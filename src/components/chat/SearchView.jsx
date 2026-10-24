@@ -1,5 +1,5 @@
 import React from 'react';
-import { ArrowLeft, Search, Users, User, MessageCircle, UserPlus } from 'lucide-react';
+import { ArrowLeft, Search, Users, User } from 'lucide-react';
 import { useChatStore } from '../../store/chatStore';
 
 export default function SearchView({ handleSearch, joinGroupById, openChat }) {
@@ -12,12 +12,12 @@ export default function SearchView({ handleSearch, joinGroupById, openChat }) {
   return (
     <div className="flex flex-col h-full w-full bg-black absolute inset-0 z-50">
       {/* HEADER & SEARCH BAR */}
-      <div className="flex items-center gap-3 px-4 py-4 border-b border-white/5 bg-black/90 backdrop-blur-xl sticky top-0 z-10">
-        <button onClick={() => setView('list')} className="p-2 -ml-2 text-white/60 hover:text-white transition-colors">
+      <div className="flex items-center gap-2 border-b border-white/5 bg-black px-2 py-3">
+        <button onClick={() => setView('list')} className="p-2 text-white" aria-label="Back">
           <ArrowLeft size={22} />
         </button>
-        
-        <div className="flex-1 flex items-center gap-2 bg-[#111] rounded-xl px-3 py-2.5 border border-white/10 focus-within:border-white/20 transition-colors">
+        <h1 className="sr-only">Search</h1>
+        <div className="flex flex-1 items-center gap-2 rounded-2xl border border-white/10 bg-[#111] px-4 py-3">
           <Search size={18} className="text-white/40" />
           <input
             autoFocus
@@ -44,12 +44,13 @@ export default function SearchView({ handleSearch, joinGroupById, openChat }) {
             {searchQuery ? 'No results found.' : 'Search for people or groups.'}
           </div>
         ) : (
-          searchResults.map((result, i) => (
+          <div className="mx-4 overflow-hidden rounded-2xl border border-white/10 bg-[#111]">
+          {searchResults.map((result, i) => (
             <button
               type="button"
               key={result.id || result.pubkey || i}
               disabled={result.type === 'user' ? !result.pubkey : !result.id}
-              className={`flex w-full items-center justify-between px-4 py-3 text-left hover:bg-white/5 active:bg-white/10 transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${i !== searchResults.length - 1 ? 'border-b border-white/5' : ''}`}
+              className="flex w-full items-center justify-between border-b border-white/5 p-4 text-left last:border-0 active:bg-white/5 disabled:opacity-50"
               onClick={() => {
                 if (result.type === 'user') {
                   openChat('dm', result.pubkey);
@@ -74,11 +75,12 @@ export default function SearchView({ handleSearch, joinGroupById, openChat }) {
                 </div>
               </span>
               
-              <span className="ml-3 flex shrink-0 items-center gap-1.5 rounded-full border border-blue-500/50 px-3 py-2 text-[13px] font-semibold text-blue-400">
-                {result.type === 'group' ? <><UserPlus size={15} /> Join</> : <><MessageCircle size={15} /> Message</>}
+              <span className="ml-3 shrink-0 rounded-2xl bg-blue-600 px-3 py-1.5 text-[13px] font-bold text-white">
+                {result.type === 'group' ? 'Join' : 'Message'}
               </span>
             </button>
-          ))
+          ))}
+          </div>
         )}
       </div>
     </div>

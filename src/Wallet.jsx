@@ -18,6 +18,7 @@ import { scopedGet, scopedSet } from './lib/storage';
 import { loadVendorPaymentConfig, saveVendorPaymentConfig } from './lib/vendorPayments';
 import PrivacySettings from './components/chat/PrivacySettings';
 import Avatar from './components/ui/Avatar';
+import ScreenHeader from './components/ui/ScreenHeader';
 import { pressable } from './components/ui/Button';
 import { copyText } from './lib/copyText';
 
@@ -266,17 +267,15 @@ export default function Wallet({ identity, onOpenChat }) {
   if (view === 'vendor_setup') {
     return (
       <div className="h-full overflow-y-auto bg-black pb-safe">
-        <header className="flex items-center gap-1 border-b border-white/5 px-1 py-2">
-          <button type="button" onClick={() => setView('main')} aria-label="Back" className="p-2 text-white"><ArrowLeft size={22} /></button>
-          <h2 className="text-[17px] font-semibold text-white">Start selling</h2>
-        </header>
-        <p className="border-b border-white/5 px-4 py-3 text-[13px] text-white/40">Add at least one address. It stays on this device.</p>
-        <form onSubmit={saveVendorSetup}>
-          <input value={btcAddress} onChange={(event) => setBtcAddress(event.target.value)} autoComplete="off" spellCheck="false" placeholder="Bitcoin address" className="w-full border-b border-white/5 bg-black px-4 py-3 text-[15px] text-white outline-none placeholder:text-white/30" />
-          <input value={xmrAddress} onChange={(event) => setXmrAddress(event.target.value)} autoComplete="off" spellCheck="false" placeholder="Monero address" className="w-full border-b border-white/5 bg-black px-4 py-3 text-[15px] text-white outline-none placeholder:text-white/30" />
-          <p className="px-4 py-3 text-[13px] text-white/40">Never enter a seed phrase or spending key.</p>
-          {status && <p role="status" className="px-4 pb-2 text-[13px] text-amber-300">{status}</p>}
-          <button type="submit" className="w-full px-4 py-4 text-left text-[15px] font-semibold text-blue-500">Save and turn on selling</button>
+        <ScreenHeader title="Start selling" onBack={() => setView('main')} />
+        <form onSubmit={saveVendorSetup} className="space-y-4 p-4">
+          <p className="text-[13px] text-white/40">Add at least one address. It stays on this device. Never enter a seed phrase or spending key.</p>
+          <div className="overflow-hidden rounded-2xl border border-white/10 bg-[#111]">
+            <input value={btcAddress} onChange={(event) => setBtcAddress(event.target.value)} autoComplete="off" spellCheck="false" placeholder="Bitcoin address" className="w-full border-b border-white/5 bg-transparent px-4 py-4 text-[15px] text-white outline-none placeholder:text-white/30" />
+            <input value={xmrAddress} onChange={(event) => setXmrAddress(event.target.value)} autoComplete="off" spellCheck="false" placeholder="Monero address" className="w-full bg-transparent px-4 py-4 text-[15px] text-white outline-none placeholder:text-white/30" />
+          </div>
+          {status && <p role="status" className="text-[13px] text-amber-300">{status}</p>}
+          <button type="submit" className="w-full rounded-2xl bg-blue-600 py-3.5 font-bold text-white hover:bg-blue-500">Save and turn on selling</button>
         </form>
       </div>
     );
@@ -443,154 +442,99 @@ export default function Wallet({ identity, onOpenChat }) {
       {status && <div className="fixed top-20 left-1/2 -translate-x-1/2 bg-blue-600 text-white px-4 py-2 rounded-xl text-xs font-bold shadow-lg z-50 animate-bounce">{status}</div>}
 
       {/* HEADER PROFILE CARD */}
-      <div className="flex flex-col items-center justify-center py-8">
+      <div className="flex flex-col items-center px-4 pb-2 pt-8">
         <div className="relative mb-4">
           <input type="file" accept="image/*" onChange={(e) => handleImageUpload(e, 'profile')} className="hidden" id="main-avatar-upload" />
-          <label htmlFor="main-avatar-upload" className="cursor-pointer group relative block">
+          <label htmlFor="main-avatar-upload" className="relative block cursor-pointer">
             {myProfile.picture ? (
-              <img src={myProfile.picture} alt="avatar" className="w-12 h-12 rounded-full object-cover border border-white/10 group-hover:opacity-80 transition-opacity" />
+              <img src={myProfile.picture} alt="" className="h-20 w-20 rounded-full border border-white/10 object-cover" />
             ) : (
-              <Avatar name={myProfile.displayName || myProfile.name} />
+              <Avatar name={myProfile.displayName || myProfile.name} className="!h-20 !w-20 text-2xl" />
             )}
-            <div className="absolute inset-0 flex items-center justify-center bg-black/50 rounded-full opacity-0 group-hover:opacity-100 transition-opacity">
-              {uploadingImage ? <RefreshCw size={24} className="text-white animate-spin" /> : <Camera size={24} className="text-white" />}
-            </div>
           </label>
         </div>
-        
         <h2 className="text-2xl font-bold tracking-tight text-white">{myProfile.displayName}</h2>
-        <p className="text-[13px] text-white/40 mb-3">@{myProfile.name}</p>
-        
-        {myProfile.about && <p className="text-[13px] text-white/50 mb-3 px-8 text-center">{myProfile.about}</p>}
-        
-        <button onClick={copyNpub} className="flex items-center gap-2 px-4 py-2 bg-[#111] border border-white/10 rounded-full text-[12px] text-white/60 hover:text-white transition-colors">
+        <p className="mb-3 text-[13px] text-white/40">@{myProfile.name}</p>
+        {myProfile.about && <p className="mb-3 px-6 text-center text-[13px] text-white/50">{myProfile.about}</p>}
+        <button onClick={copyNpub} className="flex items-center gap-2 rounded-full border border-white/10 bg-[#111] px-4 py-2 text-[12px] text-white/60">
           {copied ? 'Copied!' : `${identity.npub?.slice(0, 12)}...${identity.npub?.slice(-4)}`}
           <Copy size={12} />
         </button>
       </div>
 
-      {/* MENU LIST */}
-      <div className="w-full">
-        {/* Group 1 */}
-        <div className="mb-6">
-          <button onClick={() => setView('orders')} className={`w-full flex items-center gap-4 border-b border-white/5 bg-black px-4 py-4 text-left active:bg-white/10 ${pressable}`}>
-            <Package size={22} className="text-white/60" />
-            <div className="flex-1 text-left">
-              <p className="text-[15px] font-semibold text-white">My Orders</p>
-              <p className="text-[13px] text-white/40">Track your purchases and shipping</p>
-            </div>
-            <ChevronRight size={20} className="text-white/60" />
+      <div className="space-y-4 p-4">
+        <div className="overflow-hidden rounded-2xl border border-white/10 bg-[#111]">
+          <button onClick={() => setView('orders')} className={`flex w-full items-center gap-3 border-b border-white/5 p-4 text-left ${pressable}`}>
+            <Package size={18} className="text-white/40" />
+            <span className="min-w-0 flex-1"><span className="block text-[15px] font-semibold text-white">My Orders</span><span className="block text-[13px] text-white/40">Purchases and shipping</span></span>
+            <ChevronRight size={18} className="text-white/30" />
           </button>
-
-          <button onClick={() => setView('profile_editor')} className={`w-full flex items-center gap-4 border-b border-white/5 bg-black px-4 py-4 text-left active:bg-white/10 ${pressable}`}>
-            <User size={22} className="text-white/60" />
-            <div className="flex-1 text-left">
-              <p className="text-[15px] font-semibold text-white">Edit Profile</p>
-              <p className="text-[13px] text-white/40">Change your display name and bio</p>
-            </div>
-            <ChevronRight size={20} className="text-white/60" />
+          <button onClick={() => setView('profile_editor')} className={`flex w-full items-center gap-3 border-b border-white/5 p-4 text-left ${pressable}`}>
+            <User size={18} className="text-white/40" />
+            <span className="min-w-0 flex-1"><span className="block text-[15px] font-semibold text-white">Edit Profile</span><span className="block text-[13px] text-white/40">Name, bio, and photo</span></span>
+            <ChevronRight size={18} className="text-white/30" />
           </button>
-
-          <button onClick={() => setView('privacy')} className={`w-full flex items-center gap-4 bg-black px-4 py-4 text-left active:bg-white/10 ${pressable}`}>
-            <Shield size={22} className="text-white/60" />
-            <div className="flex-1 text-left">
-              <p className="text-[15px] font-semibold text-white">Privacy and Security</p>
-              <p className="text-[13px] text-white/40">Calls, last seen, read receipts, blocked</p>
-            </div>
-            <ChevronRight size={20} className="text-white/60" />
-          </button>
-
-          {isVendor && <button onClick={() => setView('advanced')} className="w-full flex items-center gap-4 px-4 py-4 hover:bg-white/5 transition-colors border-t border-white/5">
-            <SlidersHorizontal size={22} className="text-white/60" />
-            <div className="flex-1 text-left">
-              <p className="text-[15px] font-semibold text-white">Advanced Vendor Settings</p>
-              <p className="text-[13px] text-white/40">Order-specific BTC and XMR payment derivation</p>
-            </div>
-            <ChevronRight size={20} className="text-white/60" />
-          </button>}
-        </div>
-
-        {/* VENDOR BANNER */}
-        {!isVendor ? (
-          <button type="button" onClick={() => { setStatus(''); setView('vendor_setup'); }} className="w-full border-y border-white/5 bg-black px-4 py-4 text-left active:bg-white/10">
-            <p className="text-[15px] font-semibold text-white">Start selling</p>
-            <p className="mt-0.5 text-[13px] text-white/40">Post items in groups and take payment directly.</p>
-          </button>
-        ) : (
-          <div className="border-y border-white/5 bg-black">
-            <button type="button" onClick={() => setView('vendor')} className="w-full border-b border-white/5 px-4 py-4 text-left active:bg-white/10">
-              <p className="text-[15px] font-semibold text-white">Vendor dashboard</p>
-              <p className="text-[13px] text-white/40">Orders and listings</p>
-            </button>
-            <button type="button" onClick={() => setView('advanced')} className="w-full px-4 py-4 text-left active:bg-white/10">
-              <p className="text-[15px] font-semibold text-white">Payment settings</p>
-              <p className="text-[13px] text-white/40">Addresses used for each order</p>
-            </button>
-          </div>
-        )}
-
-        {/* Group 2 */}
-        <div className="mb-6">
-          <button onClick={() => setView('message_requests')} className="w-full flex items-center gap-4 px-4 py-4 hover:bg-white/5 transition-colors border-b border-white/5">
-            <Users size={22} className="text-white/60" />
-            <div className="flex-1 text-left">
-              <p className="text-[15px] font-semibold text-white">Message Requests</p>
-              <p className="text-[13px] text-white/40">Review DMs from strangers</p>
-            </div>
-            <ChevronRight size={20} className="text-white/60" />
-          </button>
-
-          <button onClick={() => setView('identity_backup')} className="w-full flex items-center gap-4 px-4 py-4 hover:bg-white/5 transition-colors border-b border-white/5">
-            <KeyRound size={22} className="text-white/60" />
-            <div className="flex-1 text-left">
-              <p className="text-[15px] font-semibold text-white">Identity & Backup</p>
-              <p className="text-[13px] text-white/40">Export key, QR code, or restore account</p>
-            </div>
-            <ChevronRight size={20} className="text-white/60" />
-          </button>
-
-          <button onClick={() => setView('account_switcher')} className="w-full flex items-center gap-4 px-4 py-4 hover:bg-white/5 transition-colors border-b border-white/5">
-            <RefreshCw size={22} className="text-white/60" />
-            <div className="flex-1 text-left">
-              <p className="text-[15px] font-semibold text-white">Switch Account</p>
-              <p className="text-[13px] text-white/40">Manage multiple accounts on this device</p>
-            </div>
-            <ChevronRight size={20} className="text-white/20" />
-          </button>
-
-          <button onClick={identity.lockApp} className="w-full flex items-center gap-4 px-4 py-4 hover:bg-white/5 transition-colors">
-            <Lock size={22} className="text-white/60" />
-            <div className="flex-1 text-left">
-              <p className="text-[15px] font-semibold text-white">Lock App</p>
-              <p className="text-[13px] text-white/40">Securely lock Cipher</p>
-            </div>
+          <button onClick={() => setView('privacy')} className={`flex w-full items-center gap-3 p-4 text-left ${pressable}`}>
+            <Shield size={18} className="text-white/40" />
+            <span className="min-w-0 flex-1"><span className="block text-[15px] font-semibold text-white">Privacy</span><span className="block text-[13px] text-white/40">Calls, last seen, blocked</span></span>
+            <ChevronRight size={18} className="text-white/30" />
           </button>
         </div>
 
-        {/* Group 3 (Danger) */}
-        <div className="mb-8">
+        <div className="overflow-hidden rounded-2xl border border-white/10 bg-[#111]">
+          {!isVendor ? (
+            <button type="button" onClick={() => { setStatus(''); setView('vendor_setup'); }} className="flex w-full items-center gap-3 p-4 text-left">
+              <CreditCard size={18} className="text-white/40" />
+              <span className="min-w-0 flex-1"><span className="block text-[15px] font-semibold text-white">Start selling</span><span className="block text-[13px] text-white/40">Take payment directly</span></span>
+              <ChevronRight size={18} className="text-white/30" />
+            </button>
+          ) : (
+            <>
+              <button type="button" onClick={() => setView('vendor')} className="flex w-full items-center gap-3 border-b border-white/5 p-4 text-left">
+                <BarChart3 size={18} className="text-white/40" />
+                <span className="min-w-0 flex-1"><span className="block text-[15px] font-semibold text-white">Vendor</span><span className="block text-[13px] text-white/40">Orders and listings</span></span>
+                <ChevronRight size={18} className="text-white/30" />
+              </button>
+              <button type="button" onClick={() => setView('advanced')} className="flex w-full items-center gap-3 p-4 text-left">
+                <SlidersHorizontal size={18} className="text-white/40" />
+                <span className="min-w-0 flex-1"><span className="block text-[15px] font-semibold text-white">Payment settings</span><span className="block text-[13px] text-white/40">Addresses for each order</span></span>
+                <ChevronRight size={18} className="text-white/30" />
+              </button>
+            </>
+          )}
+        </div>
+
+        <div className="overflow-hidden rounded-2xl border border-white/10 bg-[#111]">
+          <button onClick={() => setView('message_requests')} className="flex w-full items-center gap-3 border-b border-white/5 p-4 text-left">
+            <Users size={18} className="text-white/40" />
+            <span className="min-w-0 flex-1"><span className="block text-[15px] font-semibold text-white">Message requests</span><span className="block text-[13px] text-white/40">People you have not answered</span></span>
+            <ChevronRight size={18} className="text-white/30" />
+          </button>
+          <button onClick={() => setView('identity_backup')} className="flex w-full items-center gap-3 border-b border-white/5 p-4 text-left">
+            <KeyRound size={18} className="text-white/40" />
+            <span className="min-w-0 flex-1"><span className="block text-[15px] font-semibold text-white">Backup</span><span className="block text-[13px] text-white/40">Secret key and recovery phrase</span></span>
+            <ChevronRight size={18} className="text-white/30" />
+          </button>
+          <button onClick={() => setView('account_switcher')} className="flex w-full items-center gap-3 border-b border-white/5 p-4 text-left">
+            <RefreshCw size={18} className="text-white/40" />
+            <span className="min-w-0 flex-1"><span className="block text-[15px] font-semibold text-white">Accounts</span><span className="block text-[13px] text-white/40">Switch on this device</span></span>
+            <ChevronRight size={18} className="text-white/30" />
+          </button>
+          <button onClick={identity.lockApp} className="flex w-full items-center gap-3 p-4 text-left">
+            <Lock size={18} className="text-white/40" />
+            <span className="min-w-0 flex-1 text-[15px] font-semibold text-white">Lock</span>
+          </button>
+        </div>
+
+        <div className="overflow-hidden rounded-2xl border border-white/10 bg-[#111]">
           {isVendor && (
-            <button 
-              onClick={() => {
-                setIsVendor(false);
-                useChatStore.getState().setToast({ type: 'success', message: 'Switched to Buyer mode.' });
-              }}
-              className="w-full flex items-center gap-4 px-4 py-4 hover:bg-white/5 transition-colors border-b border-white/5"
-            >
-              <BarChart3 size={22} className="text-white/60" />
-              <div className="flex-1 text-left">
-                <p className="text-[15px] font-semibold text-blue-500">Switch to Buyer Mode</p>
-                <p className="text-[13px] text-white/40">Hide store, dashboard, and payment settings</p>
-              </div>
+            <button onClick={() => { setIsVendor(false); useChatStore.getState().setToast({ type: 'success', message: 'Switched to buyer mode.' }); }} className="flex w-full items-center gap-3 border-b border-white/5 p-4 text-left">
+              <span className="text-[15px] font-semibold text-blue-500">Switch to buyer mode</span>
             </button>
           )}
-
-          <button onClick={() => setShowPanicConfirm(true)} className="w-full flex items-center gap-4 px-4 py-4 hover:bg-red-500/10 transition-colors">
-            <AlertCircle size={22} className="text-white/60" />
-            <div className="flex-1 text-left">
-              <p className="text-[15px] font-semibold text-red-500">Panic Wipe</p>
-              <p className="text-[13px] text-red-500/60">Destroy all local data instantly</p>
-            </div>
+          <button onClick={() => setShowPanicConfirm(true)} className="flex w-full items-center gap-3 p-4 text-left">
+            <AlertCircle size={18} className="text-red-400" />
+            <span><span className="block text-[15px] font-semibold text-red-400">Panic wipe</span><span className="block text-[13px] text-red-400/70">Erase this device</span></span>
           </button>
         </div>
       </div>
