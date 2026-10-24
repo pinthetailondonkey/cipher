@@ -34,23 +34,26 @@ export default function AuthenticatedApp({ identity }) {
   }, []);
 
   return (
-    <div className="h-[100dvh] w-full bg-black text-white overflow-hidden flex justify-center relative">
-      <div className="absolute top-0 left-0 right-0 h-64 bg-[radial-gradient(ellipse_at_top_left,_rgba(37,99,235,0.15),_transparent_60%)] pointer-events-none z-0" />
+    <div className="relative flex h-[100dvh] w-full justify-center overflow-hidden bg-black text-white">
+      <div className="pointer-events-none fixed inset-0">
+        <div className="absolute left-[-10%] top-[-10%] h-[50%] w-[50%] rounded-full bg-blue-600/20 blur-[120px]" />
+        <div className="absolute bottom-[-10%] right-[-10%] h-[50%] w-[50%] rounded-full bg-purple-600/10 blur-[120px]" />
+      </div>
       <TutorialModal isOpen={showTutorial} onClose={() => { setShowTutorial(false); localStorage.removeItem('cipher_new_account'); }} />
       <GlobalDialog />
       <CallOverlay />
 
-      <main className="w-full max-w-md h-[calc(100dvh-4rem-env(safe-area-inset-bottom))] relative overflow-hidden z-10">
+      <main className="relative z-10 h-[calc(100dvh-6.5rem-env(safe-area-inset-bottom))] w-full max-w-md overflow-hidden">
         <div className={`absolute inset-0 ${activeTab === 'chat' ? '' : 'invisible pointer-events-none'}`}>
           <Suspense fallback={tabFallback}>
             <Chat identity={identity} />
           </Suspense>
         </div>
         {activeTab !== 'chat' && (
-          <div className="absolute inset-0 bg-black">
+          <div className="absolute inset-0">
             <Suspense fallback={tabFallback}>
               {activeTab === 'explore' && (
-                <div className="flex h-full flex-col bg-black">
+                <div className="flex h-full flex-col">
                   <div className="grid grid-cols-2 border-b border-white/5 bg-black px-4 pt-3">
                     <button type="button" onClick={() => setExploreMode('shop')} className={`py-2.5 text-[13px] font-semibold ${exploreMode === 'shop' ? 'border-b-2 border-blue-600 text-white' : 'text-white/40'}`}>Shop</button>
                     <button type="button" onClick={() => setExploreMode('groups')} className={`py-2.5 text-[13px] font-semibold ${exploreMode === 'groups' ? 'border-b-2 border-blue-600 text-white' : 'text-white/40'}`}>Groups</button>
@@ -70,7 +73,7 @@ export default function AuthenticatedApp({ identity }) {
 
       <motion.nav
         initial={{ y: 50 }} animate={{ y: 0 }} transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-        className="fixed bottom-0 left-0 right-0 z-[5] bg-black/80 backdrop-blur-2xl border-t border-white/10 pb-safe"
+        className="fixed bottom-4 left-4 right-4 z-20 mx-auto max-w-md rounded-3xl border border-white/10 bg-white/5 shadow-2xl backdrop-blur-xl"
       >
         <div className="flex justify-around items-center h-16 max-w-md mx-auto px-6">
           <button onClick={() => setActiveTab('chat')} className={`relative flex flex-col items-center gap-1 w-16 active:scale-95 transition-transform duration-100 ${activeTab === 'chat' ? 'text-blue-500' : 'text-white/40'}`}>

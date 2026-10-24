@@ -25,7 +25,7 @@ export default function MessageInput({ sendMessage, handleImageUpload, startReco
   };
 
   return (
-    <form onSubmit={submit} className="flex items-end gap-2 border-t border-white/10 bg-black px-3 py-3">
+    <form onSubmit={submit} className="flex items-end gap-2 bg-transparent px-3 py-3">
       <input
         ref={fileInput}
         type="file"
@@ -52,7 +52,7 @@ export default function MessageInput({ sendMessage, handleImageUpload, startReco
         }}
         placeholder={uploading ? 'Uploading…' : 'Message'}
         aria-label="Message"
-        className="max-h-32 min-h-10 flex-1 resize-y rounded-2xl border border-white/10 bg-[#111] px-4 py-2.5 text-[15px] text-white outline-none placeholder:text-white/35 focus:border-blue-500/50"
+        className="max-h-32 min-h-10 flex-1 resize-y rounded-2xl border border-white/10 bg-[#0A0A0A]/60 shadow-2xl backdrop-blur-2xl px-4 py-2.5 text-[15px] text-white outline-none placeholder:text-white/35 focus:border-blue-500/50"
       />
       {recording ? (
         <button type="button" onClick={stopRecording} aria-label="Stop recording" className="shrink-0 rounded-full bg-red-600 p-2.5 text-white hover:bg-red-500">

@@ -31,7 +31,7 @@ function GroupStorefront({ items, pinnedId, canList, onBuy, onList }) {
       onClick={() => onBuy(item)}
       className={`flex w-full items-center gap-3 border-b border-white/5 p-4 text-left last:border-0 active:bg-white/5 ${featuredCard ? 'bg-amber-300/[0.07]' : ''}`}
     >
-      {item.product.image ? <img src={item.product.image} alt="" className="h-12 w-12 object-cover" /> : <span className="flex h-12 w-12 items-center justify-center bg-[#111] text-[11px] text-white/30">Item</span>}
+      {item.product.image ? <img src={item.product.image} alt="" className="h-12 w-12 object-cover" /> : <span className="flex h-12 w-12 items-center justify-center bg-white/5 text-[11px] text-white/30">Item</span>}
       <span className="min-w-0 flex-1">
         {featuredCard && <span className="block text-[11px] font-semibold uppercase tracking-wide text-amber-200">Pinned</span>}
         <span className="block truncate text-[15px] font-semibold text-white">{item.product.title || item.product.name || 'Item'}</span>
@@ -41,7 +41,7 @@ function GroupStorefront({ items, pinnedId, canList, onBuy, onList }) {
   );
   return (
     <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
-      <div className="overflow-hidden rounded-2xl border border-white/10 bg-[#111]">
+      <div className="overflow-hidden rounded-2xl border border-white/10 bg-[#0A0A0A]/60 shadow-2xl backdrop-blur-2xl">
       {featured && card(featured, true)}
       {rest.map((item) => card(item, false))}
       {items.length === 0 && <p className="px-4 py-8 text-center text-[13px] text-white/40">No listings yet.</p>}
@@ -56,7 +56,7 @@ function GroupStorefront({ items, pinnedId, canList, onBuy, onList }) {
           setFormError('');
           onList({ title: title.trim(), priceUsd: amount, description: note.trim(), currency: 'USD' });
           setTitle(''); setPrice(''); setNote(''); setOpen(false);
-        }} className="overflow-hidden rounded-2xl border border-white/10 bg-[#111]">
+        }} className="overflow-hidden rounded-2xl border border-white/10 bg-[#0A0A0A]/60 shadow-2xl backdrop-blur-2xl">
           <input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Item" className="w-full border-b border-white/5 bg-transparent px-4 py-3 text-[15px] text-white outline-none placeholder:text-white/30" />
           <input value={price} onChange={(event) => setPrice(event.target.value)} placeholder="Price in USD" inputMode="decimal" className="w-full border-b border-white/5 bg-transparent px-4 py-3 text-[15px] text-white outline-none placeholder:text-white/30" />
           <input value={note} onChange={(event) => setNote(event.target.value)} placeholder="Note" className="w-full border-b border-white/5 bg-transparent px-4 py-3 text-[15px] text-white outline-none placeholder:text-white/30" />
@@ -233,7 +233,7 @@ export default function GroupView({
   };
 
   return (
-    <section className="relative flex h-full min-h-0 flex-col bg-black">
+    <section className="relative flex h-full min-h-0 flex-col bg-transparent">
       <ChatHeader mode="group" />
       <div className="grid grid-cols-2 border-b border-white/5 px-4">
         {[['chat', 'Chat'], ['shop', 'Shop']].map(([id, label]) => (
@@ -252,7 +252,7 @@ export default function GroupView({
       <>
       <div ref={scrollRef} className="flex min-h-0 flex-1 flex-col overflow-y-auto py-3">
         {visibleMessages.length === 0 ? (
-          <div className="m-auto mx-4 max-w-sm rounded-2xl border border-white/10 bg-[#111] px-4 py-8 text-center">
+          <div className="m-auto mx-4 max-w-sm rounded-2xl border border-white/10 bg-[#0A0A0A]/60 shadow-2xl backdrop-blur-2xl px-4 py-8 text-center">
             <p className="text-[15px] font-semibold text-white">You're in {activeGroup?.name || 'this group'}</p>
             <p className="mt-2 text-[13px] leading-relaxed text-white/40">Say hello. Messages stay in this chat, with a name and a time on every one.</p>
           </div>
@@ -275,7 +275,7 @@ export default function GroupView({
         })}
       </div>
       {replyingTo && (
-        <div className="mx-3 mb-2 flex items-center gap-3 rounded-2xl border border-white/10 bg-[#111] px-4 py-3">
+        <div className="mx-3 mb-2 flex items-center gap-3 rounded-2xl border border-white/10 bg-[#0A0A0A]/60 shadow-2xl backdrop-blur-2xl px-4 py-3">
           <div className="min-w-0 flex-1 border-l-2 border-blue-500 pl-3">
             <p className="text-[11px] font-semibold text-blue-400">{replyingTo.isSender ? 'You' : 'Replying'}</p>
             <p className="truncate text-[13px] text-white/60">{replyingTo.data?.message || replyingTo.rawContent || 'Message'}</p>
