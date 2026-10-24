@@ -136,11 +136,8 @@ export default function Shop({ identity, setActiveTab }) {
 
   return (
     <div className="flex h-full w-full flex-col bg-transparent">
-      <div className="px-4 pb-2 pt-4">
-        <h1 className="text-2xl font-bold tracking-tight text-white">Shop</h1>
-      </div>
-      <div className="px-4 pb-3">
-        <div className="flex items-center gap-2 rounded-2xl border border-white/10 bg-[#0A0A0A]/60 shadow-2xl backdrop-blur-2xl px-4 py-3">
+      <div className="px-4 pb-3 pt-2">
+        <div className="flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 backdrop-blur-md">
           <Search size={16} className="text-white/40" />
           <input
             type="text"
@@ -159,22 +156,22 @@ export default function Shop({ identity, setActiveTab }) {
             <p className="text-sm">Fetching products from the network...</p>
           </div>
         ) : error ? (
-          <div className="px-6 py-16 text-center">
+          <div className="mx-4 rounded-2xl border border-white/10 bg-[#0A0A0A]/60 px-4 py-16 text-center shadow-2xl backdrop-blur-2xl">
             <p className="text-[15px] font-semibold text-white">Shop unavailable</p>
             <p className="mt-1 text-[13px] text-white/40">{error}</p>
           </div>
         ) : displayProducts.length === 0 ? (
-          <div className="mt-20 text-center text-white/30">
-            <ShoppingBag size={48} className="mx-auto mb-4 opacity-50" />
-            <p>No products found</p>
+          <div className="mx-4 rounded-2xl border border-white/10 bg-[#0A0A0A]/60 px-4 py-16 text-center shadow-2xl backdrop-blur-2xl">
+            <ShoppingBag size={28} className="mx-auto mb-3 text-white/30" />
+            <p className="text-[15px] font-semibold text-white">No products</p>
           </div>
         ) : (
           <div className="grid grid-cols-2 gap-3 px-4 pb-4">
             {displayProducts.map(p => (
               <div key={p.id} className="overflow-hidden rounded-2xl border border-white/10 bg-[#0A0A0A]/60 shadow-2xl backdrop-blur-2xl">
-                <div className="relative h-28 w-full overflow-hidden bg-black">
+                <div className="relative h-28 w-full overflow-hidden bg-white/5">
                   {p.image ? (
-                    <img src={p.image} alt="" className="h-full w-full object-cover" />
+                    <img src={p.image} alt="" className="h-full w-full object-cover" onError={(event) => { event.currentTarget.style.display = 'none'; }} />
                   ) : (
                     <div className="flex h-full w-full items-center justify-center text-white/20">
                       <ShoppingBag size={28} />
