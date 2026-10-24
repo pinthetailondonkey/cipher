@@ -34,7 +34,7 @@ export default function ProductEditModal({ editingProduct, onClose, onSubmit }) 
   };
 
   return (
-    <div className="fixed inset-0 z-[90] flex items-end justify-center bg-black/70 p-3" role="presentation" onClick={onClose}>
+    <div className="fixed inset-0 z-[90] flex items-end justify-center bg-black/60 p-3 backdrop-blur-md" role="presentation" onClick={onClose}>
       <form role="dialog" aria-modal="true" aria-label="Edit listing" onClick={(event) => event.stopPropagation()} onSubmit={save} className="w-full max-w-sm space-y-4 rounded-3xl border border-white/10 bg-[#0A0A0A]/60 backdrop-blur-2xl p-5">
         <div className="flex items-center justify-between">
           <h2 className="text-2xl font-bold tracking-tight text-white">Edit listing</h2>

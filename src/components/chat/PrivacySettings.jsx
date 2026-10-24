@@ -21,7 +21,7 @@ function Choice({ icon: Icon, label, hint, value, options, onChange }) {
                 type="button"
                 aria-pressed={value === option.id}
                 onClick={() => onChange(option.id)}
-                className={`rounded-2xl px-3 py-2 text-[13px] font-bold active:scale-95 ${value === option.id ? 'bg-blue-600 text-white' : 'bg-black text-white/55'}`}
+                className={`rounded-2xl border px-3 py-2 text-[13px] font-bold active:scale-95 ${value === option.id ? 'border-blue-500 bg-blue-600 text-white' : 'border-white/10 bg-white/5 text-white/55 backdrop-blur-md'}`}
               >
                 {option.label}
               </button>

@@ -44,7 +44,7 @@ export default function AccountSwitcher({ identity, onClose }) {
             </div>
             {!account.isActive && (
               <div className="mt-3 flex gap-2">
-                <label className="flex min-w-0 flex-1 items-center gap-2 rounded-2xl border border-white/10 bg-black px-3">
+                <label className="flex min-w-0 flex-1 items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-3 backdrop-blur-md">
                   <KeyRound size={16} className="shrink-0 text-white/40" />
                   <input type="password" inputMode="numeric" autoComplete="current-password" value={pins[account.pubkey] || ''} onChange={(event) => setPins((current) => ({ ...current, [account.pubkey]: event.target.value }))} placeholder="PIN" className="min-w-0 flex-1 bg-transparent py-3 text-[15px] text-white outline-none placeholder:text-white/30" />
                 </label>
