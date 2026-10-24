@@ -1,16 +1,197 @@
 import { useCallback, useEffect } from 'react';
-import { db } from '../db';
-import { saveMessage } from '../db';
+import { finalizeEvent } from 'nostr-tools';
+import { db, saveMessage } from '../db';
 import { showNotification } from '../lib/notifications';
 import { useChatStore } from '../store/chatStore';
 import { getAuthenticatedPool } from '../lib/pool';
 import { groupRelays, generalRelays, queryWithTimeout } from '../lib/relays';
 import { getMyGroups, setMyGroups } from '../lib/myGroups';
 import { encodeGroupPayload, decodeGroupEvent } from '../lib/crypto/groupMessageCodec';
-import { putGroupKey, getAllGroupKeys, getCurrentGroupKey } from '../lib/crypto/groupKeyStore';
+import { putGroupKey, getCurrentGroupKey } from '../lib/crypto/groupKeyStore';
 import { generateGroupKey } from '../lib/crypto/groupCipher';
 import { distributeGroupKey } from '../lib/crypto/groupKeyDistribution';
 import { enqueueNostrEvent, startOutboxSync } from '../lib/outbox';
+
+const GROUP_RELAY_URL = 'wss://groups.aegispayhq.com';
+const groupSessions = new Map();
+
+function rejectAuthWaiters(session, error) {
+  const pending = session.authWaiters.splice(0);
+  pending.forEach((waiter) => waiter.reject(error));
+}
+
+function flushGroupSubs(session) {
+  if (session.ws?.readyState !== WebSocket.OPEN) return;
+  for (const [subId, filter] of session.subs) {
+    session.ws.send(JSON.stringify(['REQ', subId, filter]));
+  }
+}
+
+function markGroupAuthed(session) {
+  session.authed = true;
+  flushGroupSubs(session);
+  const pending = session.authWaiters.splice(0);
+  pending.forEach((waiter) => waiter.resolve());
+}
+
+function sendAuthResponse(session, challenge) {
+  if (!challenge || !session.identity?.sk || session.authSent) return;
+  const authEvent = finalizeEvent({
+    kind: 22242,
+    created_at: Math.floor(Date.now() / 1000),
+    tags: [
+      ['relay', GROUP_RELAY_URL],
+      ['challenge', challenge],
+    ],
+    content: '',
+  }, session.identity.sk);
+  session.authEventId = authEvent.id;
+  session.authSent = true;
+  session.ws.send(JSON.stringify(['AUTH', authEvent]));
+}
+
+function handleGroupSocketFrame(session, raw) {
+  let msg;
+  try {
+    msg = JSON.parse(raw);
+  } catch (error) {
+    console.warn('[NIP29] Ignoring malformed group relay frame:', error);
+    return;
+  }
+
+  if (msg[0] === 'AUTH') {
+    const challenge = typeof msg[1] === 'string' ? msg[1] : msg[1]?.challenge;
+    try {
+      sendAuthResponse(session, challenge);
+    } catch (error) {
+      console.error('[NIP29] Failed to authenticate group relay:', error);
+      rejectAuthWaiters(session, error);
+    }
+    return;
+  }
+
+  if (msg[0] === 'OK') {
+    const eventId = msg[1];
+    const accepted = msg[2] === true;
+    const reason = msg[3] || '';
+    if (eventId && eventId === session.authEventId) {
+      if (accepted) markGroupAuthed(session);
+      else {
+        session.authSent = false;
+        console.error('[NIP29] Group relay rejected NIP-42 authentication:', reason);
+        rejectAuthWaiters(session, new Error(reason || 'AUTH rejected'));
+      }
+      return;
+    }
+    const waiter = session.okWaiters.get(eventId);
+    if (waiter) {
+      session.okWaiters.delete(eventId);
+      clearTimeout(waiter.timer);
+      if (accepted) waiter.resolve(msg);
+      else waiter.reject(new Error(reason || 'relay rejected event'));
+    }
+  }
+
+  for (const listener of session.listeners) {
+    try { listener(msg); } catch (error) { console.error('[NIP29] Group frame listener failed:', error); }
+  }
+}
+
+function connectGroupSocket(session) {
+  if (session.closed) return;
+  session.authed = false;
+  session.authSent = false;
+  session.authEventId = null;
+  const ws = new WebSocket(GROUP_RELAY_URL);
+  session.ws = ws;
+
+  ws.onopen = () => {
+    console.log('✅ Group WS connected');
+    window.dispatchEvent(new CustomEvent('cipher:relay-connected', { detail: { url: GROUP_RELAY_URL } }));
+  };
+
+  ws.onmessage = (event) => handleGroupSocketFrame(session, event.data);
+
+  ws.onerror = (event) => console.error('Group WS error:', event);
+
+  ws.onclose = (event) => {
+    console.log('❌ Group WS closed:', event.reason || event.code);
+    session.authed = false;
+    session.authSent = false;
+    rejectAuthWaiters(session, new Error('Group relay socket closed'));
+    for (const [eventId, waiter] of session.okWaiters) {
+      clearTimeout(waiter.timer);
+      waiter.reject(new Error('Group relay socket closed'));
+      session.okWaiters.delete(eventId);
+    }
+    if (!session.closed) session.reconnectTimer = setTimeout(() => connectGroupSocket(session), 3000);
+  };
+}
+
+function openGroupRelaySession(identity) {
+  if (!identity?.pk || !identity?.sk) throw new Error('Group relay requires a signed-in key');
+  const existing = groupSessions.get(identity.pk);
+  if (existing && !existing.closed) {
+    existing.identity = identity;
+    return existing;
+  }
+
+  const session = {
+    identity,
+    ws: null,
+    authed: false,
+    authSent: false,
+    authEventId: null,
+    closed: false,
+    reconnectTimer: null,
+    authWaiters: [],
+    okWaiters: new Map(),
+    subs: new Map(),
+    listeners: new Set(),
+  };
+  groupSessions.set(identity.pk, session);
+  connectGroupSocket(session);
+  return session;
+}
+
+function whenGroupAuthed(session) {
+  if (session.authed && session.ws?.readyState === WebSocket.OPEN) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    const waiter = {
+      resolve: () => { clearTimeout(waiter.timer); resolve(); },
+      reject: (error) => { clearTimeout(waiter.timer); reject(error); },
+    };
+    waiter.timer = setTimeout(() => {
+      const index = session.authWaiters.indexOf(waiter);
+      if (index !== -1) session.authWaiters.splice(index, 1);
+      reject(new Error('Group relay AUTH timed out'));
+    }, 12000);
+    session.authWaiters.push(waiter);
+  });
+}
+
+async function publishAuthedGroupEvent(identity, event) {
+  const session = openGroupRelaySession(identity);
+  await whenGroupAuthed(session);
+  if (!event.tags?.some((tag) => tag[0] === 'h' && tag[1])) {
+    throw new Error('Group event is missing the h tag');
+  }
+  await new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      session.okWaiters.delete(event.id);
+      reject(new Error('Group relay OK timed out'));
+    }, 12000);
+    session.okWaiters.set(event.id, { resolve, reject, timer });
+    try {
+      session.ws.send(JSON.stringify(['EVENT', event]));
+    } catch (error) {
+      clearTimeout(timer);
+      session.okWaiters.delete(event.id);
+      reject(error);
+    }
+  });
+  return event;
+}
 
 const shouldSuppressGroup = (groupId) => {
   const state = useChatStore.getState();
@@ -25,8 +206,6 @@ export function useNIP29Group({ identity }) {
   const setGroups = useCallback((val) => {
     setGroupsStore((prev) => {
       const next = typeof val === 'function' ? val(prev) : val;
-      // Strict filter: only allow groups the user has explicitly joined/created.
-      // This kills the relay WS listener that injects "lmfao".
       const myGroupIds = new Set(getMyGroups(identity?.pk).map(g => g.id));
       return next.filter(g => myGroupIds.has(g.id));
     });
@@ -41,8 +220,6 @@ export function useNIP29Group({ identity }) {
     if (!identity?.sk) return undefined;
     return startOutboxSync(identity);
   }, [identity?.pk, identity?.sk]);
-
-
 
   const sortMessages = (a, b) => {
     const tA = a.local_timestamp || (a.timestamp * 1000);
@@ -70,9 +247,7 @@ export function useNIP29Group({ identity }) {
     });
   }, [setGroupMessages]);
 
-  // CREATE GROUP
   const createGroup = useCallback(async (name, about, isChannel) => {
-    const { finalizeEvent } = await import('nostr-tools');
     const pool = await getAuthenticatedPool(identity);
     const groupId = (globalThis.crypto?.randomUUID?.() || Date.now().toString()).replace(/-/g, '').slice(0, 16);
 
@@ -91,7 +266,7 @@ export function useNIP29Group({ identity }) {
       metaTags.push(['channel', 'true']);
       metaTags.push(['broadcast', 'true']);
     }
-    
+
     const metaEv = finalizeEvent({
       kind: 9002, created_at: Math.floor(Date.now() / 1000),
       tags: metaTags,
@@ -132,9 +307,8 @@ export function useNIP29Group({ identity }) {
     setGroups(prev => [newGroup, ...(prev || []).filter(g => g.id !== groupId)]);
 
     return newGroup;
-  }, [identity, setGroups]);
+  }, [identity, setGroups, appendSystemMessage]);
 
-  // JOIN GROUP
   const joinGroupById = useCallback(async (groupId, passedName = null) => {
     if (!groupId) return;
     let realName = passedName || 'Unnamed Group';
@@ -170,9 +344,7 @@ export function useNIP29Group({ identity }) {
     return newGroup;
   }, [identity, setGroups]);
 
-  // LEAVE GROUP
   const leaveGroup = useCallback(async (groupId) => {
-    const { finalizeEvent } = await import('nostr-tools');
     const pool = await getAuthenticatedPool(identity);
     const leaveEv = finalizeEvent({
       kind: 9022, created_at: Math.floor(Date.now() / 1000),
@@ -185,26 +357,20 @@ export function useNIP29Group({ identity }) {
     const updated = localGroups.filter(g => g.id !== groupId);
     setMyGroups(identity.pk, updated);
     setGroups(updated);
-  }, [identity, setGroups]);
+  }, [identity, setGroups, appendSystemMessage]);
 
-  // SEND GROUP MESSAGE
   const sendGroupMessage = useCallback(async (groupId, payload, clientId = null, replyId = null) => {
     try {
-      const { finalizeEvent } = await import('nostr-tools');
-      const pool = await getAuthenticatedPool(identity);
       const encoded = await encodeGroupPayload({ groupId, payload, senderPubkey: identity.pk, waitForKey: true });
       if (encoded.pending) {
         try {
-          const reqEv = finalizeEvent({
-            kind: 9, created_at: Math.floor(Date.now() / 1000),
+          const reqEvent = finalizeEvent({
+            kind: 9,
+            created_at: Math.floor(Date.now() / 1000),
             tags: [['h', groupId]],
-            content: JSON.stringify({ type: 'gkey_req' })
+            content: JSON.stringify({ type: 'gkey_req' }),
           }, identity.sk);
-          Promise.allSettled(pool.publish(groupRelays, reqEv)).then((results) => {
-            if (results.every((result) => result.status === 'rejected')) {
-              console.warn('[NIP29] All relays rejected the group key request:', results);
-            }
-          });
+          await publishAuthedGroupEvent(identity, reqEvent);
         } catch (error) {
           console.error('[NIP29] Failed to request a group key:', error);
         }
@@ -214,53 +380,52 @@ export function useNIP29Group({ identity }) {
       if (clientId) tags.push(['client', clientId]);
       if (replyId) tags.push(['e', replyId, '', 'reply']);
       const event = finalizeEvent({
-        kind: 9, created_at: Math.floor(Date.now() / 1000),
-        tags, content: encoded.content
+        kind: 9,
+        created_at: Math.floor(Date.now() / 1000),
+        tags,
+        content: encoded.content,
       }, identity.sk);
-      const results = await Promise.allSettled(pool.publish(groupRelays, event));
-      const relayCount = results.filter((result) => result.status === 'fulfilled').length;
-      if (relayCount === 0) {
-        console.warn('[NIP29] All group relays rejected the message:', results);
+      try {
+        await publishAuthedGroupEvent(identity, event);
+        return { success: true, event, relayCount: 1 };
+      } catch (error) {
+        console.warn('[NIP29] Group relay did not accept the message after AUTH:', error);
         await enqueueNostrEvent(event);
-        return { success: true, queued: true, event, results, relayCount: 0 };
+        return { success: true, queued: true, event, relayCount: 0 };
       }
-      return { success: true, event, results, relayCount };
     } catch (error) {
       console.error('[NIP29] Failed to send group message:', error);
       return { success: false, error: error?.message || 'Group message failed' };
     }
   }, [identity]);
 
-  // SEND GROUP TYPING INDICATOR
   const requestGroupKey = useCallback(async (groupId) => {
     try {
-      const { finalizeEvent } = await import('nostr-tools');
-      const pool = await getAuthenticatedPool(identity);
       const ev = finalizeEvent({
-        kind: 9, created_at: Math.floor(Date.now() / 1000),
-        tags: [['h', groupId]], content: JSON.stringify({ type: 'gkey_req' })
+        kind: 9,
+        created_at: Math.floor(Date.now() / 1000),
+        tags: [['h', groupId]],
+        content: JSON.stringify({ type: 'gkey_req' }),
       }, identity.sk);
-      pool.publish(groupRelays, ev);
+      await publishAuthedGroupEvent(identity, ev);
     } catch (e) {}
   }, [identity]);
 
   const sendGroupTypingIndicator = useCallback(async (groupId) => {
     try {
-      const { finalizeEvent } = await import('nostr-tools');
-      const pool = await getAuthenticatedPool(identity);
       const encoded = await encodeGroupPayload({ groupId, payload: { type: 'typing' }, senderPubkey: identity.pk });
       if (encoded.pending) return;
       const ev = finalizeEvent({
-        kind: 9, created_at: Math.floor(Date.now() / 1000),
-        tags: [['h', groupId], ...encoded.tags], content: encoded.content
+        kind: 9,
+        created_at: Math.floor(Date.now() / 1000),
+        tags: [['h', groupId], ...encoded.tags],
+        content: encoded.content,
       }, identity.sk);
-      pool.publish(groupRelays, ev);
+      await publishAuthedGroupEvent(identity, ev);
     } catch (e) {}
   }, [identity]);
 
-  // ADMIN ACTIONS
   const kickMember = useCallback(async (groupId, memberPubkey) => {
-    const { finalizeEvent } = await import('nostr-tools');
     const pool = await getAuthenticatedPool(identity);
     const allMembers = useChatStore.getState().groupMembers || [];
     const remaining = allMembers.filter(m => m.pubkey !== memberPubkey).map(m => m.pubkey);
@@ -272,12 +437,9 @@ export function useNIP29Group({ identity }) {
     await Promise.allSettled(pool.publish(groupRelays, ev));
     setGroupMembers(prev => prev.filter(m => m.pubkey !== memberPubkey));
     appendSystemMessage(groupId, `User ${memberPubkey.slice(0, 6)}... was kicked from the group`, ev.id);
-    // Rotation handled by useGroupKeyReconciler (audit H10)
-    // kickMember only publishes the 9001 relay event  }
-  }, [identity, setGroupMembers]);
+  }, [identity, setGroupMembers, appendSystemMessage]);
 
   const promoteMember = useCallback(async (groupId, memberPubkey, isAdmin) => {
-    const { finalizeEvent } = await import('nostr-tools');
     const pool = await getAuthenticatedPool(identity);
     const ev = finalizeEvent({
       kind: 9000, created_at: Math.floor(Date.now() / 1000),
@@ -287,11 +449,9 @@ export function useNIP29Group({ identity }) {
     await Promise.allSettled(pool.publish(groupRelays, ev));
     setGroupMembers(prev => prev.map(m => m.pubkey === memberPubkey ? { ...m, role: isAdmin ? 'member' : 'admin' } : m));
     appendSystemMessage(groupId, `User ${memberPubkey.slice(0, 6)}... was ${isAdmin ? 'demoted to member' : 'promoted to admin'}`, ev.id);
-  }, [identity, setGroupMembers]);
+  }, [identity, setGroupMembers, appendSystemMessage]);
 
-  // ADD MEMBER
   const addMember = useCallback(async (groupId, memberPubkey) => {
-    const { finalizeEvent } = await import('nostr-tools');
     const pool = await getAuthenticatedPool(identity);
     const ev = finalizeEvent({
       kind: 9000, created_at: Math.floor(Date.now() / 1000),
@@ -305,13 +465,10 @@ export function useNIP29Group({ identity }) {
       }
       return prev;
     });
-  }, [identity, setGroupMembers]);
+  }, [identity, setGroupMembers, appendSystemMessage]);
 
-  // UPDATE GROUP SETTINGS (name, about, avatar)
   const updateGroupSettings = useCallback(async (groupId, updates) => {
-    const { finalizeEvent } = await import('nostr-tools');
     const pool = await getAuthenticatedPool(identity);
-    
     const tags = [['h', groupId]];
     if (updates.name) tags.push(['name', updates.name]);
     if (updates.about !== undefined) tags.push(['about', updates.about]);
@@ -319,405 +476,311 @@ export function useNIP29Group({ identity }) {
     if (updates.requireApproval !== undefined) {
       tags.push(['join', updates.requireApproval ? 'approval' : 'open']);
     }
-    
     const ev = finalizeEvent({
       kind: 9002,
       created_at: Math.floor(Date.now() / 1000),
       tags,
       content: ''
     }, identity.sk);
-    
     await Promise.allSettled(pool.publish(groupRelays, ev));
-    
-    // Update local group in store
     setGroups(prev => prev.map(g => g.id === groupId ? { ...g, ...updates } : g));
-    
-    // System message
-    if (updates.name) {
-      appendSystemMessage(groupId, `Group name changed to "${updates.name}"`, ev.id);
-    } else if (updates.avatar) {
-      appendSystemMessage(groupId, 'Group photo was updated', ev.id);
-    } else if (updates.requireApproval !== undefined) {
-      appendSystemMessage(groupId, updates.requireApproval ? 'Joining this group now requires admin approval' : 'This group is now open to join', ev.id);
-    } else if (updates.about !== undefined) {
-      appendSystemMessage(groupId, 'Group description was updated', ev.id);
-    }
-    
+    if (updates.name) appendSystemMessage(groupId, `Group name changed to "${updates.name}"`, ev.id);
+    else if (updates.avatar) appendSystemMessage(groupId, 'Group photo was updated', ev.id);
+    else if (updates.requireApproval !== undefined) appendSystemMessage(groupId, updates.requireApproval ? 'Joining this group now requires admin approval' : 'This group is now open to join', ev.id);
+    else if (updates.about !== undefined) appendSystemMessage(groupId, 'Group description was updated', ev.id);
     return { success: true };
-  }, [identity, setGroups]);
+  }, [identity, setGroups, appendSystemMessage]);
 
-  // FETCH MEMBERS
   const fetchGroupMembers = useCallback(async (groupId) => {
-      try {
-        const pool = await getAuthenticatedPool(identity);
-        const [byDTag, byHTag] = await Promise.all([
-          queryWithTimeout(pool, groupRelays, { kinds: [39002], '#d': [groupId] }),
-          queryWithTimeout(pool, groupRelays, { kinds: [39002], '#h': [groupId] }),
-        ]);
-        const latest = Array.from(new Map([...byDTag, ...byHTag].map((event) => [event.id, event])).values())
-          .sort((a, b) => b.created_at - a.created_at)[0];
-        if (!latest) {
-          console.warn(`[NIP29] No membership snapshot found for group ${groupId}`);
-          return null;
-        }
-        const members = latest.tags
-          .filter((tag) => tag[0] === 'p' && tag[1])
-          .map((tag) => ({ pubkey: tag[1], role: tag[2] || 'member' }));
-        if (!members.some((member) => member.pubkey === identity.pk)) {
-          members.push({ pubkey: identity.pk, role: activeGroup?.creator === identity.pk ? 'admin' : 'member' });
-        }
-        if (useChatStore.getState().activeGroup?.id === groupId) setGroupMembers(members);
-        return members;
-      } catch (err) {
-        console.error('[useNIP29Group] fetchGroupMembers failed:', err);
+    try {
+      const pool = await getAuthenticatedPool(identity);
+      const [byDTag, byHTag] = await Promise.all([
+        queryWithTimeout(pool, groupRelays, { kinds: [39002], '#d': [groupId] }),
+        queryWithTimeout(pool, groupRelays, { kinds: [39002], '#h': [groupId] }),
+      ]);
+      const latest = Array.from(new Map([...byDTag, ...byHTag].map((event) => [event.id, event])).values())
+        .sort((a, b) => b.created_at - a.created_at)[0];
+      if (!latest) {
+        console.warn(`[NIP29] No membership snapshot found for group ${groupId}`);
         return null;
       }
-    }, [identity?.pk, identity?.sk, setGroupMembers]);
+      const members = latest.tags
+        .filter((tag) => tag[0] === 'p' && tag[1])
+        .map((tag) => ({ pubkey: tag[1], role: tag[2] || 'member' }));
+      if (!members.some((member) => member.pubkey === identity.pk)) {
+        members.push({ pubkey: identity.pk, role: activeGroup?.creator === identity.pk ? 'admin' : 'member' });
+      }
+      if (useChatStore.getState().activeGroup?.id === groupId) setGroupMembers(members);
+      return members;
+    } catch (err) {
+      console.error('[useNIP29Group] fetchGroupMembers failed:', err);
+      return null;
+    }
+  }, [identity?.pk, identity?.sk, activeGroup?.creator, setGroupMembers]);
 
-  // RAW WEBSOCKET SUBSCRIPTION (NIP-42 AUTH + join + subscribe)
   const subscribeToGroups = useCallback((groupIds, since) => {
-    if (!groupIds || groupIds.length === 0) return () => {};
+    if (!groupIds || groupIds.length === 0 || !identity?.sk) return () => {};
+    const session = openGroupRelaySession(identity);
+    const subId = `group-sub-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+    const filter = { kinds: [9], '#h': [...groupIds] };
+    if (Number.isFinite(since)) filter.since = since;
+    session.subs.set(subId, filter);
+    if (session.authed && session.ws?.readyState === WebSocket.OPEN) {
+      session.ws.send(JSON.stringify(['REQ', subId, filter]));
+    }
 
-    let ws;
-    let authSent = false;
-    let sentReq = false;
-    let isMounted = true;
     let keyHandler = null;
-    let authEventId = null;
-    let reconnectTimer = null;
 
-    const connect = () => {
-      if (!isMounted) return;
-      authSent = false;
-      sentReq = false;
-      authEventId = null;
-      ws = new WebSocket('wss://groups.aegispayhq.com');
+    const onFrame = async (msg) => {
+      if (msg[0] === 'CLOSED' && msg[1] === subId) {
+        console.log('❌ Group subscription closed:', msg[2]);
+        return;
+      }
+      if (msg[0] !== 'EVENT' || msg[1] !== subId) return;
+      const event = msg[2];
+      if (!event?.tags) return;
+      const hTag = event.tags.find(t => t[0] === 'h');
+      if (!hTag?.[1]) return;
+      const groupId = hTag[1];
+      if (!groupIds.includes(groupId)) return;
 
-      ws.onopen = () => {
-        if (!isMounted) return;
-        console.log('✅ Group WS connected');
-        window.dispatchEvent(new CustomEvent('cipher:relay-connected', {
-          detail: { url: 'wss://groups.aegispayhq.com' },
-        }));
-      };
-
-      ws.onmessage = async (e) => {
-        if (!isMounted) return;
-        let msg;
-        try {
-          msg = JSON.parse(e.data);
-        } catch (error) {
-          console.warn('[NIP29] Ignoring malformed group relay frame:', error);
-          return;
+      if (event.kind === 9021) {
+        const pk = event.pubkey;
+        if (useChatStore.getState().activeGroup?.id === groupId) {
+          setGroupMembers(prev => {
+            const updated = Array.isArray(prev) ? [...prev] : [];
+            if (updated.findIndex(m => m.pubkey === pk) === -1) updated.push({ pubkey: pk, role: 'member' });
+            return updated;
+          });
         }
-
-        if (msg[0] === 'AUTH') {
-          if (authSent || !identity?.sk) return;
-          try {
-            const { finalizeEvent } = await import('nostr-tools');
-            const challenge = typeof msg[1] === 'string' ? msg[1] : msg[1]?.challenge;
-            if (!challenge || ws.readyState !== WebSocket.OPEN) return;
-            const authEv = finalizeEvent({
-              kind: 22242, created_at: Math.floor(Date.now() / 1000),
-              tags: [['relay', 'wss://groups.aegispayhq.com'], ['challenge', challenge]],
-              content: ''
-            }, identity.sk);
-            authEventId = authEv.id;
-            ws.send(JSON.stringify(['AUTH', authEv]));
-            authSent = true;
-          } catch (error) {
-            console.error('[NIP29] Failed to authenticate group relay:', error);
-          }
+        if (pk !== identity.pk) appendSystemMessage(groupId, `User ${pk.slice(0, 6)}... joined the group`, event.id);
+        return;
+      }
+      if (event.kind === 9022) {
+        const pk = event.pubkey;
+        if (useChatStore.getState().activeGroup?.id === groupId) {
+          setGroupMembers(prev => Array.isArray(prev) ? prev.filter(m => m.pubkey !== pk) : []);
         }
-        else if (msg[0] === 'OK' && msg[1] === authEventId && msg[2] === true && !sentReq) {
-          sentReq = true;
-          for (const gid of groupIds) {
-            if (ws.readyState === WebSocket.OPEN) {
-              ws.send(JSON.stringify(['REQ', `group-sub-${gid}`, { kinds: [7, 9, 39002, 9021, 9022, 9000, 9001, 9002], '#h': [gid], since }]));
-            }
-          }
-        } else if (msg[0] === 'OK' && msg[1] === authEventId && msg[2] === false) {
-          console.error('[NIP29] Group relay rejected NIP-42 authentication:', msg[3]);
+        appendSystemMessage(groupId, `User ${pk.slice(0, 6)}... left the group`, event.id);
+        return;
+      }
+      if (event.kind === 9000) {
+        const pk = event.tags.find(t => t[0] === 'p')?.[1];
+        const role = event.tags.find(t => t[0] === 'role')?.[1] || 'member';
+        if (useChatStore.getState().activeGroup?.id === groupId) {
+          setGroupMembers(prev => {
+            const updated = Array.isArray(prev) ? [...prev] : [];
+            const idx = updated.findIndex(m => m.pubkey === pk);
+            if (idx !== -1) updated[idx] = { ...updated[idx], role };
+            else updated.push({ pubkey: pk, role });
+            return updated;
+          });
         }
-        else if (msg[0] === 'EVENT' && typeof msg[1] === 'string' && msg[1].startsWith('group-sub-')) {
-          const event = msg[2];
-          const hTag = event.tags.find(t => t[0] === 'h');
-          if (!hTag) return;
-          const groupId = hTag[1];
+        appendSystemMessage(groupId, `User ${pk.slice(0, 6)}... was ${role === 'admin' ? 'promoted to admin' : 'demoted to member'}`, event.id);
+        return;
+      }
+      if (event.kind === 9001) {
+        const pk = event.tags.find(t => t[0] === 'p')?.[1];
+        if (useChatStore.getState().activeGroup?.id === groupId) {
+          setGroupMembers(prev => Array.isArray(prev) ? prev.filter(m => m.pubkey !== pk) : []);
+        }
+        appendSystemMessage(groupId, `User ${pk.slice(0, 6)}... was kicked from the group`, event.id);
+        return;
+      }
+      if (event.kind === 9002) {
+        const name = event.tags.find(t => t[0] === 'name')?.[1];
+        const about = event.tags.find(t => t[0] === 'about')?.[1];
+        if (name) appendSystemMessage(groupId, `Group name was changed to "${name}"`, event.id);
+        else if (about) appendSystemMessage(groupId, 'Group description was updated', event.id);
+        return;
+      }
+      if (event.kind === 39002) {
+        const members = event.tags.filter(x => x[0] === 'p').map(x => ({ pubkey: x[1], role: x[2] || 'member' }));
+        if (!members.find(x => x.pubkey === identity.pk)) members.push({ pubkey: identity.pk, role: 'member' });
+        if (useChatStore.getState().activeGroup?.id === groupId) setGroupMembers(members);
+        return;
+      }
+      if (event.kind === 7) {
+        const targetId = event.tags.find(t => t[0] === 'e')?.[1];
+        if (targetId) {
+          useChatStore.getState().setReactions(prev => {
+            const existing = prev[targetId] || [];
+            if (existing.find(r => r.pubkey === event.pubkey && r.emoji === event.content)) return prev;
+            return { ...prev, [targetId]: [...existing, { emoji: event.content, pubkey: event.pubkey }] };
+          });
+        }
+        return;
+      }
+      if (event.kind !== 9) return;
 
-          if (event.kind === 9021) { // Join
-            const pk = event.pubkey;
-            if (useChatStore.getState().activeGroup?.id === groupId) {
-              setGroupMembers(prev => {
-                let updated = Array.isArray(prev) ? [...prev] : [];
-                if (updated.findIndex(m => m.pubkey === pk) === -1) updated.push({ pubkey: pk, role: 'member' });
-                return updated;
-              });
-            }
-            if (pk !== identity.pk) appendSystemMessage(groupId, `User ${pk.slice(0, 6)}... joined the group`, event.id);
-            return;
-          }
-          if (event.kind === 9022) { // Leave
-            const pk = event.pubkey;
-            if (useChatStore.getState().activeGroup?.id === groupId) {
-              setGroupMembers(prev => Array.isArray(prev) ? prev.filter(m => m.pubkey !== pk) : []);
-            }
-            appendSystemMessage(groupId, `User ${pk.slice(0, 6)}... left the group`, event.id);
-            return;
-          }
-          if (event.kind === 9000) { // Add / Promote
-            const pk = event.tags.find(t => t[0] === 'p')?.[1];
-            const role = event.tags.find(t => t[0] === 'role')?.[1] || 'member';
-            if (useChatStore.getState().activeGroup?.id === groupId) {
-              setGroupMembers(prev => {
-                let updated = Array.isArray(prev) ? [...prev] : [];
-                const idx = updated.findIndex(m => m.pubkey === pk);
-                if (idx !== -1) updated[idx] = { ...updated[idx], role };
-                else updated.push({ pubkey: pk, role });
-                return updated;
-              });
-            }
-            appendSystemMessage(groupId, `User ${pk.slice(0, 6)}... was ${role === 'admin' ? 'promoted to admin' : 'demoted to member'}`, event.id);
-            return;
-          }
-          if (event.kind === 9001) { // Kick
-            const pk = event.tags.find(t => t[0] === 'p')?.[1];
-            if (useChatStore.getState().activeGroup?.id === groupId) {
-              setGroupMembers(prev => Array.isArray(prev) ? prev.filter(m => m.pubkey !== pk) : []);
-            }
-            appendSystemMessage(groupId, `User ${pk.slice(0, 6)}... was kicked from the group`, event.id);
-            return;
-          }
-          if (event.kind === 9002) { // Metadata (Name/About)
-            const name = event.tags.find(t => t[0] === 'name')?.[1];
-            const about = event.tags.find(t => t[0] === 'about')?.[1];
-            if (name) appendSystemMessage(groupId, `Group name was changed to "${name}"`, event.id);
-            else if (about) appendSystemMessage(groupId, `Group description was updated`, event.id);
-            return;
-          }
+      const blocked = useChatStore.getState().blockedUsers || [];
+      if (blocked.includes(event.pubkey) && event.pubkey !== identity.pk) return;
 
-          if (event.kind === 39002) {
-            const t = event.tags.filter(x => x[0] === 'p');
-            const m = t.map(x => ({ pubkey: x[1], role: x[2] || 'member' }));
-            if (!m.find(x => x.pubkey === identity.pk)) {
-              m.push({ pubkey: identity.pk, role: 'member' });
-            }
-            if (useChatStore.getState().activeGroup?.id === groupId) setGroupMembers(m);
-            return;
-          }
-
-          // Handle Reaction Events
-          if (event.kind === 7) {
-            const targetId = event.tags.find(t => t[0] === 'e')?.[1];
-            if (targetId) {
-              useChatStore.getState().setReactions(prev => {
-                const existing = prev[targetId] || [];
-                if (existing.find(r => r.pubkey === event.pubkey && r.emoji === event.content)) return prev;
-                return { ...prev, [targetId]: [...existing, { emoji: event.content, pubkey: event.pubkey }] };
-              });
-            }
-            return;
-          }
-
-          // Audit H8: drop messages from blocked senders
-          const _blocked = useChatStore.getState().blockedUsers || [];
-          if (_blocked.includes(event.pubkey) && event.pubkey !== identity.pk) return;
-
-          let isGkeyReq = false;
-          try {
-            const parsedQuick = JSON.parse(event.content);
-            if (parsedQuick.type === 'gkey_req') {
-              isGkeyReq = true;
-              if (event.pubkey !== identity.pk) {
-                const current = await getCurrentGroupKey(groupId);
-                if (current) {
-                  const pool = await getAuthenticatedPool(identity);
-                  await distributeGroupKey({
-                    senderPrivkey: identity.sk, senderPubkey: identity.pk,
-                    groupId, epoch: current.epoch, keyBytes: current.bytes,
-                    recipients: [event.pubkey],
-                    publish: async (dmEv) => {
-                      const results = await Promise.allSettled(pool.publish(generalRelays, dmEv));
-                      if (!results.some(r => r.status === 'fulfilled')) throw new Error('dm rejected');
-                    },
-                  });
-                }
-              }
-            }
-          } catch (e) {}
-          if (isGkeyReq) return;
-
-          let parsed = {};
-          let plaintext = event.content;
-          let isPending = false;
-          let decEpoch = null;
-          const decoded = await decodeGroupEvent({ event, groupId });
-          if (decoded.pending) { isPending = true; decEpoch = decoded.epoch; }
-          else if (decoded.error) { console.warn('[group-decrypt] failed', decoded.reason); return; }
-          else { plaintext = decoded.plaintext; parsed = decoded.parsed || {}; decEpoch = decoded.epoch; }
-
-          // Audit H9: drop already-expired group messages
-          if (parsed.expires_at && Math.floor(Date.now() / 1000) >= parsed.expires_at) {
-            return;
-          }
-
-          if (!isPending && parsed.type === 'typing') {
-            const age = (Date.now() / 1000) - event.created_at;
-            if (age < 10 && event.pubkey !== identity.pk) {
-              setGroupTypingUsers(prev => ({ ...prev, [event.pubkey]: Date.now() }));
-            }
-            // Don't save typing events to Dexie (audit H6)
-            return;
-          }
-
-          // Safety net: If a message comes from someone not in the list, add them
+      let isGkeyReq = false;
+      try {
+        const parsedQuick = JSON.parse(event.content);
+        if (parsedQuick.type === 'gkey_req') {
+          isGkeyReq = true;
           if (event.pubkey !== identity.pk) {
-            setGroupMembers(prev => {
-              if (prev.findIndex(m => m.pubkey === event.pubkey) === -1) {
-                return [...prev, { pubkey: event.pubkey, role: 'member' }];
-              }
-              return prev;
-            });
+            const current = await getCurrentGroupKey(groupId);
+            if (current) {
+              const pool = await getAuthenticatedPool(identity);
+              await distributeGroupKey({
+                senderPrivkey: identity.sk, senderPubkey: identity.pk,
+                groupId, epoch: current.epoch, keyBytes: current.bytes,
+                recipients: [event.pubkey],
+                publish: async (dmEv) => {
+                  const results = await Promise.allSettled(pool.publish(generalRelays, dmEv));
+                  if (!results.some(r => r.status === 'fulfilled')) throw new Error('dm rejected');
+                },
+              });
+            }
           }
+        }
+      } catch (e) {}
+      if (isGkeyReq) return;
 
+      let parsed = {};
+      let plaintext = event.content;
+      let isPending = false;
+      let decEpoch = null;
+      const decoded = await decodeGroupEvent({ event, groupId });
+      if (decoded.pending) { isPending = true; decEpoch = decoded.epoch; }
+      else if (decoded.error) { console.warn('[group-decrypt] failed', decoded.reason); return; }
+      else { plaintext = decoded.plaintext; parsed = decoded.parsed || {}; decEpoch = decoded.epoch; }
+
+      if (parsed.expires_at && Math.floor(Date.now() / 1000) >= parsed.expires_at) return;
+
+      if (!isPending && parsed.type === 'typing') {
+        const age = (Date.now() / 1000) - event.created_at;
+        if (age < 10 && event.pubkey !== identity.pk) {
+          setGroupTypingUsers(prev => ({ ...prev, [event.pubkey]: Date.now() }));
+        }
+        return;
+      }
+
+      if (event.pubkey !== identity.pk) {
+        setGroupMembers(prev => {
+          if (prev.findIndex(m => m.pubkey === event.pubkey) === -1) {
+            return [...prev, { pubkey: event.pubkey, role: 'member' }];
+          }
+          return prev;
+        });
+      }
+
+      const replyTag = event.tags.find(t => t[0] === 'e' && t[3] === 'reply');
+      const clientId = event.tags.find(t => t[0] === 'client')?.[1];
+
+      if (event.pubkey === identity.pk && clientId) {
+        const optimisticMessage = await db.messages.where('clientId').equals(clientId).first();
+        if (optimisticMessage?.chatId === groupId && optimisticMessage.isSender && optimisticMessage.id !== event.id) {
+          await db.messages.delete(optimisticMessage.id);
+        }
+      }
+
+      setGroupMessages(prev => {
+        const groupMsgs = prev[groupId] || [];
+        const existingIndex = groupMsgs.findIndex(m => {
+          if (m.id === event.id) return true;
+          if (clientId && event.pubkey === identity.pk && m.isSender && m.clientId === clientId) return true;
+          if (m.isSender === (event.pubkey === identity.pk) && !isPending && parsed.message) {
+            let oldData = {};
+            try { oldData = JSON.parse(m.rawContent || '{}'); } catch (e) {}
+            return oldData.message === parsed.message && Math.abs(m.timestamp - event.created_at) < 5;
+          }
+          return false;
+        });
+
+        const baseMsg = {
+          id: event.id, clientId, isSender: event.pubkey === identity.pk,
+          pubkey: event.pubkey, timestamp: event.created_at,
+          deliveryStatus: event.pubkey === identity.pk ? 'sent' : undefined,
+          local_timestamp: Date.now(),
+          rawContent: isPending ? null : plaintext,
+          ciphertext: isPending ? event.content : null,
+          epoch: decEpoch, pending: isPending,
+          replyTo: replyTag ? replyTag[1] : null, isGroup: true
+        };
+
+        if (existingIndex >= 0) {
+          const newMsgs = [...groupMsgs];
+          newMsgs[existingIndex] = { ...newMsgs[existingIndex], ...baseMsg };
+          saveMessage(groupId, newMsgs[existingIndex]);
+          return { ...prev, [groupId]: newMsgs };
+        }
+        saveMessage(groupId, baseMsg);
+        if (event.pubkey !== identity.pk && !isPending && !shouldSuppressGroup(groupId)) {
+          let isReplyToMe = false;
+          let isMentioned = false;
+          if (replyTag) {
+            const msgs = useChatStore.getState().groupMessages[groupId] || [];
+            const originalMsg = msgs.find(m => m.id === replyTag[1]);
+            isReplyToMe = originalMsg && originalMsg.isSender;
+          }
+          try {
+            const myProfile = useChatStore.getState().profiles[identity.pk];
+            const myUsername = myProfile?.name || myProfile?.username;
+            if (myUsername && parsed.message && parsed.message.includes('@' + myUsername)) isMentioned = true;
+          } catch (e) {}
+          if (isReplyToMe) showNotification(`💬 Reply in ${groupId.slice(0, 6)}`, parsed.message || 'Replied to you');
+          else if (isMentioned) showNotification('📣 You were mentioned', parsed.message || 'Mentioned you');
+          else showNotification('New Group Message', parsed.message || 'New attachment');
+        }
+        return { ...prev, [groupId]: [...groupMsgs, baseMsg].sort(sortMessages) };
+      });
+    };
+
+    session.listeners.add(onFrame);
+
+    keyHandler = async (e) => {
+      const { groupId: gid } = e.detail || {};
+      if (!groupIds.includes(gid)) return;
+      try {
+        const pool = await getAuthenticatedPool(identity);
+        const events = await queryWithTimeout(pool, groupRelays, { kinds: [9], '#h': [gid], limit: 100 }, 4000);
+        for (const event of events) {
+          const decoded = await decodeGroupEvent({ event, groupId: gid });
+          if (decoded.pending || decoded.error) continue;
+          const parsed = decoded.parsed || {};
+          if (parsed.type === 'typing') continue;
           const replyTag = event.tags.find(t => t[0] === 'e' && t[3] === 'reply');
           const clientId = event.tags.find(t => t[0] === 'client')?.[1];
-
-          if (event.pubkey === identity.pk && clientId) {
-            const optimisticMessage = await db.messages.where('clientId').equals(clientId).first();
-            if (optimisticMessage?.chatId === groupId && optimisticMessage.isSender && optimisticMessage.id !== event.id) {
-              await db.messages.delete(optimisticMessage.id);
-            }
-          }
-
           setGroupMessages(prev => {
-            const groupMsgs = prev[groupId] || [];
-            const existingIndex = groupMsgs.findIndex(m => {
-              if (m.id === event.id) return true;
-              if (clientId && event.pubkey === identity.pk && m.isSender && m.clientId === clientId) return true;
-              if (m.isSender === (event.pubkey === identity.pk) && !isPending && parsed.message) {
-                let oldData = {};
-                try { oldData = JSON.parse(m.rawContent || '{}'); } catch(e) {}
-                return oldData.message === parsed.message && Math.abs(m.timestamp - event.created_at) < 5;
-              }
-              return false;
-            });
-
-            const baseMsg = {
+            const groupMsgs = prev[gid] || [];
+            const idx = groupMsgs.findIndex(m => m.id === event.id);
+            const newMsg = {
               id: event.id, clientId, isSender: event.pubkey === identity.pk,
               pubkey: event.pubkey, timestamp: event.created_at,
               deliveryStatus: event.pubkey === identity.pk ? 'sent' : undefined,
-              local_timestamp: Date.now(),
-              rawContent: isPending ? null : plaintext,
-              ciphertext: isPending ? event.content : null,
-              epoch: decEpoch, pending: isPending,
-              replyTo: replyTag ? replyTag[1] : null, isGroup: true
+              local_timestamp: Date.now(), rawContent: decoded.plaintext,
+              epoch: decoded.epoch, pending: false,
+              replyTo: replyTag ? replyTag[1] : null, isGroup: true,
             };
-
-            if (existingIndex >= 0) {
-              const newMsgs = [...groupMsgs];
-              newMsgs[existingIndex] = { ...newMsgs[existingIndex], ...baseMsg };
-              saveMessage(groupId, newMsgs[existingIndex]);
-              return { ...prev, [groupId]: newMsgs };
-            } else {
-              saveMessage(groupId, baseMsg);
-              if (event.pubkey !== identity.pk && !isPending && !shouldSuppressGroup(groupId)) {
-                // Check if this is a reply to us or a mention of us
-                const replyTag = event.tags.find(t => t[0] === 'e' && t[3] === 'reply');
-                let isReplyToMe = false;
-                let isMentioned = false;
-                
-                if (replyTag) {
-                  const msgs = useChatStore.getState().groupMessages[groupId] || [];
-                  const originalMsg = msgs.find(m => m.id === replyTag[1]);
-                  isReplyToMe = originalMsg && originalMsg.isSender;
-                }
-                
-                // Check for @mention of our username
-                try {
-                  const myProfile = useChatStore.getState().profiles[identity.pk];
-                  const myUsername = myProfile?.name || myProfile?.username;
-                  if (myUsername && parsed.message && parsed.message.includes('@' + myUsername)) {
-                    isMentioned = true;
-                  }
-                } catch (e) {}
-                
-                if (isReplyToMe) {
-                  showNotification(`💬 Reply in ${groupId.slice(0, 6)}`, parsed.message || 'Replied to you');
-                } else if (isMentioned) {
-                  showNotification(`📣 You were mentioned`, parsed.message || 'Mentioned you');
-                } else {
-                  showNotification('New Group Message', parsed.message || 'New attachment');
-                }
-              }
-              return { ...prev, [groupId]: [...groupMsgs, baseMsg].sort(sortMessages) };
+            if (idx >= 0) {
+              const updated = [...groupMsgs];
+              updated[idx] = { ...updated[idx], ...newMsg };
+              saveMessage(gid, updated[idx]);
+              return { ...prev, [gid]: updated };
             }
+            saveMessage(gid, newMsg);
+            return { ...prev, [gid]: [...groupMsgs, newMsg].sort(sortMessages) };
           });
         }
-        else if (msg[0] === 'CLOSED') {
-          console.log('❌ Group WS closed:', msg[2]);
-        }
-      };
-
-      if (keyHandler) window.removeEventListener('cipher:group-key-updated', keyHandler);
-      keyHandler = async (e) => {
-        const { groupId: gid } = e.detail;
-        if (!groupIds.includes(gid)) return;
-        try {
-          const pool = await getAuthenticatedPool(identity);
-          const events = await queryWithTimeout(pool, groupRelays, { kinds: [9], '#h': [gid], limit: 100 }, 4000);
-          for (const event of events) {
-            const decoded = await decodeGroupEvent({ event, groupId: gid });
-            if (decoded.pending || decoded.error) continue;
-            const parsed = decoded.parsed || {};
-            if (parsed.type === 'typing') continue;
-            const replyTag = event.tags.find(t => t[0] === 'e' && t[3] === 'reply');
-            const clientId = event.tags.find(t => t[0] === 'client')?.[1];
-            setGroupMessages(prev => {
-              const groupMsgs = prev[gid] || [];
-              const idx = groupMsgs.findIndex(m => m.id === event.id);
-              const newMsg = {
-                id: event.id, clientId, isSender: event.pubkey === identity.pk,
-                pubkey: event.pubkey, timestamp: event.created_at,
-                deliveryStatus: event.pubkey === identity.pk ? 'sent' : undefined,
-                local_timestamp: Date.now(), rawContent: decoded.plaintext,
-                epoch: decoded.epoch, pending: false,
-                replyTo: replyTag ? replyTag[1] : null, isGroup: true,
-              };
-              if (idx >= 0) {
-                const u = [...groupMsgs];
-                u[idx] = { ...u[idx], ...newMsg };
-                saveMessage(gid, u[idx]);
-                return { ...prev, [gid]: u };
-              }
-              saveMessage(gid, newMsg);
-              return { ...prev, [gid]: [...groupMsgs, newMsg].sort(sortMessages) };
-            });
-          }
-        } catch (err) { console.warn('[group-key] refresh failed', err); }
-      };
-      window.addEventListener('cipher:group-key-updated', keyHandler);
-
-      ws.onclose = (e) => {
-        console.log('❌ Group WS closed:', e.reason);
-        if (isMounted) reconnectTimer = setTimeout(connect, 3000);
-      };
-
-      ws.onerror = (e) => console.error('Group WS error:', e);
+      } catch (err) { console.warn('[group-key] refresh failed', err); }
     };
-
-    connect();
+    window.addEventListener('cipher:group-key-updated', keyHandler);
 
     return () => {
-      isMounted = false;
-      if (reconnectTimer) clearTimeout(reconnectTimer);
+      session.listeners.delete(onFrame);
+      session.subs.delete(subId);
+      if (session.ws?.readyState === WebSocket.OPEN) {
+        try { session.ws.send(JSON.stringify(['CLOSE', subId])); } catch (e) {}
+      }
       if (keyHandler) window.removeEventListener('cipher:group-key-updated', keyHandler);
-      if (ws) ws.close();
     };
-  }, [identity, setGroupMessages, setGroupTypingUsers]);
+  }, [identity, setGroupMessages, setGroupTypingUsers, setGroupMembers, appendSystemMessage]);
 
   const pinMessage = useCallback(async (groupId, messageEventId) => {
-    const { finalizeEvent } = await import('nostr-tools');
     const pool = await getAuthenticatedPool(identity);
     const ev = finalizeEvent({
       kind: 9005,
@@ -734,7 +797,6 @@ export function useNIP29Group({ identity }) {
   }, [identity?.pk, identity?.sk, setPinnedMessages]);
 
   const unpinMessage = useCallback(async (groupId) => {
-    const { finalizeEvent } = await import('nostr-tools');
     const pool = await getAuthenticatedPool(identity);
     const ev = finalizeEvent({
       kind: 9005,
@@ -785,3 +847,4 @@ export function useNIP29Group({ identity }) {
     fetchPinnedMessage,
   };
 }
+
