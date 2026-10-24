@@ -1,5 +1,18 @@
+import { useEffect } from 'react';
 import { Bell, Users, X } from 'lucide-react';
 import { useChatStore } from '../../store/chatStore';
+import { pressable } from '../ui/Button';
+
+function previewText(message) {
+  const data = message?.data;
+  if (data?.type === 'cipher_order' || data?.type === 'order_request') return 'New order';
+  if (data?.type === 'order_update') return 'Order update';
+  if (data?.type === 'image') return 'Photo';
+  if (data?.type === 'audio') return 'Voice note';
+  if (typeof data?.message === 'string' && data.message) return data.message;
+  if (typeof message?.rawContent === 'string' && message.rawContent && !message.rawContent.startsWith('{')) return message.rawContent;
+  return 'New message';
+}
 
 export default function NotificationCenter({ onClose, onJump }) {
   const unreadCounts = useChatStore((state) => state.unreadCounts);
@@ -7,6 +20,10 @@ export default function NotificationCenter({ onClose, onJump }) {
   const groupMessages = useChatStore((state) => state.groupMessages);
   const groups = useChatStore((state) => state.groups);
   const profiles = useChatStore((state) => state.profiles);
+
+  useEffect(() => {
+    useChatStore.getState().ackNotifications();
+  }, []);
 
   const notifications = Object.entries(unreadCounts || {})
     .filter(([, count]) => Number(count) > 0)
@@ -19,8 +36,8 @@ export default function NotificationCenter({ onClose, onJump }) {
         id,
         count,
         type: group ? 'group' : 'dm',
-        title: group?.name || sender?.displayName || sender?.name || id.slice(0, 12),
-        preview: latest?.data?.message || latest?.rawContent || 'Unread messages',
+        title: group?.name || sender?.displayName || sender?.name || 'New message',
+        preview: previewText(latest),
       };
     });
 
@@ -31,34 +48,30 @@ export default function NotificationCenter({ onClose, onJump }) {
   };
 
   return (
-    <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-label="Notifications">
-      <div className="flex h-[80vh] w-full max-w-sm flex-col rounded-3xl border border-white/10 bg-[#0A0A0A] p-6 shadow-2xl">
-        <div className="mb-5 flex items-center justify-between">
-          <h2 className="text-xl font-bold text-white">Notifications</h2>
-          <button type="button" onClick={onClose} className="p-2 text-white/50 hover:text-white" aria-label="Close notifications"><X size={20} /></button>
+    <div className="fixed inset-0 z-[999] flex flex-col bg-black" role="dialog" aria-modal="true" aria-label="Notifications">
+      <button type="button" onClick={onClose} className={`flex items-center gap-1 px-4 pb-2 pt-4 text-[13px] text-white/40 ${pressable}`} aria-label="Back"><X size={16} /> Close</button>
+      <h2 className="px-4 pb-4 text-2xl font-bold tracking-tight text-white">Notifications</h2>
+      {notifications.length === 0 ? (
+        <div className="flex flex-1 flex-col items-center justify-center text-white/40">
+          <Bell size={40} className="mb-3 text-blue-500" />
+          <p className="text-[13px]">You’re all caught up.</p>
         </div>
-        {notifications.length === 0 ? (
-          <div className="flex flex-1 flex-col items-center justify-center text-white/40">
-            <Bell size={40} className="mb-3" />
-            <p className="text-sm">You’re all caught up!</p>
-          </div>
-        ) : (
-          <div className="-mx-6 flex-1 overflow-y-auto">
-            {notifications.map((item) => (
-              <button key={item.id} type="button" onClick={() => openNotification(item)} className="flex w-full items-center gap-3 border-b border-white/5 px-6 py-4 text-left hover:bg-white/5">
-                <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[#111] text-white/60">
-                  {item.type === 'group' ? <Users size={20} /> : <Bell size={20} />}
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-[15px] font-semibold text-white">{item.title}</span>
-                  <span className="mt-1 block truncate text-[13px] text-white/40">{item.preview}</span>
-                </span>
-                <span className="rounded-full bg-blue-600 px-2 py-0.5 text-xs font-semibold text-white">{item.count}</span>
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
+      ) : (
+        <div className="flex-1 overflow-y-auto">
+          {notifications.map((item) => (
+            <button key={item.id} type="button" onClick={() => openNotification(item)} className={`flex w-full items-center gap-3 border-b border-white/5 bg-[#111] px-4 py-4 text-left active:bg-white/10 ${pressable}`}>
+              <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-white/10 bg-black text-blue-500">
+                {item.type === 'group' ? <Users size={20} /> : <Bell size={20} />}
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-[15px] font-semibold text-white">{item.title}</span>
+                <span className="mt-1 block truncate text-[13px] text-white/40">{item.preview}</span>
+              </span>
+              <span className="flex h-[16px] min-w-[16px] items-center justify-center rounded-full bg-blue-500 px-1.5 text-[10px] font-bold text-white">{item.count}</span>
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

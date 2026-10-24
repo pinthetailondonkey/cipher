@@ -410,7 +410,9 @@ export function useChatBootstrap({
     if (!identity?.pk) return;
     const lastUser = localStorage.getItem('cipher_last_user');
     if (lastUser && lastUser !== identity.pk) {
-      useChatStore.setState({ dms: {}, groups: [], groupMessages: {}, profiles: {}, unreadCounts: {}, reactions: {} });
+      useChatStore.setState({ dms: {}, groups: [], groupMessages: {}, profiles: {}, reactions: {} });
+      useChatStore.getState().setUnreadCounts({});
+      useChatStore.getState().clearNotificationAck();
       db.messages.clear().catch(console.error);
       db.chatReads.clear().catch(console.error);
       localStorage.removeItem('cipher_my_groups');

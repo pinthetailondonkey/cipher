@@ -14,6 +14,11 @@ const Wallet = lazy(() => import('./Wallet'));
 
 export default function AuthenticatedApp({ identity }) {
   const [activeTab, setActiveTab] = useState('chat');
+  const unreadTotal = useChatStore((state) => Object.values(state.unreadCounts || {}).reduce((sum, count) => sum + (Number(count) || 0), 0));
+  const notifTotal = useChatStore((state) => Object.entries(state.unreadCounts || {}).reduce((sum, [id, count]) => {
+    const fresh = Math.max(0, (Number(count) || 0) - (Number(state.notifAck?.[id]) || 0));
+    return sum + fresh;
+  }, 0));
   const [exploreMode, setExploreMode] = useState('shop');
   const openChatFromProfile = useCallback((pubkey) => {
     useChatStore.getState().openChat('dm', pubkey);
@@ -68,16 +73,18 @@ export default function AuthenticatedApp({ identity }) {
         className="fixed bottom-0 left-0 right-0 z-[5] bg-black/80 backdrop-blur-2xl border-t border-white/10 pb-safe"
       >
         <div className="flex justify-around items-center h-16 max-w-md mx-auto px-6">
-          <button onClick={() => setActiveTab('chat')} className={`flex flex-col items-center gap-1 w-16 transition-all active:scale-90 ${activeTab === 'chat' ? 'text-blue-500' : 'text-white/40 hover:text-white/60'}`}>
+          <button onClick={() => setActiveTab('chat')} className={`relative flex flex-col items-center gap-1 w-16 active:scale-95 transition-transform duration-100 ${activeTab === 'chat' ? 'text-blue-500' : 'text-white/40'}`}>
             <MessageSquare size={22} strokeWidth={activeTab === 'chat' ? 2.5 : 2} />
+            {unreadTotal > 0 && <span className="absolute top-1 right-3 flex h-[16px] min-w-[16px] items-center justify-center rounded-full bg-blue-500 px-1.5 text-[10px] font-bold text-white">{unreadTotal > 99 ? '99+' : unreadTotal}</span>}
             <span className="text-[10px] font-medium">Chats</span>
           </button>
           <button onClick={() => setActiveTab('explore')} className={`flex flex-col items-center gap-1 w-16 transition-all active:scale-90 ${activeTab === 'explore' ? 'text-blue-500' : 'text-white/40 hover:text-white/60'}`}>
             <Compass size={22} strokeWidth={activeTab === 'explore' ? 2.5 : 2} />
             <span className="text-[10px] font-medium">Discover</span>
           </button>
-          <button onClick={() => setActiveTab('profile')} className={`flex flex-col items-center gap-1 w-16 transition-all active:scale-90 ${activeTab === 'profile' ? 'text-blue-500' : 'text-white/40 hover:text-white/60'}`}>
+          <button onClick={() => setActiveTab('profile')} className={`relative flex flex-col items-center gap-1 w-16 active:scale-95 transition-transform duration-100 ${activeTab === 'profile' ? 'text-blue-500' : 'text-white/40'}`}>
             <User size={22} strokeWidth={activeTab === 'profile' ? 2.5 : 2} />
+            {notifTotal > 0 && <span className="absolute top-1 right-3 flex h-[16px] min-w-[16px] items-center justify-center rounded-full bg-blue-500 px-1.5 text-[10px] font-bold text-white">{notifTotal > 99 ? '99+' : notifTotal}</span>}
             <span className="text-[10px] font-medium">Profile</span>
           </button>
         </div>

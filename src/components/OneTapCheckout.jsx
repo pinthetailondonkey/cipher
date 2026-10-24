@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Check, Copy, Loader2, X } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
+import { copyText } from '../lib/copyText';
 
 function cipherOrder(product) {
   return {
@@ -34,8 +35,8 @@ export default function OneTapCheckout({ product, onConfirmOrder, onClose }) {
 
   const copyAddress = async (label, address) => {
     try {
-      await navigator.clipboard.writeText(address);
-      setCopied(label);
+      const ok = await copyText(address);
+      if (ok) setCopied(label);
     } catch (error) {
       console.error('[OneTapCheckout] Could not copy address:', error);
       setOrderError('Could not copy that address.');
