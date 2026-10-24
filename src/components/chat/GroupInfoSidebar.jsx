@@ -2,6 +2,9 @@ import { useEffect, useMemo, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { BadgeCheck, Link2, LogOut, Pin, PinOff, X } from 'lucide-react';
 import { useChatStore } from '../../store/chatStore';
+import Avatar from '../ui/Avatar';
+import Button from '../ui/Button';
+import { pressable } from '../ui/Button';
 
 const EMPTY_MESSAGES = [];
 
@@ -55,7 +58,6 @@ export default function GroupInfoSidebar({
     member.pubkey === identity?.pk && ['admin', 'owner'].includes(member.role)
   ));
   const pinnedId = pinnedMessages[group?.id];
-  const initial = (group?.name || 'G').slice(0, 1).toUpperCase();
 
   const shareGroup = async () => {
     if (!group?.id) return;
@@ -170,30 +172,26 @@ export default function GroupInfoSidebar({
             animate={{ x: 0 }}
             exit={{ x: '100%' }}
             transition={{ type: 'tween', duration: 0.22 }}
-            className="flex h-full w-full max-w-sm flex-col border-l border-white/10 bg-black"
+            className="flex h-full w-full max-w-sm flex-col border-l border-white/10 bg-[#0A0A0A]"
           >
-            <header className="flex items-center gap-3 border-b border-white/10 bg-[#111] px-4 py-4">
-              {group.picture ? (
-                <img src={group.picture} alt="" className="h-14 w-14 rounded-full object-cover" />
-              ) : (
-                <span className="flex h-14 w-14 items-center justify-center rounded-full border border-white/10 bg-black text-lg font-semibold text-blue-500">{initial}</span>
-              )}
+            <header className="flex items-center gap-3 border-b border-white/5 bg-[#0A0A0A] px-4 py-4">
+              <Avatar src={group.picture} name={group.name || 'Group'} />
               <div className="min-w-0 flex-1">
-                <h2 className="truncate text-lg font-bold text-white">{group.name || 'Group'}</h2>
-                <p className="truncate text-xs text-white/40">{memberList.length || 1} members</p>
+                <h2 className="truncate text-2xl font-bold tracking-tight text-white">{group.name || 'Group'}</h2>
+                <p className="truncate text-[13px] text-white/40">{memberList.length || 1} members</p>
               </div>
-              <button type="button" onClick={onClose} aria-label="Close group information" className="p-2 text-white/45 hover:text-white"><X size={20} /></button>
+              <button type="button" onClick={onClose} aria-label="Close group information" className={`p-2 text-white/45 hover:text-white ${pressable}`}><X size={20} /></button>
             </header>
-            <div className="min-h-0 flex-1 overflow-y-auto bg-black p-4">
-              {group.about && <p className="mb-4 text-sm leading-relaxed text-white/60">{group.about}</p>}
+            <div className="min-h-0 flex-1 overflow-y-auto bg-[#0A0A0A] p-4">
+              {group.about && <p className="mb-4 text-[13px] leading-relaxed text-white/40">{group.about}</p>}
               <div className="mb-4 flex flex-col gap-2">
-                <button type="button" onClick={shareGroup} className="rounded-xl bg-blue-600 px-4 py-3 text-left text-sm font-semibold text-white hover:bg-blue-500">
-                  <span className="flex items-center gap-2"><Link2 size={16} /> {copied ? 'Copied!' : 'Invite / Share Group'}</span>
-                </button>
+                <Button onClick={shareGroup} className="flex w-full items-center justify-center gap-2">
+                  <Link2 size={16} /> {copied ? 'Copied!' : 'Invite / Share Group'}
+                </Button>
                 {canManage && (
-                  <button type="button" onClick={editGroup} disabled={pending} className="rounded-xl border border-white/10 bg-[#111] px-4 py-3 text-left text-sm font-semibold text-white hover:border-blue-500/40 disabled:opacity-50">Edit group</button>
+                  <Button variant="secondary" onClick={editGroup} disabled={pending} className="w-full">Edit group</Button>
                 )}
-                <button type="button" onClick={leave} disabled={pending} className="flex items-center gap-2 rounded-xl border border-white/10 bg-[#111] px-4 py-3 text-left text-sm font-semibold text-red-300 hover:border-red-400/40 disabled:opacity-50"><LogOut size={16} /> Leave Group</button>
+                <Button variant="danger" onClick={leave} disabled={pending} className="flex w-full items-center justify-center gap-2"><LogOut size={16} /> Leave Group</Button>
               </div>
               <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-white/40">Members</h3>
               <div className="mb-5 space-y-1">
@@ -203,18 +201,14 @@ export default function GroupInfoSidebar({
                   const name = profile.displayName || profile.name || `${member.pubkey.slice(0, 8)}…`;
                   const role = member.role || (member.pubkey === group.creator ? 'admin' : 'member');
                   return (
-                    <div key={member.pubkey} className="flex items-center gap-3 rounded-xl bg-[#111] px-3 py-2">
-                      {profile.picture ? (
-                        <img src={profile.picture} alt="" className="h-10 w-10 rounded-full object-cover" />
-                      ) : (
-                        <span className="flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-[#0A0A0A] text-[13px] font-bold text-blue-500">{name.slice(0, 1).toUpperCase()}</span>
-                      )}
+                    <div key={member.pubkey} className="flex items-center gap-3 rounded-2xl border border-white/10 bg-[#111] px-3 py-2">
+                      <Avatar src={profile.picture} name={name} />
                       <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm font-bold text-white">{name}</p>
-                        <p className="mt-0.5 text-[11px] font-semibold text-blue-500">{role === 'admin' || role === 'owner' ? '👑 Admin' : 'Member'}</p>
+                        <p className="truncate text-[15px] font-semibold text-white">{name}</p>
+                        <p className="mt-0.5 text-[13px] text-blue-500">{role === 'admin' || role === 'owner' ? 'Admin' : 'Member'}</p>
                       </div>
                       {canManage && member.pubkey !== identity?.pk && (
-                        <button type="button" onClick={() => kick(member.pubkey)} disabled={pending} aria-label={`Kick ${name}`} className="rounded-lg border border-white/10 px-2 py-1 text-[11px] font-semibold text-white/50 hover:text-red-300 disabled:opacity-50">Kick</button>
+                        <button type="button" onClick={() => kick(member.pubkey)} disabled={pending} aria-label={`Kick ${name}`} className={`rounded-2xl border border-white/10 px-3 py-2 text-[13px] font-semibold text-white/50 hover:text-red-300 disabled:opacity-50 ${pressable}`}>Kick</button>
                       )}
                     </div>
                   );

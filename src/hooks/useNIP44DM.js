@@ -132,7 +132,7 @@ export function useNIP44DM({ identity }) {
               if (data.type === 'call') {
                 if (!isSender) {
                   const { handleCallSignal } = await import('../lib/voiceCall');
-                  await handleCallSignal({ data, from: counterparty });
+                  await handleCallSignal({ data, from: counterparty, eventId: event.id });
                 }
                 return;
               }

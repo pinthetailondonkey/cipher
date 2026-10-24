@@ -1,6 +1,8 @@
 import React from 'react';
 import { Users, Megaphone } from 'lucide-react';
 import { useChatStore } from '../../store/chatStore';
+import Avatar from '../ui/Avatar';
+import { pressable } from '../ui/Button';
 
 export default function ChatList({ onOpenChat }) {
   const dms = useChatStore((s) => s.dms);
@@ -26,91 +28,86 @@ export default function ChatList({ onOpenChat }) {
 
   const chatMap = new Map();
   [...dmList, ...groupList].forEach(c => chatMap.set(c.id, c));
-  
+
   const allChats = Array.from(chatMap.values()).sort(
     (a, b) => (b.lastMsg?.timestamp || 0) - (a.lastMsg?.timestamp || 0)
   );
 
   if (allChats.length === 0) {
-    return <p className="text-center text-white/40 mt-10 text-sm">No chats yet. Tap + to start.</p>;
+    return <p className="mt-10 text-center text-[13px] text-white/40">No chats yet. Tap + to start.</p>;
   }
 
   return (
-    <div className="flex flex-col w-full">
+    <div className="flex w-full flex-col bg-black">
       {allChats.map((chat, i) => {
         const isLast = i === allChats.length - 1;
-        
+        const row = `flex w-full items-center justify-between border-white/5 px-4 py-3 text-left active:bg-white/10 ${pressable} ${!isLast ? 'border-b' : ''}`;
+
         if (chat.type === 'dm') {
           const profile = profiles[chat.id] || { displayName: `User ${chat.id.slice(0, 4)}`, picture: null };
           return (
-            <div
+            <button
               key={chat.id}
+              type="button"
               onClick={() => onOpenChat('dm', chat.id)}
-              className={`flex items-center justify-between px-4 py-3 hover:bg-white/5 active:bg-white/10 transition-colors cursor-pointer ${!isLast ? 'border-b border-white/5' : ''}`}
+              className={row}
             >
-              <div className="flex items-center gap-3">
-                {profile.picture ? (
-                  <img src={profile.picture} className="w-12 h-12 rounded-full object-cover shrink-0" />
-                ) : (
-                  <div className="w-12 h-12 rounded-full bg-blue-600/20 text-blue-400 flex items-center justify-center font-bold text-lg shrink-0">
-                    {profile.displayName.charAt(0)}
-                  </div>
-                )}
-                <div className="min-w-0">
-                  <h3 className="text-[15px] font-semibold text-white truncate">{profile.displayName}</h3>
-                  <p className="text-[13px] text-white/40 truncate">
-                    {chat.lastMsg?.data?.type === 'cipher_order' ? '📦 Order'
-                      : chat.lastMsg?.data?.type === 'image' ? '🖼️ Photo'
-                      : chat.lastMsg?.data?.type === 'audio' ? '🎤 Voice Note'
+              <span className="flex min-w-0 items-center gap-3">
+                <Avatar src={profile.picture} name={profile.displayName || profile.name} />
+                <span className="min-w-0">
+                  <span className="block truncate text-[15px] font-semibold text-white">{profile.displayName}</span>
+                  <span className="block truncate text-[13px] text-white/40">
+                    {chat.lastMsg?.data?.type === 'cipher_order' ? 'Order'
+                      : chat.lastMsg?.data?.type === 'image' ? 'Photo'
+                      : chat.lastMsg?.data?.type === 'audio' ? 'Voice note'
                       : chat.lastMsg?.data?.message || 'Tap to chat'}
-                  </p>
-                </div>
-              </div>
-              <div className="flex flex-col items-end gap-1 shrink-0 ml-2">
+                  </span>
+                </span>
+              </span>
+              <span className="ml-2 flex shrink-0 flex-col items-end gap-1">
                 {chat.lastMsg?.timestamp && (
-                  <span className="text-[11px] text-white/30 font-medium">
+                  <span className="text-[11px] font-medium text-white/30">
                     {new Date(chat.lastMsg.timestamp * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                   </span>
                 )}
                 {unreadCounts[chat.id] > 0 && (
-                  <div className="w-5 h-5 rounded-full bg-blue-600 flex items-center justify-center text-[10px] font-bold text-white">
+                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-blue-600 text-[10px] font-bold text-white">
                     {unreadCounts[chat.id]}
-                  </div>
+                  </span>
                 )}
-              </div>
-            </div>
-          );
-        } else {
-          const Icon = chat.group.isChannel ? Megaphone : Users;
-          return (
-            <div
-              key={chat.id}
-              onClick={() => onOpenChat('group', chat.id, chat.group)}
-              className={`flex items-center justify-between px-4 py-3 hover:bg-white/5 active:bg-white/10 transition-colors cursor-pointer ${!isLast ? 'border-b border-white/5' : ''}`}
-            >
-              <div className="flex items-center gap-3">
-                <div className="w-12 h-12 rounded-full bg-[#111] border border-white/10 flex items-center justify-center text-blue-500 shrink-0">
-                  <Icon size={22} />
-                </div>
-                <div className="min-w-0">
-                  <h3 className="text-[15px] font-semibold text-white truncate">
-                    {chat.group.name && !chat.group.name.startsWith('Group ') ? chat.group.name : 'Unnamed Group'}
-                  </h3>
-                  <p className="text-[13px] text-white/40 truncate">
-                    {chat.group.isChannel ? '📢 Channel' : '👥 Public Group'}
-                  </p>
-                </div>
-              </div>
-              {unreadCounts[chat.id] > 0 && (
-                <div className="flex flex-col items-end shrink-0 ml-2">
-                  <div className="w-5 h-5 rounded-full bg-blue-600 flex items-center justify-center text-[10px] font-bold text-white">
-                    {unreadCounts[chat.id]}
-                  </div>
-                </div>
-              )}
-            </div>
+              </span>
+            </button>
           );
         }
+
+        const Icon = chat.group.isChannel ? Megaphone : Users;
+        return (
+          <button
+            key={chat.id}
+            type="button"
+            onClick={() => onOpenChat('group', chat.id, chat.group)}
+            className={row}
+          >
+            <span className="flex min-w-0 items-center gap-3">
+              <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-white/10 bg-[#111] text-blue-500">
+                <Icon size={22} />
+              </span>
+              <span className="min-w-0">
+                <span className="block truncate text-[15px] font-semibold text-white">
+                  {chat.group.name && !chat.group.name.startsWith('Group ') ? chat.group.name : 'Unnamed Group'}
+                </span>
+                <span className="block truncate text-[13px] text-white/40">
+                  {chat.group.isChannel ? 'Channel' : 'Public group'}
+                </span>
+              </span>
+            </span>
+            {unreadCounts[chat.id] > 0 && (
+              <span className="ml-2 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-blue-600 text-[10px] font-bold text-white">
+                {unreadCounts[chat.id]}
+              </span>
+            )}
+          </button>
+        );
       })}
     </div>
   );
