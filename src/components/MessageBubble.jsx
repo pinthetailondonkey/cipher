@@ -34,7 +34,7 @@ export default function MessageBubble({ message, data, onAction, senderName, isP
   ];
   if (content.type === 'product' && !isSender) actions.unshift(['buy_product', ShoppingBag, 'Buy']);
   if (content.type === 'product' && isSender) actions.unshift(['broadcast_product', Radio, 'Broadcast']);
-  if (content.type === 'order_request' && !isSender) actions.unshift(['accept_order', BadgeCheck, 'Accept order']);
+  if ((content.type === 'order_request' || content.type === 'cipher_order') && !isSender) actions.unshift(['accept_order', BadgeCheck, 'Accept order']);
   const paymentMethods = content.type === 'order_update' && content.status === 'accepted' ? content.paymentMethods || {} : {};
   const paymentRows = [
     ['BTC', paymentMethods.btc],
@@ -125,7 +125,7 @@ export default function MessageBubble({ message, data, onAction, senderName, isP
         )}
         <div className="mt-1 flex items-center justify-end gap-2">
           {message?.edited && <span className="text-[10px] text-white/40">edited</span>}
-          <time className="text-[10px] text-white/45" dateTime={validTimestamp === null ? undefined : new Date(validTimestamp * 1000).toISOString()}>
+          <time className="text-[10px] text-white/40" dateTime={validTimestamp === null ? undefined : new Date(validTimestamp * 1000).toISOString()}>
             {validTimestamp === null ? '' : new Date(validTimestamp * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
           </time>
         </div>

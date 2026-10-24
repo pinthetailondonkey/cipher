@@ -61,23 +61,24 @@ export default function Shop({ identity, setActiveTab }) {
     p.name.toLowerCase().includes(query.toLowerCase())
   );
 
-  const confirmOrder = async (product) => {
-    const vendorPubkey = product?.vendorPubkey;
-    if (!identity?.sk || !vendorPubkey) throw new Error('Unlock your account to contact the seller.');
-    if (vendorPubkey === identity.pk) throw new Error('You cannot place an order with yourself.');
-    const payload = {
-      type: 'order_request',
+  const confirmOrder = async (order) => {
+    const payload = order?.type === 'cipher_order' ? order : {
+      type: 'cipher_order',
       status: 'pending',
+      vendorPubkey: order?.vendorPubkey || '',
       product: {
-        id: product.id,
-        title: product.name,
-        name: product.name,
-        price: product.priceUsd,
-        priceUsd: product.priceUsd,
+        id: order?.id,
+        title: order?.name || order?.title || 'Product',
+        name: order?.name || order?.title || 'Product',
+        price: order?.priceUsd ?? order?.price ?? '',
+        priceUsd: order?.priceUsd ?? order?.price ?? '',
         currency: 'USD',
-        image: product.image || '',
+        image: order?.image || '',
       },
     };
+    const vendorPubkey = payload.vendorPubkey;
+    if (!identity?.sk || !vendorPubkey) throw new Error('Unlock your account to contact the seller.');
+    if (vendorPubkey === identity.pk) throw new Error('You cannot place an order with yourself.');
     const tempId = `temp-${Date.now()}`;
     const optimistic = {
       id: tempId,
