@@ -7,18 +7,25 @@ import GroupInfoSidebar from './GroupInfoSidebar';
 import { useChatStore } from '../../store/chatStore';
 import { db, saveMessage } from '../../db';
 import { scopedRemove } from '../../lib/storage';
-import { useNIP29Group } from '../../hooks/useNIP29Group';
+import { useNIP29Group, loadGroupProfile } from '../../hooks/useNIP29Group';
 
 const EMPTY_MESSAGES = [];
 
 function readPayload(message) {
-  if (message.data) return message.data;
-  if (!message.rawContent) return null;
+  if (message?.data && typeof message.data === 'object') return message.data;
+  if (typeof message?.data === 'string') return { type: 'text', message: message.data };
+  if (typeof message?.rawContent !== 'string' || message.rawContent.length === 0) return null;
   try {
-    return JSON.parse(message.rawContent);
+    const parsed = JSON.parse(message.rawContent);
+    if (typeof parsed === 'string') return { type: 'text', message: parsed };
+    if (parsed && typeof parsed === 'object') {
+      if (!parsed.type && typeof parsed.message === 'string') return { ...parsed, type: 'text' };
+      return parsed;
+    }
   } catch {
     return { type: 'text', message: message.rawContent };
   }
+  return { type: 'text', message: message.rawContent };
 }
 
 function disappearingSeconds(timer) {
@@ -42,7 +49,7 @@ export default function GroupView({
   pinMessage,
   unpinMessage,
 }) {
-  const { sendGroupMessage } = useNIP29Group({ identity });
+  const { sendGroupMessage, leaveGroup, kickMember, updateGroupSettings } = useNIP29Group({ identity });
   const activeGroup = useChatStore((state) => state.activeGroup);
   const messages = useChatStore((state) => state.groupMessages[state.activeGroup?.id] || EMPTY_MESSAGES);
   const profiles = useChatStore((state) => state.profiles);
@@ -57,6 +64,22 @@ export default function GroupView({
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
   }, [messages.length, activeGroup?.id]);
+
+  useEffect(() => {
+    if (!activeGroup?.id || !identity?.pk) return undefined;
+    let cancelled = false;
+    loadGroupProfile(identity, activeGroup.id, activeGroup.name).then((profile) => {
+      if (cancelled || !profile?.id) return;
+      const current = useChatStore.getState().activeGroup;
+      if (current?.id === profile.id && (current.name !== profile.name || current.picture !== profile.picture)) {
+        useChatStore.getState().setActiveGroup({ ...current, ...profile });
+      }
+      useChatStore.getState().setGroups((groups) => (groups || []).map((group) => (
+        group.id === profile.id ? { ...group, ...profile } : group
+      )));
+    }).catch((error) => console.warn('[GroupView] Group name lookup failed:', error));
+    return () => { cancelled = true; };
+  }, [activeGroup?.id, identity?.pk]);
 
   useEffect(() => {
     if (activeGroup?.id) {
@@ -151,12 +174,18 @@ export default function GroupView({
           <p className="m-auto px-6 text-center text-[13px] text-white/40">Messages in this group will appear here.</p>
         ) : visibleMessages.map((message) => {
           const data = message.pending ? null : readPayload(message);
+          const profile = profiles[message.pubkey] || {};
+          const senderName = message.isSender ? null : (profile.displayName || profile.name || message.pubkey?.slice(0, 8));
+          const initial = (senderName || '?').slice(0, 1).toUpperCase();
           return (
             <MessageBubble
               key={message.id}
               message={message}
-              data={data || { type: 'text', message: message.pending ? 'Waiting for group encryption key…' : 'Message unavailable' }}
-              senderName={message.isSender ? null : (profiles[message.pubkey]?.displayName || profiles[message.pubkey]?.name || message.pubkey?.slice(0, 8))}
+              data={data || { type: 'text', message: message.pending ? 'Waiting for group encryption key…' : (message.rawContent || 'Message unavailable') }}
+              senderName={senderName}
+              showAvatar={!message.isSender}
+              avatarUrl={profile.picture || ''}
+              avatarInitial={initial}
               isPinnedListing={message.id === pinnedMessageId}
               onAction={handleMessageAction}
             />
@@ -181,6 +210,9 @@ export default function GroupView({
         fetchPinnedMessage={fetchPinnedMessage}
         onPin={pinMessage}
         onUnpin={unpinMessage}
+        leaveGroup={leaveGroup}
+        kickMember={kickMember}
+        updateGroupSettings={updateGroupSettings}
       />
     </section>
   );
