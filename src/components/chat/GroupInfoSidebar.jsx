@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { BadgeCheck, LogOut, Pin, PinOff, Shield, UserMinus, X } from 'lucide-react';
+import { BadgeCheck, LogOut, Pin, PinOff, X } from 'lucide-react';
 import { useChatStore } from '../../store/chatStore';
 
 const EMPTY_MESSAGES = [];
@@ -36,7 +36,7 @@ export default function GroupInfoSidebar({
   const memberList = Array.isArray(members) ? members : [];
 
   useEffect(() => {
-    if (!isOpen || !group?.id) return undefined;
+    if (!group?.id) return undefined;
     let active = true;
     Promise.all([fetchGroupMembers?.(group.id), fetchPinnedMessage?.(group.id)])
       .catch((fetchError) => {
@@ -44,7 +44,7 @@ export default function GroupInfoSidebar({
         if (active) setError('Could not refresh group details.');
       });
     return () => { active = false; };
-  }, [isOpen, group?.id, fetchGroupMembers, fetchPinnedMessage]);
+  }, [group?.id, fetchGroupMembers, fetchPinnedMessage]);
 
   const products = useMemo(() => messages
     .map((message) => ({ message, product: messagePayload(message) }))
@@ -169,7 +169,7 @@ export default function GroupInfoSidebar({
                 {canManage && (
                   <button type="button" onClick={editGroup} disabled={pending} className="rounded-xl border border-white/10 bg-[#111] px-4 py-3 text-left text-sm font-semibold text-white hover:border-blue-500/40 disabled:opacity-50">Edit group</button>
                 )}
-                <button type="button" onClick={leave} disabled={pending} className="flex items-center gap-2 rounded-xl border border-white/10 bg-[#111] px-4 py-3 text-left text-sm font-semibold text-red-300 hover:border-red-400/40 disabled:opacity-50"><LogOut size={16} /> Leave group</button>
+                <button type="button" onClick={leave} disabled={pending} className="flex items-center gap-2 rounded-xl border border-white/10 bg-[#111] px-4 py-3 text-left text-sm font-semibold text-red-300 hover:border-red-400/40 disabled:opacity-50"><LogOut size={16} /> Leave Group</button>
               </div>
               <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-white/40">Members</h3>
               <div className="mb-5 space-y-1">
@@ -181,16 +181,16 @@ export default function GroupInfoSidebar({
                   return (
                     <div key={member.pubkey} className="flex items-center gap-3 rounded-xl bg-[#111] px-3 py-2">
                       {profile.picture ? (
-                        <img src={profile.picture} alt="" className="h-8 w-8 rounded-full object-cover" />
+                        <img src={profile.picture} alt="" className="h-10 w-10 rounded-full object-cover" />
                       ) : (
-                        <span className="flex h-8 w-8 items-center justify-center rounded-full border border-white/10 text-[12px] font-semibold text-blue-500">{name.slice(0, 1).toUpperCase()}</span>
+                        <span className="flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-[#0A0A0A] text-[13px] font-bold text-blue-500">{name.slice(0, 1).toUpperCase()}</span>
                       )}
                       <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm text-white">{name}</p>
-                        <p className="flex items-center gap-1 text-[11px] uppercase tracking-wide text-white/40">{role === 'admin' || role === 'owner' ? <Shield size={11} /> : null}{role}</p>
+                        <p className="truncate text-sm font-bold text-white">{name}</p>
+                        <p className="mt-0.5 text-[11px] font-semibold text-blue-500">{role === 'admin' || role === 'owner' ? '👑 Admin' : 'Member'}</p>
                       </div>
                       {canManage && member.pubkey !== identity?.pk && (
-                        <button type="button" onClick={() => kick(member.pubkey)} disabled={pending} aria-label={`Remove ${name}`} className="p-2 text-white/40 hover:text-red-300 disabled:opacity-50"><UserMinus size={16} /></button>
+                        <button type="button" onClick={() => kick(member.pubkey)} disabled={pending} aria-label={`Kick ${name}`} className="rounded-lg border border-white/10 px-2 py-1 text-[11px] font-semibold text-white/50 hover:text-red-300 disabled:opacity-50">Kick</button>
                       )}
                     </div>
                   );
