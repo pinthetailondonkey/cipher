@@ -14,7 +14,7 @@ const steps = [
   },
   {
     title: "Global Marketplace",
-    desc: "Tap 'Discover' to browse the marketplace. Buy items using BTC or XMR seamlessly, with zero-custody payments.",
+    desc: "Open Shop to browse listings, or Groups to find a room.",
   },
   {
     title: "Your Identity",

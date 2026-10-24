@@ -3,7 +3,7 @@ import { Package } from 'lucide-react';
 import ScreenHeader from '../ui/ScreenHeader';
 import { useVendorStats } from '../../hooks/useVendorStats';
 
-export default function VendorDashboard({ identity, products = [], onBack }) {
+export default function VendorDashboard({ identity, products = [], onBack, onCreate }) {
   const { stats, loading, fetchStats } = useVendorStats({ identity });
 
   useEffect(() => {
@@ -26,6 +26,7 @@ export default function VendorDashboard({ identity, products = [], onBack }) {
       {stats.btc > 0 && <p className="border-b border-white/5 px-4 py-3 text-[15px] text-white">{stats.btc.toFixed(8)} BTC</p>}
       {stats.xmr > 0 && <p className="border-b border-white/5 px-4 py-3 text-[15px] text-white">{stats.xmr.toFixed(6)} XMR</p>}
       <p className="px-4 pb-1 pt-4 text-[13px] text-white/40">Listings</p>
+      {onCreate && <button type="button" onClick={onCreate} className="w-full border-b border-white/5 px-4 py-3 text-left text-[15px] font-semibold text-blue-500">List an item</button>}
         {products.length === 0 ? (
           <p className="px-4 py-6 text-[13px] text-white/40">You haven’t published any products yet.</p>
         ) : products.map((product) => (
