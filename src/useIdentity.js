@@ -89,6 +89,154 @@ const getActivePubkey = () => localStorage.getItem('cipher_active_pubkey');
 
 const setActivePubkey = (pk) => localStorage.setItem('cipher_active_pubkey', pk);
 
+const PROFILE_RELAYS = ['wss://relay.primal.net', 'wss://nos.lol']
+
+// Publish one signed event and only close the socket after that relay
+// acknowledges it (OK) or the attempt has actually failed. A timeout that
+// resolves early, followed by pool.close(), drops kind 0 / 10003 on the floor.
+function publishToRelay(url, signedEvent, sk, timeoutMs = 12000) {
+  return new Promise((resolve, reject) => {
+    let settled = false
+    let socket
+    let authAttempted = false
+    const finish = (ok, value) => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      try {
+        if (socket && socket.readyState === WebSocket.OPEN) socket.close()
+      } catch (_) {}
+      if (ok) resolve(value)
+      else reject(value instanceof Error ? value : new Error(String(value)))
+    }
+    const timer = setTimeout(() => {
+      finish(false, new Error(`No OK from ${url} for kind ${signedEvent.kind} within ${timeoutMs}ms`))
+    }, timeoutMs)
+
+    const sendEvent = () => {
+      if (!socket || socket.readyState !== WebSocket.OPEN) return
+      socket.send(JSON.stringify(['EVENT', signedEvent]))
+    }
+
+    const sendAuth = async (challenge) => {
+      const { finalizeEvent } = await import('nostr-tools')
+      const authEvent = finalizeEvent({
+        kind: 22242,
+        created_at: Math.floor(Date.now() / 1000),
+        tags: [['relay', url], ['challenge', challenge]],
+        content: '',
+      }, sk)
+      if (!socket || socket.readyState !== WebSocket.OPEN) return
+      socket.send(JSON.stringify(['AUTH', authEvent]))
+    }
+
+    try {
+      socket = new WebSocket(url)
+    } catch (error) {
+      finish(false, error)
+      return
+    }
+
+    socket.onopen = () => {
+      sendEvent()
+    }
+    socket.onmessage = (message) => {
+      let frame
+      try { frame = JSON.parse(message.data) } catch { return }
+      if (!Array.isArray(frame)) return
+      if (frame[0] === 'AUTH' && typeof frame[1] === 'string') {
+        authAttempted = true
+        sendAuth(frame[1]).then(() => sendEvent()).catch((error) => finish(false, error))
+        return
+      }
+      if (frame[0] === 'NOTICE') {
+        console.warn(`[identity] ${url} NOTICE:`, frame[1])
+        return
+      }
+      if (frame[0] === 'OK' && frame[1] === signedEvent.id) {
+        if (frame[2] === true) {
+          finish(true, url)
+          return
+        }
+        const reason = typeof frame[3] === 'string' ? frame[3] : `Relay rejected kind ${signedEvent.kind}`
+        if (!authAttempted && /auth/i.test(reason)) return
+        finish(false, new Error(`${url}: ${reason}`))
+      }
+    }
+    socket.onerror = () => {
+      finish(false, new Error(`WebSocket error talking to ${url}`))
+    }
+    socket.onclose = () => {
+      if (!settled) finish(false, new Error(`${url} closed before acknowledging kind ${signedEvent.kind}`))
+    }
+  })
+}
+
+async function publishSignedEvent(signedEvent, sk, relays = PROFILE_RELAYS) {
+  const settled = await Promise.allSettled(relays.map((url) => publishToRelay(url, signedEvent, sk)))
+  settled.forEach((result, index) => {
+    const url = relays[index]
+    if (result.status === 'fulfilled') {
+      console.log(`[identity] kind ${signedEvent.kind} accepted by ${result.value}`)
+    } else {
+      console.error(`[identity] kind ${signedEvent.kind} failed on ${url}:`, result.reason?.message || result.reason)
+    }
+  })
+  return settled.some((result) => result.status === 'fulfilled')
+}
+
+export async function publishCipherProfile(sk, profile = {}, relays = PROFILE_RELAYS) {
+  const username = (profile?.username || profile?.name || '').replace(/^@/, '').trim().toLowerCase()
+  const displayName = (profile?.displayName || profile?.display_name || username || 'User').trim()
+  const about = profile?.about || 'New to Cipher.'
+  const profileData = {
+    name: username || displayName,
+    display_name: displayName,
+    about,
+  }
+  if (profile?.picture) profileData.picture = profile.picture
+
+  const { finalizeEvent } = await import('nostr-tools')
+  const now = Math.floor(Date.now() / 1000)
+  const events = [
+    finalizeEvent({
+      kind: 0,
+      created_at: now,
+      tags: [],
+      content: JSON.stringify(profileData),
+    }, sk),
+  ]
+  if (username) {
+    events.push(finalizeEvent({
+      kind: 10003,
+      created_at: now,
+      tags: [
+        ['d', 'username'],
+        ['t', 'cipher_username_' + username],
+        ['t', 'cipher_username'],
+        ['username', username],
+      ],
+      content: JSON.stringify({ username, display_name: displayName }),
+    }, sk))
+  }
+
+  const results = await Promise.all(events.map((event) => publishSignedEvent(event, sk, relays)))
+  return { profilePublished: results[0] === true, usernamePublished: username ? results[1] === true : false }
+}
+
+export async function getMnemonicFromVault(sk, pk) {
+  if (!sk || !pk) return null
+  const vault = getVaults()[pk]
+  if (!vault?.mnemonicEnc) return null
+  try {
+    const secret = sk instanceof Uint8Array ? sk : Uint8Array.from(sk)
+    return await decryptWithSk(secret, vault.mnemonicEnc)
+  } catch (e) {
+    console.error('[identity] Could not decrypt recovery phrase:', e)
+    return null
+  }
+}
+
 export function useIdentity() {
   const [keys, setKeys] = useState({ sk: null, pk: null, npub: null })
   const [hasVault, setHasVault] = useState(false)
@@ -200,59 +348,29 @@ export function useIdentity() {
     return { sk, pk, npub: nip19.npubEncode(pk), handle, mnemonic, biometricEnabled, biometricError }
   }
 
-  // UPDATED: Accepts a full profile object
   const finalizeLogin = async (sk, pk, npub, profile) => {
-    let pool;
-    const relays = ['wss://nos.lol', 'wss://relay.primal.net', 'wss://relay.damus.io', 'wss://relay.nostr.band'];
+    const username = (profile?.username || '').replace(/^@/, '').trim().toLowerCase()
+    const displayName = (profile?.displayName || username || 'User').trim()
     try {
-      const { SimplePool, finalizeEvent } = await import('nostr-tools')
-      pool = new SimplePool()
-
-      const profileData = {
-        name: profile.username, // @handle (e.g. "alice")
-        display_name: profile.displayName || profile.username, // "Alice's Shop"
+      const published = await publishCipherProfile(sk, {
+        username,
+        displayName,
         about: 'New to Cipher.',
-        picture: profile.picture || null
+        picture: profile?.picture || null,
+      })
+      if (!published.profilePublished || (username && !published.usernamePublished)) {
+        console.error('[identity] One or more account events were not accepted by any relay', published)
       }
-
-      const ev = finalizeEvent({
-        kind: 0, created_at: Math.floor(Date.now() / 1000), tags: [],
-        content: JSON.stringify(profileData)
-      }, sk)
-
-      // Also publish kind:10003 username registry (critical for search)
-      const username = profile?.username;
-      let usernameEv = null;
-      if (username) {
-        usernameEv = finalizeEvent({
-          kind: 10003,
-          created_at: Math.floor(Date.now() / 1000),
-          tags: [
-            ['d', 'username'],
-            ['t', 'cipher_username_' + username],
-            ['t', 'cipher_username'],
-            ['username', username]
-          ],
-          content: ''
-        }, sk)
-      }
-
-      const timeout = new Promise((resolve) => setTimeout(resolve, 3000))
-      const promises = [Promise.allSettled(pool.publish(relays, ev))]
-      if (usernameEv) promises.push(Promise.allSettled(pool.publish(relays, usernameEv)))
-      await Promise.race([Promise.all(promises), timeout])
     } catch (e) {
-      console.error('Failed to publish initial profile', e);
-    } finally {
-      pool?.close(relays);
+      console.error('Failed to publish initial profile', e)
     }
 
     try {
       const { saveProfile } = await import('./db')
       await saveProfile({
         pubkey: pk,
-        name: profile?.username || 'user',
-        displayName: profile?.displayName || profile?.username || 'User',
+        name: username || 'user',
+        displayName,
         picture: profile?.picture || null,
         about: 'New to Cipher.'
       })
@@ -489,13 +607,7 @@ export function useIdentity() {
     }
   }
 
-  const getMnemonic = async () => {
-    if (!keys.sk || !keys.pk) return null
-    const vaults = getVaults()
-    const vault = vaults[keys.pk]
-    if (!vault?.mnemonicEnc) return null
-    try { return await decryptWithSk(keys.sk, vault.mnemonicEnc) } catch (e) { return null }
-  };
+  const getMnemonic = async () => getMnemonicFromVault(keys.sk, keys.pk)
 
   const lockApp = async () => {
     sessionStorage.removeItem('cipher_session_sk')

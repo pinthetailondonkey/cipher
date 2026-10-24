@@ -1,6 +1,16 @@
+import { useCallback, useEffect } from 'react';
 import { db } from '../db';
+import { saveMessage } from '../db';
 import { showNotification } from '../lib/notifications';
 import { useChatStore } from '../store/chatStore';
+import { getAuthenticatedPool } from '../lib/pool';
+import { groupRelays, generalRelays, queryWithTimeout } from '../lib/relays';
+import { getMyGroups, setMyGroups } from '../lib/myGroups';
+import { encodeGroupPayload, decodeGroupEvent } from '../lib/crypto/groupMessageCodec';
+import { putGroupKey, getAllGroupKeys, getCurrentGroupKey } from '../lib/crypto/groupKeyStore';
+import { generateGroupKey } from '../lib/crypto/groupCipher';
+import { distributeGroupKey } from '../lib/crypto/groupKeyDistribution';
+import { enqueueNostrEvent, startOutboxSync } from '../lib/outbox';
 
 const shouldSuppressGroup = (groupId) => {
   const state = useChatStore.getState();
@@ -9,16 +19,6 @@ const shouldSuppressGroup = (groupId) => {
   const isArchived = state.archivedChats?.includes(groupId);
   return isMuted || isArchived;
 };
-import { useCallback, useEffect } from 'react';
-import { getAuthenticatedPool } from '../lib/pool';
-import { groupRelays, generalRelays, queryWithTimeout } from '../lib/relays';
-import { saveMessage } from '../db';
-import { getMyGroups, setMyGroups } from '../lib/myGroups';
-import { encodeGroupPayload, decodeGroupEvent } from '../lib/crypto/groupMessageCodec';
-import { putGroupKey, getAllGroupKeys, getCurrentGroupKey } from '../lib/crypto/groupKeyStore';
-import { generateGroupKey } from '../lib/crypto/groupCipher';
-import { distributeGroupKey } from '../lib/crypto/groupKeyDistribution';
-import { enqueueNostrEvent, startOutboxSync } from '../lib/outbox';
 
 export function useNIP29Group({ identity }) {
   const setGroupsStore = useChatStore((s) => s.setGroups);
