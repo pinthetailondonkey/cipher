@@ -136,7 +136,11 @@ export const useChatStore = create((set, get) => ({
     set({ notifAck: {} });
   },
   setReactions: (v) => set((s) => ({ reactions: typeof v === 'function' ? v(s.reactions) : v })),
-  setDeletedMsgs: (v) => set({ deletedMsgs: v }),
+  setDeletedMsgs: (v) => set((s) => {
+    const current = s.deletedMsgs instanceof Set ? s.deletedMsgs : new Set();
+    const next = typeof v === 'function' ? v(current) : v;
+    return { deletedMsgs: next instanceof Set ? next : new Set(next || []) };
+  }),
 
   // TYPING
   typingUsers: {},

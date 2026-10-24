@@ -341,13 +341,13 @@ export function useChatBootstrap({
       setTypingUsers(prev => {
         const next = { ...prev };
         let changed = false;
-        for (const pk in next) if (now - next[pk] > 2500) { delete next[pk]; changed = true; }
+        for (const pk in next) if (now - next[pk] > 6000) { delete next[pk]; changed = true; }
         return changed ? next : prev;
       });
       setGroupTypingUsers(prev => {
         const next = { ...prev };
         let changed = false;
-        for (const pk in next) if (now - next[pk] > 2500) { delete next[pk]; changed = true; }
+        for (const pk in next) if (now - next[pk] > 6000) { delete next[pk]; changed = true; }
         return changed ? next : prev;
       });
     }, 1000);
