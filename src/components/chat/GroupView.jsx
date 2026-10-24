@@ -21,34 +21,33 @@ function GroupStorefront({ items, pinnedId, canList, onBuy, onList }) {
       key={item.message.id}
       type="button"
       onClick={() => onBuy(item)}
-      className={`overflow-hidden rounded-2xl border text-left active:bg-white/10 ${featuredCard ? 'mb-3 flex w-full items-center gap-3 border-amber-300/20 bg-amber-300/[0.07] p-3' : 'border-white/10 bg-[#111]'}`}
+      className={`flex w-full items-center gap-3 border-b border-white/5 px-4 py-3 text-left active:bg-white/10 ${featuredCard ? 'bg-amber-300/[0.07]' : 'bg-black'}`}
     >
-      {item.product.image && <img src={item.product.image} alt="" className={featuredCard ? 'h-16 w-16 rounded-xl object-cover' : 'h-24 w-full object-cover'} />}
-      <span className={featuredCard ? 'min-w-0 flex-1' : 'block p-2'}>
-        {featuredCard && <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-amber-200">Pin slot</span>}
-        <span className="block truncate text-[14px] font-semibold text-white">{item.product.title || item.product.name || 'Item'}</span>
-        <span className="mt-0.5 block text-[13px] font-bold text-blue-500">{item.product.priceUsd ? `$${item.product.priceUsd}` : (item.product.price || 'Ask')}</span>
-        <span className="mt-1 block text-[12px] text-white/40">{featuredCard ? 'Message seller' : 'Buy'}</span>
+      {item.product.image && <img src={item.product.image} alt="" className="h-12 w-12 object-cover" />}
+      <span className="min-w-0 flex-1">
+        {featuredCard && <span className="block text-[11px] font-semibold uppercase tracking-wide text-amber-200">Pin slot</span>}
+        <span className="block truncate text-[15px] font-semibold text-white">{item.product.title || item.product.name || 'Item'}</span>
+        <span className="block text-[13px] font-bold text-blue-500">{item.product.priceUsd ? `$${item.product.priceUsd}` : (item.product.price || 'Ask')}</span>
       </span>
     </button>
   );
   return (
-    <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3">
+    <div className="min-h-0 flex-1 overflow-y-auto">
       {featured && card(featured, true)}
-      {rest.length > 0 && <div className="grid grid-cols-2 gap-2">{rest.map((item) => card(item, false))}</div>}
-      {items.length === 0 && <p className="px-4 py-10 text-center text-[13px] leading-relaxed text-white/40">No listings yet. Vendors post here so the chat stays clear.</p>}
-      {canList && !open && <button type="button" onClick={() => setOpen(true)} className="mt-4 w-full rounded-2xl bg-blue-600 py-3 text-[15px] font-semibold text-white active:bg-blue-700">List an item</button>}
+      {rest.map((item) => card(item, false))}
+      {items.length === 0 && <p className="px-4 py-10 text-center text-[13px] text-white/40">No listings yet.</p>}
+      {canList && !open && <button type="button" onClick={() => setOpen(true)} className="w-full border-b border-white/5 px-4 py-4 text-left text-[15px] font-semibold text-blue-500 active:bg-white/10">List an item</button>}
       {canList && open && (
-        <form className="mt-4 space-y-2" onSubmit={(event) => {
+        <form onSubmit={(event) => {
           event.preventDefault();
           if (!title.trim() || !price.trim()) return;
           onList({ title: title.trim(), priceUsd: price.trim(), description: note.trim(), currency: 'USD' });
           setTitle(''); setPrice(''); setNote(''); setOpen(false);
         }}>
-          <input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Item" className="w-full rounded-xl border border-white/10 bg-[#111] px-3 py-3 text-[15px] text-white outline-none" />
-          <input value={price} onChange={(event) => setPrice(event.target.value)} placeholder="Price in USD" inputMode="decimal" className="w-full rounded-xl border border-white/10 bg-[#111] px-3 py-3 text-[15px] text-white outline-none" />
-          <input value={note} onChange={(event) => setNote(event.target.value)} placeholder="Note" className="w-full rounded-xl border border-white/10 bg-[#111] px-3 py-3 text-[15px] text-white outline-none" />
-          <button type="submit" className="w-full rounded-2xl bg-blue-600 py-3 text-[15px] font-semibold text-white">Post to shop</button>
+          <input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Item" className="w-full border-b border-white/5 bg-black px-4 py-3 text-[15px] text-white outline-none placeholder:text-white/30" />
+          <input value={price} onChange={(event) => setPrice(event.target.value)} placeholder="Price in USD" inputMode="decimal" className="w-full border-b border-white/5 bg-black px-4 py-3 text-[15px] text-white outline-none placeholder:text-white/30" />
+          <input value={note} onChange={(event) => setNote(event.target.value)} placeholder="Note" className="w-full border-b border-white/5 bg-black px-4 py-3 text-[15px] text-white outline-none placeholder:text-white/30" />
+          <button type="submit" className="w-full px-4 py-4 text-left text-[15px] font-semibold text-blue-500">Post to shop</button>
         </form>
       )}
     </div>

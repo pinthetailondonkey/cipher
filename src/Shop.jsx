@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Search, ShoppingBag, Loader2, Link2 } from 'lucide-react';
-import Logo from './components/Logo';
+import { Search, ShoppingBag, Loader2 } from 'lucide-react';
 import OneTapCheckout from './components/OneTapCheckout';
 import { useNIP44DM } from './hooks/useNIP44DM';
 import { useChatStore } from './store/chatStore';
@@ -134,20 +133,19 @@ export default function Shop({ identity, setActiveTab }) {
 
   return (
     <div className="flex h-full w-full flex-col bg-black">
-      <div className="sticky top-0 z-10 flex items-center gap-3 bg-black px-4 pb-2 pt-4">
-        <Logo size={32} />
-        <h1 className="text-2xl font-bold tracking-tight text-white">Marketplace</h1>
+      <div className="border-b border-white/5 px-4 py-3">
+        <h1 className="text-[17px] font-semibold text-white">Shop</h1>
       </div>
 
-      <div className="sticky top-[60px] z-10 bg-black px-4 py-3">
-        <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-[#111] px-4 py-3 focus-within:border-blue-500/50">
-          <Search size={18} className="text-white/40" />
+      <div className="border-b border-white/5 bg-black px-4">
+        <div className="flex items-center gap-2 py-3">
+          <Search size={16} className="text-white/40" />
           <input
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search products..."
-            className="flex-1 bg-transparent text-[15px] text-white placeholder-white/40 focus:outline-none"
+            placeholder="Search"
+            className="flex-1 bg-transparent text-[15px] text-white placeholder-white/30 focus:outline-none"
           />
         </div>
       </div>
@@ -164,30 +162,24 @@ export default function Shop({ identity, setActiveTab }) {
             <p>No products found</p>
           </div>
         ) : (
-          <div className="grid grid-cols-2 gap-4 p-4">
+          <div className="grid grid-cols-2 gap-px bg-white/10">
             {displayProducts.map(p => (
-              <div key={p.id} className="group flex flex-col overflow-hidden rounded-2xl border border-white/10 bg-[#111]">
-                <div className="relative h-32 w-full overflow-hidden">
+              <div key={p.id} className="flex flex-col bg-black">
+                <div className="relative h-28 w-full overflow-hidden bg-[#111]">
                   {p.image ? (
                     <img src={p.image} alt="" className="h-full w-full object-cover" />
                   ) : (
-                    <div className="flex h-full w-full items-center justify-center bg-white/5 text-white/20">
-                      <ShoppingBag size={32} />
+                    <div className="flex h-full w-full items-center justify-center text-white/20">
+                      <ShoppingBag size={28} />
                     </div>
                   )}
                 </div>
-                <div className="flex flex-1 flex-col justify-between p-3">
-                  <div>
-                    <p className="truncate text-sm font-semibold text-white">{p.name}</p>
-                    <p className="font-bold text-green-400">${p.priceUsd}</p>
-                  </div>
-                  <div className="mt-3 flex gap-2">
-                    <button type="button" onClick={() => shareProduct(p)} className="flex flex-1 items-center justify-center gap-1 rounded-lg border border-white/10 py-2 text-xs font-bold text-white hover:border-blue-500">
-                      <Link2 size={13} /> Copy Link
-                    </button>
-                    <button type="button" onClick={() => { haptic('heavy'); setCheckoutProduct(p); }} className="flex-1 rounded-2xl bg-blue-600 py-3.5 text-xs font-bold text-white hover:bg-blue-500 active:scale-95 active:bg-blue-700 transition-transform duration-100">
-                      Buy Now
-                    </button>
+                <div className="px-3 py-2">
+                  <p className="truncate text-[15px] font-semibold text-white">{p.name}</p>
+                  <p className="text-[13px] font-bold text-blue-500">${p.priceUsd}</p>
+                  <div className="mt-2 flex gap-2">
+                    <button type="button" onClick={() => shareProduct(p)} className="text-[13px] font-semibold text-white/50 active:text-white">Copy</button>
+                    <button type="button" onClick={() => { haptic('heavy'); setCheckoutProduct(p); }} className="text-[13px] font-semibold text-blue-500 active:text-blue-400">Buy</button>
                   </div>
                 </div>
               </div>
