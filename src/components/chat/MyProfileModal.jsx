@@ -45,7 +45,7 @@ export default function MyProfileModal({ identity }) {
         </div>
         {profile.about && <p className="mt-4 text-sm text-white/60">{profile.about}</p>}
         <button type="button" onClick={copyNpub} className="mt-5 flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-blue-600 text-sm font-semibold text-white hover:bg-blue-500">
-          <Copy size={16} /> Copy Public Key (npub)
+          <Copy size={16} /> Copy npub
         </button>
         {notice && <p role="status" className="mt-3 text-center text-[13px] text-blue-500">{notice}</p>}
         {error && <p role="alert" className="mt-3 text-center text-[13px] text-red-400">{error}</p>}
