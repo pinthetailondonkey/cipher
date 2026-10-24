@@ -64,13 +64,15 @@ export default function OneTapCheckout({ product, onConfirmOrder, onClose }) {
         <div className="mb-4 flex items-center justify-between">
           <div>
             <p className="text-[13px] text-white/40">Send this order in a private chat</p>
-            <h2 className="text-[17px] font-semibold text-white">Checkout</h2>
+            <h2 className="text-2xl font-bold tracking-tight text-white">Checkout</h2>
             <p className="mt-1 text-[13px] text-white/40">{product?.name || product?.title || 'Product'}</p>
           </div>
           <button type="button" onClick={onClose} className="p-2 text-white/50 hover:text-white" aria-label="Close checkout"><X size={20} /></button>
         </div>
-        <p className="mb-1 text-[12px] text-white/40">Amount due</p>
-        <p className="mb-4 text-[22px] font-bold text-white">{amount} {currency}</p>
+        <div className="mb-4 rounded-2xl border border-white/10 bg-[#111] p-4">
+          <p className="text-[12px] text-white/40">Amount due</p>
+          <p className="text-[22px] font-bold text-white">{amount} {currency}</p>
+        </div>
         <p className="mb-3 text-[13px] text-white/40">{addresses.length ? 'These are the seller’s published addresses. They may send a fresh one in the chat after they accept.' : 'The seller sends a payment address in the chat after they accept.'}</p>
         {addresses.length === 0 ? (
           <p className="rounded-xl border border-white/10 bg-[#111] p-4 text-[13px] leading-relaxed text-white/55">
@@ -91,7 +93,7 @@ export default function OneTapCheckout({ product, onConfirmOrder, onClose }) {
           </div>
         ))}
         {orderError && <p role="alert" className="mt-4 text-sm text-red-400">{orderError}</p>}
-        <button type="button" onClick={confirmOrder} disabled={confirmed || sending} className="mt-5 flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 py-3 text-sm font-semibold text-white hover:bg-blue-500 disabled:opacity-60">
+        <button type="button" onClick={confirmOrder} disabled={confirmed || sending} className="mt-5 flex w-full items-center justify-center gap-2 rounded-2xl bg-blue-600 py-3.5 font-bold text-white hover:bg-blue-500 disabled:opacity-60">
           {sending ? <><Loader2 size={17} className="animate-spin" /> Sending order…</> : confirmed ? <><Check size={17} /> Order sent. Pay in the chat.</> : 'Send order'}
         </button>
       </div>

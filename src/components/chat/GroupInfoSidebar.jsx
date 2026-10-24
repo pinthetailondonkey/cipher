@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { BadgeCheck, X } from 'lucide-react';
+import { BadgeCheck, Link2, LogOut, Package, Pencil, Store, Users, X } from 'lucide-react';
 import { useChatStore } from '../../store/chatStore';
 import Avatar from '../ui/Avatar';
 import { pressable } from '../ui/Button';
@@ -171,50 +171,52 @@ export default function GroupInfoSidebar({
               </div>
               <button type="button" onClick={onClose} aria-label="Close group information" className={`p-2 text-white/45 hover:text-white ${pressable}`}><X size={20} /></button>
             </header>
-            <div className="min-h-0 flex-1 overflow-y-auto bg-[#0A0A0A]">
-              {group.about && <p className="border-b border-white/5 px-4 py-3 text-[13px] text-white/40">{group.about}</p>}
-              <button type="button" onClick={shareGroup} className="w-full border-b border-white/5 px-4 py-4 text-left text-[15px] font-semibold text-blue-500 active:bg-white/10">{copied ? 'Copied' : 'Invite'}</button>
-              {canManage && <button type="button" onClick={editGroup} disabled={pending} className="w-full border-b border-white/5 px-4 py-4 text-left text-[15px] font-semibold text-white disabled:opacity-40 active:bg-white/10">Edit group</button>}
-              <button type="button" onClick={leave} disabled={pending} className="w-full border-b border-white/5 px-4 py-4 text-left text-[15px] font-semibold text-red-400 disabled:opacity-40 active:bg-white/10">Leave group</button>
-              <p className="px-4 pb-1 pt-4 text-[13px] text-white/40">Members</p>
-              <div className="mb-5">
-                {memberList.length === 0 && <p className="border-b border-white/5 px-4 py-3 text-[13px] text-white/40">Looking up members…</p>}
+            <div className="min-h-0 flex-1 space-y-4 overflow-y-auto bg-[#0A0A0A] p-4">
+              {group.about && <p className="rounded-2xl border border-white/10 bg-[#111] p-4 text-[13px] text-white/50">{group.about}</p>}
+              <div className="overflow-hidden rounded-2xl border border-white/10 bg-[#111]">
+                <button type="button" onClick={shareGroup} className="flex w-full items-center gap-3 border-b border-white/5 p-4 text-left text-[15px] font-semibold text-white active:bg-white/5"><Link2 size={18} className="text-white/40" /> {copied ? 'Copied' : 'Invite'}</button>
+                {canManage && <button type="button" onClick={editGroup} disabled={pending} className="flex w-full items-center gap-3 border-b border-white/5 p-4 text-left text-[15px] font-semibold text-white disabled:opacity-40 active:bg-white/5"><Pencil size={18} className="text-white/40" /> Edit group</button>}
+                <button type="button" onClick={leave} disabled={pending} className="flex w-full items-center gap-3 p-4 text-left text-[15px] font-semibold text-red-400 disabled:opacity-40 active:bg-white/5"><LogOut size={18} /> Leave group</button>
+              </div>
+              <div className="overflow-hidden rounded-2xl border border-white/10 bg-[#111]">
+                <p className="flex items-center gap-2 border-b border-white/5 px-4 py-3 text-[13px] text-white/40"><Users size={16} /> Members</p>
+                {memberList.length === 0 && <p className="px-4 py-3 text-[13px] text-white/40">Looking up members…</p>}
                 {memberList.map((member) => {
                   const profile = profiles[member.pubkey] || {};
                   const name = profile.displayName || profile.name || `${member.pubkey.slice(0, 8)}…`;
                   const role = member.role || (member.pubkey === group.creator ? 'admin' : 'member');
                   return (
-                    <div key={member.pubkey} className="flex items-center gap-3 border-b border-white/5 px-4 py-3">
+                    <div key={member.pubkey} className="flex items-center gap-3 border-b border-white/5 px-4 py-3 last:border-0">
                       <Avatar src={profile.picture} name={name} />
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-[15px] font-semibold text-white">{name}</p>
                         <p className="mt-0.5 text-[13px] text-blue-500">{role === 'admin' || role === 'owner' ? 'Admin' : 'Member'}</p>
                       </div>
                       {canManage && member.pubkey !== identity?.pk && (
-                        <button type="button" onClick={() => kick(member.pubkey)} disabled={pending} aria-label={`Kick ${name}`} className={`rounded-2xl border border-white/10 px-3 py-2 text-[13px] font-semibold text-white/50 hover:text-red-300 disabled:opacity-50 ${pressable}`}>Kick</button>
+                        <button type="button" onClick={() => kick(member.pubkey)} disabled={pending} aria-label={`Kick ${name}`} className={`text-[13px] font-semibold text-red-400 disabled:opacity-50 ${pressable}`}>Remove</button>
                       )}
                     </div>
                   );
                 })}
               </div>
-              <p className="px-4 pb-1 pt-4 text-[13px] text-white/40">Shop</p>
-              {pinnedId && (
-                <div className="flex items-center gap-2 border-b border-white/5 px-4 py-3 text-[13px] text-amber-200">
-                  <BadgeCheck size={16} /> Pinned
-                  {canManage && <button type="button" onClick={removePin} disabled={pending} className="ml-auto text-blue-500 disabled:opacity-50">Unpin</button>}
-                </div>
-              )}
-              {error && <p role="alert" className="px-4 py-3 text-[13px] text-red-400">{error}</p>}
-              {products.length === 0 && <p className="border-b border-white/5 px-4 py-3 text-[13px] text-white/40">No listings yet.</p>}
-              <div>
+              <div className="overflow-hidden rounded-2xl border border-white/10 bg-[#111]">
+                <p className="flex items-center gap-2 border-b border-white/5 px-4 py-3 text-[13px] text-white/40"><Store size={16} /> Shop</p>
+                {pinnedId && (
+                  <div className="flex items-center gap-2 border-b border-white/5 px-4 py-3 text-[13px] text-amber-200">
+                    <BadgeCheck size={16} /> Pinned
+                    {canManage && <button type="button" onClick={removePin} disabled={pending} className="ml-auto text-blue-500 disabled:opacity-50">Unpin</button>}
+                  </div>
+                )}
+                {error && <p role="alert" className="px-4 py-3 text-[13px] text-red-400">{error}</p>}
+                {products.length === 0 && <p className="px-4 py-3 text-[13px] text-white/40">No listings yet.</p>}
                 {products.map(({ message, product }) => {
                   const isPinned = pinnedId === message.id;
                   return (
-                    <div key={message.id} className="flex items-center gap-3 border-b border-white/5 px-4 py-3">
-                      {product.image && <img src={product.image} alt="" loading="lazy" className="h-10 w-10 object-cover" />}
+                    <div key={message.id} className="flex items-center gap-3 border-b border-white/5 px-4 py-3 last:border-0">
+                      {product.image ? <img src={product.image} alt="" loading="lazy" className="h-10 w-10 rounded-xl object-cover" /> : <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-black text-white/30"><Package size={16} /></span>}
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-[15px] font-semibold text-white">{product.title || product.name || 'Product'}</p>
-                        <p className="truncate text-[13px] text-white/40">{product.price || product.priceUsd || ''}</p>
+                        <p className="truncate text-[13px] text-blue-500">{product.price || product.priceUsd || 'Ask'}</p>
                       </div>
                       {canManage && (
                         <button type="button" onClick={() => isPinned ? removePin() : setPin(message.id)} disabled={pending || isPinned} className="text-[13px] font-semibold text-blue-500 disabled:opacity-40">{isPinned ? 'Pinned' : 'Pin'}</button>
