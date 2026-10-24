@@ -12,7 +12,7 @@ export default function MessageRequests({ dms = {}, profiles = {}, onBack, onOpe
     .sort((a, b) => b.message.timestamp - a.message.timestamp);
 
   return (
-    <div className="h-full overflow-y-auto bg-black pb-safe">
+    <div className="h-full overflow-y-auto bg-transparent pb-safe">
       <ScreenHeader title="Message Requests" onBack={onBack} />
       {requests.length === 0 ? (
         <div className="px-6 py-16 text-center">
@@ -22,7 +22,7 @@ export default function MessageRequests({ dms = {}, profiles = {}, onBack, onOpe
         </div>
       ) : (
         <div className="p-4">
-          <div className="overflow-hidden rounded-2xl border border-white/10 bg-[#111]">
+          <div className="overflow-hidden rounded-2xl border border-white/10 bg-[#0A0A0A]/60 shadow-2xl backdrop-blur-2xl">
           {requests.map(({ pubkey, message }) => {
             const profile = profiles[pubkey] || {};
             const name = profile.displayName || profile.name || pubkey.slice(0, 12);

@@ -48,7 +48,7 @@ export default function NotificationCenter({ onClose, onJump }) {
   };
 
   return (
-    <div className="fixed inset-0 z-[999] flex flex-col bg-black" role="dialog" aria-modal="true" aria-label="Notifications">
+    <div className="fixed inset-0 z-[999] flex flex-col bg-black/70 backdrop-blur-2xl" role="dialog" aria-modal="true" aria-label="Notifications">
       <ScreenHeader title="Notifications" onBack={onClose} />
       {notifications.length === 0 ? (
         <div className="flex flex-1 flex-col items-center justify-center text-white/40">
@@ -57,7 +57,7 @@ export default function NotificationCenter({ onClose, onJump }) {
         </div>
       ) : (
         <div className="flex-1 overflow-y-auto p-4">
-          <div className="overflow-hidden rounded-2xl border border-white/10 bg-[#111]">
+          <div className="overflow-hidden rounded-2xl border border-white/10 bg-[#0A0A0A]/60 shadow-2xl backdrop-blur-2xl">
           {notifications.map((item) => (
             <button key={item.id} type="button" onClick={() => openNotification(item)} className="flex w-full items-center gap-3 border-b border-white/5 px-4 py-3 text-left active:bg-white/10">
               <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-white/10 bg-black text-blue-500">

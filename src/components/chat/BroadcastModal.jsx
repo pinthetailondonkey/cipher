@@ -29,7 +29,7 @@ export default function BroadcastModal({ isOpen, onClose, product, groups = [], 
 
   return (
     <div className="fixed inset-0 z-[950] flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm" role="presentation">
-      <section role="dialog" aria-modal="true" aria-label="Broadcast product" className="w-full max-w-sm rounded-3xl border border-white/10 bg-[#0A0A0A] p-5">
+      <section role="dialog" aria-modal="true" aria-label="Broadcast product" className="w-full max-w-sm rounded-3xl border border-white/10 bg-[#0A0A0A]/60 backdrop-blur-2xl p-5">
         <header className="mb-4 flex items-center gap-3">
           <Radio size={19} className="text-blue-400" />
           <div className="min-w-0 flex-1">

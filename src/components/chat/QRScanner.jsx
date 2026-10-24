@@ -130,7 +130,7 @@ export default function QRScanner({ onClose }) {
           </div>
         ) : (
           <>
-            <div className="relative aspect-square w-full max-w-xs overflow-hidden rounded-3xl border-2 border-blue-500 bg-[#111]">
+            <div className="relative aspect-square w-full max-w-xs overflow-hidden rounded-3xl border-2 border-blue-500 bg-white/5">
               <video ref={videoRef} className="h-full w-full object-cover" muted playsInline />
               <canvas ref={canvasRef} className="hidden" />
               <div className="pointer-events-none absolute inset-0 flex items-center justify-center"><Scan size={64} className="text-white/70" /></div>
