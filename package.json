@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "oxlint",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "node --import ./scripts/resolve-extensionless.mjs --test src/lib/vaultLockout.test.js src/lib/outboxPolicy.test.js src/lib/moneroIndexes.test.js src/lib/crypto/groupCipher.test.js src/lib/crypto/groupKeyGrant.test.js src/lib/crypto/groupMembership.test.js src/lib/vaultCrypto.test.js"
   },
   "dependencies": {
     "@capacitor/core": "^8.5.3",
