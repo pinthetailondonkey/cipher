@@ -54,9 +54,11 @@ export default function AuthenticatedApp({ identity }) {
             <Suspense fallback={tabFallback}>
               {activeTab === 'explore' && (
                 <div className="flex h-full flex-col">
-                  <div className="grid grid-cols-2 border-b border-white/10 bg-[#0A0A0A]/40 px-4 pt-3 backdrop-blur-xl">
-                    <button type="button" onClick={() => setExploreMode('shop')} className={`py-2.5 text-[13px] font-semibold ${exploreMode === 'shop' ? 'border-b-2 border-blue-600 text-white' : 'text-white/40'}`}>Shop</button>
-                    <button type="button" onClick={() => setExploreMode('groups')} className={`py-2.5 text-[13px] font-semibold ${exploreMode === 'groups' ? 'border-b-2 border-blue-600 text-white' : 'text-white/40'}`}>Groups</button>
+                  <div className="px-4 pb-1 pt-3">
+                    <div className="grid grid-cols-2 rounded-2xl border border-white/10 bg-[#0A0A0A]/60 p-1 shadow-2xl backdrop-blur-2xl">
+                      <button type="button" onClick={() => setExploreMode('shop')} className={`rounded-xl py-2.5 text-[13px] font-bold ${exploreMode === 'shop' ? 'bg-blue-600 text-white' : 'text-white/45'}`}>Shop</button>
+                      <button type="button" onClick={() => setExploreMode('groups')} className={`rounded-xl py-2.5 text-[13px] font-bold ${exploreMode === 'groups' ? 'bg-blue-600 text-white' : 'text-white/45'}`}>Groups</button>
+                    </div>
                   </div>
                   <div className="min-h-0 flex-1">
                     {exploreMode === 'shop'
