@@ -6,6 +6,7 @@ import { useNIP44DM } from './hooks/useNIP44DM';
 import { useChatStore } from './store/chatStore';
 import { saveMessage } from './db';
 import { haptic } from './lib/haptics';
+import { copyText } from './lib/copyText';
 
 export default function Shop({ identity, setActiveTab }) {
   const [query, setQuery] = useState('');
@@ -63,13 +64,8 @@ export default function Shop({ identity, setActiveTab }) {
 
   const shareProduct = async (product) => {
     const link = `${window.location.origin}${window.location.pathname}?product=${encodeURIComponent(product.id)}&vendor=${product.vendorPubkey}`;
-    try {
-      await navigator.clipboard.writeText(link);
-      useChatStore.getState().setToast({ type: 'success', message: 'Copied!' });
-    } catch (error) {
-      console.error('[Shop] Could not copy product link:', error);
-      useChatStore.getState().setToast({ type: 'error', message: 'Could not copy the product link.' });
-    }
+    const ok = await copyText(link);
+    if (!ok) return;
   };
   const displayProducts = products.filter(p =>
     p.name.toLowerCase().includes(query.toLowerCase())

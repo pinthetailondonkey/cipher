@@ -7,16 +7,41 @@ import { haptic } from '../lib/haptics';
 function messageText(data) {
   if (!data) return '';
   if (typeof data === 'string') return data;
-  if (data.type === 'order_request' || data.type === 'cipher_order') {
-    return `Order request${data.product?.title ? `: ${data.product.title}` : ''}`;
-  }
-  if (data.type === 'order_update') {
-    return data.status === 'accepted'
-      ? `Order accepted${data.productName ? `: ${data.productName}` : ''}`
-      : `Order ${data.status || 'updated'}`;
-  }
+  if (data.type === 'order_request' || data.type === 'cipher_order' || data.type === 'order_update') return '';
   if (data.type === 'product') return data.title || 'Product listing';
   return data.message || data.caption || '';
+}
+
+function orderLabel(status) {
+  if (status === 'accepted') return { text: 'Accepted', className: 'bg-blue-600 text-white' };
+  if (status === 'paid' || status === 'confirmed') return { text: 'Paid', className: 'bg-blue-600 text-white' };
+  if (status === 'shipped') return { text: 'Shipped', className: 'bg-blue-600 text-white' };
+  if (status === 'delivered') return { text: 'Delivered', className: 'bg-emerald-500 text-white' };
+  if (status === 'cancelled') return { text: 'Cancelled', className: 'bg-white/15 text-white' };
+  return { text: 'Awaiting Payment', className: 'bg-amber-400 text-black' };
+}
+
+function OrderReceipt({ content }) {
+  const product = content.product || {};
+  const title = product.title || product.name || content.productName || 'Order';
+  const priceValue = product.priceUsd ?? product.price ?? content.amount ?? '';
+  const currency = product.currency || content.currency || 'USD';
+  const price = priceValue === '' ? '' : (currency === 'USD' ? `$${priceValue}` : `${priceValue} ${currency}`);
+  const address = content.shippingAddress || content.address || content.shipTo || '';
+  const pill = orderLabel(content.status);
+  return (
+    <div className="mb-1 overflow-hidden rounded-2xl border border-white/10 bg-[#111] text-left">
+      {product.image && <img src={product.image} alt="" className="h-28 w-full object-cover" />}
+      <div className="p-3">
+        <div className="flex items-start justify-between gap-2">
+          <p className="text-[15px] font-semibold text-white">{title}</p>
+          <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold ${pill.className}`}>{pill.text}</span>
+        </div>
+        {price && <p className="mt-1 text-[13px] font-bold text-blue-500">{price}</p>}
+        {address && <p className="mt-1 text-[13px] text-white/40">Ship to {address}</p>}
+      </div>
+    </div>
+  );
 }
 
 export default function MessageBubble({ message, data, onAction, senderName, isPinnedListing = false, showAvatar = false, avatarUrl = '', avatarInitial = '?' }) {
@@ -85,6 +110,9 @@ export default function MessageBubble({ message, data, onAction, senderName, isP
         className={`max-w-[78%] min-w-[4.5rem] rounded-[18px] px-2.5 py-1 ${isSender ? 'rounded-br-[5px] bg-blue-600 text-white' : 'rounded-bl-[5px] bg-[#1c1c1e] text-white'}`}
       >
         {!isSender && senderName && <p className="mb-0.5 text-[11px] font-semibold leading-none text-blue-400">{senderName}</p>}
+        {(content.type === 'cipher_order' || content.type === 'order_request' || content.type === 'order_update') && (
+          <OrderReceipt content={content} />
+        )}
         {content.type === 'image' && content.url && (
           <a href={content.url} target="_blank" rel="noreferrer" className="block" onClick={(event) => event.stopPropagation()}>
             <img src={content.url} alt="Shared image" loading="lazy" className="max-h-64 max-w-full rounded-xl object-contain" />
@@ -126,7 +154,7 @@ export default function MessageBubble({ message, data, onAction, senderName, isP
         ) : (
           <p className="clear-both text-[12px] leading-none">{time}</p>
         )}
-        {!text && !content.url && !content.urls && !paymentRows.length && content.type !== 'image' && content.type !== 'audio' && content.type !== 'product' && (
+        {!text && !content.url && !content.urls && !paymentRows.length && content.type !== 'image' && content.type !== 'audio' && content.type !== 'product' && content.type !== 'cipher_order' && content.type !== 'order_request' && content.type !== 'order_update' && (
           <p className="text-[14px] leading-snug text-white/55">Message unavailable</p>
         )}
         {open && (
