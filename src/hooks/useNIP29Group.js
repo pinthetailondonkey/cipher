@@ -55,6 +55,10 @@ async function fetchGroupMetadata(identity, groupId) {
   };
 }
 
+function withGroupTag(groupId, tags = []) {
+  return [['h', groupId], ...tags.filter((tag) => tag[0] !== 'h')];
+}
+
 export async function loadGroupProfile(identity, rawId, passedName = null) {
   const parsed = parseGroupReference(rawId);
   const groupId = parsed.id;
@@ -405,7 +409,7 @@ export function useNIP29Group({ identity }) {
           const reqEvent = finalizeEvent({
             kind: 9,
             created_at: Math.floor(Date.now() / 1000),
-            tags: [['h', groupId]],
+            tags: withGroupTag(groupId),
             content: JSON.stringify({ type: 'gkey_req' }),
           }, identity.sk);
           await publishAuthedGroupEvent(identity, reqEvent);
@@ -414,7 +418,7 @@ export function useNIP29Group({ identity }) {
         }
         return { success: false, error: 'NO_KEY' };
       }
-      const tags = [['h', groupId], ...encoded.tags];
+      const tags = withGroupTag(groupId, encoded.tags);
       if (clientId) tags.push(['client', clientId]);
       if (replyId) tags.push(['e', replyId, '', 'reply']);
       const event = finalizeEvent({
@@ -442,7 +446,7 @@ export function useNIP29Group({ identity }) {
       const ev = finalizeEvent({
         kind: 9,
         created_at: Math.floor(Date.now() / 1000),
-        tags: [['h', groupId]],
+        tags: withGroupTag(groupId),
         content: JSON.stringify({ type: 'gkey_req' }),
       }, identity.sk);
       await publishAuthedGroupEvent(identity, ev);
@@ -456,7 +460,7 @@ export function useNIP29Group({ identity }) {
       const ev = finalizeEvent({
         kind: 9,
         created_at: Math.floor(Date.now() / 1000),
-        tags: [['h', groupId], ...encoded.tags],
+        tags: withGroupTag(groupId, encoded.tags),
         content: encoded.content,
       }, identity.sk);
       await publishAuthedGroupEvent(identity, ev);
@@ -723,11 +727,9 @@ export function useNIP29Group({ identity }) {
 
       setGroupMessages(prev => {
         const groupMsgs = prev[groupId] || [];
-        const existingIndex = groupMsgs.findIndex(m => {
-          if (m.id === event.id) return true;
-          if (clientId && event.pubkey === identity.pk && m.isSender && m.clientId === clientId) return true;
-          return false;
-        });
+        const existingIndex = groupMsgs.findIndex((m) => (
+          m.id === event.id || (clientId && (m.id === clientId || m.clientId === clientId))
+        ));
 
         const baseMsg = {
           id: event.id, clientId, isSender: event.pubkey === identity.pk,
