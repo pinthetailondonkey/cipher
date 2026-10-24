@@ -624,10 +624,12 @@ export function useIdentity() {
     // 1. Wipe sensitive chat data from memory
     try {
       const { useChatStore } = await import('./store/chatStore');
-      useChatStore.setState({ 
-        dms: {}, groups: [], groupMessages: {}, profiles: {}, 
-        unreadCounts: {}, reactions: {}, activeDm: null, activeGroup: null, view: 'list' 
+      useChatStore.setState({
+        dms: {}, groups: [], groupMessages: {}, profiles: {},
+        reactions: {}, activeDm: null, activeGroup: null, view: 'list',
       });
+      useChatStore.getState().setUnreadCounts({});
+      useChatStore.getState().clearNotificationAck();
     } catch(e) {}
 
     // 2. Close the Dexie DB connection

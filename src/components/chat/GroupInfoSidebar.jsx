@@ -5,6 +5,7 @@ import { useChatStore } from '../../store/chatStore';
 import Avatar from '../ui/Avatar';
 import Button from '../ui/Button';
 import { pressable } from '../ui/Button';
+import { copyText } from '../../lib/copyText';
 
 const EMPTY_MESSAGES = [];
 
@@ -69,9 +70,9 @@ export default function GroupInfoSidebar({
         ? nip19.naddrEncode({ kind: 39000, pubkey: creator, identifier: group.id, relays: ['wss://groups.aegispayhq.com'] })
         : group.id;
       const link = `${window.location.origin}${window.location.pathname}?${String(token).startsWith('naddr') ? 'naddr' : 'group'}=${encodeURIComponent(token)}`;
-      await navigator.clipboard.writeText(link);
+      const ok = await copyText(link);
+      if (!ok) return;
       setCopied(true);
-      useChatStore.getState().setToast({ type: 'success', message: 'Copied!' });
       window.setTimeout(() => setCopied(false), 1600);
     } catch (shareError) {
       console.error('[GroupInfoSidebar] Could not copy invite:', shareError);

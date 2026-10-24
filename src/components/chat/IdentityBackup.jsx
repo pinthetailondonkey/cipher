@@ -1,5 +1,8 @@
 import { useState } from 'react';
-import { AlertTriangle, Copy, Download, Eye, EyeOff, X } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, Copy, Download, Eye, EyeOff } from 'lucide-react';
+import { copyText } from '../../lib/copyText';
+import Button, { pressable } from '../ui/Button';
+import Card from '../ui/Card';
 
 export default function IdentityBackup({ identity, onClose }) {
   const [showSecret, setShowSecret] = useState(false);
@@ -18,14 +21,11 @@ export default function IdentityBackup({ identity, onClose }) {
   };
 
   const copy = async (label, value) => {
-    try {
-      const copyValue = label === 'nsec' ? await getSecretKey() : value;
-      await navigator.clipboard.writeText(copyValue);
+    const copyValue = label === 'nsec' ? await getSecretKey() : value;
+    const ok = await copyText(copyValue);
+    if (ok) {
       setCopied(label);
       window.setTimeout(() => setCopied(''), 1800);
-    } catch (error) {
-      console.error('[IdentityBackup] Clipboard copy failed:', error);
-      setCopied('Copy failed');
     }
   };
 
@@ -47,7 +47,8 @@ export default function IdentityBackup({ identity, onClose }) {
     try {
       const mnemonic = await identity?.getMnemonic?.();
       if (!mnemonic) throw new Error('This account has no recovery phrase saved on this device.');
-      await navigator.clipboard.writeText(mnemonic);
+      const ok = await copyText(mnemonic);
+      if (!ok) return;
       setCopied('phrase');
       window.setTimeout(() => setCopied(''), 1800);
     } catch (error) {
@@ -55,6 +56,7 @@ export default function IdentityBackup({ identity, onClose }) {
       setCopied(error?.message || 'Could not copy the recovery phrase.');
     }
   };
+
   const downloadRecoveryFile = async () => {
     if (!identity?.sk || exporting) return;
     if (!exportReady) {
@@ -111,50 +113,54 @@ export default function IdentityBackup({ identity, onClose }) {
   };
 
   return (
-    <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-label="Identity backup">
-      <div className="w-full max-w-sm rounded-3xl border border-white/10 bg-[#0A0A0A] p-6">
-        <div className="mb-5 flex items-center justify-between">
-          <h2 className="text-xl font-bold text-white">Identity Backup</h2>
-          <button type="button" onClick={onClose} className="p-2 text-white/50 hover:text-white" aria-label="Close"><X size={20} /></button>
-        </div>
-        <div className="mb-5 flex gap-3 rounded-xl border border-amber-500/20 bg-amber-500/5 p-3 text-amber-200/80">
+    <div className="h-full overflow-y-auto bg-black pb-24">
+      <button type="button" onClick={onClose} className={`flex items-center gap-1 px-4 pb-2 pt-4 text-[13px] text-white/40 ${pressable}`} aria-label="Back"><ArrowLeft size={16} /> Back</button>
+      <h2 className="px-4 pb-4 text-2xl font-bold tracking-tight text-white">Identity Backup</h2>
+      <div className="mx-4 space-y-3">
+        <Card className="flex gap-3 rounded-2xl p-4 text-amber-200/80">
           <AlertTriangle size={20} className="shrink-0" />
           <p className="text-[13px]">Your secret key controls this account. Never share it with anyone.</p>
-        </div>
+        </Card>
         {identity?.hasBiometric ? (
-          <p className="mb-5 rounded-xl border border-emerald-500/20 bg-emerald-500/5 px-4 py-3 text-sm text-emerald-300">Face ID / device passkey is enabled for this account.</p>
+          <Card className="rounded-2xl px-4 py-3 text-[13px] text-emerald-300">Face ID / device passkey is enabled for this account.</Card>
         ) : (
-          <button type="button" onClick={setupBiometric} disabled={!identity?.sk || enablingBiometric} className="mb-5 flex min-h-12 w-full items-center justify-center rounded-xl border border-white/10 bg-white/5 px-4 text-sm font-semibold text-white/80 hover:bg-white/10 disabled:opacity-50">
+          <Button variant="secondary" onClick={setupBiometric} disabled={!identity?.sk || enablingBiometric} className="w-full">
             {enablingBiometric ? 'Setting up device passkey…' : 'Set up Face ID / device passkey'}
-          </button>
+          </Button>
         )}
-        {biometricMessage && <p role="status" className="mb-4 text-center text-sm text-white/60">{biometricMessage}</p>}
-        <label className="mb-4 block text-[13px] text-white/40">Public key (npub)</label>
-        <div className="-mt-2 mb-5 flex gap-2">
-          <input readOnly value={npub} className="min-w-0 flex-1 rounded-xl border border-white/10 bg-[#111] px-3 py-3 font-mono text-xs text-white/80" />
-          <button type="button" onClick={() => copy('npub', npub)} disabled={!npub} className="rounded-xl border border-white/10 px-3 text-white/60 hover:text-white disabled:opacity-40" aria-label="Copy public key"><Copy size={17} /></button>
-        </div>
-        <label className="mb-2 block text-[13px] text-white/40">Secret key (nsec)</label>
-        <div className="mb-2 flex gap-2">
-          <input readOnly type={showSecret ? 'text' : 'password'} value={secretKey} className="min-w-0 flex-1 rounded-xl border border-white/10 bg-[#111] px-3 py-3 font-mono text-xs text-white/80" />
-          <button type="button" onClick={toggleSecret} className="rounded-xl border border-white/10 px-3 text-white/60 hover:text-white" aria-label={showSecret ? 'Hide secret key' : 'Reveal secret key'}>{showSecret ? <EyeOff size={17} /> : <Eye size={17} />}</button>
-          <button type="button" onClick={() => copy('nsec', secretKey)} disabled={!identity?.sk} className="rounded-xl border border-white/10 px-3 text-white/60 hover:text-white disabled:opacity-40" aria-label="Copy secret key"><Copy size={17} /></button>
-        </div>
-        <button type="button" onClick={() => copy('nsec')} disabled={!identity?.sk} className="mb-3 flex min-h-12 w-full items-center justify-center gap-2 rounded-xl border border-white/10 bg-[#111] text-sm font-semibold text-white hover:border-blue-500 disabled:opacity-40">
-          <Copy size={16} /> {copied === 'nsec' ? 'Copied!' : 'Copy secret key (nsec)'}
-        </button>
-        <button type="button" onClick={copyPhrase} disabled={!identity?.sk} className="mb-3 flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-blue-600 text-sm font-semibold text-white hover:bg-blue-500 disabled:opacity-40">
-          <Copy size={16} /> {copied === 'phrase' ? 'Copied!' : 'Copy 12-word phrase'}
-        </button>
-        <label className="mb-3 flex items-start gap-3 rounded-xl border border-white/10 bg-[#111] px-3 py-3 text-[13px] text-white/70">
-          <input type="checkbox" checked={exportReady} onChange={(event) => setExportReady(event.target.checked)} className="mt-0.5 h-5 w-5 rounded border-white/20 bg-black accent-blue-600" />
-          I understand this file contains my secret key and 12-word phrase.
-        </label>
-        <button type="button" onClick={downloadRecoveryFile} disabled={!identity?.sk || exporting || !exportReady} className="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl border border-white/10 bg-[#111] text-sm font-semibold text-white hover:border-blue-500 disabled:opacity-40">
-          <Download size={17} /> {exporting ? 'Preparing recovery file…' : 'Download recovery backup (.txt)'}
-        </button>
-        <p className="mt-2 text-center text-[11px] leading-relaxed text-amber-200/55">Includes your secret key and recovery phrase. Store securely; never upload or share it.</p>
-        {copied && <p role="status" className="mt-3 text-center text-sm text-blue-500">{copied === 'npub' || copied === 'nsec' || copied === 'phrase' ? 'Copied!' : copied}</p>}
+        {biometricMessage && <p role="status" className="text-center text-[13px] text-white/40">{biometricMessage}</p>}
+        <Card className="rounded-2xl p-4">
+          <p className="mb-2 text-[13px] text-white/40">Public key</p>
+          <div className="flex gap-2">
+            <input readOnly value={npub} className="min-w-0 flex-1 rounded-2xl border border-white/10 bg-black p-4 font-mono text-[13px] text-white" />
+            <button type="button" onClick={() => copy('npub', npub)} disabled={!npub} className={`rounded-2xl border border-white/10 bg-black px-3 text-blue-500 disabled:opacity-40 ${pressable}`} aria-label="Copy public key"><Copy size={17} /></button>
+          </div>
+        </Card>
+        <Card className="rounded-2xl p-4">
+          <p className="mb-2 text-[13px] text-white/40">Secret key</p>
+          <div className="mb-3 flex gap-2">
+            <input readOnly type={showSecret ? 'text' : 'password'} value={secretKey} className="min-w-0 flex-1 rounded-2xl border border-white/10 bg-black p-4 font-mono text-[13px] text-white" />
+            <button type="button" onClick={toggleSecret} className={`rounded-2xl border border-white/10 bg-black px-3 text-white/60 ${pressable}`} aria-label={showSecret ? 'Hide secret key' : 'Reveal secret key'}>{showSecret ? <EyeOff size={17} /> : <Eye size={17} />}</button>
+            <button type="button" onClick={() => copy('nsec')} disabled={!identity?.sk} className={`rounded-2xl border border-white/10 bg-black px-3 text-blue-500 disabled:opacity-40 ${pressable}`} aria-label="Copy secret key"><Copy size={17} /></button>
+          </div>
+          <Button variant="secondary" onClick={() => copy('nsec')} disabled={!identity?.sk} className="mb-3 flex w-full items-center justify-center gap-2">
+            <Copy size={16} /> {copied === 'nsec' ? 'Copied!' : 'Copy secret key'}
+          </Button>
+          <Button onClick={copyPhrase} disabled={!identity?.sk} className="flex w-full items-center justify-center gap-2">
+            <Copy size={16} /> {copied === 'phrase' ? 'Copied!' : 'Copy 12-word phrase'}
+          </Button>
+        </Card>
+        <Card className="rounded-2xl p-4">
+          <label className="mb-3 flex items-start gap-3 text-[13px] text-white/70">
+            <input type="checkbox" checked={exportReady} onChange={(event) => setExportReady(event.target.checked)} className="mt-0.5 h-5 w-5 rounded border-white/20 bg-black accent-blue-600" />
+            I understand this file contains my secret key and 12-word phrase.
+          </label>
+          <Button variant="secondary" onClick={downloadRecoveryFile} disabled={!identity?.sk || exporting || !exportReady} className="flex w-full items-center justify-center gap-2">
+            <Download size={17} /> {exporting ? 'Preparing recovery file…' : 'Download recovery backup'}
+          </Button>
+          <p className="mt-2 text-center text-[13px] text-white/40">Store it privately. Never upload or share it.</p>
+        </Card>
+        {copied && copied !== 'npub' && copied !== 'nsec' && copied !== 'phrase' && <p role="status" className="text-center text-[13px] text-blue-500">{copied}</p>}
       </div>
     </div>
   );
