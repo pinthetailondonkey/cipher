@@ -5,6 +5,9 @@ import MessageInput from '../MessageInput';
 import ChatHeader from './ChatHeader';
 import GroupInfoSidebar from './GroupInfoSidebar';
 import { useChatStore } from '../../store/chatStore';
+import { db, saveMessage } from '../../db';
+import { scopedRemove } from '../../lib/storage';
+import { useNIP29Group } from '../../hooks/useNIP29Group';
 
 const EMPTY_MESSAGES = [];
 
@@ -16,6 +19,15 @@ function readPayload(message) {
   } catch {
     return { type: 'text', message: message.rawContent };
   }
+}
+
+function disappearingSeconds(timer) {
+  if (!timer || timer === 'off') return 0;
+  if (String(timer).endsWith('m')) return (parseInt(timer, 10) || 0) * 60;
+  if (timer === '1h') return 3600;
+  if (timer === '24h') return 86400;
+  if (timer === '7d') return 604800;
+  return 0;
 }
 
 export default function GroupView({
@@ -30,6 +42,7 @@ export default function GroupView({
   pinMessage,
   unpinMessage,
 }) {
+  const { sendGroupMessage } = useNIP29Group({ identity });
   const activeGroup = useChatStore((state) => state.activeGroup);
   const messages = useChatStore((state) => state.groupMessages[state.activeGroup?.id] || EMPTY_MESSAGES);
   const profiles = useChatStore((state) => state.profiles);
@@ -52,6 +65,66 @@ export default function GroupView({
       });
     }
   }, [activeGroup?.id, fetchPinnedMessage]);
+
+  const sendGroupText = async (text) => {
+    const groupId = activeGroup?.id;
+    if (!groupId) return;
+    const replyId = replyingTo?.id || null;
+    const payload = { type: 'text', message: text };
+    const seconds = disappearingSeconds(useChatStore.getState().disappearingTimers?.[groupId]);
+    if (seconds > 0) payload.expires_at = Math.floor(Date.now() / 1000) + seconds;
+    const tempId = `temp-${Date.now()}`;
+    const optimistic = {
+      id: tempId,
+      clientId: tempId,
+      isSender: true,
+      pubkey: identity?.pk,
+      timestamp: Math.floor(Date.now() / 1000),
+      local_timestamp: Date.now(),
+      replyTo: replyId,
+      deliveryStatus: 'sending',
+      rawContent: JSON.stringify(payload),
+      isGroup: true,
+    };
+    useChatStore.getState().setGroupMessages((prev) => ({
+      ...prev,
+      [groupId]: [...(prev[groupId] || []), optimistic],
+    }));
+    await saveMessage(groupId, optimistic);
+    const result = await sendGroupMessage(groupId, payload, tempId, replyId);
+    if (!result?.success) {
+      useChatStore.getState().setGroupMessages((prev) => ({
+        ...prev,
+        [groupId]: (prev[groupId] || []).filter((message) => message.id !== tempId && message.clientId !== tempId),
+      }));
+      try { await db.messages.delete(tempId); } catch (error) { console.error('[GroupView] Failed to remove unsent message:', error); }
+      useChatStore.getState().setToast({
+        type: 'error',
+        message: result?.error === 'NO_KEY' ? 'Securing group... please try again in a moment.' : 'Failed to send to group',
+      });
+      throw new Error(result?.error || 'Failed to send to group');
+    }
+    if (result.event?.id) {
+      let confirmed = null;
+      useChatStore.getState().setGroupMessages((prev) => ({
+        ...prev,
+        [groupId]: (prev[groupId] || []).map((message) => {
+          if (message.clientId !== tempId) return message;
+          confirmed = {
+            ...message,
+            id: result.event.id,
+            timestamp: result.event.created_at,
+            deliveryStatus: result.queued ? 'queued' : 'sent',
+          };
+          return confirmed;
+        }),
+      }));
+      if (confirmed) await saveMessage(groupId, confirmed);
+    }
+    setReplyingTo(null);
+    scopedRemove(`draft-group-${groupId}`);
+    return result;
+  };
 
   const visibleMessages = messages.filter((message) => !deletedMsgs.has(message.id));
   const pinnedMessage = visibleMessages.find((message) => message.id === pinnedMessageId);
@@ -99,7 +172,7 @@ export default function GroupView({
           <button type="button" onClick={() => setReplyingTo(null)} aria-label="Cancel reply" className="p-2 text-white/45 hover:text-white"><X size={18} /></button>
         </div>
       )}
-      <MessageInput sendMessage={sendMessage} handleImageUpload={handleImageUpload} startRecording={startRecording} stopRecording={stopRecording} />
+      <MessageInput sendMessage={sendGroupText || sendMessage} handleImageUpload={handleImageUpload} startRecording={startRecording} stopRecording={stopRecording} />
       <GroupInfoSidebar
         isOpen={showGroupInfo}
         onClose={() => setShowGroupInfo(false)}
