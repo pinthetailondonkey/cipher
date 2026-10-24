@@ -36,8 +36,8 @@ export function useNIP44DM({ identity }) {
     if (!recipientPubkey || !identity?.sk) return { success: false, error: 'Missing params' };
 
     // Defensive: trim and cap length
-    let targetDm = recipientPubkey.trim();
-    if (targetDm.length > 64) targetDm = targetDm.slice(0, 64);
+    let targetDm = recipientPubkey.trim().toLowerCase();
+    if (!/^[0-9a-f]{64}$/.test(targetDm)) return { success: false, error: 'That is not a valid public key.' };
 
     try {
       const { finalizeEvent, nip44 } = await import('nostr-tools');
@@ -75,7 +75,7 @@ export function useNIP44DM({ identity }) {
 
   // SEND TYPING INDICATOR
   const sendTypingIndicator = useCallback(async (recipientPubkey) => {
-    if (!recipientPubkey || !identity?.sk) return;
+    if (!recipientPubkey || !identity?.sk || !/^[0-9a-f]{64}$/i.test(recipientPubkey)) return;
     try {
       const { finalizeEvent, nip44 } = await import('nostr-tools');
       const pool = await getAuthenticatedPool(identity);
