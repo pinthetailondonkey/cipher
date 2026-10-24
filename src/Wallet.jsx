@@ -265,22 +265,18 @@ export default function Wallet({ identity, onOpenChat }) {
 
   if (view === 'vendor_setup') {
     return (
-      <div className="h-full overflow-y-auto p-4 pb-safe">
-        <div className="mb-6 flex items-center gap-2">
-          <button type="button" onClick={() => setView('main')} className="-ml-2 touch-target p-2 text-white/50 hover:text-white"><ArrowLeft size={20} /></button>
-          <h2 className="text-xl font-bold text-white">Set up Vendor mode</h2>
-        </div>
-        <p className="mb-5 text-sm leading-relaxed text-white/50">Add at least one receiving address before enabling vendor tools. You can update these any time from Profile.</p>
-        <form onSubmit={saveVendorSetup} className="space-y-4">
-          <label className="block text-sm text-white/65">Bitcoin receiving address
-            <input value={btcAddress} onChange={(event) => setBtcAddress(event.target.value)} autoComplete="off" spellCheck="false" placeholder="bc1…" className="mt-2 w-full rounded-xl border border-white/10 bg-[#111] p-4 text-sm text-white outline-none focus:border-blue-500" />
-          </label>
-          <label className="block text-sm text-white/65">Monero receiving address
-            <input value={xmrAddress} onChange={(event) => setXmrAddress(event.target.value)} autoComplete="off" spellCheck="false" placeholder="Monero mainnet address" className="mt-2 w-full rounded-xl border border-white/10 bg-[#111] p-4 text-sm text-white outline-none focus:border-blue-500" />
-          </label>
-          <p className="text-xs leading-relaxed text-white/35">Addresses are stored on this device. Never enter a seed phrase, private key, or spending key here.</p>
-          {status && <p role="status" className="text-sm text-amber-300">{status}</p>}
-          <button type="submit" className="min-h-12 w-full rounded-xl bg-blue-600 text-sm font-semibold text-white hover:bg-blue-500">Save addresses and enable Vendor mode</button>
+      <div className="h-full overflow-y-auto bg-black pb-safe">
+        <header className="flex items-center gap-1 border-b border-white/5 px-1 py-2">
+          <button type="button" onClick={() => setView('main')} aria-label="Back" className="p-2 text-white"><ArrowLeft size={22} /></button>
+          <h2 className="text-[17px] font-semibold text-white">Start selling</h2>
+        </header>
+        <p className="border-b border-white/5 px-4 py-3 text-[13px] text-white/40">Add at least one address. It stays on this device.</p>
+        <form onSubmit={saveVendorSetup}>
+          <input value={btcAddress} onChange={(event) => setBtcAddress(event.target.value)} autoComplete="off" spellCheck="false" placeholder="Bitcoin address" className="w-full border-b border-white/5 bg-black px-4 py-3 text-[15px] text-white outline-none placeholder:text-white/30" />
+          <input value={xmrAddress} onChange={(event) => setXmrAddress(event.target.value)} autoComplete="off" spellCheck="false" placeholder="Monero address" className="w-full border-b border-white/5 bg-black px-4 py-3 text-[15px] text-white outline-none placeholder:text-white/30" />
+          <p className="px-4 py-3 text-[13px] text-white/40">Never enter a seed phrase or spending key.</p>
+          {status && <p role="status" className="px-4 pb-2 text-[13px] text-amber-300">{status}</p>}
+          <button type="submit" className="w-full px-4 py-4 text-left text-[15px] font-semibold text-blue-500">Save and turn on selling</button>
         </form>
       </div>
     );
@@ -297,32 +293,18 @@ export default function Wallet({ identity, onOpenChat }) {
       );
     }
     return (
-      <div className="h-full overflow-y-auto p-4 pb-24">
-        <div className="mb-6 flex items-center gap-2">
-          <button type="button" onClick={() => setView('main')} className="-ml-2 p-2 text-white/50 hover:text-white"><ArrowLeft size={20} /></button>
-          <h2 className="text-xl font-bold text-white">Advanced Settings</h2>
-        </div>
-        <form onSubmit={saveAdvancedSettings} className="space-y-4">
-            <section className="space-y-3 rounded-2xl border border-white/10 bg-[#111] p-4">
-              <h3 className="text-sm font-semibold text-white">Per-order payment addresses</h3>
-              <p className="text-xs leading-relaxed text-white/45">Optional. Configure an account-level Bitcoin xpub and a Monero private view key to generate a fresh receiving address for each accepted order.</p>
-              <div>
-                <label className="mb-1 block text-xs text-white/60">Main Monero address</label>
-                <input value={xmrAddress} onChange={(event) => setXmrAddress(event.target.value)} autoComplete="off" spellCheck="false" placeholder="Monero mainnet address" className="w-full rounded-xl border border-white/10 bg-black p-3 font-mono text-xs text-white outline-none focus:border-blue-500" />
-              </div>
-              <div>
-                <label className="mb-1 block text-xs text-white/60">Monero private view key</label>
-                <input type="password" value={xmrPrivateViewKey} onChange={(event) => setXmrPrivateViewKey(event.target.value)} autoComplete="new-password" spellCheck="false" placeholder="64-character hexadecimal key" className="w-full rounded-xl border border-white/10 bg-black p-3 font-mono text-xs text-white outline-none focus:border-blue-500" />
-                <p className="mt-1 text-[10px] leading-relaxed text-white/35">Kept on this device and encrypted using your unlocked account key. Never enter your Monero spend key or seed phrase.</p>
-              </div>
-              <div>
-                <label className="mb-1 block text-xs text-white/60">Bitcoin account xpub (optional)</label>
-                <input type="password" value={btcXpub} onChange={(event) => setBtcXpub(event.target.value)} autoComplete="off" spellCheck="false" placeholder="xpub… (public key only)" className="w-full rounded-xl border border-white/10 bg-black p-3 font-mono text-xs text-white outline-none focus:border-blue-500" />
-                <p className="mt-1 text-[10px] leading-relaxed text-white/35">Use an account-level mainnet xpub. Never enter an xprv, seed phrase, or spending key.</p>
-              </div>
-            </section>
-            <button type="submit" disabled={savingAdvanced} className="w-full rounded-xl bg-blue-600 py-3 text-sm font-semibold text-white hover:bg-blue-500 disabled:opacity-50">
-              {savingAdvanced ? 'Saving…' : 'Save vendor payment settings'}
+      <div className="h-full overflow-y-auto bg-black pb-24">
+        <header className="flex items-center gap-1 border-b border-white/5 px-1 py-2">
+          <button type="button" onClick={() => setView('main')} aria-label="Back" className="p-2 text-white"><ArrowLeft size={22} /></button>
+          <h2 className="text-[17px] font-semibold text-white">Payment settings</h2>
+        </header>
+        <form onSubmit={saveAdvancedSettings}>
+            <p className="border-b border-white/5 px-4 py-3 text-[13px] text-white/40">Optional. A fresh receiving address can be made for each order. Never enter a seed or spend key.</p>
+            <input value={xmrAddress} onChange={(event) => setXmrAddress(event.target.value)} autoComplete="off" spellCheck="false" placeholder="Monero address" className="w-full border-b border-white/5 bg-black px-4 py-3 text-[15px] text-white outline-none placeholder:text-white/30" />
+            <input type="password" value={xmrPrivateViewKey} onChange={(event) => setXmrPrivateViewKey(event.target.value)} autoComplete="new-password" spellCheck="false" placeholder="Monero view key" className="w-full border-b border-white/5 bg-black px-4 py-3 text-[15px] text-white outline-none placeholder:text-white/30" />
+            <input type="password" value={btcXpub} onChange={(event) => setBtcXpub(event.target.value)} autoComplete="off" spellCheck="false" placeholder="Bitcoin xpub" className="w-full border-b border-white/5 bg-black px-4 py-3 text-[15px] text-white outline-none placeholder:text-white/30" />
+            <button type="submit" disabled={savingAdvanced} className="w-full px-4 py-4 text-left text-[15px] font-semibold text-blue-500 disabled:opacity-40">
+              {savingAdvanced ? 'Saving…' : 'Save'}
             </button>
         </form>
         {status && <p role="status" className={`mt-4 text-center text-sm ${status.startsWith('Could not') || status.startsWith('Error') ? 'text-red-400' : 'text-emerald-400'}`}>{status}</p>}
@@ -491,7 +473,7 @@ export default function Wallet({ identity, onOpenChat }) {
       <div className="w-full">
         {/* Group 1 */}
         <div className="mb-6">
-          <button onClick={() => setView('orders')} className={`w-full flex items-center gap-4 border-b border-white/5 bg-[#111] px-4 py-4 text-left active:bg-white/10 ${pressable}`}>
+          <button onClick={() => setView('orders')} className={`w-full flex items-center gap-4 border-b border-white/5 bg-black px-4 py-4 text-left active:bg-white/10 ${pressable}`}>
             <Package size={22} className="text-white/60" />
             <div className="flex-1 text-left">
               <p className="text-[15px] font-semibold text-white">My Orders</p>
@@ -500,7 +482,7 @@ export default function Wallet({ identity, onOpenChat }) {
             <ChevronRight size={20} className="text-white/60" />
           </button>
 
-          <button onClick={() => setView('profile_editor')} className={`w-full flex items-center gap-4 border-b border-white/5 bg-[#111] px-4 py-4 text-left active:bg-white/10 ${pressable}`}>
+          <button onClick={() => setView('profile_editor')} className={`w-full flex items-center gap-4 border-b border-white/5 bg-black px-4 py-4 text-left active:bg-white/10 ${pressable}`}>
             <User size={22} className="text-white/60" />
             <div className="flex-1 text-left">
               <p className="text-[15px] font-semibold text-white">Edit Profile</p>
@@ -509,7 +491,7 @@ export default function Wallet({ identity, onOpenChat }) {
             <ChevronRight size={20} className="text-white/60" />
           </button>
 
-          <button onClick={() => setView('privacy')} className={`w-full flex items-center gap-4 bg-[#111] px-4 py-4 text-left active:bg-white/10 ${pressable}`}>
+          <button onClick={() => setView('privacy')} className={`w-full flex items-center gap-4 bg-black px-4 py-4 text-left active:bg-white/10 ${pressable}`}>
             <Shield size={22} className="text-white/60" />
             <div className="flex-1 text-left">
               <p className="text-[15px] font-semibold text-white">Privacy and Security</p>
@@ -530,12 +512,12 @@ export default function Wallet({ identity, onOpenChat }) {
 
         {/* VENDOR BANNER */}
         {!isVendor ? (
-          <button type="button" onClick={() => { setStatus(''); setView('vendor_setup'); }} className="w-full border-y border-white/5 bg-[#111] px-4 py-4 text-left active:bg-white/10">
+          <button type="button" onClick={() => { setStatus(''); setView('vendor_setup'); }} className="w-full border-y border-white/5 bg-black px-4 py-4 text-left active:bg-white/10">
             <p className="text-[15px] font-semibold text-white">Start selling</p>
             <p className="mt-0.5 text-[13px] text-white/40">Post items in groups and take payment directly.</p>
           </button>
         ) : (
-          <div className="border-y border-white/5 bg-[#111]">
+          <div className="border-y border-white/5 bg-black">
             <button type="button" onClick={() => setView('vendor')} className="w-full border-b border-white/5 px-4 py-4 text-left active:bg-white/10">
               <p className="text-[15px] font-semibold text-white">Vendor dashboard</p>
               <p className="text-[13px] text-white/40">Orders and listings</p>
