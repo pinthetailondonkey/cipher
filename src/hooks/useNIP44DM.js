@@ -1,6 +1,11 @@
+import { useCallback, useEffect } from 'react';
 import { db } from '../db';
+import { saveMessage } from '../db';
 import { showNotification } from '../lib/notifications';
 import { useChatStore } from '../store/chatStore';
+import { getAuthenticatedPool } from '../lib/pool';
+import { generalRelays, queryAllPages } from '../lib/relays';
+import { enqueueNostrEvent, startOutboxSync } from '../lib/outbox';
 
 const shouldSuppress = (chatId) => {
   const state = useChatStore.getState();
@@ -9,12 +14,6 @@ const shouldSuppress = (chatId) => {
   const isArchived = state.archivedChats?.includes(chatId);
   return isMuted || isArchived;
 };
-import { useCallback, useEffect } from 'react';
-
-import { getAuthenticatedPool } from '../lib/pool';
-import { generalRelays, queryAllPages } from '../lib/relays';
-import { saveMessage } from '../db';
-import { enqueueNostrEvent, startOutboxSync } from '../lib/outbox';
 
 export function useNIP44DM({ identity }) {
   const setDms = useChatStore((s) => s.setDms);
