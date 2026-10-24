@@ -2,10 +2,12 @@ import { useState } from 'react';
 import { Copy, X } from 'lucide-react';
 import { useChatStore } from '../../store/chatStore';
 
+const EMPTY_PROFILE = {};
+
 export default function MyProfileModal({ identity }) {
   const isOpen = useChatStore((state) => state.showMyProfile);
   const setShowMyProfile = useChatStore((state) => state.setShowMyProfile);
-  const profile = useChatStore((state) => state.profiles[identity?.pk] || {});
+  const profile = useChatStore((state) => (identity?.pk ? state.profiles[identity.pk] : undefined)) || EMPTY_PROFILE;
   const [notice, setNotice] = useState('');
   const [error, setError] = useState('');
   if (!isOpen) return null;
