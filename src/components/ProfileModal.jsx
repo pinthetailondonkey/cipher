@@ -4,8 +4,8 @@ import { useProfiles } from '../useProfiles';
 import { useVouchCount } from '../hooks/useVouchCount';
 import { useReputation } from '../hooks/useReputation';
 import Avatar from './ui/Avatar';
-import Button from './ui/Button';
-import { pressable } from './ui/Button';
+import Button, { pressable } from './ui/Button';
+import { copyText } from '../lib/copyText';
 
 export default function ProfileModal({ pubkey, identity, onClose, onMessage }) {
   const profiles = useProfiles(pubkey ? [pubkey] : []);
@@ -21,8 +21,8 @@ export default function ProfileModal({ pubkey, identity, onClose, onMessage }) {
   const copyNpub = async () => {
     try {
       const { nip19 } = await import('nostr-tools');
-      await navigator.clipboard.writeText(nip19.npubEncode(pubkey));
-      setNotice('Copied!');
+      const ok = await copyText(nip19.npubEncode(pubkey));
+      if (ok) setNotice('Copied!');
     } catch (copyError) {
       console.error('[ProfileModal] Could not copy npub:', copyError);
       setError('Could not copy the public key.');
