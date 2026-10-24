@@ -90,7 +90,7 @@ export default function Discover({ identity, onJoined }) {
   return (
     <div className="relative flex h-full w-full flex-col bg-transparent">
       <div className="px-4 pb-3 pt-2">
-        <div className="flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 backdrop-blur-md">
+        <div className="flex items-center gap-2 rounded-2xl border border-white/15 bg-white/10 px-4 py-3 shadow-2xl backdrop-blur-2xl">
           <Search size={16} className="text-white/40" />
           <input
             type="text"
@@ -115,7 +115,7 @@ export default function Discover({ identity, onJoined }) {
             <p className="text-[15px] font-semibold text-white">No groups</p>
           </div>
         ) : (
-          <div className="mx-4 overflow-hidden rounded-2xl border border-white/10 bg-[#0A0A0A]/60 shadow-2xl backdrop-blur-2xl">
+          <div className="mx-4 overflow-hidden rounded-3xl border border-white/15 bg-white/10 shadow-2xl backdrop-blur-2xl">
           {displayGroups.map((group) => {
             const Icon = group.isChannel ? Megaphone : Users;
             return (
@@ -127,7 +127,7 @@ export default function Discover({ identity, onJoined }) {
                 className="flex w-full items-center justify-between border-b border-white/5 p-4 text-left last:border-0 active:bg-white/5 disabled:opacity-50"
               >
                 <div className="flex items-center gap-3">
-                  <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/5 text-blue-500">
+                  <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-white/15 bg-white/10 text-blue-400">
                     <Icon size={22} />
                   </div>
                   <div>
