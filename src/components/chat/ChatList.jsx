@@ -34,14 +34,14 @@ export default function ChatList({ onOpenChat }) {
   );
 
   if (allChats.length === 0) {
-    return <p className="mt-10 text-center text-[13px] text-white/40">No chats yet. Tap + to start.</p>;
+    return <p className="mx-4 mt-6 rounded-2xl border border-white/10 bg-[#111] px-4 py-10 text-center text-[13px] text-white/40">No chats yet. Tap + to start.</p>;
   }
 
   return (
-    <div className="flex w-full flex-col bg-black">
-      {allChats.map((chat, i) => {
-        const isLast = i === allChats.length - 1;
-        const row = `flex w-full items-center justify-between border-white/5 px-4 py-3 text-left active:bg-white/10 ${pressable} ${!isLast ? 'border-b' : ''}`;
+    <div className="px-4 pb-4">
+      <div className="overflow-hidden rounded-2xl border border-white/10 bg-[#111]">
+      {allChats.map((chat) => {
+        const row = `flex w-full items-center justify-between border-b border-white/5 p-4 text-left last:border-0 active:bg-white/5 ${pressable}`;
 
         if (chat.type === 'dm') {
           const profile = profiles[chat.id] || { displayName: `User ${chat.id.slice(0, 4)}`, picture: null };
@@ -89,7 +89,7 @@ export default function ChatList({ onOpenChat }) {
             className={row}
           >
             <span className="flex min-w-0 items-center gap-3">
-              <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-white/10 bg-[#111] text-blue-500">
+              <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-white/10 bg-black text-blue-500">
                 <Icon size={22} />
               </span>
               <span className="min-w-0">
@@ -109,6 +109,7 @@ export default function ChatList({ onOpenChat }) {
           </button>
         );
       })}
+      </div>
     </div>
   );
 }
