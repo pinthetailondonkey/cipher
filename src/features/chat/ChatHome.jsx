@@ -38,7 +38,7 @@ export default function ChatHome({ identity, openChat, createGroup, fetchChats }
       <div className="mb-2 flex items-center justify-between px-4 pt-3">
         <div className="flex items-center gap-3">
           <Logo size={28} />
-          <h2 className="text-2xl font-black tracking-tighter text-white">Cipher</h2>
+          <h2 className="text-2xl font-bold tracking-tight text-white">Chats</h2>
         </div>
         <div className="flex gap-1">
           <button type="button" onClick={() => setShowBookmarks(true)} className="p-2 text-white/50 hover:text-white"><Bookmark size={20} /></button>
