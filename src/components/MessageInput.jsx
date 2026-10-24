@@ -25,7 +25,7 @@ export default function MessageInput({ sendMessage, handleImageUpload, startReco
   };
 
   return (
-    <form onSubmit={submit} className="flex items-end gap-2 border-t border-white/10 bg-black px-3 py-3 pb-safe">
+    <form onSubmit={submit} className="flex items-end gap-2 border-t border-white/10 bg-black px-3 py-3">
       <input
         ref={fileInput}
         type="file"
