@@ -34,14 +34,14 @@ export default function ChatHeader({ mode }) {
   };
 
   return (
-    <div className="sticky top-0 z-40 flex items-center justify-between border-b border-white/10 bg-[#0a0a0a]/90 px-3 py-2 backdrop-blur-xl">
+    <div className="sticky top-0 z-40 flex items-center justify-between border-b border-white/5 bg-black px-2 py-3">
       <div className="flex min-w-0 items-center gap-2">
-        <button onClick={() => setView('list')} className="p-2 -ml-1 text-white/70 hover:text-white" aria-label="Back">
+        <button onClick={() => setView('list')} className="p-2 text-white" aria-label="Back">
           <ArrowLeft size={22} />
         </button>
         <button type="button" className="min-w-0 text-left" onClick={() => mode === 'dm' && setProfilePubkey(activeDm)}>
-          <h2 className="truncate text-[16px] font-semibold leading-tight text-white">{title}</h2>
-          <p className={`flex items-center gap-1 text-[11px] font-medium ${someoneTyping ? 'text-blue-400' : 'text-blue-500'}`}>
+          <h2 className="truncate text-2xl font-bold tracking-tight text-white">{title}</h2>
+          <p className={`flex items-center gap-1 text-[13px] ${someoneTyping ? 'text-blue-400' : 'text-white/40'}`}>
             {someoneTyping ? (
               <>
                 typing
