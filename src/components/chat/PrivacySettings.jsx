@@ -57,21 +57,21 @@ export default function PrivacySettings({ onBack }) {
   const update = (patch) => setLocal(setPrivacy(patch));
 
   return (
-    <div className="h-full overflow-y-auto bg-black pb-8">
+    <div className="h-full overflow-y-auto bg-transparent pb-8">
       <ScreenHeader title="Privacy" onBack={onBack} />
       <div className="space-y-4 p-4">
-        <div className="overflow-hidden rounded-2xl border border-white/10 bg-[#111]">
+        <div className="overflow-hidden rounded-2xl border border-white/10 bg-[#0A0A0A]/60 shadow-2xl backdrop-blur-2xl">
           <Choice icon={Phone} label="Calls" hint="Voice only. Video is not available." value={privacy.calls} options={[{ id: 'everyone', label: 'Everyone' }, { id: 'nobody', label: 'Nobody' }]} onChange={(calls) => update({ calls })} />
           <Choice icon={Eye} label="Last seen" hint="Nobody also stops your typing status." value={privacy.lastSeen} options={[{ id: 'everyone', label: 'Everyone' }, { id: 'nobody', label: 'Nobody' }]} onChange={(lastSeen) => update({ lastSeen })} />
           <Choice icon={Image} label="Profile photo" hint="Hidden the next time you save your profile." value={privacy.profilePhoto} options={[{ id: 'everyone', label: 'Everyone' }, { id: 'nobody', label: 'Nobody' }]} onChange={(profilePhoto) => update({ profilePhoto })} />
           <Choice icon={Users} label="Groups" hint="Nobody means only you can join." value={privacy.groups} options={[{ id: 'everyone', label: 'Everyone' }, { id: 'nobody', label: 'Nobody' }]} onChange={(groups) => update({ groups })} />
         </div>
-        <div className="overflow-hidden rounded-2xl border border-white/10 bg-[#111]">
+        <div className="overflow-hidden rounded-2xl border border-white/10 bg-[#0A0A0A]/60 shadow-2xl backdrop-blur-2xl">
           <Toggle icon={CheckCheck} label="Read receipts" hint="Let people know when you opened their chat." checked={privacy.readReceipts} onChange={(readReceipts) => update({ readReceipts })} />
           <Toggle icon={Keyboard} label="Typing" hint="Show when you are writing." checked={privacy.typing && privacy.lastSeen !== 'nobody'} onChange={(typing) => update({ typing })} />
           <Toggle icon={Forward} label="Forwarding" hint="When off, new messages cannot be forwarded." checked={privacy.forwarding} onChange={(forwarding) => update({ forwarding })} />
         </div>
-        <div className="overflow-hidden rounded-2xl border border-white/10 bg-[#111]">
+        <div className="overflow-hidden rounded-2xl border border-white/10 bg-[#0A0A0A]/60 shadow-2xl backdrop-blur-2xl">
           {(blocked || []).length === 0 ? (
             <p className="flex items-center gap-3 p-4 text-[15px] text-white/40"><Ban size={18} /> No blocked people</p>
           ) : blocked.map((pubkey) => {

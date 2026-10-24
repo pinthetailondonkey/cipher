@@ -135,12 +135,12 @@ export default function Shop({ identity, setActiveTab }) {
   };
 
   return (
-    <div className="flex h-full w-full flex-col bg-black">
+    <div className="flex h-full w-full flex-col bg-transparent">
       <div className="px-4 pb-2 pt-4">
         <h1 className="text-2xl font-bold tracking-tight text-white">Shop</h1>
       </div>
       <div className="px-4 pb-3">
-        <div className="flex items-center gap-2 rounded-2xl border border-white/10 bg-[#111] px-4 py-3">
+        <div className="flex items-center gap-2 rounded-2xl border border-white/10 bg-[#0A0A0A]/60 shadow-2xl backdrop-blur-2xl px-4 py-3">
           <Search size={16} className="text-white/40" />
           <input
             type="text"
@@ -171,7 +171,7 @@ export default function Shop({ identity, setActiveTab }) {
         ) : (
           <div className="grid grid-cols-2 gap-3 px-4 pb-4">
             {displayProducts.map(p => (
-              <div key={p.id} className="overflow-hidden rounded-2xl border border-white/10 bg-[#111]">
+              <div key={p.id} className="overflow-hidden rounded-2xl border border-white/10 bg-[#0A0A0A]/60 shadow-2xl backdrop-blur-2xl">
                 <div className="relative h-28 w-full overflow-hidden bg-black">
                   {p.image ? (
                     <img src={p.image} alt="" className="h-full w-full object-cover" />

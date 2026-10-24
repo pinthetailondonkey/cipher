@@ -88,12 +88,12 @@ export default function Discover({ identity, onJoined }) {
   };
 
   return (
-    <div className="relative flex h-full w-full flex-col bg-black">
+    <div className="relative flex h-full w-full flex-col bg-transparent">
       <div className="px-4 pb-2 pt-4">
         <h1 className="text-2xl font-bold tracking-tight text-white">Groups</h1>
       </div>
       <div className="px-4 pb-3">
-        <div className="flex items-center gap-2 rounded-2xl border border-white/10 bg-[#111] px-4 py-3">
+        <div className="flex items-center gap-2 rounded-2xl border border-white/10 bg-[#0A0A0A]/60 shadow-2xl backdrop-blur-2xl px-4 py-3">
           <Search size={16} className="text-white/40" />
           <input
             type="text"
@@ -118,7 +118,7 @@ export default function Discover({ identity, onJoined }) {
             <p>No groups found</p>
           </div>
         ) : (
-          <div className="mx-4 overflow-hidden rounded-2xl border border-white/10 bg-[#111]">
+          <div className="mx-4 overflow-hidden rounded-2xl border border-white/10 bg-[#0A0A0A]/60 shadow-2xl backdrop-blur-2xl">
           {displayGroups.map((group) => {
             const Icon = group.isChannel ? Megaphone : Users;
             return (

@@ -49,5 +49,15 @@ function MainApp() {
 }
 
 export default function App() {
-  return <ErrorBoundary><MainApp /></ErrorBoundary>;
+  return (
+    <ErrorBoundary>
+      <div className="relative min-h-[100dvh] bg-black">
+        <div className="pointer-events-none fixed inset-0">
+          <div className="absolute left-[-10%] top-[-10%] h-[50%] w-[50%] rounded-full bg-blue-600/20 blur-[120px]" />
+          <div className="absolute bottom-[-10%] right-[-10%] h-[50%] w-[50%] rounded-full bg-purple-600/10 blur-[120px]" />
+        </div>
+        <MainApp />
+      </div>
+    </ErrorBoundary>
+  );
 }
