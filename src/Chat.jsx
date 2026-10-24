@@ -443,54 +443,54 @@ export default function Chat({ identity }) {
     return () => clearInterval(interval);
   }, [setTypingUsers, setGroupTypingUsers]);
 
+  const groupSenderKey = useMemo(() => {
+    if (!activeGroup?.id) return '';
+    return [...new Set((groupMessages[activeGroup.id] || []).map((message) => message.pubkey))].sort().join(',');
+  }, [activeGroup?.id, groupMessages]);
+
   useEffect(() => {
-    if (activeGroup && groupMessages[activeGroup.id]) {
-      const pks = new Set(groupMessages[activeGroup.id].map(m => m.pubkey));
-      if (pks.size > 0) fetchProfilesForPubkeys([...pks]);
-    }
-  }, [activeGroup, groupMessages]);
+    if (!groupSenderKey) return;
+    fetchProfilesForPubkeys(groupSenderKey.split(','));
+  }, [groupSenderKey]);
 
   useEffect(() => {
     const interval = setInterval(async () => {
       const now = Math.floor(Date.now() / 1000);
-      setDms(prev => {
-        let changed = false;
-        const next = { ...prev };
-        for (const [pk, msgs] of Object.entries(prev)) {
-          const timerStr = disappearingTimers[pk];
-          if (timerStr && timerStr !== 'off') {
-            let seconds = 0;
-            if (timerStr.endsWith('m')) seconds = parseInt(timerStr) * 60;
-            else if (timerStr === '1h') seconds = 3600;
-            else if (timerStr === '24h') seconds = 86400;
-            else if (timerStr === '7d') seconds = 604800;
-            if (seconds > 0) {
-              const filtered = msgs.filter(m => (now - m.timestamp) < seconds);
-              if (filtered.length !== msgs.length) { next[pk] = filtered; changed = true; }
-            }
-          }
-        }
-        return changed ? next : prev;
+      const expiredIds = [];
+    const expire = (messages, timerStr) => {
+      if (!timerStr || timerStr === 'off') return messages;
+      let seconds = 0;
+      if (String(timerStr).endsWith('m')) seconds = parseInt(timerStr, 10) * 60;
+      else if (timerStr === '1h') seconds = 3600;
+      else if (timerStr === '24h') seconds = 86400;
+      else if (timerStr === '7d') seconds = 604800;
+      if (!seconds) return messages;
+      const kept = messages.filter((message) => {
+        const keep = (now - message.timestamp) < seconds;
+        if (!keep && message.id) expiredIds.push(message.id);
+        return keep;
       });
-      setGroupMessages(prev => {
-        let changed = false;
-        const next = { ...prev };
-        for (const [gid, msgs] of Object.entries(prev)) {
-          const timerStr = disappearingTimers[gid];
-          if (timerStr && timerStr !== 'off') {
-            let seconds = 0;
-            if (timerStr.endsWith('m')) seconds = parseInt(timerStr) * 60;
-            else if (timerStr === '1h') seconds = 3600;
-            else if (timerStr === '24h') seconds = 86400;
-            else if (timerStr === '7d') seconds = 604800;
-            if (seconds > 0) {
-              const filtered = msgs.filter(m => (now - m.timestamp) < seconds);
-              if (filtered.length !== msgs.length) { next[gid] = filtered; changed = true; }
-            }
-          }
-        }
-        return changed ? next : prev;
-      });
+      return kept.length === messages.length ? messages : kept;
+    };
+    setDms((prev) => {
+      let changed = false;
+      const next = { ...prev };
+      for (const [pk, msgs] of Object.entries(prev)) {
+        const kept = expire(msgs, disappearingTimers[pk]);
+        if (kept !== msgs) { next[pk] = kept; changed = true; }
+      }
+      return changed ? next : prev;
+    });
+    setGroupMessages((prev) => {
+      let changed = false;
+      const next = { ...prev };
+      for (const [gid, msgs] of Object.entries(prev)) {
+        const kept = expire(msgs, disappearingTimers[gid]);
+        if (kept !== msgs) { next[gid] = kept; changed = true; }
+      }
+      return changed ? next : prev;
+    });
+    if (expiredIds.length) db.messages.bulkDelete(expiredIds).catch((error) => console.error('[disappearing] Could not delete expired messages:', error));
     }, 5000);
     return () => clearInterval(interval);
   }, [disappearingTimers, setDms, setGroupMessages]);

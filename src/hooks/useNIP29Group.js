@@ -193,6 +193,7 @@ function connectGroupSocket(session) {
   session.ws = ws;
 
   ws.onopen = () => {
+    session.attempt = 0;
     console.log('✅ Group WS connected');
     window.dispatchEvent(new CustomEvent('cipher:relay-connected', { detail: { url: GROUP_RELAY_URL } }));
   };
@@ -211,8 +212,30 @@ function connectGroupSocket(session) {
       waiter.reject(new Error('Group relay socket closed'));
       session.okWaiters.delete(eventId);
     }
-    if (!session.closed) session.reconnectTimer = setTimeout(() => connectGroupSocket(session), 3000);
+    if (!session.closed) {
+      const attempt = session.attempt || 0;
+      session.attempt = attempt + 1;
+      const delay = Math.min(30000, 1000 * (2 ** Math.min(attempt, 5)));
+      session.reconnectTimer = setTimeout(() => connectGroupSocket(session), delay);
+    }
   };
+}
+
+export function closeGroupSessions() {
+  for (const session of groupSessions.values()) {
+    session.closed = true;
+    if (session.reconnectTimer) clearTimeout(session.reconnectTimer);
+    try { session.ws?.close(); } catch {}
+    rejectAuthWaiters(session, new Error('Signed out'));
+    for (const waiter of session.okWaiters.values()) {
+      clearTimeout(waiter.timer);
+      waiter.reject(new Error('Signed out'));
+    }
+    session.okWaiters.clear();
+    session.listeners.clear();
+    session.subs.clear();
+  }
+  groupSessions.clear();
 }
 
 function openGroupRelaySession(identity) {

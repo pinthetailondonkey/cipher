@@ -615,6 +615,8 @@ export function useIdentity() {
     try {
       const { clearPool } = await import('./lib/pool');
       clearPool();
+      const { closeGroupSessions } = await import('./hooks/useNIP29Group');
+      closeGroupSessions();
     } catch (error) {
       console.error('[identity] Could not close relay connections:', error);
     }
@@ -639,6 +641,8 @@ export function useIdentity() {
     try {
       const { clearPool } = await import('./lib/pool');
       clearPool();
+      const { closeGroupSessions } = await import('./hooks/useNIP29Group');
+      closeGroupSessions();
       const { closeDB } = await import('./db');
       closeDB();
 
