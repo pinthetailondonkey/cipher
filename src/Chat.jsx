@@ -1312,120 +1312,58 @@ export default function Chat({ identity }) {
 
     if (rawQuery.startsWith('@')) {
       const usernameToFind = rawQuery.slice(1).toLowerCase().trim();
-      console.log('🔍 [Search] Looking for username:', usernameToFind);
       
       try {
         const pool = await getAuthenticatedPool(identity);
 
-        // 1. INSTANT LOCAL CHECK (Vaults)
+        // 1. Check Local Vaults
         const vaults = JSON.parse(localStorage.getItem('cipher_vaults') || '{}');
         for (const [pk, data] of Object.entries(vaults)) {
-          const h = (data.handle || '').toLowerCase();
-          const dn = (data.displayName || '').toLowerCase();
-          if (h === usernameToFind || dn === usernameToFind) {
-            console.log('✅ [Search] Found in local vaults:', pk);
-            state.setSearchResults([{ type: 'user', pubkey: pk, name: '@' + (data.handle || usernameToFind), picture: null }]);
+          if ((data.handle || '').toLowerCase() === usernameToFind) {
+            state.setSearchResults([{ type: 'user', pubkey: pk, name: '@' + usernameToFind, picture: null }]);
             state.setIsSearching(false);
             return;
           }
         }
 
-        // 2. CIPHER REGISTRY (kind 10003)
-        const regEvents = await queryWithTimeout(pool, ['wss://groups.aegispayhq.com'], { kinds: [10003], limit: 500 }, 4000);
+        // 2. Check Cipher Registry on YOUR relay
+        const regEvents = await queryWithTimeout(pool, ['wss://groups.aegispayhq.com'], { kinds: [10003], limit: 500 }, 3000);
         const regMatches = regEvents.filter(ev => {
           const usernameTag = ev.tags.find(t => t[0] === 'username')?.[1];
-          const tTag = ev.tags.find(t => t[0] === 't' && t[1] === 'cipher_username_' + usernameToFind);
-          return usernameTag === usernameToFind || tTag;
+          return usernameTag === usernameToFind;
         });
+        
         if (regMatches.length > 0) {
-          console.log('✅ [Search] Found in Cipher Registry');
-          state.setSearchResults([{ type: 'user', pubkey: regMatches[0].pubkey, name: '@' + usernameToFind, picture: null }]);
+          const targetPubkey = regMatches[0].pubkey;
+          // Fetch their profile picture from public relay
+          const pEvents = await queryWithTimeout(pool, ['wss://relay.primal.net'], { kinds: [0], authors: [targetPubkey] }, 3000);
+          let pic = null;
+          if (pEvents.length > 0) {
+            try { pic = JSON.parse(pEvents[0].content).picture; } catch(e){}
+          }
+          state.setSearchResults([{ type: 'user', pubkey: targetPubkey, name: '@' + usernameToFind, picture: pic }]);
           state.setIsSearching(false);
           return;
         }
 
-        // 3. VERTEX DVM SEARCH
-        let dvmPool;
-        try {
-          const { finalizeEvent } = await import('nostr-tools');
-          dvmPool = new SimplePool();
-          const requestEvent = finalizeEvent({
-            kind: 5315, created_at: Math.floor(Date.now() / 1000),
-            tags: [['param', 'search', usernameToFind], ['param', 'limit', '10']], content: ''
-          }, identity.sk);
-          await Promise.allSettled(dvmPool.publish(['wss://groups.aegispayhq.com'], requestEvent));
-          
-          const responseEvents = await Promise.race([
-            dvmPool.querySync(['wss://groups.aegispayhq.com'], { kinds: [6315], '#e': [requestEvent.id] }),
-            new Promise(resolve => setTimeout(() => resolve([]), 3500))
-          ]);
-
-          if (false && responseEvents.length > 0) {
-            const pubkeys = JSON.parse(responseEvents[0].content).map(p => p.pubkey);
-            if (pubkeys.length > 0) {
-              const profileEvents = await pool.querySync(['wss://groups.aegispayhq.com'], { kinds: [0], authors: pubkeys });
-              const profiles = profileEvents.map(ev => {
-                const data = JSON.parse(ev.content);
-                return { type: 'user', pubkey: ev.pubkey, name: data.display_name || data.name || ev.pubkey.slice(0, 8), picture: data.picture };
-              });
-              if (profiles.length > 0) {
-                console.log('✅ [Search] Found via Vertex DVM');
-                state.setSearchResults(profiles);
-                state.setIsSearching(false);
-                return;
-              }
-            }
-          }
-        } catch (e) {
-          console.warn('Vertex DVM error:', e);
-        } finally {
-          dvmPool?.destroy();
-        }
-
-        // 4. NIP-50 FALLBACK (With strict filtering to kill random people)
-        console.log('🔍 [Search] Querying NIP-50 fallback...');
-        const publicSearchRelays = ['wss://groups.aegispayhq.com'];
-        const events = await Promise.race([
-          pool.querySync(publicSearchRelays, { kinds: [0], search: usernameToFind, limit: 100 }),
-          new Promise(resolve => setTimeout(() => resolve([]), 4000))
-        ]);
+        // 3. NIP-50 SEARCH (Looks up the exact name on public relays)
+        console.log('🔍 [Search] Using NIP-50 to find profile...');
+        const searchEvents = await queryWithTimeout(pool, ['wss://relay.primal.net'], { kinds: [0], search: usernameToFind, limit: 10 }, 3000);
         
-        if (events.length > 0) {
-          // THE FIX: Filter out the trash (like Retardino)
-          const profiles = events.map(ev => {
-            try {
-              const d = JSON.parse(ev.content);
-              const n = (d.name || '').toLowerCase();
-              const dn = (d.display_name || '').toLowerCase();
-              const nip05 = (d.nip05 || '').toLowerCase().split('@')[0];
-              
-              // Only include if the search term actually matches their name/username
-              if (n.includes(usernameToFind) || dn.includes(usernameToFind) || nip05.includes(usernameToFind)) {
-                return { type: 'user', pubkey: ev.pubkey, name: d.display_name || d.name || ev.pubkey.slice(0, 8), picture: d.picture };
-              }
-              return null;
-            } catch { return null; }
-          }).filter(Boolean);
-
-          if (profiles.length > 0) {
-            console.log('✅ [Search] Found via NIP-50 with strict filter');
-            state.setSearchResults(profiles);
-            state.setIsSearching(false);
-            return;
-          }
+        if (searchEvents.length > 0) {
+          let pic = null;
+          try { pic = JSON.parse(searchEvents[0].content).picture; } catch(e){}
+          state.setSearchResults([{ type: 'user', pubkey: searchEvents[0].pubkey, name: '@' + usernameToFind, picture: pic }]);
+          state.setIsSearching(false);
+          return;
         }
-
-        console.log('❌ [Search] Exhausted all methods. Not found.');
-        state.setSearchResults([]);
-        setToast({ type: 'error', message: '@' + usernameToFind + ' not found.' });
 
       } catch (err) {
-        console.error("Username search failed:", err);
-        state.setSearchResults([]);
-        setToast({ type: 'error', message: 'Search failed: ' + err.message });
-      } finally {
-        state.setIsSearching(false);
+        console.error('Username search failed:', err);
       }
+      
+      state.setSearchResults([]);
+      state.setIsSearching(false);
       return;
     }
 

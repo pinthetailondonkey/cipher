@@ -1,3 +1,4 @@
+import { db } from '../db';
 import { showNotification } from '../lib/notifications';
 import { useChatStore } from '../store/chatStore';
 
