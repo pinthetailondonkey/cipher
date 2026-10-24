@@ -24,13 +24,14 @@ export default function MyOrders({ dms = {}, profiles = {}, onBack, onOpenChat }
           <p className="mt-1 text-[13px] text-white/40">Orders you place with vendors will appear here.</p>
         </div>
       ) : (
-        <div>
+        <div className="p-4">
+          <div className="overflow-hidden rounded-2xl border border-white/10 bg-[#111]">
           {orders.map(({ message, vendorPubkey, update }) => {
             const product = message.data.product || message.data;
             const status = update?.data.status || message.data.status || 'pending';
             return (
-              <button type="button" key={message.id} onClick={() => onOpenChat?.(vendorPubkey)} className="flex w-full items-center gap-3 border-b border-white/5 px-4 py-3 text-left active:bg-white/10">
-                {product.image ? <img src={product.image} alt="" loading="lazy" className="h-12 w-12 shrink-0 object-cover" /> : <span className="flex h-12 w-12 shrink-0 items-center justify-center bg-[#111] text-white/40"><Package size={18} /></span>}
+              <button type="button" key={message.id} onClick={() => onOpenChat?.(vendorPubkey)} className="flex w-full items-center gap-3 border-b border-white/5 p-4 text-left last:border-0 active:bg-white/5">
+                {product.image ? <img src={product.image} alt="" loading="lazy" className="h-12 w-12 shrink-0 rounded-xl object-cover" /> : <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-black text-white/40"><Package size={18} /></span>}
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-[15px] font-semibold text-white">{product.title || product.name || 'Order'}</span>
                   <span className="block truncate text-[13px] text-white/40">{profiles[vendorPubkey]?.displayName || profiles[vendorPubkey]?.name || 'Seller'}</span>
@@ -39,6 +40,7 @@ export default function MyOrders({ dms = {}, profiles = {}, onBack, onOpenChat }
               </button>
             );
           })}
+          </div>
         </div>
       )}
     </div>

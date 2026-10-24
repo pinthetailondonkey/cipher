@@ -50,7 +50,7 @@ export default function CreateGroupModal({ isOpen, onClose, createGroup }) {
           About <span className="font-normal">(optional)</span>
           <textarea value={about} onChange={(event) => setAbout(event.target.value)} maxLength={500} rows={3} placeholder="What is this space for?" className="mt-2 w-full resize-none rounded-2xl border border-white/10 bg-[#111] p-4 text-[15px] text-white placeholder-white/30 focus:outline-none focus:border-blue-500/50" />
         </label>
-        <Button type="submit" disabled={!name.trim() || creating} className="mt-5 w-full">
+        <Button type="submit" disabled={!name.trim() || creating} className="mt-5 w-full rounded-2xl py-3.5 font-bold">
           {creating ? 'Creating…' : `Create ${isChannel ? 'channel' : 'group'}`}
         </Button>
       </form>

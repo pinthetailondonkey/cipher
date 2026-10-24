@@ -74,21 +74,25 @@ export default function VendorStorefront({ isOpen, onClose, vendorPubkey, profil
           </div>
           <button type="button" onClick={onClose} aria-label="Close storefront" className="p-2 text-white/45 hover:text-white"><X size={20} /></button>
         </header>
-        <button type="button" onClick={() => onOpenChat?.(vendorPubkey)} className="flex w-full items-center justify-center gap-2 border-b border-white/5 px-4 py-3 text-sm font-semibold text-blue-400 hover:bg-white/5"><MessageCircle size={17} /> Message vendor</button>
-        {loading && <p className="px-4 py-8 text-center text-[13px] text-white/40">Loading listings…</p>}
-        {error && <p role="alert" className="px-4 py-8 text-center text-[13px] text-red-400">{error}</p>}
-        {!loading && !error && products.length === 0 && <p className="px-4 py-8 text-center text-[13px] text-white/40">No active listings.</p>}
+        <div className="space-y-3 p-4">
+        <button type="button" onClick={() => onOpenChat?.(vendorPubkey)} className="flex w-full items-center justify-center gap-2 rounded-2xl bg-blue-600 py-3.5 font-bold text-white hover:bg-blue-500"><MessageCircle size={17} /> Message vendor</button>
+        {loading && <p className="rounded-2xl border border-white/10 bg-[#111] px-4 py-8 text-center text-[13px] text-white/40">Loading listings…</p>}
+        {error && <p role="alert" className="rounded-2xl border border-white/10 bg-[#111] px-4 py-8 text-center text-[13px] text-red-400">{error}</p>}
+        {!loading && !error && products.length === 0 && <p className="rounded-2xl border border-white/10 bg-[#111] px-4 py-8 text-center text-[13px] text-white/40">No active listings.</p>}
+        {products.length > 0 && <div className="overflow-hidden rounded-2xl border border-white/10 bg-[#111]">
         {products.map((product) => (
-          <article key={product.id} className="flex items-center gap-3 border-b border-white/5 px-4 py-4">
-            {product.image ? <img src={product.image} alt="" loading="lazy" className="h-12 w-12 rounded-full border border-white/10 object-cover" /> : <div className="flex h-12 w-12 items-center justify-center rounded-full border border-white/10 bg-[#111] text-white/40"><Package size={18} /></div>}
+          <article key={product.id} className="flex items-center gap-3 border-b border-white/5 p-4 last:border-0">
+            {product.image ? <img src={product.image} alt="" loading="lazy" className="h-12 w-12 rounded-xl border border-white/10 object-cover" /> : <div className="flex h-12 w-12 items-center justify-center rounded-xl border border-white/10 bg-black text-white/40"><Package size={18} /></div>}
             <div className="min-w-0 flex-1">
               <h3 className="truncate text-[15px] font-semibold text-white">{product.name}</h3>
               <p className="text-[13px] font-semibold text-blue-500">{product.price ? `${product.price} ${product.currency || ''}`.trim() : 'Ask'}</p>
               {product.description && <p className="truncate text-[13px] text-white/40">{product.description}</p>}
             </div>
-            <button type="button" onClick={() => onBuy?.(product, vendorPubkey)} className="rounded-full bg-blue-600 px-4 py-2 text-[13px] font-semibold text-white hover:bg-blue-500">Buy</button>
+            <button type="button" onClick={() => onBuy?.(product, vendorPubkey)} className="rounded-2xl bg-blue-600 px-4 py-2 text-[13px] font-bold text-white hover:bg-blue-500">Buy</button>
           </article>
         ))}
+        </div>}
+        </div>
       </section>
     </div>
   );
