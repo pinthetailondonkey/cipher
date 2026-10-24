@@ -20,8 +20,9 @@ function messageText(data) {
   return data.message || data.caption || '';
 }
 
-export default function MessageBubble({ message, data, onAction, senderName, isPinnedListing = false }) {
+export default function MessageBubble({ message, data, onAction, senderName, isPinnedListing = false, showAvatar = false, avatarUrl = '', avatarInitial = '?' }) {
   const content = data || message?.data || {};
+  const text = messageText(content) || (typeof message?.rawContent === 'string' && !message.rawContent.startsWith('{') ? message.rawContent : '');
   const isSender = !!message?.isSender;
   const timestamp = Number(message?.timestamp);
   const validTimestamp = Number.isFinite(timestamp) ? timestamp : null;
@@ -66,10 +67,17 @@ export default function MessageBubble({ message, data, onAction, senderName, isP
       layout
       layoutId={layoutId}
       transition={{ layout: { duration: 0.24 } }}
-      className={`flex w-full ${isSender ? 'justify-end' : 'justify-start'} px-3 py-1`}
+      className={`flex w-full items-end gap-2 ${isSender ? 'justify-end' : 'justify-start'} px-3 py-0.5`}
     >
-      <div className={`max-w-[84%] min-w-0 rounded-2xl px-3 py-2 ${isSender ? 'rounded-br-md bg-blue-600 text-white' : 'rounded-bl-md border border-white/10 bg-[#111] text-white'}`}>
-        {!isSender && senderName && <p className="mb-1 text-[11px] font-semibold text-blue-400">{senderName}</p>}
+      {!isSender && showAvatar && (
+        avatarUrl ? (
+          <img src={avatarUrl} alt="" className="h-8 w-8 shrink-0 rounded-full object-cover" />
+        ) : (
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-white/10 bg-[#111] text-[12px] font-semibold text-blue-500">{avatarInitial}</span>
+        )
+      )}
+      <div className={`max-w-[78%] min-w-0 rounded-2xl px-3 py-2 ${isSender ? 'rounded-br-md bg-blue-600 text-white' : 'rounded-bl-md border border-white/10 bg-[#111] text-white'}`}>
+        {!isSender && senderName && <p className="mb-1 text-[11px] font-semibold text-blue-500">{senderName}</p>}
         {content.type === 'image' && content.url && (
           <a href={content.url} target="_blank" rel="noreferrer" className="block">
             <img src={content.url} alt="Shared image" loading="lazy" className="max-h-72 max-w-full rounded-lg object-contain" />
@@ -104,16 +112,16 @@ export default function MessageBubble({ message, data, onAction, senderName, isP
             ))}
           </div>
         )}
-        {messageText(content) && (
-          <p className="whitespace-pre-wrap break-words text-[14px] leading-relaxed">{messageText(content)}</p>
+        {text && (
+          <p className="whitespace-pre-wrap break-words text-[15px] leading-snug">{text}</p>
         )}
         {isSender && deliveryLabel && (
           <p role="status" className={`mt-1 text-[11px] ${message?.deliveryStatus === 'failed' ? 'text-rose-300' : 'text-white/45'}`}>
             {deliveryLabel}
           </p>
         )}
-        {!messageText(content) && !content.url && !content.urls && !paymentRows.length && (
-          <p className="text-[13px] text-white/50">Message content unavailable</p>
+        {!text && !content.url && !content.urls && !paymentRows.length && content.type !== 'image' && content.type !== 'audio' && (
+          <p className="whitespace-pre-wrap break-words text-[15px] leading-snug text-white/70">{typeof content === 'string' ? content : 'Message content unavailable'}</p>
         )}
         <div className="mt-1 flex items-center justify-end gap-2">
           {message?.edited && <span className="text-[10px] text-white/40">edited</span>}
