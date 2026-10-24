@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Check, Copy, X } from 'lucide-react';
+import { Check, Copy, Loader2, X } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 
 function cipherOrder(product) {
@@ -21,6 +21,7 @@ function cipherOrder(product) {
 
 export default function OneTapCheckout({ product, onConfirmOrder, onClose }) {
   const [confirmed, setConfirmed] = useState(false);
+  const [sending, setSending] = useState(false);
   const [orderError, setOrderError] = useState('');
   const [copied, setCopied] = useState('');
   const order = cipherOrder(product);
@@ -42,15 +43,17 @@ export default function OneTapCheckout({ product, onConfirmOrder, onClose }) {
   };
 
   const confirmOrder = async () => {
-    if (confirmed) return;
-    setConfirmed(true);
+    if (confirmed || sending) return;
+    setSending(true);
     setOrderError('');
     try {
       await onConfirmOrder?.(order);
+      setConfirmed(true);
     } catch (error) {
       console.error('[OneTapCheckout] Order confirmation failed:', error);
-      setConfirmed(false);
       setOrderError(error?.message || 'Could not send your order request.');
+    } finally {
+      setSending(false);
     }
   };
 
@@ -87,8 +90,8 @@ export default function OneTapCheckout({ product, onConfirmOrder, onClose }) {
           </div>
         ))}
         {orderError && <p role="alert" className="mt-4 text-sm text-red-400">{orderError}</p>}
-        <button type="button" onClick={confirmOrder} disabled={confirmed} className="mt-5 flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 py-3 text-sm font-semibold text-white hover:bg-blue-500 disabled:opacity-60">
-          {confirmed ? <><Check size={17} /> Order sent to the seller</> : 'Confirm and message seller'}
+        <button type="button" onClick={confirmOrder} disabled={confirmed || sending} className="mt-5 flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 py-3 text-sm font-semibold text-white hover:bg-blue-500 disabled:opacity-60">
+          {sending ? <><Loader2 size={17} className="animate-spin" /> Sending order…</> : confirmed ? <><Check size={17} /> Order sent to the seller</> : 'Confirm'}
         </button>
       </div>
     </div>

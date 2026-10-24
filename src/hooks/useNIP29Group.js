@@ -55,6 +55,18 @@ async function fetchGroupMetadata(identity, groupId) {
   };
 }
 
+function sameOutgoingMessage(message, event, identity, clientId) {
+  if (!message) return false;
+  if (message.id === event.id) return true;
+  if (clientId && (message.id === clientId || message.clientId === clientId)) return true;
+  return !!(
+    message.isSender
+    && event.pubkey === identity?.pk
+    && String(message.id || '').startsWith('temp-')
+    && Math.abs((message.timestamp || 0) - (event.created_at || 0)) <= 8
+  );
+}
+
 function mergeGroupMessage(existing, incoming) {
   if (!existing) return incoming;
   const rawContent = incoming.rawContent || existing.rawContent || null;
@@ -740,9 +752,7 @@ export function useNIP29Group({ identity }) {
 
       setGroupMessages(prev => {
         const groupMsgs = prev[groupId] || [];
-        const existingIndex = groupMsgs.findIndex((m) => (
-          m.id === event.id || (clientId && (m.id === clientId || m.clientId === clientId))
-        ));
+        const existingIndex = groupMsgs.findIndex((m) => sameOutgoingMessage(m, event, identity, clientId));
 
         const baseMsg = {
           id: event.id, clientId, isSender: event.pubkey === identity.pk,
@@ -800,7 +810,7 @@ export function useNIP29Group({ identity }) {
           const clientId = event.tags.find(t => t[0] === 'client')?.[1];
           setGroupMessages(prev => {
             const groupMsgs = prev[gid] || [];
-            const idx = groupMsgs.findIndex((m) => m.id === event.id || (clientId && (m.id === clientId || m.clientId === clientId)));
+            const idx = groupMsgs.findIndex((m) => sameOutgoingMessage(m, event, identity, clientId));
             const newMsg = {
               id: event.id, clientId, isSender: event.pubkey === identity.pk,
               pubkey: event.pubkey, timestamp: event.created_at,

@@ -164,7 +164,7 @@ export default function Shop({ identity, setActiveTab }) {
         ) : displayProducts.length === 0 ? (
           <div className="mt-20 text-center text-white/30">
             <ShoppingBag size={48} className="mx-auto mb-4 opacity-50" />
-            <p>No products found on the network yet.</p>
+            <p>No products found</p>
           </div>
         ) : (
           <div className="grid grid-cols-2 gap-4 p-4">
