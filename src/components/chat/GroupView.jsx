@@ -74,9 +74,14 @@ export default function GroupView({
       if (current?.id === profile.id && (current.name !== profile.name || current.picture !== profile.picture)) {
         useChatStore.getState().setActiveGroup({ ...current, ...profile });
       }
-      useChatStore.getState().setGroups((groups) => (groups || []).map((group) => (
-        group.id === profile.id ? { ...group, ...profile } : group
-      )));
+      useChatStore.getState().setGroups((groups) => {
+        const list = Array.isArray(groups) ? groups : [];
+        const existing = list.find((group) => group.id === profile.id);
+        if (existing && existing.name === profile.name && (existing.picture || '') === (profile.picture || '') && (existing.about || '') === (profile.about || '')) {
+          return list;
+        }
+        return list.map((group) => (group.id === profile.id ? { ...group, ...profile } : group));
+      });
     }).catch((error) => console.warn('[GroupView] Group name lookup failed:', error));
     return () => { cancelled = true; };
   }, [activeGroup?.id, identity?.pk]);
