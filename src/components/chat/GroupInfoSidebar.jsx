@@ -144,7 +144,7 @@ export default function GroupInfoSidebar({
     <AnimatePresence>
       {isOpen && group && (
         <motion.div
-          className="fixed inset-0 z-[980] flex justify-end bg-black/70"
+          className="fixed inset-0 z-[980] flex justify-end bg-black/50 backdrop-blur-sm"
           role="presentation"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
