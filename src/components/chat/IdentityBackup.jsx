@@ -5,6 +5,7 @@ export default function IdentityBackup({ identity, onClose }) {
   const [showSecret, setShowSecret] = useState(false);
   const [secretKey, setSecretKey] = useState('');
   const [copied, setCopied] = useState('');
+  const [exportReady, setExportReady] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [enablingBiometric, setEnablingBiometric] = useState(false);
   const [biometricMessage, setBiometricMessage] = useState('');
@@ -56,7 +57,10 @@ export default function IdentityBackup({ identity, onClose }) {
   };
   const downloadRecoveryFile = async () => {
     if (!identity?.sk || exporting) return;
-    if (!window.confirm('This file contains your secret key and 12-word recovery phrase. Anyone with the file can control your account. Save it somewhere private and never share it. Continue?')) return;
+    if (!exportReady) {
+      setCopied('Confirm that you understand this file contains your secret key.');
+      return;
+    }
     setExporting(true);
     try {
       const mnemonic = await identity.getMnemonic();
@@ -142,7 +146,11 @@ export default function IdentityBackup({ identity, onClose }) {
         <button type="button" onClick={copyPhrase} disabled={!identity?.sk} className="mb-3 flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-blue-600 text-sm font-semibold text-white hover:bg-blue-500 disabled:opacity-40">
           <Copy size={16} /> {copied === 'phrase' ? 'Copied!' : 'Copy 12-word phrase'}
         </button>
-        <button type="button" onClick={downloadRecoveryFile} disabled={!identity?.sk || exporting} className="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl border border-white/10 bg-[#111] text-sm font-semibold text-white hover:border-blue-500 disabled:opacity-40">
+        <label className="mb-3 flex items-start gap-3 rounded-xl border border-white/10 bg-[#111] px-3 py-3 text-[13px] text-white/70">
+          <input type="checkbox" checked={exportReady} onChange={(event) => setExportReady(event.target.checked)} className="mt-0.5 h-5 w-5 rounded border-white/20 bg-black accent-blue-600" />
+          I understand this file contains my secret key and 12-word phrase.
+        </label>
+        <button type="button" onClick={downloadRecoveryFile} disabled={!identity?.sk || exporting || !exportReady} className="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl border border-white/10 bg-[#111] text-sm font-semibold text-white hover:border-blue-500 disabled:opacity-40">
           <Download size={17} /> {exporting ? 'Preparing recovery file…' : 'Download recovery backup (.txt)'}
         </button>
         <p className="mt-2 text-center text-[11px] leading-relaxed text-amber-200/55">Includes your secret key and recovery phrase. Store securely; never upload or share it.</p>
