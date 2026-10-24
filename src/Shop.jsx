@@ -5,6 +5,7 @@ import OneTapCheckout from './components/OneTapCheckout';
 import { useNIP44DM } from './hooks/useNIP44DM';
 import { useChatStore } from './store/chatStore';
 import { saveMessage } from './db';
+import { haptic } from './lib/haptics';
 
 export default function Shop({ identity, setActiveTab }) {
   const [query, setQuery] = useState('');
@@ -188,7 +189,7 @@ export default function Shop({ identity, setActiveTab }) {
                     <button type="button" onClick={() => shareProduct(p)} className="flex flex-1 items-center justify-center gap-1 rounded-lg border border-white/10 py-2 text-xs font-bold text-white hover:border-blue-500">
                       <Link2 size={13} /> Copy Link
                     </button>
-                    <button type="button" onClick={() => setCheckoutProduct(p)} className="flex-1 rounded-lg bg-blue-600 py-2 text-xs font-bold text-white hover:bg-blue-500">
+                    <button type="button" onClick={() => { haptic('heavy'); setCheckoutProduct(p); }} className="flex-1 rounded-2xl bg-blue-600 py-3.5 text-xs font-bold text-white hover:bg-blue-500 active:scale-95 active:bg-blue-700 transition-transform duration-100">
                       Buy Now
                     </button>
                   </div>
