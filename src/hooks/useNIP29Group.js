@@ -1,5 +1,5 @@
 import { useCallback, useEffect } from 'react';
-import { finalizeEvent } from 'nostr-tools';
+import { finalizeEvent, nip19 } from 'nostr-tools';
 import { db, saveMessage } from '../db';
 import { showNotification } from '../lib/notifications';
 import { useChatStore } from '../store/chatStore';
@@ -14,6 +14,64 @@ import { enqueueNostrEvent, startOutboxSync } from '../lib/outbox';
 
 const GROUP_RELAY_URL = 'wss://groups.aegispayhq.com';
 const groupSessions = new Map();
+
+export function parseGroupReference(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return { id: '', relays: [], author: '' };
+  if (/^naddr1/i.test(raw)) {
+    try {
+      const decoded = nip19.decode(raw);
+      if (decoded?.type === 'naddr') {
+        return {
+          id: String(decoded.data?.identifier || '').trim(),
+          relays: Array.isArray(decoded.data?.relays) ? decoded.data.relays : [],
+          author: decoded.data?.pubkey || '',
+          kind: decoded.data?.kind,
+        };
+      }
+    } catch (error) {
+      console.warn('[NIP29] naddr could not be decoded, keeping the raw value:', error);
+    }
+  }
+  return { id: raw, relays: [], author: '' };
+}
+
+async function fetchGroupMetadata(identity, groupId) {
+  const pool = await getAuthenticatedPool(identity);
+  const [metadata, legacy] = await Promise.all([
+    queryWithTimeout(pool, groupRelays, { kinds: [39000], '#d': [groupId], limit: 10 }, 4000).catch(() => []),
+    queryWithTimeout(pool, groupRelays, { kinds: [9002], '#h': [groupId], limit: 10 }, 4000).catch(() => []),
+  ]);
+  const latest = [...metadata, ...legacy].sort((a, b) => (b.created_at || 0) - (a.created_at || 0))[0];
+  if (!latest) return {};
+  const tag = (name) => latest.tags?.find((item) => item[0] === name)?.[1] || '';
+  let content = {};
+  try { content = JSON.parse(latest.content || '{}'); } catch { content = {}; }
+  return {
+    name: tag('name') || content.name || content.display_name || '',
+    about: tag('about') || content.about || '',
+    picture: tag('picture') || content.picture || '',
+    creator: latest.pubkey || '',
+  };
+}
+
+export async function loadGroupProfile(identity, rawId, passedName = null) {
+  const parsed = parseGroupReference(rawId);
+  const groupId = parsed.id;
+  if (!groupId) throw new Error('Missing group id');
+  let meta = {};
+  try { meta = await fetchGroupMetadata(identity, groupId); }
+  catch (error) { console.warn('[NIP29] Group metadata lookup failed:', error); }
+  const name = meta.name || (passedName && passedName !== 'Unnamed Group' ? passedName : '') || groupId.slice(0, 12);
+  return {
+    id: groupId,
+    name,
+    about: meta.about || '',
+    picture: meta.picture || '',
+    isChannel: false,
+    creator: meta.creator || parsed.author || '',
+  };
+}
 
 function rejectAuthWaiters(session, error) {
   const pending = session.authWaiters.splice(0);
@@ -310,37 +368,17 @@ export function useNIP29Group({ identity }) {
   }, [identity, setGroups, appendSystemMessage]);
 
   const joinGroupById = useCallback(async (groupId, passedName = null) => {
-    if (!groupId) return;
-    let realName = passedName || 'Unnamed Group';
-
+    const profile = await loadGroupProfile(identity, groupId, passedName);
+    if (!profile.id) return;
+    const newGroup = { ...profile };
     const localGroups = getMyGroups(identity.pk);
-    const localMatch = localGroups.find(g => g.id === groupId);
-    if (!passedName && localMatch?.name && localMatch.name !== 'Unnamed Group') {
-      realName = localMatch.name;
-    } else if (!passedName) {
-      try {
-        const pool = await getAuthenticatedPool(identity);
-        const events = await queryWithTimeout(pool, groupRelays, { kinds: [9002], limit: 200 }, 3000);
-        const match = events.find(ev => ev.tags.find(t => t[0] === 'h')?.[1] === groupId);
-        if (match) {
-          const nameTag = match.tags.find(t => t[0] === 'name')?.[1];
-          if (nameTag) realName = nameTag;
-        }
-      } catch (e) {}
-    }
-
-    if (realName === 'Unnamed Group') {
-      const userInput = window.prompt('What is this group called?', '');
-      if (userInput && userInput.trim()) realName = userInput.trim();
-    }
-
-    const newGroup = { id: groupId, name: realName, isChannel: false, creator: '' };
-    const idx = localGroups.findIndex(g => g.id === groupId);
+    const idx = localGroups.findIndex(g => g.id === newGroup.id);
     if (idx === -1) localGroups.push(newGroup);
-    else localGroups[idx].name = realName;
+    else localGroups[idx] = { ...localGroups[idx], ...newGroup };
     setMyGroups(identity.pk, localGroups);
-    setGroups(prev => [newGroup, ...(prev || []).filter(g => g.id !== groupId)]);
-
+    setGroups(prev => [newGroup, ...(prev || []).filter(g => g.id !== newGroup.id)]);
+    const active = useChatStore.getState().activeGroup;
+    if (active?.id === newGroup.id) useChatStore.getState().setActiveGroup({ ...active, ...newGroup });
     return newGroup;
   }, [identity, setGroups]);
 
@@ -646,8 +684,13 @@ export function useNIP29Group({ identity }) {
       let decEpoch = null;
       const decoded = await decodeGroupEvent({ event, groupId });
       if (decoded.pending) { isPending = true; decEpoch = decoded.epoch; }
-      else if (decoded.error) { console.warn('[group-decrypt] failed', decoded.reason); return; }
+      else if (decoded.error) {
+        console.warn('[group-decrypt] failed', decoded.reason);
+        plaintext = typeof event.content === 'string' ? event.content : '';
+        parsed = { type: 'text', message: plaintext || 'Message unavailable' };
+      }
       else { plaintext = decoded.plaintext; parsed = decoded.parsed || {}; decEpoch = decoded.epoch; }
+      if (!parsed || typeof parsed !== 'object') parsed = { type: 'text', message: typeof plaintext === 'string' ? plaintext : '' };
 
       if (parsed.expires_at && Math.floor(Date.now() / 1000) >= parsed.expires_at) return;
 
@@ -683,11 +726,6 @@ export function useNIP29Group({ identity }) {
         const existingIndex = groupMsgs.findIndex(m => {
           if (m.id === event.id) return true;
           if (clientId && event.pubkey === identity.pk && m.isSender && m.clientId === clientId) return true;
-          if (m.isSender === (event.pubkey === identity.pk) && !isPending && parsed.message) {
-            let oldData = {};
-            try { oldData = JSON.parse(m.rawContent || '{}'); } catch (e) {}
-            return oldData.message === parsed.message && Math.abs(m.timestamp - event.created_at) < 5;
-          }
           return false;
         });
 
