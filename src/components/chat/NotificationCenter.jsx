@@ -48,19 +48,25 @@ export default function NotificationCenter({ onClose, onJump }) {
   };
 
   return (
-    <div className="fixed inset-0 z-[999] flex flex-col bg-black/70 backdrop-blur-2xl" role="dialog" aria-modal="true" aria-label="Notifications">
+    <div className="fixed inset-0 z-[999] flex flex-col bg-black" role="dialog" aria-modal="true" aria-label="Notifications">
+      <div className="pointer-events-none absolute inset-0">
+        <div className="absolute left-[-10%] top-[-10%] h-[50%] w-[50%] rounded-full bg-blue-600/20 blur-[120px]" />
+        <div className="absolute bottom-[-10%] right-[-10%] h-[50%] w-[50%] rounded-full bg-purple-600/10 blur-[120px]" />
+      </div>
+      <div className="relative z-10 flex min-h-0 flex-1 flex-col">
       <ScreenHeader title="Notifications" onBack={onClose} />
       {notifications.length === 0 ? (
-        <div className="flex flex-1 flex-col items-center justify-center text-white/40">
-          <Bell size={40} className="mb-3 text-blue-500" />
-          <p className="text-[13px]">You’re all caught up.</p>
+        <div className="m-4 rounded-2xl border border-white/10 bg-[#0A0A0A]/60 px-4 py-16 text-center shadow-2xl backdrop-blur-2xl">
+          <Bell size={28} className="mx-auto mb-3 text-blue-500" />
+          <p className="text-[15px] font-semibold text-white">You're caught up</p>
+          <p className="mt-1 text-[13px] text-white/40">New messages show up here.</p>
         </div>
       ) : (
-        <div className="flex-1 overflow-y-auto p-4">
+        <div className="min-h-0 flex-1 overflow-y-auto p-4">
           <div className="overflow-hidden rounded-2xl border border-white/10 bg-[#0A0A0A]/60 shadow-2xl backdrop-blur-2xl">
           {notifications.map((item) => (
-            <button key={item.id} type="button" onClick={() => openNotification(item)} className="flex w-full items-center gap-3 border-b border-white/5 px-4 py-3 text-left active:bg-white/10">
-              <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-white/10 bg-black text-blue-500">
+            <button key={item.id} type="button" onClick={() => openNotification(item)} className="flex w-full items-center gap-3 border-b border-white/5 p-4 text-left last:border-0 active:bg-white/5">
+              <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/5 text-blue-500">
                 {item.type === 'group' ? <Users size={20} /> : <Bell size={20} />}
               </span>
               <span className="min-w-0 flex-1">
@@ -73,6 +79,7 @@ export default function NotificationCenter({ onClose, onJump }) {
           </div>
         </div>
       )}
+      </div>
     </div>
   );
 }
