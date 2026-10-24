@@ -157,6 +157,11 @@ export default function GroupView({
   const visibleMessages = messages.filter((message) => !(deletedMsgs instanceof Set && deletedMsgs.has(message.id)));
   const pinnedMessage = visibleMessages.find((message) => message.id === pinnedMessageId);
   const pinnedProduct = pinnedMessage ? readPayload(pinnedMessage) : null;
+  const shopItems = visibleMessages
+    .map((message) => ({ message, product: readPayload(message) }))
+    .filter(({ product }) => product?.type === 'product' && !product.soldOut)
+    .slice(-8)
+    .reverse();
 
   return (
     <section className="relative flex h-full min-h-0 flex-col bg-black">
@@ -173,6 +178,25 @@ export default function GroupView({
             <span className="block truncate text-sm font-semibold text-white">{pinnedProduct.title || pinnedProduct.name || 'Product'}</span>
           </span>
         </button>
+      )}
+      {shopItems.length > 0 && (
+        <div className="border-b border-white/5 bg-black px-3 py-2">
+          <p className="mb-2 text-[13px] text-white/40">Shop</p>
+          <div className="flex gap-2 overflow-x-auto pb-1">
+            {shopItems.map(({ message, product }) => (
+              <button
+                key={message.id}
+                type="button"
+                onClick={() => handleMessageAction?.('buy_product', { ...message, data: product })}
+                className="w-36 shrink-0 overflow-hidden rounded-2xl border border-white/10 bg-[#111] text-left active:bg-white/10"
+              >
+                {product.image && <img src={product.image} alt="" className="h-20 w-full object-cover" />}
+                <span className="block truncate px-2 pt-2 text-[13px] font-semibold text-white">{product.title || product.name || 'Item'}</span>
+                <span className="block px-2 pb-2 text-[12px] font-bold text-blue-500">{product.priceUsd ? `$${product.priceUsd}` : (product.price || '')}</span>
+              </button>
+            ))}
+          </div>
+        </div>
       )}
       <div ref={scrollRef} className="flex min-h-0 flex-1 flex-col overflow-y-auto py-3">
         {visibleMessages.length === 0 ? (
