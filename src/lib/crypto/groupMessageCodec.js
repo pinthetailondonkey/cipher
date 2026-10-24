@@ -25,6 +25,10 @@ export async function decodeGroupEvent({ event, groupId }) {
   try {
     const env = JSON.parse(event.content);
     const plaintext = await decryptGroupMessage({ rawKey: key, envelope: env, groupId, epoch, senderPubkey: event.pubkey });
-    return { plaintext, parsed: JSON.parse(plaintext), epoch };
+    let parsed;
+    try { parsed = JSON.parse(plaintext); }
+    catch { parsed = { type: 'text', message: plaintext }; }
+    if (typeof parsed === 'string') parsed = { type: 'text', message: parsed };
+    return { plaintext, parsed, epoch };
   } catch (e) { return { error: 'decrypt-failed', epoch, reason: e.message }; }
 }

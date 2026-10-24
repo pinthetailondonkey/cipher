@@ -22,7 +22,7 @@ import { useChatStore } from './store/chatStore';
 import { scopedGet, scopedSet, scopedRemove } from './lib/storage';
 import { haptic } from './lib/haptics';
 import { useNIP44DM } from './hooks/useNIP44DM';
-import { useNIP29Group } from './hooks/useNIP29Group';
+import { useNIP29Group, parseGroupReference, loadGroupProfile } from './hooks/useNIP29Group';
 import { decodeGroupEvent } from './lib/crypto/groupMessageCodec';
 import { useGroupKeyReconciler } from './hooks/useGroupKeyReconciler';
 import { useReactions } from './hooks/useReactions';
@@ -1164,41 +1164,23 @@ export default function Chat({ identity }) {
   const joinGroupById = async (groupId, passedName = null, channel = false) => {
     if (!groupId) return;
     setLoading(true);
-    let realName = passedName || 'Unnamed Group';
     try {
+      const parsed = parseGroupReference(groupId);
+      const resolvedId = parsed.id;
+      if (!resolvedId) throw new Error('That group address could not be read.');
+      const profile = await loadGroupProfile(identity, resolvedId, passedName);
+      const newGroupObj = { ...profile, isChannel: !!(channel || profile.isChannel) };
       const localGroups = getMyGroups(identity.pk);
-      const localMatch = localGroups.find(g => g.id === groupId);
-      let isChannel = !!(channel || localMatch?.isChannel);
-      if (!passedName && localMatch && localMatch.name && localMatch.name !== 'Unnamed Group') {
-        realName = localMatch.name;
-      } else if (!passedName) {
-        try {
-          const pool = await getAuthenticatedPool(identity);
-          const events = await queryWithTimeout(pool, groupRelays, { kinds: [9002], limit: 200 }, 3000);
-          const match = events.find(ev => ev.tags.find(t => t[0] === 'h')?.[1] === groupId);
-          if (match) {
-            const nameTag = match.tags.find(t => t[0] === 'name')?.[1];
-            if (nameTag) realName = nameTag;
-            isChannel = match.tags.some((tag) => tag[0] === 'channel' || tag[0] === 'broadcast');
-          }
-        } catch (e) {}
-      }
-      if (realName === 'Unnamed Group') {
-        const userInput = window.prompt("What is this group called?", "");
-        if (userInput && userInput.trim()) realName = userInput.trim();
-      }
-      const newGroupObj = { id: groupId, name: realName, isChannel, creator: '' };
-      const existingGroups = getMyGroups(identity.pk);
-      if (!existingGroups.find(g => g.id === newGroupObj.id)) setMyGroups(identity.pk, [...existingGroups, newGroupObj]);
-      const idx = localGroups.findIndex(g => g.id === groupId);
+      const idx = localGroups.findIndex(g => g.id === newGroupObj.id);
       if (idx === -1) localGroups.push(newGroupObj);
-      else localGroups[idx].name = realName;
+      else localGroups[idx] = { ...localGroups[idx], ...newGroupObj };
       setMyGroups(identity.pk, localGroups);
-      setGroups(prev => [newGroupObj, ...(prev || []).filter(g => g.id !== groupId)]);
-      openChat('group', groupId, newGroupObj);
+      setGroups(prev => [newGroupObj, ...(prev || []).filter(g => g.id !== newGroupObj.id)]);
+      openChat('group', newGroupObj.id, newGroupObj);
       setToast({ type: 'success', message: 'Joined group' });
     } catch (err) {
       console.error('[joinGroupById] error:', err);
+      setToast({ type: 'error', message: err?.message || 'Could not join that group.' });
     } finally {
       setLoading(false);
       if (window.location.search.length > 0) window.history.replaceState({}, document.title, window.location.pathname);
@@ -1399,6 +1381,20 @@ export default function Chat({ identity }) {
       return;
     }
 
+    if (/^naddr1/i.test(rawQuery)) {
+      try {
+        const parsed = parseGroupReference(rawQuery);
+        if (parsed.id) {
+          const profile = await loadGroupProfile(identity, parsed.id);
+          state.setSearchResults([{ type: 'group', id: profile.id, name: profile.name, isChannel: false, creator: profile.creator }]);
+          state.setIsSearching(false);
+          return;
+        }
+      } catch (error) {
+        console.warn('[search] naddr group lookup failed:', error);
+      }
+    }
+
     rawQuery = rawQuery.replace(/^@/, '');
     if (/^[0-9a-f]{64,}$/i.test(rawQuery)) rawQuery = rawQuery.slice(0, 64);
     if (rawQuery.length >= 12 && rawQuery.length <= 20 && /^[a-z0-9_-]+$/i.test(rawQuery) && !rawQuery.includes(' ')) {
@@ -1413,8 +1409,9 @@ export default function Chat({ identity }) {
     const isNip05 = rawQuery.includes('@');
 
     if (isPartialHex) {
-      setToast({ type: 'error', message: "Hex public keys must be exactly 64 characters." });
-      state.setIsSearching(false); return;
+      state.setSearchResults([{ type: 'group', id: rawQuery, name: 'Group ' + rawQuery, isChannel: false, creator: '' }]);
+      state.setIsSearching(false);
+      return;
     }
     
     let pool;
