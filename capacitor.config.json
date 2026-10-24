@@ -1,0 +1,9 @@
+{
+  "appId": "com.aegispayhq.cipher",
+  "appName": "Cipher",
+  "webDir": "dist",
+  "server": {
+    "url": "https://sonic-cobalt-4m6q5vj.vercel.app",
+    "cleartext": false
+  }
+}
