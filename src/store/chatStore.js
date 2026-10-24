@@ -95,7 +95,7 @@ export const useChatStore = create((set, get) => ({
   setGroups: (v) => set((s) => ({ groups: typeof v === 'function' ? v(s.groups) : v })),
   setGroupMessages: (v) => set((s) => ({ groupMessages: typeof v === 'function' ? v(s.groupMessages) : v })),
   setProfiles: (v) => set((s) => ({ profiles: typeof v === 'function' ? v(s.profiles) : v })),
-  setGroupMembers: (v) => set({ groupMembers: v }),
+  setGroupMembers: (v) => set((s) => ({ groupMembers: typeof v === 'function' ? v(Array.isArray(s.groupMembers) ? s.groupMembers : []) : v })),
   setPinnedMessages: (v) => set((s) => ({ pinnedMessages: typeof v === 'function' ? v(s.pinnedMessages) : v })),
   setDisappearingTimer: (chatId, duration) => set((s) => {
     const next = { ...s.disappearingTimers, [chatId]: duration };
