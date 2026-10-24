@@ -92,7 +92,23 @@ export const useChatStore = create((set, get) => ({
   deletedMsgs: new Set(),
 
   setDms: (v) => set((s) => ({ dms: typeof v === 'function' ? v(s.dms) : v })),
-  setGroups: (v) => set((s) => ({ groups: typeof v === 'function' ? v(s.groups) : v })),
+  setGroups: (v) => set((s) => {
+    const next = typeof v === 'function' ? v(s.groups) : v;
+    const prev = Array.isArray(s.groups) ? s.groups : [];
+    const incoming = Array.isArray(next) ? next : [];
+    const same = prev.length === incoming.length && prev.every((group, index) => {
+      const other = incoming[index];
+      return group === other || (
+        group?.id === other?.id
+        && group?.name === other?.name
+        && group?.about === other?.about
+        && group?.picture === other?.picture
+        && group?.creator === other?.creator
+        && !!group?.isChannel === !!other?.isChannel
+      );
+    });
+    return same ? s : { groups: incoming };
+  }),
   setGroupMessages: (v) => set((s) => ({ groupMessages: typeof v === 'function' ? v(s.groupMessages) : v })),
   setProfiles: (v) => set((s) => ({ profiles: typeof v === 'function' ? v(s.profiles) : v })),
   setGroupMembers: (v) => set((s) => ({ groupMembers: typeof v === 'function' ? v(Array.isArray(s.groupMembers) ? s.groupMembers : []) : v })),
