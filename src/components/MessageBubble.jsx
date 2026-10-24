@@ -161,7 +161,7 @@ export default function MessageBubble({ message, data, onAction, senderName, isP
       initial={justArrived ? { y: 18, opacity: 0 } : false}
       animate={{ y: 0, opacity: 1 }}
       transition={{ type: 'spring', stiffness: 420, damping: 28 }}
-      className={`flex w-full items-end gap-1.5 px-2 ${isSender ? 'justify-end' : 'justify-start'} py-[1px]`}
+      className={`flex w-full items-end gap-2 px-3 py-1 ${isSender ? 'justify-end' : 'justify-start'}`}
     >
       {!isSender && showAvatar && (
         avatarUrl ? (
@@ -179,7 +179,7 @@ export default function MessageBubble({ message, data, onAction, senderName, isP
         onPointerCancel={clearPress}
         onPointerMove={movePress}
         onContextMenu={(event) => { event.preventDefault(); haptic('medium'); setOpen(true); }}
-        className={`max-w-[78%] min-w-[4.5rem] rounded-[18px] px-2.5 py-1 ${isSender ? 'rounded-br-[5px] bg-blue-600 text-white' : 'rounded-bl-[5px] bg-[#1c1c1e] text-white'}`}
+        className={`max-w-[78%] min-w-[4.5rem] rounded-2xl border px-3 py-2 ${isSender ? 'border-blue-500 bg-blue-600 text-white' : 'border-white/10 bg-[#111] text-white'}`}
       >
         {!isSender && senderName && <p className="mb-0.5 text-[11px] font-semibold leading-none text-blue-400">{senderName}</p>}
         {(content.type === 'cipher_order' || content.type === 'order_request' || content.type === 'order_update') && (
