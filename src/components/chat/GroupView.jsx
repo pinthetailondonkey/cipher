@@ -62,7 +62,7 @@ export default function GroupView({
   const scrollRef = useRef(null);
 
   useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
+    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
   }, [messages.length, activeGroup?.id]);
 
   useEffect(() => {
@@ -154,7 +154,7 @@ export default function GroupView({
     return result;
   };
 
-  const visibleMessages = messages.filter((message) => !deletedMsgs.has(message.id));
+  const visibleMessages = messages.filter((message) => !(deletedMsgs instanceof Set && deletedMsgs.has(message.id)));
   const pinnedMessage = visibleMessages.find((message) => message.id === pinnedMessageId);
   const pinnedProduct = pinnedMessage ? readPayload(pinnedMessage) : null;
 

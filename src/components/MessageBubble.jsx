@@ -1,8 +1,14 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { motion } from 'framer-motion';
 import { BadgeCheck, Bookmark, Copy, Radio, Reply, ShoppingBag, Trash2 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { paymentUri } from '../lib/paymentUri';
 import { haptic } from '../lib/haptics';
+import { useChatStore } from '../store/chatStore';
+import LinkPreview, { firstUrl } from './chat/LinkPreview';
+
+const EMPTY_REACTIONS = [];
+const REACTION_CHOICES = ['❤️', '👍', '🔥', '😂', '😮', '😢', '🙏'];
 
 function messageText(data) {
   if (!data) return '';
@@ -51,6 +57,11 @@ export default function MessageBubble({ message, data, onAction, senderName, isP
   const timestamp = Number(message?.timestamp);
   const validTimestamp = Number.isFinite(timestamp) ? timestamp : null;
   const [open, setOpen] = useState(false);
+  const [showReactors, setShowReactors] = useState(false);
+  const mountedAt = useRef(Date.now() / 1000);
+  const deleted = useChatStore((state) => state.deletedMsgs);
+  const reactions = useChatStore((state) => (message?.id ? state.reactions[message.id] : undefined)) || EMPTY_REACTIONS;
+  const profiles = useChatStore((state) => state.profiles);
   const actions = [
     ['reply', Reply, 'Reply'],
     ['bookmark', Bookmark, 'Save'],
@@ -81,18 +92,36 @@ export default function MessageBubble({ message, data, onAction, senderName, isP
     queued: 'Queued',
     failed: 'Failed',
   }[message?.deliveryStatus];
+  const read = message?.read || message?.deliveryStatus === 'read';
+  const checks = isSender && !deliveryLabel
+    ? <span className={read ? 'text-blue-400' : 'text-white/45'}>{read ? '✓✓' : '✓'}</span>
+    : null;
   const timeLabel = validTimestamp === null ? '' : new Date(validTimestamp * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   const time = (
     <span className="float-right ml-2 mt-[5px] inline-flex items-center gap-1 text-[10px] leading-none text-white/45">
       {message?.edited && <span>edited</span>}
       {isSender && deliveryLabel && <span className={message?.deliveryStatus === 'failed' ? 'text-rose-200' : ''}>{deliveryLabel}</span>}
+      {checks}
       <time dateTime={validTimestamp === null ? undefined : new Date(validTimestamp * 1000).toISOString()}>{timeLabel}</time>
     </span>
   );
 
+  const previewUrl = firstUrl(text);
+  const grouped = reactions.reduce((map, reaction) => {
+    const bucket = map.get(reaction.emoji) || [];
+    bucket.push(reaction);
+    map.set(reaction.emoji, bucket);
+    return map;
+  }, new Map());
+  const justArrived = message?.deliveryStatus === 'sending' || (Number(message?.timestamp) >= mountedAt.current - 2);
+  if (message?.id && deleted instanceof Set && deleted.has(message.id)) return null;
+
   return (
-    <article
+    <motion.article
       id={message?.id ? `msg-${message.id}` : undefined}
+      initial={justArrived ? { y: 18, opacity: 0 } : false}
+      animate={{ y: 0, opacity: 1 }}
+      transition={{ type: 'spring', stiffness: 420, damping: 28 }}
       className={`flex w-full items-end gap-1.5 px-2 ${isSender ? 'justify-end' : 'justify-start'} py-[1px]`}
     >
       {!isSender && showAvatar && (
@@ -154,11 +183,40 @@ export default function MessageBubble({ message, data, onAction, senderName, isP
         ) : (
           <p className="clear-both text-[12px] leading-none">{time}</p>
         )}
+        {previewUrl && <LinkPreview url={previewUrl} />}
+        {grouped.size > 0 && (
+          <div className="mt-1 flex flex-wrap gap-1">
+            {[...grouped.entries()].map(([emoji, people]) => (
+              <motion.button
+                key={emoji}
+                type="button"
+                initial={{ scale: 0.6 }}
+                animate={{ scale: 1 }}
+                transition={{ type: 'spring', stiffness: 500, damping: 18 }}
+                onClick={(event) => { event.stopPropagation(); setShowReactors(emoji); }}
+                className="rounded-full border border-white/10 bg-black/40 px-1.5 py-0.5 text-[12px] text-white"
+              >
+                {emoji} {people.length}
+              </motion.button>
+            ))}
+          </div>
+        )}
         {!text && !content.url && !content.urls && !paymentRows.length && content.type !== 'image' && content.type !== 'audio' && content.type !== 'product' && content.type !== 'cipher_order' && content.type !== 'order_request' && content.type !== 'order_update' && (
           <p className="text-[14px] leading-snug text-white/55">Message unavailable</p>
         )}
         {open && (
-          <div className="mt-1 flex gap-2.5 border-t border-white/10 pt-1">
+          <div className="mt-1 border-t border-white/10 pt-1">
+            <div className="mb-1 flex gap-1">
+              {REACTION_CHOICES.map((emoji) => (
+                <button key={emoji} type="button" aria-label={`React ${emoji}`} onClick={(event) => {
+                  event.stopPropagation();
+                  haptic('light');
+                  onAction?.('react', { id: message.id, pubkey: message.pubkey, emoji });
+                  setOpen(false);
+                }} className="rounded-full px-1 text-[14px] active:scale-95">{emoji}</button>
+              ))}
+            </div>
+            <div className="flex gap-2.5">
             {actions.map(([action, Icon, label]) => (
               <button key={action} type="button" aria-label={label} title={label} onClick={(event) => {
                 event.stopPropagation();
@@ -169,9 +227,23 @@ export default function MessageBubble({ message, data, onAction, senderName, isP
                 <Icon size={13} />
               </button>
             ))}
+            </div>
           </div>
         )}
       </div>
-    </article>
+      {showReactors && (
+        <div className="fixed inset-0 z-[70] flex items-end justify-center bg-black/60 p-4" onClick={() => setShowReactors(false)}>
+          <div className="w-full max-w-sm rounded-2xl border border-white/10 bg-[#0A0A0A] p-4" onClick={(event) => event.stopPropagation()}>
+            <p className="mb-3 text-[15px] font-semibold text-white">{showReactors}</p>
+            {(grouped.get(showReactors) || []).map((person) => (
+              <p key={person.pubkey} className="border-b border-white/5 py-2 text-[13px] text-white/80">
+                {profiles[person.pubkey]?.displayName || profiles[person.pubkey]?.name || `${person.pubkey.slice(0, 8)}…`}
+              </p>
+            ))}
+            <button type="button" onClick={() => setShowReactors(false)} className="mt-3 text-[13px] font-semibold text-blue-500">Close</button>
+          </div>
+        </div>
+      )}
+    </motion.article>
   );
 }
