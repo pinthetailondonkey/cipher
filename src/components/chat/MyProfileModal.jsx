@@ -32,7 +32,7 @@ export default function MyProfileModal({ identity }) {
   const name = profile.displayName || profile.name || 'Your profile';
 
   return (
-    <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/80 p-4" role="presentation" onMouseDown={(event) => {
+    <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/70 p-4 backdrop-blur-md" role="presentation" onMouseDown={(event) => {
       if (event.target === event.currentTarget) setShowMyProfile(false);
     }}>
       <section role="dialog" aria-modal="true" aria-label="My profile" className="relative w-full max-w-sm rounded-3xl border border-white/10 bg-[#0A0A0A]/60 backdrop-blur-2xl p-6">

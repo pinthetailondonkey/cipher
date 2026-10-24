@@ -292,21 +292,20 @@ export default function Wallet({ identity, onOpenChat }) {
       );
     }
     return (
-      <div className="h-full overflow-y-auto bg-transparent pb-24">
-        <header className="flex items-center gap-1 border-b border-white/5 px-1 py-2">
-          <button type="button" onClick={() => setView('main')} aria-label="Back" className="p-2 text-white"><ArrowLeft size={22} /></button>
-          <h2 className="text-[17px] font-semibold text-white">Payment settings</h2>
-        </header>
-        <form onSubmit={saveAdvancedSettings}>
-            <p className="border-b border-white/5 px-4 py-3 text-[13px] text-white/40">A view key and an xpub only let you watch payments. They stay on this device. Never enter a seed or a spend key.</p>
-            <input value={xmrAddress} onChange={(event) => setXmrAddress(event.target.value)} autoComplete="off" spellCheck="false" placeholder="Monero address" className="w-full border-b border-white/5 bg-black px-4 py-3 text-[15px] text-white outline-none placeholder:text-white/30" />
-            <input type="password" value={xmrPrivateViewKey} onChange={(event) => setXmrPrivateViewKey(event.target.value)} autoComplete="new-password" spellCheck="false" placeholder="Monero view key" className="w-full border-b border-white/5 bg-black px-4 py-3 text-[15px] text-white outline-none placeholder:text-white/30" />
-            <input type="password" value={btcXpub} onChange={(event) => setBtcXpub(event.target.value)} autoComplete="off" spellCheck="false" placeholder="Bitcoin xpub" className="w-full border-b border-white/5 bg-black px-4 py-3 text-[15px] text-white outline-none placeholder:text-white/30" />
-            <button type="submit" disabled={savingAdvanced} className="w-full px-4 py-4 text-left text-[15px] font-semibold text-blue-500 disabled:opacity-40">
-              {savingAdvanced ? 'Saving…' : 'Save'}
-            </button>
+      <div className="h-full overflow-y-auto bg-transparent pb-8">
+        <ScreenHeader title="Payment settings" onBack={() => setView('main')} />
+        <form onSubmit={saveAdvancedSettings} className="space-y-4 p-4">
+          <p className="text-[13px] text-white/40">A view key and an xpub only let you watch payments. They stay on this device. Never enter a seed or a spend key.</p>
+          <div className="overflow-hidden rounded-2xl border border-white/10 bg-[#0A0A0A]/60 shadow-2xl backdrop-blur-2xl">
+            <input value={xmrAddress} onChange={(event) => setXmrAddress(event.target.value)} autoComplete="off" spellCheck="false" placeholder="Monero address" className="w-full border-b border-white/10 bg-white/5 px-4 py-4 text-[15px] text-white outline-none placeholder:text-white/30" />
+            <input type="password" value={xmrPrivateViewKey} onChange={(event) => setXmrPrivateViewKey(event.target.value)} autoComplete="new-password" spellCheck="false" placeholder="Monero view key" className="w-full border-b border-white/10 bg-white/5 px-4 py-4 text-[15px] text-white outline-none placeholder:text-white/30" />
+            <input type="password" value={btcXpub} onChange={(event) => setBtcXpub(event.target.value)} autoComplete="off" spellCheck="false" placeholder="Bitcoin xpub" className="w-full bg-white/5 px-4 py-4 text-[15px] text-white outline-none placeholder:text-white/30" />
+          </div>
+          <button type="submit" disabled={savingAdvanced} className="w-full rounded-2xl bg-blue-600 py-3.5 font-bold text-white disabled:opacity-40">
+            {savingAdvanced ? 'Saving…' : 'Save'}
+          </button>
+          {status && <p role="status" className={`text-center text-sm ${status.startsWith('Could not') || status.startsWith('Error') ? 'text-red-400' : 'text-emerald-400'}`}>{status}</p>}
         </form>
-        {status && <p role="status" className={`mt-4 text-center text-sm ${status.startsWith('Could not') || status.startsWith('Error') ? 'text-red-400' : 'text-emerald-400'}`}>{status}</p>}
       </div>
     );
   }
@@ -314,15 +313,9 @@ export default function Wallet({ identity, onOpenChat }) {
   // --- SUB-SCREEN: EDIT PROFILE ---
   if (view === 'edit_profile') {
     return (
-      <div className="p-4 animate-slide-up pb-24 overflow-y-auto h-full">
-        <div className="flex items-center gap-2 mb-6">
-          <button onClick={() => setView('main')} className="p-2 -ml-2 text-white/50 hover:text-white transition-colors">
-            <ArrowLeft size={20}/>
-          </button>
-          <h2 className="text-xl font-bold">Edit Profile</h2>
-        </div>
-        
-        <div className="flex flex-col items-center mb-8">
+      <div className="h-full overflow-y-auto bg-transparent pb-8">
+        <ScreenHeader title="Edit profile" onBack={() => setView('main')} />
+        <div className="space-y-4 p-4">
           <div className="relative">
             {picture ? (
               <img src={picture} alt="avatar" className="w-24 h-24 rounded-full object-cover border-2 border-white/10 shadow-lg" />
@@ -338,17 +331,17 @@ export default function Wallet({ identity, onOpenChat }) {
           </div>
         </div>
 
-        <form onSubmit={saveProfile} className="space-y-5">
+        <form onSubmit={saveProfile} className="space-y-4 px-4 pb-4">
           <div className="border border-white/10 bg-white/5 shadow-2xl backdrop-blur-md rounded-2xl p-4">
             <h3 className="text-xs font-bold text-white/50 uppercase tracking-wider mb-3">Payment Addresses</h3>
             <div className="space-y-3">
               <div>
                 <label className="block text-xs text-white/60 mb-1">Bitcoin (BTC)</label>
-                <input type="text" placeholder="bc1q..." value={btcAddress} onChange={(e) => setBtcAddress(e.target.value)} className="w-full bg-black border border-white/10 rounded-xl p-3 text-sm text-white placeholder-white/20 focus:border-blue-500 outline-none transition-colors" />
+                <input type="text" placeholder="bc1q..." value={btcAddress} onChange={(e) => setBtcAddress(e.target.value)} className="w-full rounded-xl border border-white/10 bg-white/5 p-3 text-sm text-white outline-none placeholder-white/30 backdrop-blur-md focus:border-blue-500" />
               </div>
               <div>
                 <label className="block text-xs text-white/60 mb-1">Monero (XMR)</label>
-                <input type="text" placeholder="4..." value={xmrAddress} onChange={(e) => setXmrAddress(e.target.value)} className="w-full bg-black border border-white/10 rounded-xl p-3 text-sm text-white placeholder-white/20 focus:border-blue-500 outline-none transition-colors" />
+                <input type="text" placeholder="4..." value={xmrAddress} onChange={(e) => setXmrAddress(e.target.value)} className="w-full rounded-xl border border-white/10 bg-white/5 p-3 text-sm text-white outline-none placeholder-white/30 backdrop-blur-md focus:border-blue-500" />
               </div>
             </div>
           </div>
@@ -382,11 +375,9 @@ export default function Wallet({ identity, onOpenChat }) {
   // --- SUB-SCREEN: ADD PRODUCT ---
   if (view === 'product') {
     return (
-      <div className="p-4 animate-slide-up overflow-y-auto h-full">
-        <button onClick={() => setView('main')} className="flex items-center gap-1 text-white/50 text-sm mb-6 hover:text-white transition-colors"><ArrowLeft size={16}/> Back</button>
-        <h2 className="text-xl font-bold mb-6">List New Product</h2>
-        
-        <div className="space-y-4">
+      <div className="h-full overflow-y-auto bg-transparent pb-8">
+        <ScreenHeader title="New listing" onBack={() => setView('main')} />
+        <div className="space-y-4 p-4">
           <input placeholder="Product Title" value={title} onChange={e => setTitle(e.target.value)} className="w-full border border-white/10 bg-white/5 shadow-2xl backdrop-blur-md rounded-2xl p-4 text-sm focus:border-blue-500 outline-none" />
           <textarea placeholder="Description" value={description} onChange={e => setDescription(e.target.value)} className="w-full border border-white/10 bg-white/5 shadow-2xl backdrop-blur-md rounded-2xl p-4 text-sm focus:border-blue-500 outline-none resize-none h-24" />
           
@@ -394,7 +385,7 @@ export default function Wallet({ identity, onOpenChat }) {
             {image ? (
               <img src={image} alt="product" className="w-16 h-16 rounded-xl object-cover" />
             ) : (
-              <div className="w-16 h-16 rounded-xl bg-black flex items-center justify-center">
+              <div className="flex h-16 w-16 items-center justify-center rounded-xl border border-white/10 bg-white/5">
                 <Camera size={24} className="text-white/20" />
               </div>
             )}
@@ -424,10 +415,9 @@ export default function Wallet({ identity, onOpenChat }) {
   // --- SUB-SCREEN: PAYMENTS ---
   if (view === 'payments') {
     return (
-      <div className="p-4 animate-slide-up overflow-y-auto h-full">
-        <button onClick={() => setView('main')} className="flex items-center gap-1 text-white/50 text-sm mb-6 hover:text-white transition-colors"><ArrowLeft size={16}/> Back</button>
-        <h2 className="text-xl font-bold mb-6">Payment Addresses</h2>
-        <div className="space-y-4">
+      <div className="h-full overflow-y-auto bg-transparent pb-8">
+        <ScreenHeader title="Payment addresses" onBack={() => setView('main')} />
+        <div className="space-y-4 p-4">
           <input placeholder="Bitcoin (BTC)" value={btcAddress} onChange={e => setBtcAddress(e.target.value)} className="w-full border border-white/10 bg-white/5 shadow-2xl backdrop-blur-md rounded-2xl p-4 text-sm focus:border-blue-500 outline-none" />
           <input placeholder="Monero (XMR)" value={xmrAddress} onChange={e => setXmrAddress(e.target.value)} className="w-full border border-white/10 bg-white/5 shadow-2xl backdrop-blur-md rounded-2xl p-4 text-sm focus:border-blue-500 outline-none" />
           <button onClick={savePayments} className="w-full py-4 bg-blue-600 text-white rounded-2xl font-bold text-sm mt-4 hover:bg-blue-500 transition-colors">Save Addresses</button>
