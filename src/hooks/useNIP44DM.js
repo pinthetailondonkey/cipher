@@ -146,7 +146,7 @@ export function useNIP44DM({ identity }) {
               if (data.type === 'read') {
                 setDms(prev => {
                   const msgs = prev[counterparty] || [];
-                  return { ...prev, [counterparty]: msgs.map(m => m.isSender ? { ...m, read: true } : m) };
+                  return { ...prev, [counterparty]: msgs.map(m => m.isSender ? { ...m, read: true, deliveryStatus: 'read' } : m) };
                 });
                 return;
               }

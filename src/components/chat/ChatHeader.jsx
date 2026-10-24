@@ -12,19 +12,21 @@ export default function ChatHeader({ mode }) {
   const setToast = useChatStore((state) => state.setToast);
   const profile = useChatStore((state) => (activeDm ? state.profiles[activeDm] : undefined));
   const typingAt = useChatStore((state) => (activeDm ? state.typingUsers[activeDm] : 0));
+  const groupTyping = useChatStore((state) => state.groupTypingUsers);
   const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
-    if (mode !== 'dm') return undefined;
-    const timer = setInterval(() => setNow(Date.now()), 2000);
+    const timer = setInterval(() => setNow(Date.now()), 400);
     return () => clearInterval(timer);
-  }, [mode]);
+  }, []);
 
   const title = mode === 'dm'
     ? (profile?.displayName || profile?.name || activeDm?.slice(0, 8) || 'Chat')
     : activeGroup?.name || 'Group';
-  const online = mode === 'dm' && typingAt && now - typingAt < 8000;
-  const subtitle = mode === 'dm' ? (online ? 'online' : 'encrypted') : `${activeGroup?.id?.slice(0, 6) || ''}…`;
+  const someoneTyping = mode === 'dm'
+    ? Boolean(typingAt && now - typingAt < 6000)
+    : Object.values(groupTyping || {}).some((stamp) => now - stamp < 6000);
+  const subtitle = someoneTyping ? 'typing' : (mode === 'dm' ? 'encrypted' : 'group');
 
   const placeCall = async () => {
     const result = await startCall({ peer: activeDm, name: title });
@@ -39,7 +41,18 @@ export default function ChatHeader({ mode }) {
         </button>
         <button type="button" className="min-w-0 text-left" onClick={() => mode === 'dm' && setProfilePubkey(activeDm)}>
           <h2 className="truncate text-[16px] font-semibold leading-tight text-white">{title}</h2>
-          <p className={`text-[11px] font-medium ${online ? 'text-emerald-400' : 'text-blue-500'}`}>{subtitle}</p>
+          <p className={`flex items-center gap-1 text-[11px] font-medium ${someoneTyping ? 'text-blue-400' : 'text-blue-500'}`}>
+            {someoneTyping ? (
+              <>
+                typing
+                <span className="inline-flex gap-0.5">
+                  <span className="h-1 w-1 animate-bounce rounded-full bg-blue-400 [animation-delay:0ms]" />
+                  <span className="h-1 w-1 animate-bounce rounded-full bg-blue-400 [animation-delay:120ms]" />
+                  <span className="h-1 w-1 animate-bounce rounded-full bg-blue-400 [animation-delay:240ms]" />
+                </span>
+              </>
+            ) : subtitle}
+          </p>
         </button>
       </div>
       <div className="flex items-center">
