@@ -51,7 +51,7 @@ export default function AuthenticatedApp({ identity }) {
             <Suspense fallback={tabFallback}>
               {activeTab === 'explore' && (
                 <div className="flex h-full flex-col bg-black">
-                  <div className="grid grid-cols-2 border-b border-white/10">
+                  <div className="grid grid-cols-2 border-b border-white/5 bg-black px-4 pt-3">
                     <button type="button" onClick={() => setExploreMode('shop')} className={`py-2.5 text-[13px] font-semibold ${exploreMode === 'shop' ? 'border-b-2 border-blue-600 text-white' : 'text-white/40'}`}>Shop</button>
                     <button type="button" onClick={() => setExploreMode('groups')} className={`py-2.5 text-[13px] font-semibold ${exploreMode === 'groups' ? 'border-b-2 border-blue-600 text-white' : 'text-white/40'}`}>Groups</button>
                   </div>
