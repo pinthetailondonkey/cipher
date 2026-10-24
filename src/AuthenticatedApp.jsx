@@ -7,11 +7,13 @@ import { requestNotificationPermission } from './lib/notifications';
 import { useChatStore } from './store/chatStore';
 
 const Shop = lazy(() => import('./Shop'));
+const Discover = lazy(() => import('./Discover'));
 const Chat = lazy(() => import('./Chat'));
 const Wallet = lazy(() => import('./Wallet'));
 
 export default function AuthenticatedApp({ identity }) {
   const [activeTab, setActiveTab] = useState('chat');
+  const [exploreMode, setExploreMode] = useState('shop');
   const openChatFromProfile = useCallback((pubkey) => {
     useChatStore.getState().openChat('dm', pubkey);
     setActiveTab('chat');
@@ -43,7 +45,19 @@ export default function AuthenticatedApp({ identity }) {
           >
             <Suspense fallback={tabFallback}>
               {activeTab === 'chat' && <Chat identity={identity} />}
-              {activeTab === 'explore' && <Shop identity={identity} setActiveTab={setActiveTab} />}
+              {activeTab === 'explore' && (
+                <div className="flex h-full flex-col bg-black">
+                  <div className="flex gap-2 px-4 pt-3">
+                    <button type="button" onClick={() => setExploreMode('shop')} className={`rounded-full px-4 py-1.5 text-[13px] font-semibold ${exploreMode === 'shop' ? 'bg-blue-600 text-white' : 'bg-[#111] text-white/50'}`}>Shop</button>
+                    <button type="button" onClick={() => setExploreMode('groups')} className={`rounded-full px-4 py-1.5 text-[13px] font-semibold ${exploreMode === 'groups' ? 'bg-blue-600 text-white' : 'bg-[#111] text-white/50'}`}>Groups</button>
+                  </div>
+                  <div className="min-h-0 flex-1">
+                    {exploreMode === 'shop'
+                      ? <Shop identity={identity} setActiveTab={setActiveTab} />
+                      : <Discover identity={identity} onJoined={() => setActiveTab('chat')} />}
+                  </div>
+                </div>
+              )}
               {activeTab === 'profile' && <Wallet identity={identity} onOpenChat={openChatFromProfile} />}
             </Suspense>
           </motion.div>
