@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { X } from 'lucide-react';
 import MessageBubble from '../MessageBubble';
 import MessageInput from '../MessageInput';
@@ -8,6 +8,52 @@ import { useChatStore } from '../../store/chatStore';
 import { db, saveMessage } from '../../db';
 import { scopedRemove } from '../../lib/storage';
 import { useNIP29Group, loadGroupProfile } from '../../hooks/useNIP29Group';
+
+function GroupStorefront({ items, pinnedId, canList, onBuy, onList }) {
+  const [open, setOpen] = useState(false);
+  const [title, setTitle] = useState('');
+  const [price, setPrice] = useState('');
+  const [note, setNote] = useState('');
+  const featured = items.find((item) => item.message.id === pinnedId);
+  const rest = items.filter((item) => item.message.id !== pinnedId);
+  const card = (item, featuredCard) => (
+    <button
+      key={item.message.id}
+      type="button"
+      onClick={() => onBuy(item)}
+      className={`overflow-hidden rounded-2xl border text-left active:bg-white/10 ${featuredCard ? 'mb-3 flex w-full items-center gap-3 border-amber-300/20 bg-amber-300/[0.07] p-3' : 'border-white/10 bg-[#111]'}`}
+    >
+      {item.product.image && <img src={item.product.image} alt="" className={featuredCard ? 'h-16 w-16 rounded-xl object-cover' : 'h-24 w-full object-cover'} />}
+      <span className={featuredCard ? 'min-w-0 flex-1' : 'block p-2'}>
+        {featuredCard && <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-amber-200">Pin slot</span>}
+        <span className="block truncate text-[14px] font-semibold text-white">{item.product.title || item.product.name || 'Item'}</span>
+        <span className="mt-0.5 block text-[13px] font-bold text-blue-500">{item.product.priceUsd ? `$${item.product.priceUsd}` : (item.product.price || 'Ask')}</span>
+        <span className="mt-1 block text-[12px] text-white/40">{featuredCard ? 'Message seller' : 'Buy'}</span>
+      </span>
+    </button>
+  );
+  return (
+    <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3">
+      {featured && card(featured, true)}
+      {rest.length > 0 && <div className="grid grid-cols-2 gap-2">{rest.map((item) => card(item, false))}</div>}
+      {items.length === 0 && <p className="px-4 py-10 text-center text-[13px] leading-relaxed text-white/40">No listings yet. Vendors post here so the chat stays clear.</p>}
+      {canList && !open && <button type="button" onClick={() => setOpen(true)} className="mt-4 w-full rounded-2xl bg-blue-600 py-3 text-[15px] font-semibold text-white active:bg-blue-700">List an item</button>}
+      {canList && open && (
+        <form className="mt-4 space-y-2" onSubmit={(event) => {
+          event.preventDefault();
+          if (!title.trim() || !price.trim()) return;
+          onList({ title: title.trim(), priceUsd: price.trim(), description: note.trim(), currency: 'USD' });
+          setTitle(''); setPrice(''); setNote(''); setOpen(false);
+        }}>
+          <input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Item" className="w-full rounded-xl border border-white/10 bg-[#111] px-3 py-3 text-[15px] text-white outline-none" />
+          <input value={price} onChange={(event) => setPrice(event.target.value)} placeholder="Price in USD" inputMode="decimal" className="w-full rounded-xl border border-white/10 bg-[#111] px-3 py-3 text-[15px] text-white outline-none" />
+          <input value={note} onChange={(event) => setNote(event.target.value)} placeholder="Note" className="w-full rounded-xl border border-white/10 bg-[#111] px-3 py-3 text-[15px] text-white outline-none" />
+          <button type="submit" className="w-full rounded-2xl bg-blue-600 py-3 text-[15px] font-semibold text-white">Post to shop</button>
+        </form>
+      )}
+    </div>
+  );
+}
 
 const EMPTY_MESSAGES = [];
 
@@ -60,6 +106,9 @@ export default function GroupView({
   const replyingTo = useChatStore((state) => state.replyingTo);
   const setReplyingTo = useChatStore((state) => state.setReplyingTo);
   const scrollRef = useRef(null);
+  const [pane, setPane] = useState('chat');
+  const isVendor = useChatStore((state) => state.isVendor);
+  const setToast = useChatStore((state) => state.setToast);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
@@ -155,49 +204,39 @@ export default function GroupView({
   };
 
   const visibleMessages = messages.filter((message) => !(deletedMsgs instanceof Set && deletedMsgs.has(message.id)));
-  const pinnedMessage = visibleMessages.find((message) => message.id === pinnedMessageId);
-  const pinnedProduct = pinnedMessage ? readPayload(pinnedMessage) : null;
   const shopItems = visibleMessages
     .map((message) => ({ message, product: readPayload(message) }))
-    .filter(({ product }) => product?.type === 'product' && !product.soldOut)
-    .slice(-8)
-    .reverse();
+    .filter(({ product }) => product?.type === 'product' && !product.soldOut);
+  const canList = isVendor || activeGroup?.creator === identity?.pk;
+  const postListing = async (product) => {
+    if (!activeGroup?.id) return;
+    try {
+      const result = await sendGroupMessage(activeGroup.id, { type: 'product', ...product });
+      if (result?.success === false) setToast({ type: 'error', message: 'Could not post that listing.' });
+    } catch (error) {
+      console.error('[shop] listing failed:', error);
+      setToast({ type: 'error', message: 'Could not post that listing.' });
+    }
+  };
 
   return (
     <section className="relative flex h-full min-h-0 flex-col bg-black">
       <ChatHeader mode="group" />
-      {pinnedMessage && pinnedProduct?.type === 'product' && (
-        <button
-          type="button"
-          onClick={() => document.getElementById(`msg-${pinnedMessage.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })}
-          className="flex items-center gap-3 border-b border-amber-300/15 bg-amber-300/[0.07] px-4 py-3 text-left"
-        >
-          {pinnedProduct.image && <img src={pinnedProduct.image} alt="" loading="lazy" className="h-11 w-11 rounded-lg object-cover" />}
-          <span className="min-w-0 flex-1">
-            <span className="mb-0.5 flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-amber-200"><span aria-hidden="true">★</span> Endorsed / Pinned Listing</span>
-            <span className="block truncate text-sm font-semibold text-white">{pinnedProduct.title || pinnedProduct.name || 'Product'}</span>
-          </span>
-        </button>
-      )}
-      {shopItems.length > 0 && (
-        <div className="border-b border-white/5 bg-black px-3 py-2">
-          <p className="mb-2 text-[13px] text-white/40">Shop</p>
-          <div className="flex gap-2 overflow-x-auto pb-1">
-            {shopItems.map(({ message, product }) => (
-              <button
-                key={message.id}
-                type="button"
-                onClick={() => handleMessageAction?.('buy_product', { ...message, data: product })}
-                className="w-36 shrink-0 overflow-hidden rounded-2xl border border-white/10 bg-[#111] text-left active:bg-white/10"
-              >
-                {product.image && <img src={product.image} alt="" className="h-20 w-full object-cover" />}
-                <span className="block truncate px-2 pt-2 text-[13px] font-semibold text-white">{product.title || product.name || 'Item'}</span>
-                <span className="block px-2 pb-2 text-[12px] font-bold text-blue-500">{product.priceUsd ? `$${product.priceUsd}` : (product.price || '')}</span>
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
+      <div className="grid grid-cols-2 border-b border-white/10">
+        {[['chat', 'Chat'], ['shop', 'Shop']].map(([id, label]) => (
+          <button key={id} type="button" onClick={() => setPane(id)} className={`py-2.5 text-[13px] font-semibold ${pane === id ? 'border-b-2 border-blue-600 text-white' : 'text-white/40'}`}>{label}</button>
+        ))}
+      </div>
+      {pane === 'shop' ? (
+        <GroupStorefront
+          items={shopItems}
+          pinnedId={pinnedMessageId}
+          canList={canList}
+          onBuy={({ message, product }) => handleMessageAction?.('buy_product', { ...message, data: product })}
+          onList={postListing}
+        />
+      ) : (
+      <>
       <div ref={scrollRef} className="flex min-h-0 flex-1 flex-col overflow-y-auto py-3">
         {visibleMessages.length === 0 ? (
           <div className="m-auto max-w-[16rem] px-6 text-center">
@@ -234,6 +273,8 @@ export default function GroupView({
       <div className="pb-safe">
         <MessageInput sendMessage={sendGroupText || sendMessage} handleImageUpload={handleImageUpload} startRecording={startRecording} stopRecording={stopRecording} />
       </div>
+      </>
+      )}
       <GroupInfoSidebar
         isOpen={showGroupInfo}
         onClose={() => setShowGroupInfo(false)}
