@@ -260,7 +260,7 @@ export default function Wallet({ identity, onOpenChat }) {
   }
 
   if (view === 'vendor') {
-    return <Suspense fallback={<div className="flex h-full items-center justify-center bg-black"><div className="h-7 w-7 animate-spin rounded-full border-2 border-white/20 border-t-blue-500" /></div>}><VendorDashboard identity={identity} products={JSON.parse(localStorage.getItem('cipher_my_products') || '[]')} onBack={() => setView('main')} /></Suspense>;
+    return <Suspense fallback={<div className="flex h-full items-center justify-center bg-black"><div className="h-7 w-7 animate-spin rounded-full border-2 border-white/20 border-t-blue-500" /></div>}><VendorDashboard identity={identity} products={JSON.parse(localStorage.getItem('cipher_my_products') || '[]')} onBack={() => setView('main')} onCreate={() => setView('product')} /></Suspense>;
   }
 
   if (view === 'vendor_setup') {
@@ -299,7 +299,7 @@ export default function Wallet({ identity, onOpenChat }) {
           <h2 className="text-[17px] font-semibold text-white">Payment settings</h2>
         </header>
         <form onSubmit={saveAdvancedSettings}>
-            <p className="border-b border-white/5 px-4 py-3 text-[13px] text-white/40">Optional. A fresh receiving address can be made for each order. Never enter a seed or spend key.</p>
+            <p className="border-b border-white/5 px-4 py-3 text-[13px] text-white/40">A view key and an xpub only let you watch payments. They stay on this device. Never enter a seed or a spend key.</p>
             <input value={xmrAddress} onChange={(event) => setXmrAddress(event.target.value)} autoComplete="off" spellCheck="false" placeholder="Monero address" className="w-full border-b border-white/5 bg-black px-4 py-3 text-[15px] text-white outline-none placeholder:text-white/30" />
             <input type="password" value={xmrPrivateViewKey} onChange={(event) => setXmrPrivateViewKey(event.target.value)} autoComplete="new-password" spellCheck="false" placeholder="Monero view key" className="w-full border-b border-white/5 bg-black px-4 py-3 text-[15px] text-white outline-none placeholder:text-white/30" />
             <input type="password" value={btcXpub} onChange={(event) => setBtcXpub(event.target.value)} autoComplete="off" spellCheck="false" placeholder="Bitcoin xpub" className="w-full border-b border-white/5 bg-black px-4 py-3 text-[15px] text-white outline-none placeholder:text-white/30" />
@@ -439,7 +439,7 @@ export default function Wallet({ identity, onOpenChat }) {
 
   // --- MAIN PROFILE TAB ---
   return (
-    <div className="animate-fade-in overflow-y-auto h-full pb-24">
+    <div className="animate-fade-in overflow-y-auto h-full pb-4">
       {status && <div className="fixed top-20 left-1/2 -translate-x-1/2 bg-blue-600 text-white px-4 py-2 rounded-xl text-xs font-bold shadow-lg z-50 animate-bounce">{status}</div>}
 
       {/* HEADER PROFILE CARD */}

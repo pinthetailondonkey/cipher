@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { AlertTriangle, Check, X } from 'lucide-react';
 import { useChatStore } from '../store/chatStore';
 
@@ -9,11 +9,21 @@ export default function GlobalDialog() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
+  const panelRef = useRef(null);
+
   useEffect(() => {
     setValue(dialog?.inputDefault || '');
     setError('');
     setBusy(false);
-  }, [dialog]);
+    if (!dialog) return undefined;
+    const onKey = (event) => {
+      if (event.key === 'Escape') closeDialog();
+    };
+    window.addEventListener('keydown', onKey);
+    const focusable = panelRef.current?.querySelector('textarea, button');
+    focusable?.focus();
+    return () => window.removeEventListener('keydown', onKey);
+  }, [dialog, closeDialog]);
 
   if (!dialog) return null;
 
@@ -35,7 +45,7 @@ export default function GlobalDialog() {
 
   return (
     <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm" role="presentation">
-      <form onSubmit={confirm} role="dialog" aria-modal="true" aria-labelledby="global-dialog-title" className="w-full max-w-sm rounded-3xl border border-white/10 bg-[#0A0A0A] p-6">
+      <form ref={panelRef} onSubmit={confirm} role="dialog" aria-modal="true" aria-labelledby="global-dialog-title" className="w-full max-w-sm rounded-3xl border border-white/10 bg-[#0A0A0A] p-6">
         <div className="flex items-start gap-3">
           {dialog.type === 'danger' && <AlertTriangle size={21} className="mt-1 shrink-0 text-red-400" />}
           <div className="min-w-0 flex-1">

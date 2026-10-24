@@ -104,7 +104,7 @@ export default function Discover({ identity, onJoined }) {
       </div>
 
       {error && <p role="alert" className="px-4 text-sm text-red-400">{error}</p>}
-      <div className="flex-1 overflow-y-auto pb-24">
+      <div className="flex-1 overflow-y-auto pb-4">
         {loading ? (
           <div className="flex flex-col items-center justify-center mt-20 text-white/40">
             <Loader2 size={32} className="animate-spin mb-4 text-blue-500" />
@@ -119,9 +119,12 @@ export default function Discover({ identity, onJoined }) {
           displayGroups.map((group, i) => {
             const Icon = group.isChannel ? Megaphone : Users;
             return (
-              <div 
-                key={group.id} 
-                className={`flex items-center justify-between px-4 py-3 hover:bg-white/5 active:bg-white/10 transition-colors cursor-pointer ${i !== displayGroups.length - 1 ? 'border-b border-white/5' : ''}`}
+              <button
+                type="button"
+                key={group.id}
+                onClick={() => join(group)}
+                disabled={joiningId === group.id}
+                className={`flex w-full items-center justify-between px-4 py-3 text-left active:bg-white/10 disabled:opacity-50 ${i !== displayGroups.length - 1 ? 'border-b border-white/5' : ''}`}
               >
                 <div className="flex items-center gap-3">
                   <div className="w-12 h-12 rounded-full bg-[#111] border border-white/10 flex items-center justify-center text-blue-500 shrink-0">
@@ -132,10 +135,8 @@ export default function Discover({ identity, onJoined }) {
                     <p className="text-[13px] text-white/40 line-clamp-1">{group.about}</p>
                   </div>
                 </div>
-                <button type="button" onClick={() => join(group)} disabled={joiningId === group.id} className="text-[15px] font-semibold text-blue-500 disabled:opacity-40">
-                  {joiningId === group.id ? 'Joining…' : 'Join'}
-                </button>
-              </div>
+                <span className="text-[15px] font-semibold text-blue-500">{joiningId === group.id ? 'Joining…' : 'Join'}</span>
+              </button>
             );
           })
         )}
