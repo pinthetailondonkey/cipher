@@ -80,7 +80,7 @@ export default function AuthenticatedApp({ identity }) {
           </button>
           <button onClick={() => setActiveTab('explore')} className={`flex flex-col items-center gap-1 w-16 transition-all active:scale-90 ${activeTab === 'explore' ? 'text-blue-500' : 'text-white/40 hover:text-white/60'}`}>
             <Compass size={22} strokeWidth={activeTab === 'explore' ? 2.5 : 2} />
-            <span className="text-[10px] font-medium">Discover</span>
+            <span className="text-[10px] font-medium">Shop</span>
           </button>
           <button onClick={() => setActiveTab('profile')} className={`relative flex flex-col items-center gap-1 w-16 active:scale-95 transition-transform duration-100 ${activeTab === 'profile' ? 'text-blue-500' : 'text-white/40'}`}>
             <User size={22} strokeWidth={activeTab === 'profile' ? 2.5 : 2} />
