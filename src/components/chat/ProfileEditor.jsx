@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { ArrowLeft, RefreshCw, Save, X } from 'lucide-react';
 import { useProfiles, updateProfileCache } from '../../useProfiles';
+import { useChatStore } from '../../store/chatStore';
 
 const PROFILE_RELAYS = ['wss://relay.primal.net', 'wss://nos.lol', 'wss://relay.damus.io'];
 
@@ -20,7 +21,9 @@ export default function ProfileEditor({ identity, onClose }) {
   const publishProfile = async (event) => {
     event.preventDefault();
     if (!identity?.sk || !identity?.pk) {
-      setMessage('Unlock your account before editing your profile.');
+      const text = 'Unlock your account before editing your profile.';
+      setMessage(text);
+      useChatStore.getState().setToast({ type: 'error', message: text });
       return;
     }
     setSaving(true);
@@ -53,7 +56,9 @@ export default function ProfileEditor({ identity, onClose }) {
       setMessage('Profile published.');
     } catch (error) {
       console.error('[ProfileEditor] Profile publish failed:', error);
-      setMessage(error?.message || 'Could not publish your profile.');
+      const text = error?.message || 'Could not save your profile.';
+      setMessage(text);
+      useChatStore.getState().setToast({ type: 'error', message: text });
     } finally {
       pool?.close(PROFILE_RELAYS);
       setSaving(false);
@@ -78,7 +83,7 @@ export default function ProfileEditor({ identity, onClose }) {
           <label className="block text-[13px] text-white/40">About<textarea value={values.about} onChange={(event) => setDraft((current) => ({ ...values, ...current, about: event.target.value }))} className={`${inputClass} mt-1 resize-none`} rows={4} maxLength={500} /></label>
           <label className="block text-[13px] text-white/40">Picture URL<input type="url" value={values.picture} onChange={(event) => setDraft((current) => ({ ...values, ...current, picture: event.target.value }))} className={`${inputClass} mt-1`} maxLength={2048} /></label>
         </div>
-        {message && <p role="status" className="mt-4 text-sm text-white/60">{message}</p>}
+        {message && <p role="status" className={`mt-4 text-sm ${/could not|unlock|error|no relay/i.test(message) ? 'text-red-400' : 'text-blue-500'}`}>{message}</p>}
         <button type="submit" disabled={saving} className="mt-5 flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 py-3 text-sm font-semibold text-white hover:bg-blue-500 disabled:opacity-50">
           {saving ? <RefreshCw size={16} className="animate-spin" /> : <Save size={16} />} {saving ? 'Publishing…' : 'Publish profile'}
         </button>

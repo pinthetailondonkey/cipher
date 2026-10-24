@@ -1,6 +1,6 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Plus, Users, MessageSquare, Radio } from 'lucide-react';
+import { Plus, Users, MessageSquare, Radio, User } from 'lucide-react';
 import { useChatStore } from '../../store/chatStore';
 
 export default function FloatingMenu() {
@@ -8,6 +8,7 @@ export default function FloatingMenu() {
   const setShowMenu = useChatStore((s) => s.setShowMenu);
   const setView = useChatStore((s) => s.setView);
   const setShowCreateGroup = useChatStore((s) => s.setShowCreateGroup);
+  const setShowMyProfile = useChatStore((s) => s.setShowMyProfile);
   const setIsChannel = useChatStore((s) => s.setIsChannel);
 
   return (
@@ -43,6 +44,13 @@ export default function FloatingMenu() {
                 <div className="p-2 bg-blue-600 rounded-full text-white shadow-lg"><Users size={16} /></div>
               </button>
 
+              <button
+                onClick={() => { setShowMenu(false); setShowMyProfile(true); }}
+                className="flex items-center gap-3 bg-[#111] px-5 py-3.5 rounded-full border border-white/10 shadow-2xl text-white hover:bg-[#1a1a1a] transition-colors"
+              >
+                <span className="text-sm font-bold tracking-wide">My Profile</span>
+                <div className="p-2 bg-blue-600 rounded-full text-white shadow-lg"><User size={16} /></div>
+              </button>
               <button
                 onClick={() => { setShowMenu(false); setIsChannel(true); setShowCreateGroup(true); }}
                 className="flex items-center gap-3 bg-[#111] px-5 py-3.5 rounded-full border border-white/10 shadow-2xl text-white hover:bg-[#1a1a1a] transition-colors"
