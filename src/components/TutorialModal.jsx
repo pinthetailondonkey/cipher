@@ -10,7 +10,7 @@ const steps = [
   },
   {
     title: "Encrypted Chats",
-    desc: "Tap 'Chats' to access your secure DMs. Create or join public/private Groups using decentralized relays.",
+    desc: "Open Chats for private messages. Create or join a group when you want a room.",
   },
   {
     title: "Global Marketplace",
@@ -71,15 +71,6 @@ export default function TutorialModal({ isOpen, onClose }) {
             {currentStep === steps.length - 1 ? "Start Using Cipher" : "Next"}
             {currentStep !== steps.length - 1 && <ChevronRight size={18} />}
           </button>
-
-          <div className="mt-8 flex flex-col items-center justify-center opacity-40">
-            <div className="flex items-center gap-1.5 text-[11px] font-medium text-white tracking-wide">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-blue-500">
-                <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
-              </svg>
-              Powered by Nostr
-            </div>
-          </div>
         </motion.div>
       </motion.div>
     </AnimatePresence>
