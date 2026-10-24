@@ -14,6 +14,14 @@ function GroupStorefront({ items, pinnedId, canList, onBuy, onList }) {
   const [title, setTitle] = useState('');
   const [price, setPrice] = useState('');
   const [note, setNote] = useState('');
+  const [formError, setFormError] = useState('');
+  const money = (product) => {
+    const amount = product.priceUsd ?? product.price ?? '';
+    if (amount === '' || amount == null) return 'Ask';
+    const currency = product.currency || (product.priceUsd != null && product.priceUsd !== '' ? 'USD' : '');
+    if (!currency || currency === 'USD') return `$${amount}`;
+    return `${amount} ${currency}`;
+  };
   const featured = items.find((item) => item.message.id === pinnedId);
   const rest = items.filter((item) => item.message.id !== pinnedId);
   const card = (item, featuredCard) => (
@@ -23,11 +31,11 @@ function GroupStorefront({ items, pinnedId, canList, onBuy, onList }) {
       onClick={() => onBuy(item)}
       className={`flex w-full items-center gap-3 border-b border-white/5 px-4 py-3 text-left active:bg-white/10 ${featuredCard ? 'bg-amber-300/[0.07]' : 'bg-black'}`}
     >
-      {item.product.image && <img src={item.product.image} alt="" className="h-12 w-12 object-cover" />}
+      {item.product.image ? <img src={item.product.image} alt="" className="h-12 w-12 object-cover" /> : <span className="flex h-12 w-12 items-center justify-center bg-[#111] text-[11px] text-white/30">Item</span>}
       <span className="min-w-0 flex-1">
-        {featuredCard && <span className="block text-[11px] font-semibold uppercase tracking-wide text-amber-200">Pin slot</span>}
+        {featuredCard && <span className="block text-[11px] font-semibold uppercase tracking-wide text-amber-200">Pinned</span>}
         <span className="block truncate text-[15px] font-semibold text-white">{item.product.title || item.product.name || 'Item'}</span>
-        <span className="block text-[13px] font-bold text-blue-500">{item.product.priceUsd ? `$${item.product.priceUsd}` : (item.product.price || 'Ask')}</span>
+        <span className="block text-[13px] font-bold text-blue-500">{money(item.product)}</span>
       </span>
     </button>
   );
@@ -40,14 +48,18 @@ function GroupStorefront({ items, pinnedId, canList, onBuy, onList }) {
       {canList && open && (
         <form onSubmit={(event) => {
           event.preventDefault();
-          if (!title.trim() || !price.trim()) return;
-          onList({ title: title.trim(), priceUsd: price.trim(), description: note.trim(), currency: 'USD' });
+          const amount = Number(price);
+          if (!title.trim()) { setFormError('Add a name.'); return; }
+          if (!Number.isFinite(amount) || amount <= 0) { setFormError('Enter a price greater than 0.'); return; }
+          setFormError('');
+          onList({ title: title.trim(), priceUsd: amount, description: note.trim(), currency: 'USD' });
           setTitle(''); setPrice(''); setNote(''); setOpen(false);
         }}>
           <input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Item" className="w-full border-b border-white/5 bg-black px-4 py-3 text-[15px] text-white outline-none placeholder:text-white/30" />
           <input value={price} onChange={(event) => setPrice(event.target.value)} placeholder="Price in USD" inputMode="decimal" className="w-full border-b border-white/5 bg-black px-4 py-3 text-[15px] text-white outline-none placeholder:text-white/30" />
           <input value={note} onChange={(event) => setNote(event.target.value)} placeholder="Note" className="w-full border-b border-white/5 bg-black px-4 py-3 text-[15px] text-white outline-none placeholder:text-white/30" />
           <button type="submit" className="w-full px-4 py-4 text-left text-[15px] font-semibold text-blue-500">Post to shop</button>
+          {formError && <p role="alert" className="px-4 pb-3 text-[13px] text-red-400">{formError}</p>}
         </form>
       )}
     </div>
