@@ -5,6 +5,7 @@ import { useChatStore } from "./store/chatStore";
 import { compressImage } from './lib/imageCompression';
 import Button from './components/ui/Button';
 import { pressable } from './components/ui/Button';
+import { MIN_PIN_LENGTH } from './lib/vaultLockout';
 
 export default function LockScreen({ identity }) {
   const [mode, setMode] = useState(() => {
@@ -35,8 +36,8 @@ export default function LockScreen({ identity }) {
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const handleBiometricUnlock = async () => {
     if (biometricLoading || loading) return;
-    if (!identity?.hasVault && pin.length < 4) {
-      setError('Enter a new PIN (at least 4 digits) before recovering this account on the device.');
+    if (!identity?.hasVault && pin.length < MIN_PIN_LENGTH) {
+      setError(`Enter a new PIN (at least ${MIN_PIN_LENGTH} digits) before recovering this account on the device.`);
       return;
     }
     setBiometricLoading(true);
@@ -79,8 +80,8 @@ export default function LockScreen({ identity }) {
     if (mode === 'create' || mode === 'restore') {
       if (cleanHandle.length < 3) { setError('Handle must be at least 3 letters/numbers'); setLoading(false); return; }
     }
-    if (mode !== 'restore_mnemonic' && pin.length < 4) {
-      setError('PIN must be at least 4 digits');
+    if ((mode !== 'restore_mnemonic' && pin.length < MIN_PIN_LENGTH) || (mode === 'restore_mnemonic' && pin.length < MIN_PIN_LENGTH)) {
+      setError(`PIN must be at least ${MIN_PIN_LENGTH} digits`);
       setLoading(false);
       return;
     }
@@ -211,7 +212,7 @@ export default function LockScreen({ identity }) {
           {mode === 'verify_key' ? 'Verify Your Recovery Key' : mode === 'save_key' ? 'Save Your Recovery Key' : mode === 'setup_profile' ? 'Your Profile' : mode === 'create' ? 'Welcome to Cipher' : mode === 'unlock' ? 'Unlock Cipher' : mode === 'restore' ? 'Restore Account' : 'Restore with Recovery Phrase'}
         </h1>
         <p className="text-[13px] text-white/40 text-center mb-8 max-w-[280px] leading-relaxed">
-          {mode === 'verify_key' ? 'Enter the words below to confirm you saved the phrase.' : mode === 'save_key' ? 'Write down these 12 words. You need them + your PIN to recover this account.' : mode === 'setup_profile' ? 'Set up your profile and start messaging.' : mode === 'create' ? 'Pick a handle and a PIN (4+ digits).' : mode === 'unlock' ? 'Enter your PIN, or use your saved device passkey.' : mode === 'restore' ? 'Enter your handle and PIN.' : 'Enter your 12-word phrase and a new PIN.'}
+          {mode === 'verify_key' ? 'Enter the words below to confirm you saved the phrase.' : mode === 'save_key' ? 'Write down these 12 words. You need them and your PIN to recover this account. Five wrong PINs delete the copy stored on this device.' : mode === 'setup_profile' ? 'Set up your profile and start messaging.' : mode === 'create' ? `Pick a handle and a PIN (${MIN_PIN_LENGTH}+ digits).` : mode === 'unlock' ? 'Enter your PIN, or use your saved device passkey. Five wrong PINs delete this account from the device, including the encrypted recovery phrase.' : mode === 'restore' ? 'Enter your handle and PIN.' : `Enter your 12-word phrase and a new PIN (${MIN_PIN_LENGTH}+ digits).`}
         </p>
 
         <form onSubmit={mode === 'verify_key' ? handleVerifyKey : mode === 'save_key' ? handleSaveKeyContinue : mode === 'setup_profile' ? handleFinishSetup : handleSubmit} className="w-full flex flex-col gap-4 rounded-3xl border border-white/10 bg-[#0A0A0A]/60 backdrop-blur-2xl p-6 shadow-2xl">
@@ -283,7 +284,7 @@ export default function LockScreen({ identity }) {
               )}
 
               {!isMnemonicMode && mode !== 'verify_key' && (
-                <input type="password" placeholder="PIN (4+ digits)" value={pin} onChange={(e) => { setPin(e.target.value.replace(/\D/g, '').slice(0, 8)); setError(''); }} className="w-full border border-white/10 bg-white/5 shadow-2xl backdrop-blur-md rounded-2xl px-5 py-4 text-[16px] text-white placeholder-gray-600 focus:outline-none focus:border-blue-500 transition-colors" maxLength={8} />
+                <input type="password" placeholder={`PIN (${MIN_PIN_LENGTH}+ digits)`} value={pin} onChange={(e) => { setPin(e.target.value.replace(/\D/g, '').slice(0, 8)); setError(''); }} className="w-full border border-white/10 bg-white/5 shadow-2xl backdrop-blur-md rounded-2xl px-5 py-4 text-[16px] text-white placeholder-gray-600 focus:outline-none focus:border-blue-500 transition-colors" maxLength={8} />
               )}
 
               {mode === 'create' && (

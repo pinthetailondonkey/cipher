@@ -32,22 +32,45 @@ export async function enqueueNostrEvent(event) {
   const owner = currentOwner();
   if (!owner) throw new Error('Local account database is not open.');
   const outbox = db.outbox;
-  await outbox.put({
+  await outbox.put(outboxRow(event));
+  await updateMessageStatus(event.id, 'queued', owner);
+}
+
+function retryDelay(attempts, random = Math.random) {
+  const exponential = Math.min(RETRY_MAX_MS, RETRY_BASE_MS * (2 ** Math.min(attempts - 1, 16)));
+  return Math.round(exponential * (0.8 + random() * 0.4));
+}
+
+export function shouldFlushOutboxRow(row, now, force = false) {
+  if (force) return true;
+  return (row?.nextRetryAt || 0) <= now;
+}
+
+export function outboxRow(event, now = Date.now()) {
+  return {
     id: event.id,
     kind: event.kind,
     event,
     attempts: 0,
     nextRetryAt: 0,
     status: 'queued',
-    queuedAt: Date.now(),
+    queuedAt: now,
     created_at: event.created_at,
-  });
-  await updateMessageStatus(event.id, 'queued', owner);
+  };
 }
 
-function retryDelay(attempts) {
-  const exponential = Math.min(RETRY_MAX_MS, RETRY_BASE_MS * (2 ** Math.min(attempts - 1, 16)));
-  return Math.round(exponential * (0.8 + Math.random() * 0.4));
+export function settleOutboxAttempt(queued, { accepted, now = Date.now(), error = '' }) {
+  if (accepted) return { action: 'delete' };
+  const attempts = (queued.attempts || 0) + 1;
+  return {
+    action: 'update',
+    patch: {
+      attempts,
+      nextRetryAt: now + retryDelay(attempts),
+      lastError: String(error || '').slice(0, 500),
+      status: 'failed',
+    },
+  };
 }
 
 export async function flushNostrOutbox(identity, { force = false } = {}) {
@@ -62,7 +85,7 @@ export async function flushNostrOutbox(identity, { force = false } = {}) {
     const pending = await outbox.toArray();
     for (const queued of pending) {
       if (currentOwner() !== identity.pk) return;
-      if (!force && (queued.nextRetryAt || 0) > Date.now()) continue;
+      if (!shouldFlushOutboxRow(queued, Date.now(), force)) continue;
 
       await outbox.update(queued.id, { status: 'sending' });
       await updateMessageStatus(queued.id, 'sending', identity.pk);
@@ -70,33 +93,26 @@ export async function flushNostrOutbox(identity, { force = false } = {}) {
         const relays = queued.kind === 9 ? groupRelays : generalRelays;
         const results = await Promise.allSettled(pool.publish(relays, queued.event));
         if (currentOwner() !== identity.pk) return;
-        if (results.some((result) => result.status === 'fulfilled')) {
+        const accepted = results.some((result) => result.status === 'fulfilled');
+        const settled = settleOutboxAttempt(queued, {
+          accepted,
+          error: results
+            .filter((result) => result.status === 'rejected')
+            .map((result) => result.reason?.message || String(result.reason))
+            .join('; '),
+        });
+        if (settled.action === 'delete') {
           await outbox.delete(queued.id);
           await updateMessageStatus(queued.id, 'sent', identity.pk);
           continue;
         }
-
-        const attempts = (queued.attempts || 0) + 1;
-        await outbox.update(queued.id, {
-          attempts,
-          nextRetryAt: Date.now() + retryDelay(attempts),
-          lastError: results
-            .filter((result) => result.status === 'rejected')
-            .map((result) => result.reason?.message || String(result.reason))
-            .join('; ').slice(0, 500),
-          status: 'failed',
-        });
+        await outbox.update(queued.id, settled.patch);
         await updateMessageStatus(queued.id, 'failed', identity.pk);
       } catch (error) {
         if (currentOwner() !== identity.pk) return;
-        const attempts = (queued.attempts || 0) + 1;
         console.warn('[outbox] Retry failed:', queued.id, error);
-        await outbox.update(queued.id, {
-          attempts,
-          nextRetryAt: Date.now() + retryDelay(attempts),
-          lastError: error?.message || String(error),
-          status: 'failed',
-        });
+        const settled = settleOutboxAttempt(queued, { accepted: false, error: error?.message || String(error) });
+        await outbox.update(queued.id, settled.patch);
         await updateMessageStatus(queued.id, 'failed', identity.pk);
       }
     }
