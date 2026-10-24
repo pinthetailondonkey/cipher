@@ -1,16 +1,35 @@
 import { useState } from 'react';
 import { Check, X } from 'lucide-react';
+import { QRCodeSVG } from 'qrcode.react';
+
+function cipherOrder(product) {
+  return {
+    type: 'cipher_order',
+    status: 'pending',
+    vendorPubkey: product?.vendorPubkey || '',
+    product: {
+      id: product?.id || null,
+      title: product?.name || product?.title || 'Product',
+      name: product?.name || product?.title || 'Product',
+      price: product?.priceUsd ?? product?.price ?? '',
+      priceUsd: product?.priceUsd ?? product?.price ?? '',
+      currency: product?.currency || 'USD',
+      image: product?.image || '',
+    },
+  };
+}
 
 export default function OneTapCheckout({ product, onConfirmOrder, onClose }) {
   const [confirmed, setConfirmed] = useState(false);
   const [orderError, setOrderError] = useState('');
+  const order = cipherOrder(product);
 
   const confirmOrder = async () => {
     if (confirmed) return;
     setConfirmed(true);
     setOrderError('');
     try {
-      await onConfirmOrder?.(product);
+      await onConfirmOrder?.(order);
     } catch (error) {
       console.error('[OneTapCheckout] Order confirmation failed:', error);
       setConfirmed(false);
@@ -24,17 +43,20 @@ export default function OneTapCheckout({ product, onConfirmOrder, onClose }) {
         <div className="mb-4 flex items-center justify-between">
           <div>
             <h2 className="text-xl font-bold text-white">Checkout</h2>
-            <p className="mt-1 text-[13px] text-white/40">{product?.name || 'Product'}</p>
+            <p className="mt-1 text-[13px] text-white/40">{product?.name || product?.title || 'Product'}</p>
           </div>
           <button type="button" onClick={onClose} className="p-2 text-white/50 hover:text-white" aria-label="Close checkout"><X size={20} /></button>
         </div>
-        <p className="mb-5 text-[15px] font-semibold text-white">{product?.price || ''} {product?.currency || ''}</p>
+        <p className="mb-4 text-[15px] font-semibold text-white">{product?.price || ''} {product?.currency || ''}</p>
+        <div className="mb-4 flex justify-center rounded-xl bg-white p-3">
+          <QRCodeSVG value={JSON.stringify(order)} size={168} level="M" />
+        </div>
         <p className="rounded-xl border border-white/10 bg-[#111] p-4 text-[13px] leading-relaxed text-white/55">
-          This sends an encrypted order request to the seller. Payment details and a fresh order-specific BTC/XMR address will appear in your private chat after the seller accepts.
+          Confirm sends this order as an encrypted message to the seller. Payment details appear in that private chat after they accept.
         </p>
         {orderError && <p role="alert" className="mt-4 text-sm text-red-400">{orderError}</p>}
         <button type="button" onClick={confirmOrder} disabled={confirmed} className="mt-5 flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 py-3 text-sm font-semibold text-white hover:bg-blue-500 disabled:opacity-60">
-          {confirmed ? <><Check size={17} /> Order request sent</> : 'Send order request'}
+          {confirmed ? <><Check size={17} /> Order sent</> : 'Confirm'}
         </button>
       </div>
     </div>
