@@ -349,15 +349,6 @@ export default function LockScreen({ identity }) {
             </button>
           )}
         </div>
-        {/* POWERED BY NOSTR */}
-        <div className="mt-12 flex flex-col items-center justify-center opacity-30 hover:opacity-80 transition-opacity">
-          <div className="flex items-center gap-1.5 text-[11px] font-medium text-white tracking-wide">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-blue-500">
-              <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
-            </svg>
-            Powered by Nostr
-          </div>
-        </div>
       </div>
     </div>
   );
