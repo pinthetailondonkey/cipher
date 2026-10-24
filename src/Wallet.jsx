@@ -17,6 +17,8 @@ import { compressImage } from './lib/imageCompression';
 import { scopedGet, scopedSet } from './lib/storage';
 import { loadVendorPaymentConfig, saveVendorPaymentConfig } from './lib/vendorPayments';
 import PrivacySettings from './components/chat/PrivacySettings';
+import Avatar from './components/ui/Avatar';
+import { pressable } from './components/ui/Button';
 
 const VendorDashboard = lazy(() => import('./components/chat/VendorDashboard'));
 const ProfileEditor = lazy(() => import('./components/chat/ProfileEditor'));
@@ -462,11 +464,9 @@ export default function Wallet({ identity, onOpenChat }) {
           <input type="file" accept="image/*" onChange={(e) => handleImageUpload(e, 'profile')} className="hidden" id="main-avatar-upload" />
           <label htmlFor="main-avatar-upload" className="cursor-pointer group relative block">
             {myProfile.picture ? (
-              <img src={myProfile.picture} alt="avatar" className="w-24 h-24 rounded-full object-cover border-2 border-white/10 group-hover:opacity-80 transition-opacity" />
+              <img src={myProfile.picture} alt="avatar" className="w-12 h-12 rounded-full object-cover border border-white/10 group-hover:opacity-80 transition-opacity" />
             ) : (
-              <div className="w-24 h-24 rounded-full bg-[#111] flex items-center justify-center border-2 border-white/10 group-hover:opacity-80 transition-opacity">
-                <Logo size={48} className="opacity-60" />
-              </div>
+              <Avatar name={myProfile.displayName || myProfile.name} />
             )}
             <div className="absolute inset-0 flex items-center justify-center bg-black/50 rounded-full opacity-0 group-hover:opacity-100 transition-opacity">
               {uploadingImage ? <RefreshCw size={24} className="text-white animate-spin" /> : <Camera size={24} className="text-white" />}
@@ -474,8 +474,8 @@ export default function Wallet({ identity, onOpenChat }) {
           </label>
         </div>
         
-        <h2 className="text-[20px] font-bold text-white">{myProfile.displayName}</h2>
-        <p className="text-[14px] text-white/40 mb-3">@{myProfile.name}</p>
+        <h2 className="text-2xl font-bold tracking-tight text-white">{myProfile.displayName}</h2>
+        <p className="text-[13px] text-white/40 mb-3">@{myProfile.name}</p>
         
         {myProfile.about && <p className="text-[13px] text-white/50 mb-3 px-8 text-center">{myProfile.about}</p>}
         
@@ -489,7 +489,7 @@ export default function Wallet({ identity, onOpenChat }) {
       <div className="w-full">
         {/* Group 1 */}
         <div className="mb-6">
-          <button onClick={() => setView('orders')} className="w-full flex items-center gap-4 px-4 py-4 hover:bg-white/5 transition-colors border-b border-white/5">
+          <button onClick={() => setView('orders')} className={`w-full flex items-center gap-4 border-b border-white/5 bg-[#111] px-4 py-4 text-left active:bg-white/10 ${pressable}`}>
             <Package size={22} className="text-white/60" />
             <div className="flex-1 text-left">
               <p className="text-[15px] font-semibold text-white">My Orders</p>
@@ -498,7 +498,7 @@ export default function Wallet({ identity, onOpenChat }) {
             <ChevronRight size={20} className="text-white/60" />
           </button>
 
-          <button onClick={() => setView('profile_editor')} className="w-full flex items-center gap-4 px-4 py-4 hover:bg-white/5 transition-colors border-b border-white/5">
+          <button onClick={() => setView('profile_editor')} className={`w-full flex items-center gap-4 border-b border-white/5 bg-[#111] px-4 py-4 text-left active:bg-white/10 ${pressable}`}>
             <User size={22} className="text-white/60" />
             <div className="flex-1 text-left">
               <p className="text-[15px] font-semibold text-white">Edit Profile</p>
@@ -507,7 +507,7 @@ export default function Wallet({ identity, onOpenChat }) {
             <ChevronRight size={20} className="text-white/60" />
           </button>
 
-          <button onClick={() => setView('privacy')} className="w-full flex items-center gap-4 px-4 py-4 hover:bg-white/5 transition-colors">
+          <button onClick={() => setView('privacy')} className={`w-full flex items-center gap-4 bg-[#111] px-4 py-4 text-left active:bg-white/10 ${pressable}`}>
             <Shield size={22} className="text-white/60" />
             <div className="flex-1 text-left">
               <p className="text-[15px] font-semibold text-white">Privacy and Security</p>
