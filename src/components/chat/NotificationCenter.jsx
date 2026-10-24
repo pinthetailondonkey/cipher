@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
-import { Bell, Users, X } from 'lucide-react';
+import { Bell, Users } from 'lucide-react';
+import ScreenHeader from '../ui/ScreenHeader';
 import { useChatStore } from '../../store/chatStore';
-import { pressable } from '../ui/Button';
 
 function previewText(message) {
   const data = message?.data;
@@ -49,8 +49,7 @@ export default function NotificationCenter({ onClose, onJump }) {
 
   return (
     <div className="fixed inset-0 z-[999] flex flex-col bg-black" role="dialog" aria-modal="true" aria-label="Notifications">
-      <button type="button" onClick={onClose} className={`flex items-center gap-1 px-4 pb-2 pt-4 text-[13px] text-white/40 ${pressable}`} aria-label="Back"><X size={16} /> Close</button>
-      <h2 className="px-4 pb-4 text-2xl font-bold tracking-tight text-white">Notifications</h2>
+      <ScreenHeader title="Notifications" onBack={onClose} />
       {notifications.length === 0 ? (
         <div className="flex flex-1 flex-col items-center justify-center text-white/40">
           <Bell size={40} className="mb-3 text-blue-500" />
@@ -59,7 +58,7 @@ export default function NotificationCenter({ onClose, onJump }) {
       ) : (
         <div className="flex-1 overflow-y-auto">
           {notifications.map((item) => (
-            <button key={item.id} type="button" onClick={() => openNotification(item)} className={`flex w-full items-center gap-3 border-b border-white/5 bg-[#111] px-4 py-4 text-left active:bg-white/10 ${pressable}`}>
+            <button key={item.id} type="button" onClick={() => openNotification(item)} className="flex w-full items-center gap-3 border-b border-white/5 px-4 py-3 text-left active:bg-white/10">
               <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-white/10 bg-black text-blue-500">
                 {item.type === 'group' ? <Users size={20} /> : <Bell size={20} />}
               </span>
