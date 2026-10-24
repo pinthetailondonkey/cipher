@@ -1,9 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { BadgeCheck, Link2, LogOut, Pin, PinOff, X } from 'lucide-react';
+import { BadgeCheck, X } from 'lucide-react';
 import { useChatStore } from '../../store/chatStore';
 import Avatar from '../ui/Avatar';
-import Button from '../ui/Button';
 import { pressable } from '../ui/Button';
 import { copyText } from '../../lib/copyText';
 
@@ -178,26 +177,20 @@ export default function GroupInfoSidebar({
               </div>
               <button type="button" onClick={onClose} aria-label="Close group information" className={`p-2 text-white/45 hover:text-white ${pressable}`}><X size={20} /></button>
             </header>
-            <div className="min-h-0 flex-1 overflow-y-auto bg-[#0A0A0A] p-4">
-              {group.about && <p className="mb-4 text-[13px] leading-relaxed text-white/40">{group.about}</p>}
-              <div className="mb-4 flex flex-col gap-2">
-                <Button onClick={shareGroup} className="flex w-full items-center justify-center gap-2">
-                  <Link2 size={16} /> {copied ? 'Copied!' : 'Invite / Share Group'}
-                </Button>
-                {canManage && (
-                  <Button variant="secondary" onClick={editGroup} disabled={pending} className="w-full">Edit group</Button>
-                )}
-                <Button variant="danger" onClick={leave} disabled={pending} className="flex w-full items-center justify-center gap-2"><LogOut size={16} /> Leave Group</Button>
-              </div>
-              <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-white/40">Members</h3>
-              <div className="mb-5 space-y-1">
-                {memberList.length === 0 && <p className="rounded-xl bg-[#111] px-3 py-3 text-sm text-white/40">Looking up members…</p>}
+            <div className="min-h-0 flex-1 overflow-y-auto bg-[#0A0A0A]">
+              {group.about && <p className="border-b border-white/5 px-4 py-3 text-[13px] text-white/40">{group.about}</p>}
+              <button type="button" onClick={shareGroup} className="w-full border-b border-white/5 px-4 py-4 text-left text-[15px] font-semibold text-blue-500 active:bg-white/10">{copied ? 'Copied' : 'Invite'}</button>
+              {canManage && <button type="button" onClick={editGroup} disabled={pending} className="w-full border-b border-white/5 px-4 py-4 text-left text-[15px] font-semibold text-white disabled:opacity-40 active:bg-white/10">Edit group</button>}
+              <button type="button" onClick={leave} disabled={pending} className="w-full border-b border-white/5 px-4 py-4 text-left text-[15px] font-semibold text-red-400 disabled:opacity-40 active:bg-white/10">Leave group</button>
+              <p className="px-4 pb-1 pt-4 text-[13px] text-white/40">Members</p>
+              <div className="mb-5">
+                {memberList.length === 0 && <p className="border-b border-white/5 px-4 py-3 text-[13px] text-white/40">Looking up members…</p>}
                 {memberList.map((member) => {
                   const profile = profiles[member.pubkey] || {};
                   const name = profile.displayName || profile.name || `${member.pubkey.slice(0, 8)}…`;
                   const role = member.role || (member.pubkey === group.creator ? 'admin' : 'member');
                   return (
-                    <div key={member.pubkey} className="flex items-center gap-3 rounded-2xl border border-white/10 bg-[#111] px-3 py-2">
+                    <div key={member.pubkey} className="flex items-center gap-3 border-b border-white/5 px-4 py-3">
                       <Avatar src={profile.picture} name={name} />
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-[15px] font-semibold text-white">{name}</p>
@@ -210,39 +203,29 @@ export default function GroupInfoSidebar({
                   );
                 })}
               </div>
-              <h3 className="mb-2 text-[13px] text-white/40">Shop</h3>
+              <p className="px-4 pb-1 pt-4 text-[13px] text-white/40">Shop</p>
               {pinnedId && (
-                <div className="mb-4 flex items-center gap-2 rounded-xl border border-amber-400/20 bg-amber-400/10 px-3 py-3 text-xs font-semibold text-amber-200">
-                  <BadgeCheck size={16} /> An endorsed listing is pinned
-                  {canManage && <button type="button" onClick={removePin} disabled={pending} className="ml-auto flex items-center gap-1 text-amber-100/75 hover:text-white disabled:opacity-50"><PinOff size={14} /> Unpin</button>}
+                <div className="flex items-center gap-2 border-b border-white/5 px-4 py-3 text-[13px] text-amber-200">
+                  <BadgeCheck size={16} /> Pinned
+                  {canManage && <button type="button" onClick={removePin} disabled={pending} className="ml-auto text-blue-500 disabled:opacity-50">Unpin</button>}
                 </div>
               )}
-              {error && <p role="alert" className="mb-3 rounded-lg bg-red-500/10 p-3 text-xs text-red-300">{error}</p>}
-              {products.length === 0 && <p className="mb-3 rounded-2xl border border-white/10 bg-[#111] px-3 py-3 text-[13px] text-white/40">No listings in this group yet.</p>}
-              <div className="space-y-2">
+              {error && <p role="alert" className="px-4 py-3 text-[13px] text-red-400">{error}</p>}
+              {products.length === 0 && <p className="border-b border-white/5 px-4 py-3 text-[13px] text-white/40">No listings yet.</p>}
+              <div>
                 {products.map(({ message, product }) => {
                   const isPinned = pinnedId === message.id;
                   return (
-                    <article key={message.id} className={`rounded-xl border p-3 ${isPinned ? 'border-amber-400/30 bg-amber-400/[0.06]' : 'border-white/10 bg-[#111]'}`}>
-                      <div className="flex items-center gap-3">
-                        {product.image && <img src={product.image} alt="" loading="lazy" className="h-11 w-11 rounded-lg object-cover" />}
-                        <div className="min-w-0 flex-1">
-                          <p className="truncate text-sm font-semibold text-white">{product.title || product.name || 'Product'}</p>
-                          <p className="truncate text-xs text-white/45">{product.price || product.priceUsd || ''} {product.currency || 'USD'}</p>
-                        </div>
-                        {canManage && (
-                          <button
-                            type="button"
-                            onClick={() => isPinned ? removePin() : setPin(message.id)}
-                            disabled={pending || isPinned}
-                            aria-label={isPinned ? 'Listing is pinned' : 'Pin listing'}
-                            className="rounded-lg border border-white/10 p-2 text-white/70 hover:border-amber-300/40 hover:text-amber-200 disabled:opacity-50"
-                          >
-                            {isPinned ? <BadgeCheck size={16} /> : <Pin size={16} />}
-                          </button>
-                        )}
+                    <div key={message.id} className="flex items-center gap-3 border-b border-white/5 px-4 py-3">
+                      {product.image && <img src={product.image} alt="" loading="lazy" className="h-10 w-10 object-cover" />}
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-[15px] font-semibold text-white">{product.title || product.name || 'Product'}</p>
+                        <p className="truncate text-[13px] text-white/40">{product.price || product.priceUsd || ''}</p>
                       </div>
-                    </article>
+                      {canManage && (
+                        <button type="button" onClick={() => isPinned ? removePin() : setPin(message.id)} disabled={pending || isPinned} className="text-[13px] font-semibold text-blue-500 disabled:opacity-40">{isPinned ? 'Pinned' : 'Pin'}</button>
+                      )}
+                    </div>
                   );
                 })}
               </div>
