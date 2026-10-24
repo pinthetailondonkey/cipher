@@ -11,9 +11,11 @@ export default function Discover({ identity, onJoined }) {
   const [loading, setLoading] = useState(true);
   const [joiningId, setJoiningId] = useState('');
   const [error, setError] = useState('');
-  const storeGroups = useChatStore((s) => s.groups) || [];
+  const storeGroups = useChatStore((s) => s.groups);
+  const groupKey = (storeGroups || []).map((group) => group.id).sort().join('|');
 
   useEffect(() => {
+    const groups = useChatStore.getState().groups || [];
     const fetchGroups = async () => {
       setLoading(true);
       try {
@@ -45,19 +47,19 @@ export default function Discover({ identity, onJoined }) {
         setRealGroups(unique);
       } catch (err) {
         console.error("Failed to fetch groups:", err);
-        setRealGroups(storeGroups);
+        setRealGroups(useChatStore.getState().groups || []);
       } finally {
         setLoading(false);
       }
     };
 
-    if (storeGroups.length > 0) {
-      setRealGroups(storeGroups);
+    if (groups.length > 0) {
+      setRealGroups(groups);
       setLoading(false);
     } else {
       fetchGroups();
     }
-  }, [storeGroups]);
+  }, [groupKey]);
 
   const displayGroups = realGroups.filter(g => 
     (g.name || '').toLowerCase().includes(query.toLowerCase()) || 

@@ -317,7 +317,7 @@ export function useNIP29Group({ identity }) {
     setGroupsStore((prev) => {
       const next = typeof val === 'function' ? val(prev) : val;
       const myGroupIds = new Set(getMyGroups(identity?.pk).map(g => g.id));
-      return next.filter(g => myGroupIds.has(g.id));
+      return (Array.isArray(next) ? next : []).filter(g => myGroupIds.has(g.id));
     });
   }, [identity?.pk, setGroupsStore]);
   const setGroupMessages = useChatStore((s) => s.setGroupMessages);
