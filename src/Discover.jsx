@@ -89,18 +89,20 @@ export default function Discover({ identity, onJoined }) {
 
   return (
     <div className="relative flex h-full w-full flex-col bg-black">
-      <div className="border-b border-white/5 px-4 py-3">
-        <h1 className="text-[17px] font-semibold text-white">Groups</h1>
+      <div className="px-4 pb-2 pt-4">
+        <h1 className="text-2xl font-bold tracking-tight text-white">Groups</h1>
       </div>
-      <div className="flex items-center gap-2 border-b border-white/5 px-4 py-3">
-        <Search size={16} className="text-white/40" />
-        <input
-          type="text"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search"
-          className="flex-1 bg-transparent text-[15px] text-white placeholder-white/30 focus:outline-none"
-        />
+      <div className="px-4 pb-3">
+        <div className="flex items-center gap-2 rounded-2xl border border-white/10 bg-[#111] px-4 py-3">
+          <Search size={16} className="text-white/40" />
+          <input
+            type="text"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search"
+            className="flex-1 bg-transparent text-[15px] text-white placeholder-white/30 focus:outline-none"
+          />
+        </div>
       </div>
 
       {error && <p role="alert" className="px-4 text-sm text-red-400">{error}</p>}
@@ -116,7 +118,8 @@ export default function Discover({ identity, onJoined }) {
             <p>No groups found</p>
           </div>
         ) : (
-          displayGroups.map((group, i) => {
+          <div className="mx-4 overflow-hidden rounded-2xl border border-white/10 bg-[#111]">
+          {displayGroups.map((group) => {
             const Icon = group.isChannel ? Megaphone : Users;
             return (
               <button
@@ -124,10 +127,10 @@ export default function Discover({ identity, onJoined }) {
                 key={group.id}
                 onClick={() => join(group)}
                 disabled={joiningId === group.id}
-                className={`flex w-full items-center justify-between px-4 py-3 text-left active:bg-white/10 disabled:opacity-50 ${i !== displayGroups.length - 1 ? 'border-b border-white/5' : ''}`}
+                className="flex w-full items-center justify-between border-b border-white/5 p-4 text-left last:border-0 active:bg-white/5 disabled:opacity-50"
               >
                 <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 rounded-full bg-[#111] border border-white/10 flex items-center justify-center text-blue-500 shrink-0">
+                  <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-white/10 bg-black text-blue-500">
                     <Icon size={22} />
                   </div>
                   <div>
@@ -135,10 +138,11 @@ export default function Discover({ identity, onJoined }) {
                     <p className="text-[13px] text-white/40 line-clamp-1">{group.about}</p>
                   </div>
                 </div>
-                <span className="text-[15px] font-semibold text-blue-500">{joiningId === group.id ? 'Joining…' : 'Join'}</span>
+                <span className="rounded-2xl bg-blue-600 px-3 py-1.5 text-[13px] font-bold text-white">{joiningId === group.id ? '…' : 'Join'}</span>
               </button>
             );
-          })
+          })}
+          </div>
         )}
       </div>
     </div>
