@@ -19,6 +19,7 @@ import { loadVendorPaymentConfig, saveVendorPaymentConfig } from './lib/vendorPa
 import PrivacySettings from './components/chat/PrivacySettings';
 import Avatar from './components/ui/Avatar';
 import { pressable } from './components/ui/Button';
+import { copyText } from './lib/copyText';
 
 const VendorDashboard = lazy(() => import('./components/chat/VendorDashboard'));
 const ProfileEditor = lazy(() => import('./components/chat/ProfileEditor'));
@@ -141,8 +142,9 @@ export default function Wallet({ identity, onOpenChat }) {
 
   const copyNpub = () => {
     if (identity.npub) {
-      navigator.clipboard.writeText(identity.npub)
-      setCopied(true); setTimeout(() => setCopied(false), 2000)
+      copyText(identity.npub);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
     }
   }
 

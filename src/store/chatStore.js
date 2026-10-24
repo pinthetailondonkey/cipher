@@ -56,7 +56,8 @@ export const useChatStore = create((set, get) => ({
   groupMembers: [],
   pinnedMessages: {},
   disappearingTimers: scopedGet('disappearing_timers', {}),
-  unreadCounts: {},
+  unreadCounts: scopedGet('unread', {}),
+  notifAck: scopedGet('notif_ack', {}),
   pinnedChats: scopedGet('pinned', []),
   archivedChats: scopedGet('archived', []),
   toggleArchiveChat: (id) => set(s => {
@@ -118,7 +119,22 @@ export const useChatStore = create((set, get) => ({
     scopedSet('disappearing_timers', next);
     return { disappearingTimers: next };
   }),
-  setUnreadCounts: (v) => set((s) => ({ unreadCounts: typeof v === 'function' ? v(s.unreadCounts) : v })),
+  setUnreadCounts: (v) => set((s) => {
+    const next = typeof v === 'function' ? v(s.unreadCounts) : v;
+    const counts = next && typeof next === 'object' ? next : {};
+    scopedSet('unread', counts);
+    return { unreadCounts: counts };
+  }),
+  ackNotifications: () => set((s) => {
+    const ack = { ...s.notifAck };
+    for (const [id, count] of Object.entries(s.unreadCounts || {})) ack[id] = Number(count) || 0;
+    scopedSet('notif_ack', ack);
+    return { notifAck: ack };
+  }),
+  clearNotificationAck: () => {
+    scopedSet('notif_ack', {});
+    set({ notifAck: {} });
+  },
   setReactions: (v) => set((s) => ({ reactions: typeof v === 'function' ? v(s.reactions) : v })),
   setDeletedMsgs: (v) => set({ deletedMsgs: v }),
 
@@ -312,6 +328,8 @@ export const useChatStore = create((set, get) => ({
     bookmarks: normalizeBookmarks(scopedGet('bookmarks', [])),
     messageEdits: scopedGet('msg_edits', {}),
     disappearingTimers: scopedGet('disappearing_timers', {}),
+    unreadCounts: scopedGet('unread', {}),
+    notifAck: scopedGet('notif_ack', {}),
     joinRequests: scopedGet('join_requests', {}),
     isVendor: scopedGet('is_vendor', false) === true,
     myProducts: scopedGet('my_products', []),

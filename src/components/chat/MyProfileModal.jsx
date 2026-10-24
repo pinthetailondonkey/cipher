@@ -2,8 +2,8 @@ import { useState } from 'react';
 import { Copy, X } from 'lucide-react';
 import { useChatStore } from '../../store/chatStore';
 import Avatar from '../ui/Avatar';
-import Button from '../ui/Button';
-import { pressable } from '../ui/Button';
+import Button, { pressable } from '../ui/Button';
+import { copyText } from '../../lib/copyText';
 
 const EMPTY_PROFILE = {};
 
@@ -21,9 +21,8 @@ export default function MyProfileModal({ identity }) {
       const { nip19 } = await import('nostr-tools');
       const npub = identity?.npub || (identity?.pk ? nip19.npubEncode(identity.pk) : '');
       if (!npub) throw new Error('No public key yet.');
-      await navigator.clipboard.writeText(npub);
-      setNotice('Copied!');
-      useChatStore.getState().setToast({ type: 'success', message: 'Copied!' });
+      const ok = await copyText(npub);
+      if (ok) setNotice('Copied!');
     } catch (copyError) {
       console.error('[MyProfileModal] Could not copy npub:', copyError);
       setError('Could not copy the public key.');

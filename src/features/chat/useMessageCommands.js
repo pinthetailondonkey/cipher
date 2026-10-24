@@ -2,7 +2,7 @@ import { db } from '../../db';
 import { getAuthenticatedPool } from '../../lib/pool';
 import { generalRelays } from '../../lib/relays';
 import { useChatStore } from '../../store/chatStore';
-import { copyToClipboard } from './media';
+import { copyText } from '../../lib/copyText';
 
 export function useMessageCommands({
   identity,
@@ -50,8 +50,7 @@ export function useMessageCommands({
     }
     if (action === 'reply') { setReplyingTo(msg); setSelectedMessage(null); return; }
     if (action === 'copy') {
-      copyToClipboard(msg.data?.message || msg.rawContent || msg.text || '');
-      setToast({ type: 'success', message: 'Copied' });
+      await copyText(msg.data?.message || msg.rawContent || msg.text || '');
       setSelectedMessage(null); return;
     }
     if (action === 'forward') {
