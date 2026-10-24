@@ -56,7 +56,8 @@ export default function NotificationCenter({ onClose, onJump }) {
           <p className="text-[13px]">You’re all caught up.</p>
         </div>
       ) : (
-        <div className="flex-1 overflow-y-auto">
+        <div className="flex-1 overflow-y-auto p-4">
+          <div className="overflow-hidden rounded-2xl border border-white/10 bg-[#111]">
           {notifications.map((item) => (
             <button key={item.id} type="button" onClick={() => openNotification(item)} className="flex w-full items-center gap-3 border-b border-white/5 px-4 py-3 text-left active:bg-white/10">
               <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-white/10 bg-black text-blue-500">
@@ -69,6 +70,7 @@ export default function NotificationCenter({ onClose, onJump }) {
               <span className="flex h-[16px] min-w-[16px] items-center justify-center rounded-full bg-blue-500 px-1.5 text-[10px] font-bold text-white">{item.count}</span>
             </button>
           ))}
+          </div>
         </div>
       )}
     </div>

@@ -33,7 +33,7 @@ export default function BroadcastModal({ isOpen, onClose, product, groups = [], 
         <header className="mb-4 flex items-center gap-3">
           <Radio size={19} className="text-blue-400" />
           <div className="min-w-0 flex-1">
-            <h2 className="text-lg font-bold text-white">Broadcast listing</h2>
+            <h2 className="text-2xl font-bold tracking-tight text-white">Broadcast</h2>
             <p className="truncate text-xs text-white/45">{product.title || product.name || 'Product'}</p>
           </div>
           <button type="button" onClick={onClose} aria-label="Close broadcast" className="p-2 text-white/45 hover:text-white"><X size={19} /></button>
@@ -58,7 +58,7 @@ export default function BroadcastModal({ isOpen, onClose, product, groups = [], 
           type="button"
           onClick={broadcast}
           disabled={sending || selectedGroups.length === 0}
-          className="mt-5 w-full rounded-xl bg-blue-600 py-3 text-sm font-semibold text-white hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
+          className="mt-5 w-full rounded-2xl bg-blue-600 py-3.5 font-bold text-white hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
         >
           {sending ? 'Broadcasting…' : `Post to ${selectedGroups.length} group${selectedGroups.length === 1 ? '' : 's'}`}
         </button>
