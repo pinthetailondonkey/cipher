@@ -21,12 +21,13 @@ export default function MessageRequests({ dms = {}, profiles = {}, onBack, onOpe
           <p className="mt-1 text-[13px] text-white/40">New conversations you have not answered show up here.</p>
         </div>
       ) : (
-        <div>
+        <div className="p-4">
+          <div className="overflow-hidden rounded-2xl border border-white/10 bg-[#111]">
           {requests.map(({ pubkey, message }) => {
             const profile = profiles[pubkey] || {};
             const name = profile.displayName || profile.name || pubkey.slice(0, 12);
             return (
-              <button type="button" key={pubkey} onClick={() => onOpenChat?.(pubkey)} className="flex w-full items-center gap-3 border-b border-white/5 px-4 py-3 text-left active:bg-white/10">
+              <button type="button" key={pubkey} onClick={() => onOpenChat?.(pubkey)} className="flex w-full items-center gap-3 border-b border-white/5 p-4 text-left last:border-0 active:bg-white/5">
                 <Avatar src={profile.picture} name={name} />
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-[15px] font-semibold text-white">{name}</span>
@@ -35,6 +36,7 @@ export default function MessageRequests({ dms = {}, profiles = {}, onBack, onOpe
               </button>
             );
           })}
+          </div>
         </div>
       )}
     </div>
