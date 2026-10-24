@@ -3,6 +3,7 @@ import { getAuthenticatedPool } from '../../lib/pool';
 import { generalRelays } from '../../lib/relays';
 import { useChatStore } from '../../store/chatStore';
 import { copyText } from '../../lib/copyText';
+import { haptic } from '../../lib/haptics';
 
 export function useMessageCommands({
   identity,
@@ -23,7 +24,6 @@ export function useMessageCommands({
   const setForwardingMsg = useChatStore((s) => s.setForwardingMsg);
   const setDms = useChatStore((s) => s.setDms);
   const setGroupMessages = useChatStore((s) => s.setGroupMessages);
-  const setDeletedMsgs = useChatStore((s) => s.setDeletedMsgs);
   const setVendorStorefrontPubkey = useChatStore((s) => s.setVendorStorefrontPubkey);
   const setBroadcastProduct = useChatStore((s) => s.setBroadcastProduct);
   const setEditingProduct = useChatStore((s) => s.setEditingProduct);
@@ -44,9 +44,18 @@ export function useMessageCommands({
     }
     if (!msg) return;
 
-    if (action === 'react' && emojiOverride) {
-      await sendReaction(msg.id, emojiOverride, !!activeGroup, activeGroup?.id, msg.pubkey);
-      setSelectedMessage(null); return;
+    if (action === 'react') {
+      const emoji = emojiOverride || msg.emoji;
+      if (!emoji || !msg.id) return;
+      try {
+        haptic('light');
+        await sendReaction(msg.id, emoji, !!activeGroup, activeGroup?.id, msg.pubkey);
+      } catch (error) {
+        console.error('[Chat] Reaction failed:', error);
+        setToast({ type: 'error', message: 'Could not add that reaction.' });
+      }
+      setSelectedMessage(null);
+      return;
     }
     if (action === 'reply') { setReplyingTo(msg); setSelectedMessage(null); return; }
     if (action === 'copy') {
@@ -92,31 +101,45 @@ export function useMessageCommands({
       setSelectedMessage(null); return;
     }
     if (action === 'delete') {
+      const id = msg.id;
       try {
-        await db.messages.delete(msg.id);
-        setDeletedMsgs(prev => new Set(prev).add(msg.id));
-        if (msg.pubkey === identity.pk) {
-          const { finalizeEvent } = await import('nostr-tools');
-          const pool = await getAuthenticatedPool(identity);
-          const deletionEvent = finalizeEvent({
-            kind: 5,
-            tags: [['e', msg.id]],
-            content: 'Deleted',
-          }, identity.sk);
-          const results = await Promise.allSettled(pool.publish(generalRelays, deletionEvent));
-          const published = results.some((result) => result.status === 'fulfilled');
-          setToast({
-            type: published ? 'success' : 'error',
-            message: published ? 'Deleted for everyone' : 'Deleted locally; relay sync failed',
-          });
-        } else {
-          setToast({ type: 'success', message: 'Deleted locally' });
+        const state = useChatStore.getState();
+        const current = state.deletedMsgs instanceof Set ? state.deletedMsgs : new Set();
+        const nextDeleted = new Set(current);
+        nextDeleted.add(id);
+        state.setDeletedMsgs(nextDeleted);
+        if (activeDm) setDms((prev) => ({ ...prev, [activeDm]: (prev[activeDm] || []).filter((item) => item.id !== id) }));
+        else if (activeGroup?.id) setGroupMessages((prev) => ({ ...prev, [activeGroup.id]: (prev[activeGroup.id] || []).filter((item) => item.id !== id) }));
+        setSelectedMessage(null);
+        try { await db.messages.delete(id); } catch (storageError) {
+          console.error('[Chat] Local delete failed:', storageError);
         }
-      } catch (e) {
-        console.error('[Chat] Message deletion failed:', e);
-        setToast({ type: 'error', message: 'Deleted locally; relay sync failed' });
+        if (msg.pubkey === identity?.pk && identity?.sk) {
+          try {
+            const { finalizeEvent } = await import('nostr-tools');
+            const pool = await getAuthenticatedPool(identity);
+            const deletionEvent = finalizeEvent({
+              kind: 5,
+              created_at: Math.floor(Date.now() / 1000),
+              tags: [['e', id]],
+              content: '',
+            }, identity.sk);
+            const results = await Promise.allSettled(pool.publish(generalRelays, deletionEvent));
+            const published = results.some((result) => result.status === 'fulfilled');
+            setToast({ type: published ? 'success' : 'error', message: published ? 'Deleted' : 'Removed on this device. It could not sync.' });
+          } catch (publishError) {
+            console.error('[Chat] Delete sync failed:', publishError);
+            setToast({ type: 'error', message: 'Removed on this device. It could not sync.' });
+          }
+        } else {
+          setToast({ type: 'success', message: 'Removed' });
+        }
+      } catch (error) {
+        console.error('[Chat] Message deletion failed:', error);
+        setToast({ type: 'error', message: 'Could not delete that message.' });
+        setSelectedMessage(null);
       }
-      setSelectedMessage(null); return;
+      return;
     }
     if (action === 'pin' && activeGroup) {
       await pinMessage(activeGroup.id, msg.id);
@@ -192,8 +215,15 @@ export function useMessageCommands({
       onConfirm: async () => {
         const chatId = activeDm || activeGroup?.id;
         if (!chatId) return;
-        for (const id of selectedIds) await db.messages.delete(id);
-        useChatStore.getState().setDeletedMsgs(new Set([...useChatStore.getState().deletedMsgs, ...selectedIds]));
+        const current = useChatStore.getState().deletedMsgs;
+        const nextDeleted = new Set(current instanceof Set ? current : []);
+        selectedIds.forEach((id) => nextDeleted.add(id));
+        useChatStore.getState().setDeletedMsgs(nextDeleted);
+        if (activeDm) setDms((prev) => ({ ...prev, [activeDm]: (prev[activeDm] || []).filter((item) => !selectedIds.includes(item.id)) }));
+        else if (activeGroup?.id) setGroupMessages((prev) => ({ ...prev, [activeGroup.id]: (prev[activeGroup.id] || []).filter((item) => !selectedIds.includes(item.id)) }));
+        for (const id of selectedIds) {
+          try { await db.messages.delete(id); } catch (error) { console.error('[Chat] Local delete failed:', error); }
+        }
         useChatStore.getState().clearSelection();
         setToast({ type: 'success', message: 'Messages deleted' });
       },
