@@ -117,11 +117,15 @@ export default function QRScanner({ onClose }) {
 
   return (
     <div className="fixed inset-0 z-[999] flex flex-col bg-black pt-safe pb-safe" role="dialog" aria-modal="true" aria-label="Scan QR code">
-      <div className="flex items-center justify-between border-b border-white/10 p-4">
+      <div className="pointer-events-none absolute inset-0">
+        <div className="absolute left-[-10%] top-[-10%] h-[50%] w-[50%] rounded-full bg-blue-600/20 blur-[120px]" />
+        <div className="absolute bottom-[-10%] right-[-10%] h-[50%] w-[50%] rounded-full bg-purple-600/10 blur-[120px]" />
+      </div>
+      <div className="relative z-10 flex items-center justify-between border-b border-white/10 bg-[#0A0A0A]/60 p-4 backdrop-blur-2xl">
         <h2 className="text-lg font-bold text-white">Scan QR Code</h2>
         <button type="button" onClick={onClose} className="touch-target p-2 text-white/60 hover:text-white" aria-label="Close scanner"><X size={24} /></button>
       </div>
-      <div className="flex flex-1 flex-col items-center justify-center gap-5 overflow-y-auto p-5">
+      <div className="relative z-10 flex flex-1 flex-col items-center justify-center gap-5 overflow-y-auto p-5">
         {error ? (
           <div className="flex max-w-xs flex-col items-center text-center">
             <Camera size={48} className="mb-4 text-white/40" />

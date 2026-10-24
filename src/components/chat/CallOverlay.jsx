@@ -56,6 +56,10 @@ export default function CallOverlay() {
 
   return (
     <div className="fixed inset-0 z-[80] flex flex-col bg-black">
+      <div className="pointer-events-none absolute inset-0">
+        <div className="absolute left-[-10%] top-[-10%] h-[50%] w-[50%] rounded-full bg-blue-600/25 blur-[120px]" />
+        <div className="absolute bottom-[-10%] right-[-10%] h-[50%] w-[50%] rounded-full bg-purple-600/15 blur-[120px]" />
+      </div>
       <div className="flex flex-1 flex-col items-center justify-center px-6">
         <Avatar src={profile.picture} name={name} className={`!h-32 !w-32 text-4xl ${call.status === 'ringing' || call.status === 'calling' ? 'animate-pulse' : ''}`} />
         <h2 className="mt-5 max-w-full truncate text-2xl font-bold tracking-tight text-white">{name}</h2>
@@ -64,7 +68,7 @@ export default function CallOverlay() {
       <div className={`flex items-end justify-center gap-14 px-8 pb-16 ${call.status === 'ringing' && call.direction === 'in' ? '' : ''}`}>
         {call.status === 'active' && (
           <button type="button" onClick={toggleMute} className="flex flex-col items-center gap-2 text-white" aria-label={call.muted ? 'Unmute' : 'Mute'}>
-            <span className={`flex h-16 w-16 items-center justify-center rounded-full bg-white/5 active:bg-white/10 ${pressable}`}>{call.muted ? <MicOff size={24} /> : <Mic size={24} />}</span>
+            <span className={`flex h-16 w-16 items-center justify-center rounded-full border border-white/10 bg-white/10 shadow-2xl backdrop-blur-xl active:bg-white/20 ${pressable}`}>{call.muted ? <MicOff size={24} /> : <Mic size={24} />}</span>
             <span className="text-[13px] text-white/70">{call.muted ? 'Unmute' : 'Mute'}</span>
           </button>
         )}
