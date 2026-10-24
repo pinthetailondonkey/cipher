@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ArrowLeft, Info, MoreVertical, Phone } from 'lucide-react';
+import { ArrowLeft, Info, Phone } from 'lucide-react';
 import { useChatStore } from '../../store/chatStore';
 import { startCall } from '../../lib/voiceCall';
 
@@ -58,7 +58,6 @@ export default function ChatHeader({ mode }) {
       <div className="flex items-center">
         {mode === 'group' && <button type="button" onClick={() => setShowGroupInfo(true)} aria-label="Group information and pinned listing" className="p-2 text-white/50 hover:text-white"><Info size={19} /></button>}
         {mode === 'dm' && <button type="button" onClick={placeCall} aria-label="Voice call" className="p-2 text-white/70 hover:text-white"><Phone size={18} /></button>}
-        <button type="button" onClick={() => mode === 'group' ? setShowGroupInfo(true) : setProfilePubkey(activeDm)} aria-label={mode === 'group' ? 'More group details' : 'More contact details'} className="p-2 text-white/50 hover:text-white"><MoreVertical size={20} /></button>
       </div>
     </div>
   );

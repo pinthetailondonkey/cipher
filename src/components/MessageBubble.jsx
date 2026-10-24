@@ -185,6 +185,9 @@ export default function MessageBubble({ message, data, onAction, senderName, isP
         {(content.type === 'cipher_order' || content.type === 'order_request' || content.type === 'order_update') && (
           <OrderReceipt content={content} />
         )}
+        {(content.type === 'cipher_order' || content.type === 'order_request') && !isSender && content.status !== 'accepted' && (
+          <button type="button" onClick={(event) => { event.stopPropagation(); onAction?.('accept_order', { ...message, data: content }); }} className="mb-1 text-[13px] font-semibold text-blue-400">Accept order</button>
+        )}
         {content.type === 'image' && content.url && (
           <a href={content.url} target="_blank" rel="noreferrer" className="block" onClick={(event) => event.stopPropagation()}>
             <img src={content.url} alt="Shared image" loading="lazy" className="max-h-64 max-w-full rounded-xl object-contain" />

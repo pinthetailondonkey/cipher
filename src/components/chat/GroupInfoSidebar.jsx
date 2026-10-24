@@ -100,50 +100,44 @@ export default function GroupInfoSidebar({
     }
   };
 
-  const editGroup = async () => {
-    const nextName = window.prompt('Group name', group?.name || '');
-    if (!nextName || !nextName.trim() || nextName.trim() === group?.name) return;
-    setPending(true);
-    setError('');
-    try {
-      await updateGroupSettings?.(group.id, { name: nextName.trim() });
-      const current = useChatStore.getState().activeGroup;
-      if (current?.id === group.id) useChatStore.getState().setActiveGroup({ ...current, name: nextName.trim() });
-    } catch (editError) {
-      console.error('[GroupInfoSidebar] Could not edit group:', editError);
-      setError(editError?.message || 'Could not update the group.');
-    } finally {
-      setPending(false);
-    }
+  const editGroup = () => {
+    useChatStore.getState().openDialog({
+      title: 'Group name',
+      hasInput: true,
+      inputDefault: group?.name || '',
+      inputRows: 1,
+      confirmText: 'Save',
+      onConfirm: async (nextName) => {
+        if (!nextName || !nextName.trim() || nextName.trim() === group?.name) return;
+        await updateGroupSettings?.(group.id, { name: nextName.trim() });
+        const current = useChatStore.getState().activeGroup;
+        if (current?.id === group.id) useChatStore.getState().setActiveGroup({ ...current, name: nextName.trim() });
+      },
+    });
   };
 
-  const kick = async (pubkey) => {
-    if (!window.confirm('Remove this member from the group?')) return;
-    setPending(true);
-    setError('');
-    try {
-      await kickMember?.(group.id, pubkey);
-    } catch (kickError) {
-      console.error('[GroupInfoSidebar] Could not kick member:', kickError);
-      setError(kickError?.message || 'Could not remove that member.');
-    } finally {
-      setPending(false);
-    }
+  const kick = (pubkey) => {
+    useChatStore.getState().openDialog({
+      title: 'Remove member',
+      message: 'They will lose access to new messages.',
+      type: 'danger',
+      confirmText: 'Remove',
+      onConfirm: () => kickMember?.(group.id, pubkey),
+    });
   };
 
-  const leave = async () => {
-    if (!window.confirm('Leave this group?')) return;
-    setPending(true);
-    setError('');
-    try {
-      await leaveGroup?.(group.id);
-      useChatStore.getState().closeChat();
-      onClose?.();
-    } catch (leaveError) {
-      console.error('[GroupInfoSidebar] Could not leave group:', leaveError);
-      setError(leaveError?.message || 'Could not leave the group.');
-      setPending(false);
-    }
+  const leave = () => {
+    useChatStore.getState().openDialog({
+      title: 'Leave group',
+      message: 'You can rejoin later with an invite.',
+      type: 'danger',
+      confirmText: 'Leave',
+      onConfirm: async () => {
+        await leaveGroup?.(group.id);
+        useChatStore.getState().closeChat();
+        onClose?.();
+      },
+    });
   };
 
   return (

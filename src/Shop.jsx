@@ -11,12 +11,14 @@ export default function Shop({ identity, setActiveTab }) {
   const [query, setQuery] = useState('');
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
   const [checkoutProduct, setCheckoutProduct] = useState(null);
   const { sendDM } = useNIP44DM({ identity });
 
   useEffect(() => {
     const fetchMarketplace = async () => {
       setLoading(true);
+      setError('');
       try {
         const { SimplePool } = await import('nostr-tools');
         const pool = new SimplePool();
@@ -53,6 +55,7 @@ export default function Shop({ identity, setActiveTab }) {
         pool.close(['wss://relay.primal.net', 'wss://groups.aegispayhq.com']);
       } catch (err) {
         console.error('Failed to fetch marketplace:', err);
+        setError('Could not load the shop. Check your connection and try again.');
       } finally {
         setLoading(false);
       }
@@ -150,11 +153,16 @@ export default function Shop({ identity, setActiveTab }) {
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto pb-24">
+      <div className="flex-1 overflow-y-auto pb-4">
         {loading ? (
           <div className="mt-20 flex flex-col items-center justify-center text-white/40">
             <Loader2 size={32} className="mb-4 animate-spin text-blue-500" />
             <p className="text-sm">Fetching products from the network...</p>
+          </div>
+        ) : error ? (
+          <div className="px-6 py-16 text-center">
+            <p className="text-[15px] font-semibold text-white">Shop unavailable</p>
+            <p className="mt-1 text-[13px] text-white/40">{error}</p>
           </div>
         ) : displayProducts.length === 0 ? (
           <div className="mt-20 text-center text-white/30">

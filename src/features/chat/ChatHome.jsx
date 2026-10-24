@@ -33,9 +33,9 @@ export default function ChatHome({ identity, openChat, createGroup, fetchChats }
   };
 
   return (
-    <motion.div initial={{ x: -20, opacity: 0 }} animate={{ x: 0, opacity: 1 }} exit={{ x: -20, opacity: 0 }} transition={{ duration: 0.2 }} className="relative min-h-0 flex-1 overflow-y-auto bg-black p-4 pb-24">
+    <motion.div initial={{ x: -20, opacity: 0 }} animate={{ x: 0, opacity: 1 }} exit={{ x: -20, opacity: 0 }} transition={{ duration: 0.2 }} className="relative min-h-0 flex-1 overflow-y-auto bg-black pb-4">
       <ToastBanner />
-      <div className="mb-6 flex items-center justify-between">
+      <div className="mb-2 flex items-center justify-between px-4 pt-3">
         <div className="flex items-center gap-3">
           <Logo size={28} />
           <h2 className="text-2xl font-black tracking-tighter text-white">Cipher</h2>
