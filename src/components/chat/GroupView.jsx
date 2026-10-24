@@ -174,18 +174,16 @@ export default function GroupView({
           <p className="m-auto px-6 text-center text-[13px] text-white/40">Messages in this group will appear here.</p>
         ) : visibleMessages.map((message) => {
           const data = message.pending ? null : readPayload(message);
-          const profile = profiles[message.pubkey] || {};
-          const senderName = message.isSender ? null : (profile.displayName || profile.name || message.pubkey?.slice(0, 8));
-          const initial = (senderName || '?').slice(0, 1).toUpperCase();
+          const senderProfile = profiles[message.pubkey];
           return (
             <MessageBubble
               key={message.id}
               message={message}
-              data={data || { type: 'text', message: message.pending ? 'Waiting for group encryption key…' : (message.rawContent || 'Message unavailable') }}
-              senderName={senderName}
+              data={data || { type: 'text', message: message.pending ? 'Waiting for group encryption key…' : (typeof message.rawContent === 'string' && message.rawContent && !message.rawContent.startsWith('{') ? message.rawContent : 'Message unavailable') }}
+              senderName={message.isSender ? null : (senderProfile?.displayName || senderProfile?.name || message.pubkey?.slice(0, 8))}
               showAvatar={!message.isSender}
-              avatarUrl={profile.picture || ''}
-              avatarInitial={initial}
+              avatarUrl={senderProfile?.picture}
+              avatarInitial={senderProfile?.displayName?.charAt(0) || '?'}
               isPinnedListing={message.id === pinnedMessageId}
               onAction={handleMessageAction}
             />
@@ -201,7 +199,9 @@ export default function GroupView({
           <button type="button" onClick={() => setReplyingTo(null)} aria-label="Cancel reply" className="p-2 text-white/45 hover:text-white"><X size={18} /></button>
         </div>
       )}
-      <MessageInput sendMessage={sendGroupText || sendMessage} handleImageUpload={handleImageUpload} startRecording={startRecording} stopRecording={stopRecording} />
+      <div className="pb-safe">
+        <MessageInput sendMessage={sendGroupText || sendMessage} handleImageUpload={handleImageUpload} startRecording={startRecording} stopRecording={stopRecording} />
+      </div>
       <GroupInfoSidebar
         isOpen={showGroupInfo}
         onClose={() => setShowGroupInfo(false)}

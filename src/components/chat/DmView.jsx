@@ -47,7 +47,9 @@ export default function DmView({ sendMessage, handleMessageAction, handleImageUp
           <button type="button" onClick={() => setReplyingTo(null)} aria-label="Cancel reply" className="p-2 text-white/45 hover:text-white"><X size={18} /></button>
         </div>
       )}
-      <MessageInput sendMessage={sendMessage} handleImageUpload={handleImageUpload} startRecording={startRecording} stopRecording={stopRecording} />
+      <div className="pb-safe">
+        <MessageInput sendMessage={sendMessage} handleImageUpload={handleImageUpload} startRecording={startRecording} stopRecording={stopRecording} />
+      </div>
     </section>
   );
 }
