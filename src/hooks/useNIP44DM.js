@@ -6,6 +6,7 @@ import { useChatStore } from '../store/chatStore';
 import { getAuthenticatedPool } from '../lib/pool';
 import { generalRelays, queryAllPages } from '../lib/relays';
 import { enqueueNostrEvent, startOutboxSync } from '../lib/outbox';
+import { allowsTyping } from '../lib/privacy';
 
 const shouldSuppress = (chatId) => {
   const state = useChatStore.getState();
@@ -75,7 +76,7 @@ export function useNIP44DM({ identity }) {
 
   // SEND TYPING INDICATOR
   const sendTypingIndicator = useCallback(async (recipientPubkey) => {
-    if (!recipientPubkey || !identity?.sk || !/^[0-9a-f]{64}$/i.test(recipientPubkey)) return;
+    if (!recipientPubkey || !identity?.sk || !/^[0-9a-f]{64}$/i.test(recipientPubkey) || !allowsTyping()) return;
     try {
       const { finalizeEvent, nip44 } = await import('nostr-tools');
       const pool = await getAuthenticatedPool(identity);
@@ -128,6 +129,13 @@ export function useNIP44DM({ identity }) {
               let data = {};
               try { data = JSON.parse(text); } catch (e) { data = { type: 'text', message: text }; }
 
+              if (data.type === 'call') {
+                if (!isSender) {
+                  const { handleCallSignal } = await import('../lib/voiceCall');
+                  await handleCallSignal({ data, from: counterparty });
+                }
+                return;
+              }
               if (data.type === 'typing') {
                 const age = (Date.now() / 1000) - event.created_at;
                 if (age < 10 && event.pubkey !== identity.pk) {
@@ -220,7 +228,7 @@ export function useNIP44DM({ identity }) {
         catch (e) { continue; }
         let data = {};
         try { data = JSON.parse(text); } catch (e) { data = { type: 'text', message: text }; }
-        if (data.type === 'gkey' || data.type === 'typing' || data.type === 'read' || data.type === 'pin') continue;
+        if (data.type === 'gkey' || data.type === 'typing' || data.type === 'read' || data.type === 'pin' || data.type === 'call') continue;
         if (data.expires_at && Math.floor(Date.now() / 1000) >= data.expires_at) continue;
         const replyTag = ev.tags.find(t => t[0] === 'e' && t[3] === 'reply');
         const clientId = ev.tags.find(t => t[0] === 'client')?.[1];

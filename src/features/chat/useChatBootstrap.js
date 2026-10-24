@@ -5,6 +5,7 @@ import { generalRelays, groupRelays, queryAllPages, queryWithTimeout } from '../
 import { getAuthenticatedPool } from '../../lib/pool';
 import { useChatStore } from '../../store/chatStore';
 import { scopedGet, scopedSet } from '../../lib/storage';
+import { getPrivacy, allowsTyping } from '../../lib/privacy';
 import { decodeGroupEvent } from '../../lib/crypto/groupMessageCodec';
 import { useGroupKeyReconciler } from '../../hooks/useGroupKeyReconciler';
 
@@ -14,6 +15,7 @@ export function useChatBootstrap({
   subscribeToDMs,
   subscribeToGroups,
   sendTypingIndicator,
+  sendDM,
   sendGroupTypingIndicator,
   fetchGroupMembers,
   setGroups,
@@ -305,7 +307,7 @@ export function useChatBootstrap({
 
   // DM typing — routed through useNIP44DM hook
   useEffect(() => {
-    if (!newMessage.trim() || view !== 'dm' || !activeDm || !identity.sk) return;
+    if (!newMessage.trim() || view !== 'dm' || !activeDm || !identity.sk || !allowsTyping()) return;
     if (Date.now() - lastTypingSent.current < 2500) return;
     const timer = setTimeout(async () => {
       await sendTypingIndicator(activeDm);
@@ -316,7 +318,7 @@ export function useChatBootstrap({
 
   // Group typing — routed through useNIP29Group hook
   useEffect(() => {
-    if (!newMessage.trim() || view !== 'group' || !activeGroup || !identity.sk) return;
+    if (!newMessage.trim() || view !== 'group' || !activeGroup || !identity.sk || !allowsTyping()) return;
     if (Date.now() - lastTypingSent.current < 2500) return;
     const timer = setTimeout(async () => {
       await sendGroupTypingIndicator(activeGroup.id);
@@ -324,6 +326,14 @@ export function useChatBootstrap({
     }, 200);
     return () => clearTimeout(timer);
   }, [newMessage, view, activeGroup, identity.sk, sendGroupTypingIndicator]);
+
+  useEffect(() => {
+    if (view !== 'dm' || !activeDm || !identity?.sk || !getPrivacy().readReceipts || !sendDM) return undefined;
+    sendDM(activeDm, { type: 'read', at: Math.floor(Date.now() / 1000) }).catch((error) => {
+      console.warn('[DM] Read receipt failed:', error);
+    });
+    return undefined;
+  }, [view, activeDm, identity?.sk, sendDM]);
 
   useEffect(() => {
     const interval = setInterval(() => {
