@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { BadgeCheck, LogOut, Pin, PinOff, X } from 'lucide-react';
+import { BadgeCheck, Link2, LogOut, Pin, PinOff, X } from 'lucide-react';
 import { useChatStore } from '../../store/chatStore';
 
 const EMPTY_MESSAGES = [];
@@ -33,6 +33,7 @@ export default function GroupInfoSidebar({
   const pinnedMessages = useChatStore((state) => state.pinnedMessages);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState('');
+  const [copied, setCopied] = useState(false);
   const memberList = Array.isArray(members) ? members : [];
 
   useEffect(() => {
@@ -55,6 +56,26 @@ export default function GroupInfoSidebar({
   ));
   const pinnedId = pinnedMessages[group?.id];
   const initial = (group?.name || 'G').slice(0, 1).toUpperCase();
+
+  const shareGroup = async () => {
+    if (!group?.id) return;
+    setError('');
+    try {
+      const { nip19 } = await import('nostr-tools');
+      const creator = /^[0-9a-f]{64}$/i.test(group.creator || '') ? group.creator : (identity?.pk || '');
+      const token = creator
+        ? nip19.naddrEncode({ kind: 39000, pubkey: creator, identifier: group.id, relays: ['wss://groups.aegispayhq.com'] })
+        : group.id;
+      const link = `${window.location.origin}${window.location.pathname}?${String(token).startsWith('naddr') ? 'naddr' : 'group'}=${encodeURIComponent(token)}`;
+      await navigator.clipboard.writeText(link);
+      setCopied(true);
+      useChatStore.getState().setToast({ type: 'success', message: 'Copied!' });
+      window.setTimeout(() => setCopied(false), 1600);
+    } catch (shareError) {
+      console.error('[GroupInfoSidebar] Could not copy invite:', shareError);
+      setError('Could not copy the invite link.');
+    }
+  };
 
   const setPin = async (messageId) => {
     setPending(true);
@@ -166,6 +187,9 @@ export default function GroupInfoSidebar({
             <div className="min-h-0 flex-1 overflow-y-auto bg-black p-4">
               {group.about && <p className="mb-4 text-sm leading-relaxed text-white/60">{group.about}</p>}
               <div className="mb-4 flex flex-col gap-2">
+                <button type="button" onClick={shareGroup} className="rounded-xl bg-blue-600 px-4 py-3 text-left text-sm font-semibold text-white hover:bg-blue-500">
+                  <span className="flex items-center gap-2"><Link2 size={16} /> {copied ? 'Copied!' : 'Invite / Share Group'}</span>
+                </button>
                 {canManage && (
                   <button type="button" onClick={editGroup} disabled={pending} className="rounded-xl border border-white/10 bg-[#111] px-4 py-3 text-left text-sm font-semibold text-white hover:border-blue-500/40 disabled:opacity-50">Edit group</button>
                 )}
@@ -173,7 +197,7 @@ export default function GroupInfoSidebar({
               </div>
               <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-white/40">Members</h3>
               <div className="mb-5 space-y-1">
-                {memberList.length === 0 && <p className="rounded-xl bg-[#111] px-3 py-3 text-sm text-white/40">Membership list has not loaded yet.</p>}
+                {memberList.length === 0 && <p className="rounded-xl bg-[#111] px-3 py-3 text-sm text-white/40">Looking up members…</p>}
                 {memberList.map((member) => {
                   const profile = profiles[member.pubkey] || {};
                   const name = profile.displayName || profile.name || `${member.pubkey.slice(0, 8)}…`;

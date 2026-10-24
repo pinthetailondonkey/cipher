@@ -55,6 +55,19 @@ async function fetchGroupMetadata(identity, groupId) {
   };
 }
 
+function mergeGroupMessage(existing, incoming) {
+  if (!existing) return incoming;
+  const rawContent = incoming.rawContent || existing.rawContent || null;
+  return {
+    ...existing,
+    ...incoming,
+    clientId: incoming.clientId || existing.clientId,
+    rawContent,
+    pending: !rawContent && !!incoming.pending,
+    deliveryStatus: incoming.deliveryStatus || existing.deliveryStatus || 'sent',
+  };
+}
+
 function withGroupTag(groupId, tags = []) {
   return [['h', groupId], ...tags.filter((tag) => tag[0] !== 'h')];
 }
@@ -744,7 +757,7 @@ export function useNIP29Group({ identity }) {
 
         if (existingIndex >= 0) {
           const newMsgs = [...groupMsgs];
-          newMsgs[existingIndex] = { ...newMsgs[existingIndex], ...baseMsg };
+          newMsgs[existingIndex] = mergeGroupMessage(newMsgs[existingIndex], baseMsg);
           saveMessage(groupId, newMsgs[existingIndex]);
           return { ...prev, [groupId]: newMsgs };
         }
@@ -787,7 +800,7 @@ export function useNIP29Group({ identity }) {
           const clientId = event.tags.find(t => t[0] === 'client')?.[1];
           setGroupMessages(prev => {
             const groupMsgs = prev[gid] || [];
-            const idx = groupMsgs.findIndex(m => m.id === event.id);
+            const idx = groupMsgs.findIndex((m) => m.id === event.id || (clientId && (m.id === clientId || m.clientId === clientId)));
             const newMsg = {
               id: event.id, clientId, isSender: event.pubkey === identity.pk,
               pubkey: event.pubkey, timestamp: event.created_at,
@@ -798,7 +811,7 @@ export function useNIP29Group({ identity }) {
             };
             if (idx >= 0) {
               const updated = [...groupMsgs];
-              updated[idx] = { ...updated[idx], ...newMsg };
+              updated[idx] = mergeGroupMessage(updated[idx], newMsg);
               saveMessage(gid, updated[idx]);
               return { ...prev, [gid]: updated };
             }

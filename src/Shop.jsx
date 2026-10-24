@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Search, ShoppingBag, Loader2 } from 'lucide-react';
+import { Search, ShoppingBag, Loader2, Link2 } from 'lucide-react';
 import Logo from './components/Logo';
 import OneTapCheckout from './components/OneTapCheckout';
 import { useNIP44DM } from './hooks/useNIP44DM';
@@ -33,14 +33,17 @@ export default function Shop({ identity, setActiveTab }) {
 
         const parsed = events.map(ev => {
           const getTag = (name) => ev.tags.find(t => t[0] === name)?.[1];
+          const payments = ev.tags.filter((tag) => tag[0] === 'payment').map((tag) => tag[1] || '');
           return {
             id: getTag('d') || ev.id,
             name: getTag('title') || 'Unnamed Product',
             priceUsd: parseFloat(getTag('price') || '0'),
             price: `$${parseFloat(getTag('price') || '0')}`,
-            currency: 'USD',
+            currency: getTag('price') ? (ev.tags.find((tag) => tag[0] === 'price')?.[2] || 'USD') : 'USD',
             image: getTag('image') || '',
             vendorPubkey: ev.pubkey,
+            btc: payments.find((value) => value.startsWith('btc:'))?.slice(4) || '',
+            xmr: payments.find((value) => value.startsWith('xmr:'))?.slice(4) || '',
           };
         }).filter(p => p.priceUsd > 0);
 
@@ -57,6 +60,16 @@ export default function Shop({ identity, setActiveTab }) {
     fetchMarketplace();
   }, []);
 
+  const shareProduct = async (product) => {
+    const link = `${window.location.origin}${window.location.pathname}?product=${encodeURIComponent(product.id)}&vendor=${product.vendorPubkey}`;
+    try {
+      await navigator.clipboard.writeText(link);
+      useChatStore.getState().setToast({ type: 'success', message: 'Copied!' });
+    } catch (error) {
+      console.error('[Shop] Could not copy product link:', error);
+      useChatStore.getState().setToast({ type: 'error', message: 'Could not copy the product link.' });
+    }
+  };
   const displayProducts = products.filter(p =>
     p.name.toLowerCase().includes(query.toLowerCase())
   );
@@ -171,9 +184,14 @@ export default function Shop({ identity, setActiveTab }) {
                     <p className="truncate text-sm font-semibold text-white">{p.name}</p>
                     <p className="font-bold text-green-400">${p.priceUsd}</p>
                   </div>
-                  <button type="button" onClick={() => setCheckoutProduct(p)} className="mt-3 w-full rounded-lg bg-blue-600 py-2 text-xs font-bold text-white hover:bg-blue-500">
-                    Buy Now
-                  </button>
+                  <div className="mt-3 flex gap-2">
+                    <button type="button" onClick={() => shareProduct(p)} className="flex flex-1 items-center justify-center gap-1 rounded-lg border border-white/10 py-2 text-xs font-bold text-white hover:border-blue-500">
+                      <Link2 size={13} /> Copy Link
+                    </button>
+                    <button type="button" onClick={() => setCheckoutProduct(p)} className="flex-1 rounded-lg bg-blue-600 py-2 text-xs font-bold text-white hover:bg-blue-500">
+                      Buy Now
+                    </button>
+                  </div>
                 </div>
               </div>
             ))}

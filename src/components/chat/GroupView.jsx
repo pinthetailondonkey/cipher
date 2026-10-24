@@ -171,13 +171,16 @@ export default function GroupView({
       )}
       <div ref={scrollRef} className="flex min-h-0 flex-1 flex-col overflow-y-auto py-3">
         {visibleMessages.length === 0 ? (
-          <p className="m-auto px-6 text-center text-[13px] text-white/40">Messages in this group will appear here.</p>
+          <div className="m-auto max-w-[16rem] px-6 text-center">
+            <p className="text-[15px] font-semibold text-white">You're in {activeGroup?.name || 'this group'}</p>
+            <p className="mt-2 text-[13px] leading-relaxed text-white/40">Say hello. Messages stay in this chat, with a name and a time on every one.</p>
+          </div>
         ) : visibleMessages.map((message) => {
           const data = message.pending ? null : readPayload(message);
           const senderProfile = profiles[message.pubkey];
           return (
             <MessageBubble
-              key={message.id}
+              key={message.clientId || message.id}
               message={message}
               data={data || { type: 'text', message: message.pending ? 'Waiting for group encryption key…' : (typeof message.rawContent === 'string' && message.rawContent && !message.rawContent.startsWith('{') ? message.rawContent : 'Message unavailable') }}
               senderName={message.isSender ? null : (senderProfile?.displayName || senderProfile?.name || message.pubkey?.slice(0, 8))}
