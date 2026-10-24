@@ -137,7 +137,7 @@ export default function Shop({ identity, setActiveTab }) {
   return (
     <div className="flex h-full w-full flex-col bg-transparent">
       <div className="px-4 pb-3 pt-2">
-        <div className="flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 backdrop-blur-md">
+        <div className="flex items-center gap-2 rounded-2xl border border-white/15 bg-white/10 px-4 py-3 shadow-2xl backdrop-blur-2xl">
           <Search size={16} className="text-white/40" />
           <input
             type="text"
@@ -168,21 +168,21 @@ export default function Shop({ identity, setActiveTab }) {
         ) : (
           <div className="grid grid-cols-2 gap-3 px-4 pb-4">
             {displayProducts.map(p => (
-              <div key={p.id} className="overflow-hidden rounded-2xl border border-white/10 bg-[#0A0A0A]/60 shadow-2xl backdrop-blur-2xl">
-                <div className="relative h-28 w-full overflow-hidden bg-white/5">
+              <div key={p.id} className="rounded-3xl border border-white/15 bg-white/10 p-2 shadow-2xl backdrop-blur-2xl">
+                <div className="relative h-28 w-full overflow-hidden rounded-2xl bg-white/5">
                   {p.image ? (
                     <img src={p.image} alt="" className="h-full w-full object-cover" onError={(event) => { event.currentTarget.style.display = 'none'; }} />
                   ) : (
-                    <div className="flex h-full w-full items-center justify-center text-white/20">
+                    <div className="flex h-full w-full items-center justify-center text-white/30">
                       <ShoppingBag size={28} />
                     </div>
                   )}
                 </div>
-                <div className="p-3">
+                <div className="px-1.5 pb-1 pt-3">
                   <p className="truncate text-[15px] font-semibold text-white">{p.name}</p>
-                  <p className="text-[13px] font-bold text-blue-500">${p.priceUsd}</p>
-                  <button type="button" onClick={() => { haptic('heavy'); setCheckoutProduct(p); }} className="mt-3 w-full rounded-2xl bg-blue-600 py-2 text-[13px] font-bold text-white">Buy</button>
-                  <button type="button" onClick={() => shareProduct(p)} className="mt-1 w-full py-1 text-[12px] font-semibold text-white/40">Copy link</button>
+                  <p className="text-[13px] font-bold text-blue-400">${p.priceUsd}</p>
+                  <button type="button" onClick={() => { haptic('heavy'); setCheckoutProduct(p); }} className="mt-3 w-full rounded-2xl bg-blue-600 py-2.5 text-[13px] font-bold text-white shadow-lg">Buy</button>
+                  <button type="button" onClick={() => shareProduct(p)} className="mt-1 w-full py-1 text-[12px] font-semibold text-white/50">Copy link</button>
                 </div>
               </div>
             ))}
