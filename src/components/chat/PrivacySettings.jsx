@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ArrowLeft } from 'lucide-react';
+import ScreenHeader from '../ui/ScreenHeader';
 import { getPrivacy, setPrivacy } from '../../lib/privacy';
 import { useChatStore } from '../../store/chatStore';
 import { pressable } from '../ui/Button';
@@ -50,8 +50,7 @@ export default function PrivacySettings({ onBack }) {
 
   return (
     <div className="h-full overflow-y-auto bg-black pb-24">
-      <button type="button" onClick={onBack} className={`flex items-center gap-1 px-4 pb-2 pt-4 text-[13px] text-white/40 hover:text-white ${pressable}`}><ArrowLeft size={16} /> Back</button>
-      <h2 className="px-4 pb-4 text-2xl font-bold tracking-tight text-white">Privacy and Security</h2>
+      <ScreenHeader title="Privacy and Security" onBack={onBack} />
       <p className="px-4 pb-2 text-[13px] text-white/40">Who can reach you</p>
       <Choice label="Calls" hint="Voice only. Video is not available." value={privacy.calls} options={[{ id: 'everyone', label: 'Everyone' }, { id: 'nobody', label: 'Nobody' }]} onChange={(calls) => update({ calls })} />
       <Choice label="Last seen and online" hint="Nobody means you also stop sending typing." value={privacy.lastSeen} options={[{ id: 'everyone', label: 'Everyone' }, { id: 'nobody', label: 'Nobody' }]} onChange={(lastSeen) => update({ lastSeen })} />
