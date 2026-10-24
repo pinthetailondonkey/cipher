@@ -1,26 +1,22 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { MessageSquare, Compass, User, ShieldCheck, ChevronRight, X } from 'lucide-react';
+import { ChevronRight, X } from 'lucide-react';
 import Logo from './Logo';
 
 const steps = [
   {
-    icon: <ShieldCheck className="text-blue-500" size={40} />,
     title: "Welcome to Cipher",
     desc: "Your decentralized, encrypted messaging & commerce app. Take a quick tour to see how it works.",
   },
   {
-    icon: <MessageSquare className="text-blue-500" size={40} />,
     title: "Encrypted Chats",
     desc: "Tap 'Chats' to access your secure DMs. Create or join public/private Groups using decentralized relays.",
   },
   {
-    icon: <Compass className="text-blue-500" size={40} />,
     title: "Global Marketplace",
     desc: "Tap 'Discover' to browse the marketplace. Buy items using BTC or XMR seamlessly, with zero-custody payments.",
   },
   {
-    icon: <User className="text-blue-500" size={40} />,
     title: "Your Identity",
     desc: "Tap 'Profile' to manage your wallet addresses, open your Vendor Dashboard, or backup your identity.",
   }
@@ -58,16 +54,12 @@ export default function TutorialModal({ isOpen, onClose }) {
             <X size={20} />
           </button>
 
-          <div className="mb-6 mt-2">
-            <Logo size={56} />
+          <div className="mb-8 mt-2">
+            <Logo size={72} />
           </div>
 
-          <div className="w-16 h-16 rounded-2xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center mb-6">
-            {step.icon}
-          </div>
-          
           <h2 className="text-2xl font-bold text-white mb-3">{step.title}</h2>
-          <p className="text-[14px] text-white/60 leading-relaxed mb-8 px-2">{step.desc}</p>
+          <p className="text-[14px] text-white/60 leading-relaxed mb-8 px-2 h-20">{step.desc}</p>
 
           <div className="flex gap-2 mb-8">
             {steps.map((_, i) => (
@@ -80,7 +72,6 @@ export default function TutorialModal({ isOpen, onClose }) {
             {currentStep !== steps.length - 1 && <ChevronRight size={18} />}
           </button>
 
-          {/* POWERED BY NOSTR */}
           <div className="mt-8 flex flex-col items-center justify-center opacity-40">
             <div className="flex items-center gap-1.5 text-[11px] font-medium text-white tracking-wide">
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-blue-500">
