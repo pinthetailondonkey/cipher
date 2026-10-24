@@ -83,7 +83,8 @@ export default function VendorStorefront({ isOpen, onClose, vendorPubkey, profil
             {product.image ? <img src={product.image} alt="" loading="lazy" className="h-12 w-12 rounded-full border border-white/10 object-cover" /> : <div className="flex h-12 w-12 items-center justify-center rounded-full border border-white/10 bg-[#111] text-white/40"><Package size={18} /></div>}
             <div className="min-w-0 flex-1">
               <h3 className="truncate text-[15px] font-semibold text-white">{product.name}</h3>
-              <p className="truncate text-[13px] text-white/40">{product.description || `${product.price} ${product.currency}`}</p>
+              <p className="text-[13px] font-semibold text-blue-500">{product.price ? `${product.price} ${product.currency || ''}`.trim() : 'Ask'}</p>
+              {product.description && <p className="truncate text-[13px] text-white/40">{product.description}</p>}
             </div>
             <button type="button" onClick={() => onBuy?.(product, vendorPubkey)} className="rounded-full bg-blue-600 px-4 py-2 text-[13px] font-semibold text-white hover:bg-blue-500">Buy</button>
           </article>
