@@ -7,7 +7,7 @@ import Avatar from '../ui/Avatar';
 
 function Choice({ label, hint, value, options, onChange }) {
   return (
-    <div className="border-b border-white/5 bg-[#111] px-4 py-3">
+    <div className="border-b border-white/5 bg-black px-4 py-3">
       <p className="text-[15px] font-semibold text-white">{label}</p>
       {hint && <p className="mt-0.5 text-[13px] text-white/40">{hint}</p>}
       <div className="mt-2 flex gap-2">
@@ -28,7 +28,7 @@ function Choice({ label, hint, value, options, onChange }) {
 
 function Toggle({ label, hint, checked, onChange }) {
   return (
-    <button type="button" onClick={() => onChange(!checked)} className={`flex w-full items-center gap-3 border-b border-white/5 bg-[#111] px-4 py-3 text-left active:bg-white/10 ${pressable}`}>
+    <button type="button" onClick={() => onChange(!checked)} className={`flex w-full items-center gap-3 border-b border-white/5 bg-black px-4 py-3 text-left active:bg-white/10 ${pressable}`}>
       <span className="min-w-0 flex-1">
         <span className="block text-[15px] font-semibold text-white">{label}</span>
         {hint && <span className="mt-0.5 block text-[13px] text-white/40">{hint}</span>}
@@ -66,7 +66,7 @@ export default function PrivacySettings({ onBack }) {
       ) : blocked.map((pubkey) => {
         const name = profiles[pubkey]?.displayName || `${pubkey.slice(0, 8)}…`;
         return (
-          <div key={pubkey} className="flex items-center gap-3 border-b border-white/5 bg-[#111] px-4 py-3">
+          <div key={pubkey} className="flex items-center gap-3 border-b border-white/5 bg-black px-4 py-3">
             <Avatar src={profiles[pubkey]?.picture} name={name} />
             <span className="min-w-0 flex-1 truncate text-[15px] font-semibold text-white">{name}</span>
             <button type="button" onClick={() => toggleBlockUser(pubkey)} className={`text-[13px] font-bold text-blue-500 ${pressable}`}>Unblock</button>
