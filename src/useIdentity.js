@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { MIN_PIN_LENGTH, pinFailureMessage, recordPinFailure, resetPinFailures } from './lib/vaultLockout'
 
 // Derive 32-byte secret key from BIP39 mnemonic
 export async function deriveSkFromMnemonic(mnemonic) {
@@ -313,7 +314,7 @@ export function useIdentity() {
     // Legacy fallback (for backwards compat)
     localStorage.setItem('cipher_vault', JSON.stringify(encryptedLocal))
     localStorage.setItem('cipher_handle', handle.toLowerCase().trim())
-    localStorage.setItem('cipher_fails', '0')
+    resetPinFailures(localStorage, pk)
 
     // (relay backup removed for security — recovery is phrase-only)
 
@@ -382,6 +383,7 @@ export function useIdentity() {
   }
 
   const unlock = async (pin) => {
+    const failureAccount = getActivePubkey() || null
     try {
       // Multi-account: use the active account's vault
       const activePk = getActivePubkey();
@@ -418,13 +420,12 @@ export function useIdentity() {
       }
       
       sessionStorage.setItem('cipher_session_sk', JSON.stringify(Array.from(sk)))
-      localStorage.setItem('cipher_fails', '0')
+      resetPinFailures(localStorage, pk)
       setKeys({ sk, pk, npub: nip19.npubEncode(pk) })
       return { success: true }
     } catch (e) {
-      const fails = parseInt(localStorage.getItem('cipher_fails') || '0') + 1
-      localStorage.setItem('cipher_fails', fails.toString())
-      if (fails >= 5) {
+      const { lockedOut, remaining } = recordPinFailure(localStorage, failureAccount)
+      if (lockedOut) {
         // Only wipe THIS account's vault — other accounts stay intact
         const activePk = getActivePubkey();
         try {
@@ -441,12 +442,12 @@ export function useIdentity() {
             localStorage.removeItem('cipher_handle');
           }
           localStorage.removeItem('cipher_active_pubkey');
-          localStorage.setItem('cipher_fails', '0');
+          resetPinFailures(localStorage, activePk);
         } catch (wipeErr) { console.error('Lockout wipe failed:', wipeErr) }
         sessionStorage.removeItem('cipher_session_sk');
         window.location.reload();
       }
-      return { success: false, remaining: 5 - fails }
+      return { success: false, error: pinFailureMessage(remaining), remaining }
     }
   }
 
@@ -459,7 +460,7 @@ export function useIdentity() {
       if (activePk && pubkey !== activePk) throw new Error('The saved passkey belongs to a different account.');
       const vaults = getVaults();
       if (!vaults[pubkey]) {
-        if (newPin.length < 4) throw new Error('Enter a new PIN (at least 4 digits) to restore this account on this device.');
+        if (newPin.length < MIN_PIN_LENGTH) throw new Error(`Enter a new PIN (at least ${MIN_PIN_LENGTH} digits) to restore this account on this device.`);
         const vault = await encryptKey(Array.from(secretKey), newPin);
         const legacyHandle = localStorage.getItem('cipher_handle') || 'restored';
         vaults[pubkey] = {
@@ -478,6 +479,7 @@ export function useIdentity() {
       const { nip19 } = await import('nostr-tools')
       const sk = Uint8Array.from(secretKey)
       sessionStorage.setItem('cipher_session_sk', JSON.stringify(Array.from(sk)))
+      resetPinFailures(localStorage, pubkey)
       setKeys({ sk, pk: pubkey, npub: nip19.npubEncode(pubkey) })
       setHasVault(true)
       setHasBiometric(true)
@@ -559,6 +561,7 @@ export function useIdentity() {
       saveVaults(newVaults);
 
       setActivePubkey(pk);
+      resetPinFailures(localStorage, pk);
       sessionStorage.setItem('cipher_session_sk', JSON.stringify(Array.from(sk)));
       localStorage.setItem('cipher_vault', JSON.stringify(targetVault));
       localStorage.setItem('cipher_handle', handle);
@@ -575,6 +578,7 @@ export function useIdentity() {
   const restoreFromMnemonic = async (mnemonicInput, newPin) => {
     try {
       const normalizedMnemonic = mnemonicInput.trim().toLowerCase().replace(/\s+/g, ' ')
+      if (!newPin || String(newPin).length < MIN_PIN_LENGTH) throw new Error(`PIN must be at least ${MIN_PIN_LENGTH} digits`)
       const [{ validateMnemonic }, { wordlist }] = await Promise.all([
         import('@scure/bip39'),
         import('@scure/bip39/wordlists/english.js'),
@@ -597,7 +601,7 @@ export function useIdentity() {
       saveVaults(vaults)
       setActivePubkey(pk)
       localStorage.setItem('cipher_vault', JSON.stringify(newLocalVault))
-      localStorage.setItem('cipher_fails', '0')
+      resetPinFailures(localStorage, pk)
       sessionStorage.setItem('cipher_session_sk', JSON.stringify(Array.from(sk)))
       setKeys({ sk, pk, npub: nip19.npubEncode(pk) })
       setHasVault(true)
@@ -750,6 +754,7 @@ export function useIdentity() {
       if (pk !== targetPk) throw new Error('Invalid PIN for this account');
       
       setActivePubkey(targetPk);
+      resetPinFailures(localStorage, targetPk);
       sessionStorage.setItem('cipher_session_sk', JSON.stringify(Array.from(sk)));
       
       // Update legacy vault too

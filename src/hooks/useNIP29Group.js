@@ -8,12 +8,31 @@ import { groupRelays, generalRelays, queryWithTimeout } from '../lib/relays';
 import { allowsTyping } from '../lib/privacy';
 import { getMyGroups, setMyGroups } from '../lib/myGroups';
 import { encodeGroupPayload, decodeGroupEvent } from '../lib/crypto/groupMessageCodec';
-import { putGroupKey, getCurrentGroupKey } from '../lib/crypto/groupKeyStore';
+import { getAllGroupKeys, getCurrentGroupKey, putGroupKey } from '../lib/crypto/groupKeyStore';
+import { authorizeGroupControl } from '../lib/crypto/groupMembership';
+import { loadMemberSnapshot, patchMemberSnapshot, rememberMembers, requesterMayReceiveKey, rotateGroupEpoch } from '../lib/crypto/groupKeyRotation';
 import { generateGroupKey } from '../lib/crypto/groupCipher';
 import { distributeGroupKey } from '../lib/crypto/groupKeyDistribution';
 import { enqueueNostrEvent, startOutboxSync } from '../lib/outbox';
 
 const GROUP_RELAY_URL = 'wss://groups.aegispayhq.com';
+
+async function publishKeyDm(identity, dmEvent) {
+  const pool = await getAuthenticatedPool(identity);
+  const results = await Promise.allSettled(pool.publish(generalRelays, dmEvent));
+  if (!results.some((result) => result.status === 'fulfilled')) throw new Error('dm rejected');
+}
+
+function controlContext(groupId) {
+  const state = useChatStore.getState();
+  const group = (state.groups || []).find((item) => item.id === groupId)
+    || (state.activeGroup?.id === groupId ? state.activeGroup : null);
+  const live = state.activeGroup?.id === groupId ? state.groupMembers : null;
+  return {
+    creator: group?.creator || '',
+    members: Array.isArray(live) && live.length ? live : (group?.members || []),
+  };
+}
 const groupSessions = new Map();
 
 export function parseGroupReference(value) {
@@ -399,11 +418,9 @@ export function useNIP29Group({ identity }) {
         await distributeGroupKey({
           senderPrivkey: identity.sk, senderPubkey: identity.pk,
           groupId, epoch: 1, keyBytes: key, recipients: [identity.pk],
-          publish: async (dmEv) => {
-            const results = await Promise.allSettled(pool.publish(groupRelays, dmEv));
-            if (!results.some(r => r.status === 'fulfilled')) throw new Error('dm rejected');
-          },
+          publish: (dmEvent) => publishKeyDm(identity, dmEvent),
         });
+        await rememberMembers(groupId, [identity.pk]);
       }
     } catch (e) { console.warn('[createGroup] key bootstrap deferred', e); }
 
@@ -437,6 +454,22 @@ export function useNIP29Group({ identity }) {
 
   const leaveGroup = useCallback(async (groupId) => {
     const pool = await getAuthenticatedPool(identity);
+    const known = useChatStore.getState().groupMembers || [];
+    const remaining = known.map((member) => member.pubkey).filter((pubkey) => pubkey && pubkey !== identity.pk);
+    try {
+      const rotation = await rotateGroupEpoch({
+        identity,
+        groupId,
+        remainingPubkeys: remaining,
+        publish: (dmEvent) => publishKeyDm(identity, dmEvent),
+      });
+      if (!rotation?.rotated) await rememberMembers(groupId, remaining);
+    } catch (error) {
+      console.error('[group-key] Could not rotate the key after a member left:', error);
+      try { await rememberMembers(groupId, remaining); } catch (snapshotError) {
+        console.error('[group-key] Could not update the membership snapshot:', snapshotError);
+      }
+    }
     const leaveEv = finalizeEvent({
       kind: 9022, created_at: Math.floor(Date.now() / 1000),
       tags: [['h', groupId]], content: ''
@@ -522,6 +555,20 @@ export function useNIP29Group({ identity }) {
     const allMembers = useChatStore.getState().groupMembers || [];
     const remaining = allMembers.filter(m => m.pubkey !== memberPubkey).map(m => m.pubkey);
     if (!remaining.includes(identity.pk)) remaining.push(identity.pk);
+    try {
+      const rotation = await rotateGroupEpoch({
+        identity,
+        groupId,
+        remainingPubkeys: remaining,
+        publish: (dmEvent) => publishKeyDm(identity, dmEvent),
+      });
+      if (!rotation?.rotated) await rememberMembers(groupId, remaining);
+    } catch (error) {
+      console.error('[group-key] Could not rotate the key after a kick:', error);
+      try { await rememberMembers(groupId, remaining); } catch (snapshotError) {
+        console.error('[group-key] Could not update the membership snapshot:', snapshotError);
+      }
+    }
     const ev = finalizeEvent({
       kind: 9001, created_at: Math.floor(Date.now() / 1000),
       tags: [['h', groupId], ['p', memberPubkey]], content: ''
@@ -550,6 +597,8 @@ export function useNIP29Group({ identity }) {
       tags: [['h', groupId], ['p', memberPubkey]], content: ''
     }, identity.sk);
     await Promise.allSettled(pool.publish(groupRelays, ev));
+    const snapshot = await loadMemberSnapshot(groupId);
+    await rememberMembers(groupId, [...new Set([...(snapshot || []), memberPubkey, identity.pk])]);
     appendSystemMessage(groupId, `User ${memberPubkey.slice(0, 6)}... was added to the group`, ev.id);
     setGroupMembers(prev => {
       if (prev.findIndex(x => x.pubkey === memberPubkey) === -1) {
@@ -635,9 +684,20 @@ export function useNIP29Group({ identity }) {
       if (!hTag?.[1]) return;
       const groupId = hTag[1];
       if (!groupIds.includes(groupId)) return;
+      if ([9000, 9001, 9002, 9021, 9022, 39002].includes(event.kind)) {
+        const { creator, members } = controlContext(groupId);
+        const subject = event.kind === 9021 || event.kind === 9022
+          ? event.pubkey
+          : (event.tags.find((tag) => tag[0] === 'p')?.[1] || event.pubkey);
+        if (!authorizeGroupControl({ kind: event.kind, sender: event.pubkey, subject, members, creator })) {
+          console.warn('[group] Ignored an unauthorized membership event', event.kind, event.id);
+          return;
+        }
+      }
 
       if (event.kind === 9021) {
         const pk = event.pubkey;
+        await patchMemberSnapshot(groupId, (members) => (members.includes(pk) ? members : [...members, pk]));
         if (useChatStore.getState().activeGroup?.id === groupId) {
           setGroupMembers(prev => {
             const updated = Array.isArray(prev) ? [...prev] : [];
@@ -650,6 +710,7 @@ export function useNIP29Group({ identity }) {
       }
       if (event.kind === 9022) {
         const pk = event.pubkey;
+        await patchMemberSnapshot(groupId, (members) => members.filter((member) => member !== pk));
         if (useChatStore.getState().activeGroup?.id === groupId) {
           setGroupMembers(prev => Array.isArray(prev) ? prev.filter(m => m.pubkey !== pk) : []);
         }
@@ -659,6 +720,7 @@ export function useNIP29Group({ identity }) {
       if (event.kind === 9000) {
         const pk = event.tags.find(t => t[0] === 'p')?.[1];
         const role = event.tags.find(t => t[0] === 'role')?.[1] || 'member';
+        if (pk) await patchMemberSnapshot(groupId, (members) => (members.includes(pk) ? members : [...members, pk]));
         if (useChatStore.getState().activeGroup?.id === groupId) {
           setGroupMembers(prev => {
             const updated = Array.isArray(prev) ? [...prev] : [];
@@ -673,6 +735,7 @@ export function useNIP29Group({ identity }) {
       }
       if (event.kind === 9001) {
         const pk = event.tags.find(t => t[0] === 'p')?.[1];
+        if (pk) await patchMemberSnapshot(groupId, (members) => members.filter((member) => member !== pk));
         if (useChatStore.getState().activeGroup?.id === groupId) {
           setGroupMembers(prev => Array.isArray(prev) ? prev.filter(m => m.pubkey !== pk) : []);
         }
@@ -689,6 +752,7 @@ export function useNIP29Group({ identity }) {
       if (event.kind === 39002) {
         const members = event.tags.filter(x => x[0] === 'p').map(x => ({ pubkey: x[1], role: x[2] || 'member' }));
         if (!members.find(x => x.pubkey === identity.pk)) members.push({ pubkey: identity.pk, role: 'member' });
+        await rememberMembers(groupId, members.map((member) => member.pubkey));
         if (useChatStore.getState().activeGroup?.id === groupId) setGroupMembers(members);
         return;
       }
@@ -714,17 +778,17 @@ export function useNIP29Group({ identity }) {
         if (parsedQuick.type === 'gkey_req') {
           isGkeyReq = true;
           if (event.pubkey !== identity.pk) {
+            const snapshot = await loadMemberSnapshot(groupId);
+            if (!requesterMayReceiveKey(snapshot, event.pubkey)) return;
             const current = await getCurrentGroupKey(groupId);
             if (current) {
-              const pool = await getAuthenticatedPool(identity);
+              const prior = (await getAllGroupKeys(groupId)).filter((epoch) => epoch.epoch !== current.epoch);
               await distributeGroupKey({
                 senderPrivkey: identity.sk, senderPubkey: identity.pk,
                 groupId, epoch: current.epoch, keyBytes: current.bytes,
                 recipients: [event.pubkey],
-                publish: async (dmEv) => {
-                  const results = await Promise.allSettled(pool.publish(generalRelays, dmEv));
-                  if (!results.some(r => r.status === 'fulfilled')) throw new Error('dm rejected');
-                },
+                extraEpochs: prior,
+                publish: (dmEvent) => publishKeyDm(identity, dmEvent),
               });
             }
           }
