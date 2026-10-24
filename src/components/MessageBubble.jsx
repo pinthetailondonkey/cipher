@@ -55,6 +55,7 @@ export default function MessageBubble({ message, data, onAction, senderName, isP
     : content.type === 'order_request' && content.product?.id
       ? `order-product-${content.product.id}`
       : undefined;
+  const avatarColor = ['text-blue-500', 'text-sky-400', 'text-indigo-300', 'text-cyan-300'][(message?.pubkey?.charCodeAt(0) || 0) % 4];
   const deliveryLabel = {
     sending: 'Sending…',
     queued: 'Queued · waiting for connection',
@@ -73,7 +74,7 @@ export default function MessageBubble({ message, data, onAction, senderName, isP
         avatarUrl ? (
           <img src={avatarUrl} alt="" className="h-8 w-8 shrink-0 rounded-full object-cover" />
         ) : (
-          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-white/10 bg-[#111] text-[12px] font-semibold text-blue-500">{avatarInitial}</span>
+          <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-white/10 bg-[#111] text-[12px] font-semibold ${avatarColor}`}>{avatarInitial}</span>
         )
       )}
       <div className={`max-w-[78%] min-w-0 rounded-2xl px-3 py-2 ${isSender ? 'rounded-br-md bg-blue-600 text-white' : 'rounded-bl-md border border-white/10 bg-[#111] text-white'}`}>

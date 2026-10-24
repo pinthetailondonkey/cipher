@@ -42,6 +42,18 @@ export default function IdentityBackup({ identity, onClose }) {
     }
   };
 
+  const copyPhrase = async () => {
+    try {
+      const mnemonic = await identity?.getMnemonic?.();
+      if (!mnemonic) throw new Error('This account has no recovery phrase saved on this device.');
+      await navigator.clipboard.writeText(mnemonic);
+      setCopied('phrase');
+      window.setTimeout(() => setCopied(''), 1800);
+    } catch (error) {
+      console.error('[IdentityBackup] Could not copy recovery phrase:', error);
+      setCopied(error?.message || 'Could not copy the recovery phrase.');
+    }
+  };
   const downloadRecoveryFile = async () => {
     if (!identity?.sk || exporting) return;
     if (!window.confirm('This file contains your secret key and 12-word recovery phrase. Anyone with the file can control your account. Save it somewhere private and never share it. Continue?')) return;
@@ -124,11 +136,17 @@ export default function IdentityBackup({ identity, onClose }) {
           <button type="button" onClick={toggleSecret} className="rounded-xl border border-white/10 px-3 text-white/60 hover:text-white" aria-label={showSecret ? 'Hide secret key' : 'Reveal secret key'}>{showSecret ? <EyeOff size={17} /> : <Eye size={17} />}</button>
           <button type="button" onClick={() => copy('nsec', secretKey)} disabled={!identity?.sk} className="rounded-xl border border-white/10 px-3 text-white/60 hover:text-white disabled:opacity-40" aria-label="Copy secret key"><Copy size={17} /></button>
         </div>
-        <button type="button" onClick={downloadRecoveryFile} disabled={!identity?.sk || exporting} className="mt-5 flex min-h-12 w-full items-center justify-center gap-2 rounded-xl border border-blue-500/30 bg-blue-500/10 px-4 text-sm font-semibold text-blue-300 hover:bg-blue-500/15 disabled:opacity-50">
+        <button type="button" onClick={() => copy('nsec')} disabled={!identity?.sk} className="mb-3 flex min-h-12 w-full items-center justify-center gap-2 rounded-xl border border-white/10 bg-[#111] text-sm font-semibold text-white hover:border-blue-500 disabled:opacity-40">
+          <Copy size={16} /> {copied === 'nsec' ? 'Copied!' : 'Copy secret key (nsec)'}
+        </button>
+        <button type="button" onClick={copyPhrase} disabled={!identity?.sk} className="mb-3 flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-blue-600 text-sm font-semibold text-white hover:bg-blue-500 disabled:opacity-40">
+          <Copy size={16} /> {copied === 'phrase' ? 'Copied!' : 'Copy 12-word phrase'}
+        </button>
+        <button type="button" onClick={downloadRecoveryFile} disabled={!identity?.sk || exporting} className="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl border border-white/10 bg-[#111] text-sm font-semibold text-white hover:border-blue-500 disabled:opacity-40">
           <Download size={17} /> {exporting ? 'Preparing recovery file…' : 'Download recovery backup (.txt)'}
         </button>
         <p className="mt-2 text-center text-[11px] leading-relaxed text-amber-200/55">Includes your secret key and recovery phrase. Store securely; never upload or share it.</p>
-        {copied && <p role="status" className="mt-3 text-sm text-white/50">{copied === 'npub' || copied === 'nsec' ? `${copied} copied` : copied}</p>}
+        {copied && <p role="status" className="mt-3 text-center text-sm text-blue-500">{copied === 'npub' || copied === 'nsec' || copied === 'phrase' ? 'Copied!' : copied}</p>}
       </div>
     </div>
   );

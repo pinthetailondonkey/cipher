@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { BadgeCheck, Heart, MessageCircle, X } from 'lucide-react';
+import { BadgeCheck, Copy, Heart, MessageCircle, X } from 'lucide-react';
 import { useProfiles } from '../useProfiles';
 import { useVouchCount } from '../hooks/useVouchCount';
 import { useReputation } from '../hooks/useReputation';
@@ -13,8 +13,18 @@ export default function ProfileModal({ pubkey, identity, onClose, onMessage }) {
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   if (!pubkey) return null;
-
   const isSelf = identity?.pk === pubkey;
+
+  const copyNpub = async () => {
+    try {
+      const { nip19 } = await import('nostr-tools');
+      await navigator.clipboard.writeText(nip19.npubEncode(pubkey));
+      setNotice('Copied!');
+    } catch (copyError) {
+      console.error('[ProfileModal] Could not copy npub:', copyError);
+      setError('Could not copy the public key.');
+    }
+  };
   const vouchForVendor = async () => {
     setSending(true);
     setError('');
@@ -43,6 +53,9 @@ export default function ProfileModal({ pubkey, identity, onClose, onMessage }) {
           </div>
         </div>
         {profile.about && <p className="mt-4 whitespace-pre-wrap text-sm text-white/60">{profile.about}</p>}
+        <button type="button" onClick={copyNpub} className="mt-5 flex min-h-12 w-full items-center justify-center gap-2 rounded-xl border border-white/10 bg-[#111] text-sm font-semibold text-white hover:border-blue-500">
+          <Copy size={16} /> Copy Public Key (npub)
+        </button>
         {!isSelf && identity?.sk && onMessage && (
           <button type="button" onClick={() => onMessage(pubkey)} className="mt-5 flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-blue-600 text-sm font-semibold text-white hover:bg-blue-500">
             <MessageCircle size={17} /> Message
