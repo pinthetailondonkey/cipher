@@ -40,7 +40,7 @@ export default function ChatHome({ identity, openChat, createGroup, fetchChats }
           <Logo size={28} />
           <h2 className="text-2xl font-bold tracking-tight text-white">Chats</h2>
         </div>
-        <div className="flex gap-1">
+        <div className="flex gap-1 rounded-2xl border border-white/10 bg-[#0A0A0A]/60 p-1 shadow-2xl backdrop-blur-2xl">
           <button type="button" onClick={() => setShowBookmarks(true)} className="p-2 text-white/50 hover:text-white"><Bookmark size={20} /></button>
           <button type="button" onClick={() => setShowNotifCenter(true)} className="p-2 text-white/50 hover:text-white" aria-label="Notifications"><Bell size={20} /></button>
           <button type="button" onClick={() => setShowQRScanner(true)} className="p-2 text-white/50 hover:text-white" aria-label="Scan QR code"><QrCode size={20} /></button>
