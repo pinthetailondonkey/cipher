@@ -10,14 +10,14 @@ export default function SearchView({ handleSearch, joinGroupById, openChat }) {
   const isSearching = useChatStore((s) => s.isSearching);
 
   return (
-    <div className="flex flex-col h-full w-full bg-black absolute inset-0 z-50">
+    <div className="absolute inset-0 z-50 flex h-full w-full flex-col bg-black/80 backdrop-blur-2xl">
       {/* HEADER & SEARCH BAR */}
-      <div className="flex items-center gap-2 border-b border-white/5 bg-black px-2 py-3">
+      <div className="flex items-center gap-2 border-b border-white/10 bg-[#0A0A0A]/60 px-2 py-3 backdrop-blur-2xl">
         <button onClick={() => setView('list')} className="p-2 text-white" aria-label="Back">
           <ArrowLeft size={22} />
         </button>
         <h1 className="sr-only">Search</h1>
-        <div className="flex flex-1 items-center gap-2 rounded-2xl border border-white/10 bg-[#111] px-4 py-3">
+        <div className="flex flex-1 items-center gap-2 rounded-2xl border border-white/10 bg-[#0A0A0A]/60 shadow-2xl backdrop-blur-2xl px-4 py-3">
           <Search size={18} className="text-white/40" />
           <input
             autoFocus
@@ -44,7 +44,7 @@ export default function SearchView({ handleSearch, joinGroupById, openChat }) {
             {searchQuery ? 'No results found.' : 'Search for people or groups.'}
           </div>
         ) : (
-          <div className="mx-4 overflow-hidden rounded-2xl border border-white/10 bg-[#111]">
+          <div className="mx-4 overflow-hidden rounded-2xl border border-white/10 bg-[#0A0A0A]/60 shadow-2xl backdrop-blur-2xl">
           {searchResults.map((result, i) => (
             <button
               type="button"
@@ -60,7 +60,7 @@ export default function SearchView({ handleSearch, joinGroupById, openChat }) {
               }}
             >
               <span className="flex min-w-0 items-center gap-3">
-                <div className="w-12 h-12 rounded-full bg-[#111] border border-white/10 flex items-center justify-center text-blue-500 shrink-0 overflow-hidden">
+                <div className="w-12 h-12 rounded-full border border-white/10 bg-white/5 shadow-2xl backdrop-blur-md flex items-center justify-center text-blue-500 shrink-0 overflow-hidden">
                   {result.picture ? (
                     <img src={result.picture} alt="" loading="lazy" className="w-full h-full object-cover" />
                   ) : result.type === 'group' ? (
