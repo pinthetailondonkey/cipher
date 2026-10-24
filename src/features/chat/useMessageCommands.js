@@ -155,6 +155,11 @@ export function useMessageCommands({
   const handleForwardSubmit = async (targetId, isGroup) => {
     if (!forwardingMsg) return;
     const data = forwardingMsg.data || {};
+    if (data.noforward) {
+      setToast({ type: 'info', message: 'This message can’t be forwarded.' });
+      setForwardingMsg(null);
+      return;
+    }
     try {
       if (isGroup) await sendGroupMessage(targetId, data, null, null);
       else await sendDM(targetId, data, null, null);

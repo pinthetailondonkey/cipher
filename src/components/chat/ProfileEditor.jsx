@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { ArrowLeft, RefreshCw, Save, X } from 'lucide-react';
 import { useProfiles, updateProfileCache } from '../../useProfiles';
-import { useChatStore } from '../../store/chatStore';
+import { getPrivacy } from '../../lib/privacy';
 
 const PROFILE_RELAYS = ['wss://relay.primal.net', 'wss://nos.lol', 'wss://relay.damus.io'];
 
@@ -40,7 +40,7 @@ export default function ProfileEditor({ identity, onClose }) {
           name: values.name.trim(),
           display_name: values.displayName.trim(),
           about: values.about.trim(),
-          picture: values.picture.trim(),
+          picture: getPrivacy().profilePhoto === 'nobody' ? '' : values.picture.trim(),
         }),
       }, identity.sk);
       const results = await Promise.allSettled(pool.publish(PROFILE_RELAYS, nostrEvent));
