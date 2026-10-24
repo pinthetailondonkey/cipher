@@ -2,11 +2,15 @@ import React, { useState, useEffect } from 'react';
 import { Search, Users, Megaphone, Loader2 } from 'lucide-react';
 import Logo from './components/Logo';
 import { useChatStore } from './store/chatStore';
+import { loadGroupProfile } from './hooks/useNIP29Group';
+import { getMyGroups, setMyGroups } from './lib/myGroups';
 
-export default function Discover() {
+export default function Discover({ identity, onJoined }) {
   const [query, setQuery] = useState('');
   const [realGroups, setRealGroups] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [joiningId, setJoiningId] = useState('');
+  const [error, setError] = useState('');
   const storeGroups = useChatStore((s) => s.groups) || [];
 
   useEffect(() => {
@@ -56,9 +60,31 @@ export default function Discover() {
   }, [storeGroups]);
 
   const displayGroups = realGroups.filter(g => 
-    g.name.toLowerCase().includes(query.toLowerCase()) || 
-    g.about.toLowerCase().includes(query.toLowerCase())
+    (g.name || '').toLowerCase().includes(query.toLowerCase()) || 
+    (g.about || '').toLowerCase().includes(query.toLowerCase())
   );
+
+  const join = async (group) => {
+    if (!identity?.pk || joiningId) return;
+    setJoiningId(group.id);
+    setError('');
+    try {
+      const profile = await loadGroupProfile(identity, group.id, group.name);
+      const local = getMyGroups(identity.pk);
+      const next = local.some((item) => item.id === profile.id)
+        ? local.map((item) => item.id === profile.id ? { ...item, ...profile, isChannel: group.isChannel } : item)
+        : [...local, { ...profile, isChannel: !!group.isChannel }];
+      setMyGroups(identity.pk, next);
+      useChatStore.getState().setGroups((groups) => [profile, ...(groups || []).filter((item) => item.id !== profile.id)]);
+      useChatStore.getState().openChat('group', profile.id, { ...profile, isChannel: !!group.isChannel });
+      onJoined?.();
+    } catch (joinError) {
+      console.error('[Discover] Could not join group:', joinError);
+      setError(joinError?.message || 'Could not join that group.');
+    } finally {
+      setJoiningId('');
+    }
+  };
 
   return (
     <div className="flex flex-col h-full w-full relative">
@@ -80,6 +106,7 @@ export default function Discover() {
         </div>
       </div>
 
+      {error && <p role="alert" className="px-4 text-sm text-red-400">{error}</p>}
       <div className="flex-1 overflow-y-auto pb-24">
         {loading ? (
           <div className="flex flex-col items-center justify-center mt-20 text-white/40">
@@ -89,7 +116,7 @@ export default function Discover() {
         ) : displayGroups.length === 0 ? (
           <div className="text-center text-white/30 mt-20">
             <Users size={48} className="mx-auto mb-4 opacity-50" />
-            <p>No groups found on the network.</p>
+            <p>No groups found</p>
           </div>
         ) : (
           displayGroups.map((group, i) => {
@@ -108,8 +135,8 @@ export default function Discover() {
                     <p className="text-[13px] text-white/40 line-clamp-1">{group.about}</p>
                   </div>
                 </div>
-                <button className="px-4 py-1.5 rounded-full border border-blue-500/50 text-blue-500 text-[13px] font-semibold hover:bg-blue-500/10 transition-colors">
-                  Join
+                <button type="button" onClick={() => join(group)} disabled={joiningId === group.id} className="px-4 py-1.5 rounded-full border border-blue-500/50 text-blue-500 text-[13px] font-semibold hover:bg-blue-500/10 transition-colors disabled:opacity-50">
+                  {joiningId === group.id ? 'Joining…' : 'Join'}
                 </button>
               </div>
             );
