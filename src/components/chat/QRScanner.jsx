@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { Camera, Check, Copy, Scan, X } from 'lucide-react';
+import { Camera, Check, Copy, Scan } from 'lucide-react';
+import ScreenHeader from '../ui/ScreenHeader';
 
 export default function QRScanner({ onClose }) {
   const videoRef = useRef(null);
@@ -121,30 +122,28 @@ export default function QRScanner({ onClose }) {
         <div className="absolute left-[-10%] top-[-10%] h-[50%] w-[50%] rounded-full bg-blue-600/20 blur-[120px]" />
         <div className="absolute bottom-[-10%] right-[-10%] h-[50%] w-[50%] rounded-full bg-purple-600/10 blur-[120px]" />
       </div>
-      <div className="relative z-10 flex items-center justify-between border-b border-white/10 bg-[#0A0A0A]/60 p-4 backdrop-blur-2xl">
-        <h2 className="text-lg font-bold text-white">Scan QR Code</h2>
-        <button type="button" onClick={onClose} className="touch-target p-2 text-white/60 hover:text-white" aria-label="Close scanner"><X size={24} /></button>
-      </div>
-      <div className="relative z-10 flex flex-1 flex-col items-center justify-center gap-5 overflow-y-auto p-5">
+      <div className="relative z-10 flex min-h-0 flex-1 flex-col">
+      <ScreenHeader title="Scan" onBack={onClose} />
+      <div className="flex flex-1 flex-col items-center justify-center gap-5 overflow-y-auto p-4">
         {error ? (
-          <div className="flex max-w-xs flex-col items-center text-center">
+          <div className="w-full max-w-xs rounded-2xl border border-white/10 bg-[#0A0A0A]/60 px-4 py-10 text-center shadow-2xl backdrop-blur-2xl">
             <Camera size={48} className="mb-4 text-white/40" />
             <h3 className="text-[15px] font-semibold text-white">Scanner unavailable</h3>
             <p role="alert" className="mt-2 text-[13px] text-white/50">{error}</p>
           </div>
         ) : (
           <>
-            <div className="relative aspect-square w-full max-w-xs overflow-hidden rounded-3xl border-2 border-blue-500 bg-white/5">
+            <div className="relative aspect-square w-full max-w-xs overflow-hidden rounded-3xl border border-white/10 bg-[#0A0A0A]/60 shadow-2xl">
               <video ref={videoRef} className="h-full w-full object-cover" muted playsInline />
               <canvas ref={canvasRef} className="hidden" />
               <div className="pointer-events-none absolute inset-0 flex items-center justify-center"><Scan size={64} className="text-white/70" /></div>
             </div>
             {decodedValue ? (
-              <section className="w-full max-w-sm rounded-2xl border border-emerald-500/20 bg-emerald-500/5 p-4">
-                <p className="mb-2 flex items-center gap-2 text-sm font-semibold text-emerald-300"><Check size={17} /> QR code decoded</p>
-                <p className="break-all rounded-xl bg-black/50 p-3 font-mono text-xs text-white/80">{decodedValue}</p>
-                <button type="button" onClick={copyDecodedValue} className="mt-3 flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-white/10 text-sm font-semibold text-white hover:bg-white/15">
-                  <Copy size={16} /> {copied ? 'Copied' : 'Copy result'}
+              <section className="w-full max-w-sm rounded-2xl border border-white/10 bg-[#0A0A0A]/60 p-4 shadow-2xl backdrop-blur-2xl">
+                <p className="mb-2 flex items-center gap-2 text-[15px] font-semibold text-white"><Check size={17} className="text-blue-500" /> Scanned</p>
+                <p className="break-all rounded-2xl border border-white/10 bg-white/5 p-3 font-mono text-[13px] text-white/80">{decodedValue}</p>
+                <button type="button" onClick={copyDecodedValue} className="mt-3 flex w-full items-center justify-center gap-2 rounded-2xl bg-blue-600 py-3.5 text-[15px] font-bold text-white">
+                  <Copy size={16} /> {copied ? 'Copied' : 'Copy'}
                 </button>
               </section>
             ) : (
@@ -152,6 +151,7 @@ export default function QRScanner({ onClose }) {
             )}
           </>
         )}
+      </div>
       </div>
     </div>
   );

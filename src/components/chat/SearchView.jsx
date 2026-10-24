@@ -1,5 +1,6 @@
 import React from 'react';
-import { ArrowLeft, Search, Users, User } from 'lucide-react';
+import { Search, Users, User } from 'lucide-react';
+import ScreenHeader from '../ui/ScreenHeader';
 import { useChatStore } from '../../store/chatStore';
 
 export default function SearchView({ handleSearch, joinGroupById, openChat }) {
@@ -10,78 +11,78 @@ export default function SearchView({ handleSearch, joinGroupById, openChat }) {
   const isSearching = useChatStore((s) => s.isSearching);
 
   return (
-    <div className="absolute inset-0 z-50 flex h-full w-full flex-col bg-black/80 backdrop-blur-2xl">
-      {/* HEADER & SEARCH BAR */}
-      <div className="flex items-center gap-2 border-b border-white/10 bg-[#0A0A0A]/60 px-2 py-3 backdrop-blur-2xl">
-        <button onClick={() => setView('list')} className="p-2 text-white" aria-label="Back">
-          <ArrowLeft size={22} />
-        </button>
-        <h1 className="sr-only">Search</h1>
-        <div className="flex flex-1 items-center gap-2 rounded-2xl border border-white/10 bg-[#0A0A0A]/60 shadow-2xl backdrop-blur-2xl px-4 py-3">
-          <Search size={18} className="text-white/40" />
-          <input
-            autoFocus
-            type="text"
-            placeholder="Search @username, npub, or group..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') handleSearch();
-            }}
-            className="w-full bg-transparent text-[15px] text-white placeholder-white/40 outline-none"
-          />
-        </div>
+    <div className="absolute inset-0 z-50 flex h-full w-full flex-col bg-black">
+      <div className="pointer-events-none absolute inset-0">
+        <div className="absolute left-[-10%] top-[-10%] h-[50%] w-[50%] rounded-full bg-blue-600/20 blur-[120px]" />
+        <div className="absolute bottom-[-10%] right-[-10%] h-[50%] w-[50%] rounded-full bg-purple-600/10 blur-[120px]" />
       </div>
-
-      {/* RESULTS LIST */}
-      <div className="flex-1 overflow-y-auto pb-24">
-        {isSearching ? (
-          <div className="flex justify-center mt-10">
-            <div className="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
-          </div>
-        ) : searchResults.length === 0 ? (
-          <div className="text-center text-white/30 mt-10 text-sm">
-            {searchQuery ? 'No results found.' : 'Search for people or groups.'}
-          </div>
-        ) : (
-          <div className="mx-4 overflow-hidden rounded-2xl border border-white/10 bg-[#0A0A0A]/60 shadow-2xl backdrop-blur-2xl">
-          {searchResults.map((result, i) => (
-            <button
-              type="button"
-              key={result.id || result.pubkey || i}
-              disabled={result.type === 'user' ? !result.pubkey : !result.id}
-              className="flex w-full items-center justify-between border-b border-white/5 p-4 text-left last:border-0 active:bg-white/5 disabled:opacity-50"
-              onClick={() => {
-                if (result.type === 'user') {
-                  openChat('dm', result.pubkey);
-                } else if (result.type === 'group') {
-                  joinGroupById(result.id, result.name, result.isChannel);
-                }
+      <div className="relative z-10 flex min-h-0 flex-1 flex-col">
+        <ScreenHeader title="Search" onBack={() => setView('list')} />
+        <div className="px-4 pb-3">
+          <div className="flex items-center gap-2 rounded-2xl border border-white/10 bg-[#0A0A0A]/60 px-4 py-3 shadow-2xl backdrop-blur-2xl">
+            <Search size={18} className="text-white/40" />
+            <input
+              autoFocus
+              type="text"
+              placeholder="Name or group"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') handleSearch();
               }}
-            >
-              <span className="flex min-w-0 items-center gap-3">
-                <div className="w-12 h-12 rounded-full border border-white/10 bg-white/5 shadow-2xl backdrop-blur-md flex items-center justify-center text-blue-500 shrink-0 overflow-hidden">
-                  {result.picture ? (
-                    <img src={result.picture} alt="" loading="lazy" className="w-full h-full object-cover" />
-                  ) : result.type === 'group' ? (
-                    <Users size={20} />
-                  ) : (
-                    <User size={20} />
-                  )}
-                </div>
-                <div>
-                  <h3 className="text-[15px] font-semibold text-white">{result.name || `User ${result.pubkey?.slice(0, 6)}`}</h3>
-                  <p className="text-[13px] text-white/40">{result.type === 'group' ? 'Group' : 'User'}</p>
-                </div>
-              </span>
-              
-              <span className="ml-3 shrink-0 rounded-2xl bg-blue-600 px-3 py-1.5 text-[13px] font-bold text-white">
-                {result.type === 'group' ? 'Join' : 'Message'}
-              </span>
-            </button>
-          ))}
+              className="w-full bg-transparent text-[15px] text-white placeholder-white/40 outline-none"
+            />
           </div>
-        )}
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-8">
+          {isSearching ? (
+            <div className="mt-10 flex justify-center">
+              <div className="h-6 w-6 animate-spin rounded-full border-2 border-blue-500 border-t-transparent" />
+            </div>
+          ) : searchResults.length === 0 ? (
+            <div className="rounded-2xl border border-white/10 bg-[#0A0A0A]/60 px-4 py-16 text-center shadow-2xl backdrop-blur-2xl">
+              <p className="text-[15px] font-semibold text-white">{searchQuery ? 'No results' : 'Find someone'}</p>
+              <p className="mt-1 text-[13px] text-white/40">{searchQuery ? 'Try another name.' : 'Search a name or a group.'}</p>
+            </div>
+          ) : (
+            <div className="overflow-hidden rounded-2xl border border-white/10 bg-[#0A0A0A]/60 shadow-2xl backdrop-blur-2xl">
+              {searchResults.map((result, i) => (
+                <button
+                  type="button"
+                  key={result.id || result.pubkey || i}
+                  disabled={result.type === 'user' ? !result.pubkey : !result.id}
+                  className="flex w-full items-center justify-between border-b border-white/5 p-4 text-left last:border-0 active:bg-white/5 disabled:opacity-50"
+                  onClick={() => {
+                    if (result.type === 'user') {
+                      openChat('dm', result.pubkey);
+                    } else if (result.type === 'group') {
+                      joinGroupById(result.id, result.name, result.isChannel);
+                    }
+                  }}
+                >
+                  <span className="flex min-w-0 items-center gap-3">
+                    <span className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-full border border-white/10 bg-white/5 text-blue-500">
+                      {result.picture ? (
+                        <img src={result.picture} alt="" loading="lazy" className="h-full w-full object-cover" />
+                      ) : result.type === 'group' ? (
+                        <Users size={20} />
+                      ) : (
+                        <User size={20} />
+                      )}
+                    </span>
+                    <span className="min-w-0">
+                      <span className="block truncate text-[15px] font-semibold text-white">{result.name || `User ${result.pubkey?.slice(0, 6)}`}</span>
+                      <span className="block text-[13px] text-white/40">{result.type === 'group' ? 'Group' : 'Person'}</span>
+                    </span>
+                  </span>
+                  <span className="ml-3 shrink-0 rounded-2xl bg-blue-600 px-3 py-1.5 text-[13px] font-bold text-white">
+                    {result.type === 'group' ? 'Join' : 'Message'}
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
