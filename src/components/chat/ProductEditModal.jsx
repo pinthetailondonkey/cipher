@@ -35,12 +35,12 @@ export default function ProductEditModal({ editingProduct, onClose, onSubmit }) 
 
   return (
     <div className="fixed inset-0 z-[90] flex items-end justify-center bg-black/70 p-3" role="presentation" onClick={onClose}>
-      <form role="dialog" aria-modal="true" aria-label="Edit listing" onClick={(event) => event.stopPropagation()} onSubmit={save} className="w-full max-w-sm space-y-4 rounded-3xl border border-white/10 bg-[#0A0A0A] p-5">
+      <form role="dialog" aria-modal="true" aria-label="Edit listing" onClick={(event) => event.stopPropagation()} onSubmit={save} className="w-full max-w-sm space-y-4 rounded-3xl border border-white/10 bg-[#0A0A0A]/60 backdrop-blur-2xl p-5">
         <div className="flex items-center justify-between">
           <h2 className="text-2xl font-bold tracking-tight text-white">Edit listing</h2>
           <button type="button" onClick={onClose} aria-label="Close" className="p-2 text-white/50"><X size={18} /></button>
         </div>
-        <div className="overflow-hidden rounded-2xl border border-white/10 bg-[#111]">
+        <div className="overflow-hidden rounded-2xl border border-white/10 bg-[#0A0A0A]/60 shadow-2xl backdrop-blur-2xl">
           <label className="flex items-center gap-3 border-b border-white/5 p-4">
             <Type size={18} className="text-white/40" />
             <input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Name" className="w-full bg-transparent text-[15px] text-white outline-none" />

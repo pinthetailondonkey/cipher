@@ -30,7 +30,7 @@ export default function FloatingMenu() {
             >
               <button 
                 onClick={() => { setShowMenu(false); setView('search'); }} 
-                className={`flex items-center gap-3 rounded-2xl border border-white/10 bg-[#111] px-5 py-3.5 font-bold text-white shadow-2xl active:bg-white/10 ${pressable}`}
+                className={`flex items-center gap-3 rounded-2xl border border-white/10 bg-[#0A0A0A]/60 shadow-2xl backdrop-blur-2xl px-5 py-3.5 font-bold text-white shadow-2xl active:bg-white/10 ${pressable}`}
               >
                 <span className="text-sm font-bold tracking-wide">New Chat</span>
                 <div className="p-2 bg-blue-600 rounded-full text-white shadow-lg"><MessageSquare size={16} /></div>
@@ -38,7 +38,7 @@ export default function FloatingMenu() {
               
               <button 
                 onClick={() => { setShowMenu(false); setShowCreateGroup(true); }} 
-                className={`flex items-center gap-3 rounded-2xl border border-white/10 bg-[#111] px-5 py-3.5 font-bold text-white shadow-2xl active:bg-white/10 ${pressable}`}
+                className={`flex items-center gap-3 rounded-2xl border border-white/10 bg-[#0A0A0A]/60 shadow-2xl backdrop-blur-2xl px-5 py-3.5 font-bold text-white shadow-2xl active:bg-white/10 ${pressable}`}
               >
                 <span className="text-sm font-bold tracking-wide">New Group</span>
                 <div className="p-2 bg-blue-600 rounded-full text-white shadow-lg"><Users size={16} /></div>
@@ -46,7 +46,7 @@ export default function FloatingMenu() {
 
               <button
                 onClick={() => { setShowMenu(false); setIsChannel(true); setShowCreateGroup(true); }}
-                className={`flex items-center gap-3 rounded-2xl border border-white/10 bg-[#111] px-5 py-3.5 font-bold text-white shadow-2xl active:bg-white/10 ${pressable}`}
+                className={`flex items-center gap-3 rounded-2xl border border-white/10 bg-[#0A0A0A]/60 shadow-2xl backdrop-blur-2xl px-5 py-3.5 font-bold text-white shadow-2xl active:bg-white/10 ${pressable}`}
               >
                 <span className="text-sm font-bold tracking-wide">New Channel</span>
                 <div className="p-2 bg-blue-600 rounded-full text-white shadow-lg"><Radio size={16} /></div>

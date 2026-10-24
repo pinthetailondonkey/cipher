@@ -27,13 +27,13 @@ export default function AccountSwitcher({ identity, onClose }) {
   };
 
   return (
-    <div className="h-full overflow-y-auto bg-black pb-24">
+    <div className="h-full overflow-y-auto bg-transparent pb-24">
       <ScreenHeader title="Accounts" onBack={onClose} />
       <div className="space-y-3 p-4">
       {accounts.map((account) => {
         const name = account.displayName || account.handle || 'Account';
         return (
-          <div key={account.pubkey} className="overflow-hidden rounded-2xl border border-white/10 bg-[#111] p-4">
+          <div key={account.pubkey} className="overflow-hidden rounded-2xl border border-white/10 bg-[#0A0A0A]/60 shadow-2xl backdrop-blur-2xl p-4">
             <div className="flex items-center gap-3">
               <Avatar name={name} />
               <span className="min-w-0 flex-1">
@@ -54,7 +54,7 @@ export default function AccountSwitcher({ identity, onClose }) {
           </div>
         );
       })}
-      {accounts.length === 0 && <p className="rounded-2xl border border-white/10 bg-[#111] px-4 py-10 text-center text-[13px] text-white/40">No saved accounts on this device.</p>}
+      {accounts.length === 0 && <p className="rounded-2xl border border-white/10 bg-[#0A0A0A]/60 shadow-2xl backdrop-blur-2xl px-4 py-10 text-center text-[13px] text-white/40">No saved accounts on this device.</p>}
       {error && <p role="alert" className="text-[13px] text-red-400">{error}</p>}
       </div>
     </div>
