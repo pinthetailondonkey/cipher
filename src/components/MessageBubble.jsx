@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
-import { BadgeCheck, Bookmark, Copy, Radio, Reply, ShoppingBag, Trash2 } from 'lucide-react';
+import { BadgeCheck, Bookmark, Copy, Forward, Pencil, Pin, Radio, Reply, ShoppingBag, Trash2 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { paymentUri } from '../lib/paymentUri';
 import { haptic } from '../lib/haptics';
@@ -62,15 +62,9 @@ export default function MessageBubble({ message, data, onAction, senderName, isP
   const deleted = useChatStore((state) => state.deletedMsgs);
   const reactions = useChatStore((state) => (message?.id ? state.reactions[message.id] : undefined)) || EMPTY_REACTIONS;
   const profiles = useChatStore((state) => state.profiles);
-  const actions = [
-    ['reply', Reply, 'Reply'],
-    ['bookmark', Bookmark, 'Save'],
-    ['copy', Copy, 'Copy'],
-    ['delete', Trash2, 'Delete'],
-  ];
-  if (content.type === 'product' && !isSender) actions.unshift(['buy_product', ShoppingBag, 'Buy']);
-  if (content.type === 'product' && isSender) actions.unshift(['broadcast_product', Radio, 'Broadcast']);
-  if ((content.type === 'order_request' || content.type === 'cipher_order') && !isSender) actions.unshift(['accept_order', BadgeCheck, 'Accept order']);
+  const inGroup = useChatStore((state) => !!state.activeGroup);
+  const pressTimer = useRef(null);
+  const pressPoint = useRef(null);
   const paymentMethods = content.type === 'order_update' && content.status === 'accepted' ? content.paymentMethods || {} : {};
   const paymentRows = [
     ['BTC', paymentMethods.btc],
@@ -116,7 +110,44 @@ export default function MessageBubble({ message, data, onAction, senderName, isP
   const justArrived = message?.deliveryStatus === 'sending' || (Number(message?.timestamp) >= mountedAt.current - 2);
   if (message?.id && deleted instanceof Set && deleted.has(message.id)) return null;
 
+  const act = (action, extra = {}) => {
+    onAction?.(action, { ...message, data: content, text, ...extra });
+    setOpen(false);
+  };
+  const clearPress = () => {
+    if (pressTimer.current) window.clearTimeout(pressTimer.current);
+    pressTimer.current = null;
+  };
+  const startPress = (event) => {
+    if (event.button && event.button !== 0) return;
+    pressPoint.current = { x: event.clientX, y: event.clientY };
+    clearPress();
+    pressTimer.current = window.setTimeout(() => {
+      haptic('medium');
+      setOpen(true);
+    }, 420);
+  };
+  const movePress = (event) => {
+    if (!pressPoint.current) return;
+    const dx = Math.abs(event.clientX - pressPoint.current.x);
+    const dy = Math.abs(event.clientY - pressPoint.current.y);
+    if (dx > 10 || dy > 10) clearPress();
+  };
+  const menuActions = [
+    ['reply', Reply, 'Reply'],
+    ['copy', Copy, 'Copy'],
+    ['forward', Forward, 'Forward'],
+    ['bookmark', Bookmark, 'Save'],
+    ...(inGroup ? [['pin', Pin, 'Pin']] : []),
+    ...(content.type === 'product' && !isSender ? [['buy_product', ShoppingBag, 'Buy']] : []),
+    ...(content.type === 'product' && isSender ? [['broadcast_product', Radio, 'Share']] : []),
+    ...((content.type === 'order_request' || content.type === 'cipher_order') && !isSender ? [['accept_order', BadgeCheck, 'Accept']] : []),
+    ...(isSender && text ? [['edit', Pencil, 'Edit']] : []),
+    ['delete', Trash2, 'Delete'],
+  ];
+
   return (
+    <>
     <motion.article
       id={message?.id ? `msg-${message.id}` : undefined}
       initial={justArrived ? { y: 18, opacity: 0 } : false}
@@ -134,8 +165,12 @@ export default function MessageBubble({ message, data, onAction, senderName, isP
       <div
         role="button"
         tabIndex={0}
-        onClick={() => setOpen((value) => !value)}
-        onKeyDown={(event) => { if (event.key === 'Enter') setOpen((value) => !value); }}
+        onPointerDown={startPress}
+        onPointerUp={clearPress}
+        onPointerLeave={clearPress}
+        onPointerCancel={clearPress}
+        onPointerMove={movePress}
+        onContextMenu={(event) => { event.preventDefault(); haptic('medium'); setOpen(true); }}
         className={`max-w-[78%] min-w-[4.5rem] rounded-[18px] px-2.5 py-1 ${isSender ? 'rounded-br-[5px] bg-blue-600 text-white' : 'rounded-bl-[5px] bg-[#1c1c1e] text-white'}`}
       >
         {!isSender && senderName && <p className="mb-0.5 text-[11px] font-semibold leading-none text-blue-400">{senderName}</p>}
@@ -204,33 +239,27 @@ export default function MessageBubble({ message, data, onAction, senderName, isP
         {!text && !content.url && !content.urls && !paymentRows.length && content.type !== 'image' && content.type !== 'audio' && content.type !== 'product' && content.type !== 'cipher_order' && content.type !== 'order_request' && content.type !== 'order_update' && (
           <p className="text-[14px] leading-snug text-white/55">Message unavailable</p>
         )}
-        {open && (
-          <div className="mt-1 border-t border-white/10 pt-1">
-            <div className="mb-1 flex gap-1">
-              {REACTION_CHOICES.map((emoji) => (
-                <button key={emoji} type="button" aria-label={`React ${emoji}`} onClick={(event) => {
-                  event.stopPropagation();
-                  haptic('light');
-                  onAction?.('react', { id: message.id, pubkey: message.pubkey, emoji });
-                  setOpen(false);
-                }} className="rounded-full px-1 text-[14px] active:scale-95">{emoji}</button>
-              ))}
-            </div>
-            <div className="flex gap-2.5">
-            {actions.map(([action, Icon, label]) => (
-              <button key={action} type="button" aria-label={label} title={label} onClick={(event) => {
-                event.stopPropagation();
-                if (action === 'buy_product') haptic('light');
-                onAction?.(action, message);
-                setOpen(false);
-              }} className="text-white/70 hover:text-white">
-                <Icon size={13} />
+      </div>
+    </motion.article>
+    {open && (
+      <div className="fixed inset-0 z-[75] flex items-end justify-center bg-black/70 p-3" onPointerDown={(event) => { if (event.target === event.currentTarget) setOpen(false); }}>
+        <div className="mb-safe w-full max-w-sm rounded-3xl border border-white/10 bg-[#0A0A0A] p-3" onPointerDown={(event) => event.stopPropagation()}>
+          <div className="mb-2 flex justify-between rounded-2xl bg-[#111] px-2 py-2">
+            {REACTION_CHOICES.map((emoji) => (
+              <button key={emoji} type="button" aria-label={`React ${emoji}`} onClick={() => { haptic('light'); act('react', { emoji }); }} className="text-[22px] active:scale-95">{emoji}</button>
+            ))}
+          </div>
+          <div className="grid grid-cols-4 gap-1">
+            {menuActions.map(([action, Icon, label]) => (
+              <button key={action} type="button" onClick={() => { haptic('light'); act(action); }} className={`flex flex-col items-center gap-1 rounded-2xl px-2 py-3 text-[12px] font-semibold active:bg-white/10 ${action === 'delete' ? 'text-red-400' : 'text-white'}`}>
+                <Icon size={18} />
+                {label}
               </button>
             ))}
-            </div>
           </div>
-        )}
+        </div>
       </div>
+    )}
       {showReactors && (
         <div className="fixed inset-0 z-[70] flex items-end justify-center bg-black/60 p-4" onClick={() => setShowReactors(false)}>
           <div className="w-full max-w-sm rounded-2xl border border-white/10 bg-[#0A0A0A] p-4" onClick={(event) => event.stopPropagation()}>
@@ -244,6 +273,6 @@ export default function MessageBubble({ message, data, onAction, senderName, isP
           </div>
         </div>
       )}
-    </motion.article>
+    </>
   );
 }

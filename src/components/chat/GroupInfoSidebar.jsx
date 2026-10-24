@@ -64,12 +64,7 @@ export default function GroupInfoSidebar({
     if (!group?.id) return;
     setError('');
     try {
-      const { nip19 } = await import('nostr-tools');
-      const creator = /^[0-9a-f]{64}$/i.test(group.creator || '') ? group.creator : (identity?.pk || '');
-      const token = creator
-        ? nip19.naddrEncode({ kind: 39000, pubkey: creator, identifier: group.id, relays: ['wss://groups.aegispayhq.com'] })
-        : group.id;
-      const link = `${window.location.origin}${window.location.pathname}?${String(token).startsWith('naddr') ? 'naddr' : 'group'}=${encodeURIComponent(token)}`;
+      const link = `${window.location.origin}${window.location.pathname}?g=${encodeURIComponent(group.id)}`;
       const ok = await copyText(link);
       if (!ok) return;
       setCopied(true);
@@ -215,10 +210,7 @@ export default function GroupInfoSidebar({
                   );
                 })}
               </div>
-              <div className="mb-4 rounded-xl border border-white/10 bg-[#111] p-4">
-                <p className="text-sm font-semibold text-white">Pinned listing slot</p>
-                <p className="mt-1 text-xs leading-relaxed text-white/45">Pin one product card to feature it at the top of the group chat.</p>
-              </div>
+              <h3 className="mb-2 text-[13px] text-white/40">Shop</h3>
               {pinnedId && (
                 <div className="mb-4 flex items-center gap-2 rounded-xl border border-amber-400/20 bg-amber-400/10 px-3 py-3 text-xs font-semibold text-amber-200">
                   <BadgeCheck size={16} /> An endorsed listing is pinned
@@ -226,6 +218,7 @@ export default function GroupInfoSidebar({
                 </div>
               )}
               {error && <p role="alert" className="mb-3 rounded-lg bg-red-500/10 p-3 text-xs text-red-300">{error}</p>}
+              {products.length === 0 && <p className="mb-3 rounded-2xl border border-white/10 bg-[#111] px-3 py-3 text-[13px] text-white/40">No listings in this group yet.</p>}
               <div className="space-y-2">
                 {products.map(({ message, product }) => {
                   const isPinned = pinnedId === message.id;

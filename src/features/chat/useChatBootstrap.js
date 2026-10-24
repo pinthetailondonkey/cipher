@@ -422,25 +422,35 @@ export function useChatBootstrap({
 
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
-    const joinId = urlParams.get('group') || urlParams.get('join') || urlParams.get('g');
+    const directId = urlParams.get('g') || urlParams.get('group') || urlParams.get('join');
+    const naddr = urlParams.get('naddr');
     const joinName = urlParams.get('name');
-    if (joinId && identity?.pk) {
-      (async () => {
+    if ((!directId && !naddr) || !identity?.pk) return undefined;
+    let cancelled = false;
+    (async () => {
+      let joinId = directId;
+      if (!joinId && naddr) {
         try {
-          const pool = await getAuthenticatedPool(identity);
-          const events = await queryWithTimeout(pool, groupRelays, { kinds: [9002], limit: 200 }, 3000);
-          const match = events.find(ev => ev.tags.find(t => t[0] === 'h')?.[1] === joinId);
-          const creator = match?.pubkey;
-          if (creator && creator !== identity.pk) {
-            await requestToJoinGroup(joinId, joinName, creator);
-          } else {
-            joinGroupById(joinId, joinName);
-          }
-        } catch {
-          joinGroupById(joinId, joinName);
+          const { parseGroupReference } = await import('../../hooks/useNIP29Group');
+          joinId = parseGroupReference(naddr).id;
+        } catch (error) {
+          console.warn('[join] Could not read invite:', error);
         }
-      })();
-    }
+      }
+      if (!joinId || cancelled) return;
+      try {
+        const pool = await getAuthenticatedPool(identity);
+        const events = await queryWithTimeout(pool, groupRelays, { kinds: [9002], limit: 200 }, 3000);
+        const match = events.find(ev => ev.tags.find(t => t[0] === 'h')?.[1] === joinId);
+        const creator = match?.pubkey;
+        if (cancelled) return;
+        if (creator && creator !== identity.pk) await requestToJoinGroup(joinId, joinName, creator);
+        else joinGroupById(joinId, joinName);
+      } catch {
+        if (!cancelled) joinGroupById(joinId, joinName);
+      }
+    })();
+    return () => { cancelled = true; };
   }, [identity?.pk]);
   return { fetchChats };
 }
