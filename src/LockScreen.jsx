@@ -3,6 +3,8 @@ import React, { useState } from "react";
 import { Fingerprint, ChevronLeft, AtSign, Camera, RefreshCw, KeyRound, Check } from "lucide-react";
 import { useChatStore } from "./store/chatStore";
 import { compressImage } from './lib/imageCompression';
+import Button from './components/ui/Button';
+import { pressable } from './components/ui/Button';
 
 export default function LockScreen({ identity }) {
   const [mode, setMode] = useState(() => {
@@ -201,10 +203,10 @@ export default function LockScreen({ identity }) {
           <Logo size={80} />
         </div>
 
-        <h1 className="text-3xl font-bold tracking-tight text-white mb-2 text-center">
+        <h1 className="text-2xl font-bold tracking-tight text-white mb-2 text-center">
           {mode === 'verify_key' ? 'Verify Your Recovery Key' : mode === 'save_key' ? 'Save Your Recovery Key' : mode === 'setup_profile' ? 'Your Profile' : mode === 'create' ? 'Welcome to Cipher' : mode === 'unlock' ? 'Unlock Cipher' : mode === 'restore' ? 'Restore Account' : 'Restore with Recovery Phrase'}
         </h1>
-        <p className="text-gray-400 text-[15px] text-center mb-8 max-w-[280px] leading-relaxed">
+        <p className="text-[13px] text-white/40 text-center mb-8 max-w-[280px] leading-relaxed">
           {mode === 'verify_key' ? 'Enter the words below to confirm you saved the phrase.' : mode === 'save_key' ? 'Write down these 12 words. You need them + your PIN to recover this account.' : mode === 'setup_profile' ? 'Set up your profile and start messaging.' : mode === 'create' ? 'Pick a handle and a PIN (4+ digits).' : mode === 'unlock' ? 'Enter your PIN, or use your saved device passkey.' : mode === 'restore' ? 'Enter your handle and PIN.' : 'Enter your 12-word phrase and a new PIN.'}
         </p>
 
@@ -295,9 +297,9 @@ export default function LockScreen({ identity }) {
           {error && <p className="text-red-500 text-sm text-center mt-1 mb-1 font-medium">{error}</p>}
 
           {/* SOLID BLUE BUTTON - Matches Logo, No Gradient */}
-          <button type="submit" disabled={submitDisabled} className="w-full bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold py-4 rounded-2xl transition-all flex items-center justify-center gap-2 mt-2">
+          <Button type="submit" disabled={submitDisabled} className="mt-2 flex w-full items-center justify-center gap-2">
             {loading ? <RefreshCw size={20} className="animate-spin" /> : mode === 'verify_key' ? 'Verify & Continue' : mode === 'save_key' ? (mnemonicConfirmed ? 'Continue' : 'Confirm you saved it') : mode === 'setup_profile' ? 'Finish Setup' : mode === 'unlock' ? 'Unlock' : 'Continue'}
-          </button>
+          </Button>
           {biometricNotice && mode === 'save_key' && (
             <p role="status" className="text-center text-xs leading-relaxed text-amber-300">{biometricNotice} You can still unlock with your PIN.</p>
           )}
@@ -307,7 +309,7 @@ export default function LockScreen({ identity }) {
           {mode === 'unlock' && (
             <>
               {identity?.hasBiometric && (
-                <button type="button" onClick={handleBiometricUnlock} disabled={biometricLoading || loading} className="flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl border border-blue-500/30 bg-blue-500/10 px-4 text-sm font-semibold text-blue-300 hover:bg-blue-500/15 disabled:opacity-50">
+                <button type="button" onClick={handleBiometricUnlock} disabled={biometricLoading || loading} className={`flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl border border-white/10 bg-[#111] px-4 text-[15px] font-semibold text-blue-500 active:bg-white/10 disabled:opacity-50 ${pressable}`}>
                   {biometricLoading ? <RefreshCw size={17} className="animate-spin" /> : <Fingerprint size={17} />}
                   Unlock or recover with Face ID / passkey
                 </button>

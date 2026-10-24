@@ -2,6 +2,7 @@ import React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Plus, Users, MessageSquare, Radio, User } from 'lucide-react';
 import { useChatStore } from '../../store/chatStore';
+import { pressable } from '../ui/Button';
 
 export default function FloatingMenu() {
   const showMenu = useChatStore((s) => s.showMenu);
@@ -30,7 +31,7 @@ export default function FloatingMenu() {
             >
               <button 
                 onClick={() => { setShowMenu(false); setView('search'); }} 
-                className="flex items-center gap-3 bg-[#111] px-5 py-3.5 rounded-full border border-white/10 shadow-2xl text-white hover:bg-[#1a1a1a] transition-colors"
+                className={`flex items-center gap-3 rounded-2xl border border-white/10 bg-[#111] px-5 py-3.5 font-bold text-white shadow-2xl active:bg-white/10 ${pressable}`}
               >
                 <span className="text-sm font-bold tracking-wide">New Chat</span>
                 <div className="p-2 bg-blue-600 rounded-full text-white shadow-lg"><MessageSquare size={16} /></div>
@@ -38,7 +39,7 @@ export default function FloatingMenu() {
               
               <button 
                 onClick={() => { setShowMenu(false); setShowCreateGroup(true); }} 
-                className="flex items-center gap-3 bg-[#111] px-5 py-3.5 rounded-full border border-white/10 shadow-2xl text-white hover:bg-[#1a1a1a] transition-colors"
+                className={`flex items-center gap-3 rounded-2xl border border-white/10 bg-[#111] px-5 py-3.5 font-bold text-white shadow-2xl active:bg-white/10 ${pressable}`}
               >
                 <span className="text-sm font-bold tracking-wide">New Group</span>
                 <div className="p-2 bg-blue-600 rounded-full text-white shadow-lg"><Users size={16} /></div>
@@ -46,14 +47,14 @@ export default function FloatingMenu() {
 
               <button
                 onClick={() => { setShowMenu(false); setShowMyProfile(true); }}
-                className="flex items-center gap-3 bg-[#111] px-5 py-3.5 rounded-full border border-white/10 shadow-2xl text-white hover:bg-[#1a1a1a] transition-colors"
+                className={`flex items-center gap-3 rounded-2xl border border-white/10 bg-[#111] px-5 py-3.5 font-bold text-white shadow-2xl active:bg-white/10 ${pressable}`}
               >
                 <span className="text-sm font-bold tracking-wide">My Profile</span>
                 <div className="p-2 bg-blue-600 rounded-full text-white shadow-lg"><User size={16} /></div>
               </button>
               <button
                 onClick={() => { setShowMenu(false); setIsChannel(true); setShowCreateGroup(true); }}
-                className="flex items-center gap-3 bg-[#111] px-5 py-3.5 rounded-full border border-white/10 shadow-2xl text-white hover:bg-[#1a1a1a] transition-colors"
+                className={`flex items-center gap-3 rounded-2xl border border-white/10 bg-[#111] px-5 py-3.5 font-bold text-white shadow-2xl active:bg-white/10 ${pressable}`}
               >
                 <span className="text-sm font-bold tracking-wide">New Channel</span>
                 <div className="p-2 bg-blue-600 rounded-full text-white shadow-lg"><Radio size={16} /></div>
@@ -66,7 +67,7 @@ export default function FloatingMenu() {
       <motion.button 
         animate={{ rotate: showMenu ? 45 : 0 }}
         onClick={() => setShowMenu(!showMenu)} 
-        className="fixed bottom-24 right-6 p-4 bg-blue-600 text-white rounded-full shadow-[0_0_20px_rgba(37,99,235,0.4)] hover:scale-105 active:scale-95 transition-transform z-50"
+        className={`fixed bottom-24 right-6 z-50 rounded-full bg-blue-600 p-4 text-white shadow-[0_0_20px_rgba(37,99,235,0.4)] active:bg-blue-700 ${pressable}`}
       >
         <Plus size={24} strokeWidth={2.5} />
       </motion.button>
