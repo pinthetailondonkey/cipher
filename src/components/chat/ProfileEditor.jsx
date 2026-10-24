@@ -71,11 +71,11 @@ export default function ProfileEditor({ identity, onClose }) {
   const field = 'w-full bg-transparent text-[15px] text-white outline-none placeholder:text-white/30';
 
   return (
-    <div className="h-full overflow-y-auto bg-black pb-8">
+    <div className="h-full overflow-y-auto bg-transparent pb-8">
       <form onSubmit={publishProfile} className="space-y-4">
         <ScreenHeader title="Edit Profile" onBack={onClose} />
         <div className="space-y-4 px-4">
-          <div className="overflow-hidden rounded-2xl border border-white/10 bg-[#111]">
+          <div className="overflow-hidden rounded-2xl border border-white/10 bg-[#0A0A0A]/60 shadow-2xl backdrop-blur-2xl">
             <label className="flex items-center gap-3 border-b border-white/5 p-4">
               <AtSign size={18} className="shrink-0 text-white/40" />
               <span className="min-w-0 flex-1">

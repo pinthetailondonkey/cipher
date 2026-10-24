@@ -161,9 +161,9 @@ export default function GroupInfoSidebar({
             animate={{ x: 0 }}
             exit={{ x: '100%' }}
             transition={{ type: 'tween', duration: 0.22 }}
-            className="flex h-full w-full max-w-sm flex-col border-l border-white/10 bg-[#0A0A0A]"
+            className="flex h-full w-full max-w-sm flex-col border-l border-white/10 bg-[#0A0A0A]/60 backdrop-blur-2xl"
           >
-            <header className="flex items-center gap-3 border-b border-white/5 bg-[#0A0A0A] px-4 py-4">
+            <header className="flex items-center gap-3 border-b border-white/5 bg-[#0A0A0A]/60 backdrop-blur-2xl px-4 py-4">
               <Avatar src={group.picture} name={group.name || 'Group'} />
               <div className="min-w-0 flex-1">
                 <h2 className="truncate text-2xl font-bold tracking-tight text-white">{group.name || 'Group'}</h2>
@@ -171,14 +171,14 @@ export default function GroupInfoSidebar({
               </div>
               <button type="button" onClick={onClose} aria-label="Close group information" className={`p-2 text-white/45 hover:text-white ${pressable}`}><X size={20} /></button>
             </header>
-            <div className="min-h-0 flex-1 space-y-4 overflow-y-auto bg-[#0A0A0A] p-4">
-              {group.about && <p className="rounded-2xl border border-white/10 bg-[#111] p-4 text-[13px] text-white/50">{group.about}</p>}
-              <div className="overflow-hidden rounded-2xl border border-white/10 bg-[#111]">
+            <div className="min-h-0 flex-1 space-y-4 overflow-y-auto bg-[#0A0A0A]/60 backdrop-blur-2xl p-4">
+              {group.about && <p className="rounded-2xl border border-white/10 bg-[#0A0A0A]/60 shadow-2xl backdrop-blur-2xl p-4 text-[13px] text-white/50">{group.about}</p>}
+              <div className="overflow-hidden rounded-2xl border border-white/10 bg-[#0A0A0A]/60 shadow-2xl backdrop-blur-2xl">
                 <button type="button" onClick={shareGroup} className="flex w-full items-center gap-3 border-b border-white/5 p-4 text-left text-[15px] font-semibold text-white active:bg-white/5"><Link2 size={18} className="text-white/40" /> {copied ? 'Copied' : 'Invite'}</button>
                 {canManage && <button type="button" onClick={editGroup} disabled={pending} className="flex w-full items-center gap-3 border-b border-white/5 p-4 text-left text-[15px] font-semibold text-white disabled:opacity-40 active:bg-white/5"><Pencil size={18} className="text-white/40" /> Edit group</button>}
                 <button type="button" onClick={leave} disabled={pending} className="flex w-full items-center gap-3 p-4 text-left text-[15px] font-semibold text-red-400 disabled:opacity-40 active:bg-white/5"><LogOut size={18} /> Leave group</button>
               </div>
-              <div className="overflow-hidden rounded-2xl border border-white/10 bg-[#111]">
+              <div className="overflow-hidden rounded-2xl border border-white/10 bg-[#0A0A0A]/60 shadow-2xl backdrop-blur-2xl">
                 <p className="flex items-center gap-2 border-b border-white/5 px-4 py-3 text-[13px] text-white/40"><Users size={16} /> Members</p>
                 {memberList.length === 0 && <p className="px-4 py-3 text-[13px] text-white/40">Looking up members…</p>}
                 {memberList.map((member) => {
@@ -199,7 +199,7 @@ export default function GroupInfoSidebar({
                   );
                 })}
               </div>
-              <div className="overflow-hidden rounded-2xl border border-white/10 bg-[#111]">
+              <div className="overflow-hidden rounded-2xl border border-white/10 bg-[#0A0A0A]/60 shadow-2xl backdrop-blur-2xl">
                 <p className="flex items-center gap-2 border-b border-white/5 px-4 py-3 text-[13px] text-white/40"><Store size={16} /> Shop</p>
                 {pinnedId && (
                   <div className="flex items-center gap-2 border-b border-white/5 px-4 py-3 text-[13px] text-amber-200">

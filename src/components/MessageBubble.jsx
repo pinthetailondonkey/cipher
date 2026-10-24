@@ -44,7 +44,7 @@ function OrderReceipt({ content }) {
   const address = content.shippingAddress || content.address || content.shipTo || '';
   const pill = orderLabel(content.status);
   return (
-    <div className="mb-1 overflow-hidden rounded-2xl border border-white/10 bg-[#111] text-left">
+    <div className="mb-1 overflow-hidden rounded-2xl border border-white/10 bg-[#0A0A0A]/60 shadow-2xl backdrop-blur-2xl text-left">
       {product.image && <img src={product.image} alt="" className="h-28 w-full object-cover" />}
       <div className="p-3">
         <div className="flex items-start justify-between gap-2">
@@ -179,7 +179,7 @@ export default function MessageBubble({ message, data, onAction, senderName, isP
         onPointerCancel={clearPress}
         onPointerMove={movePress}
         onContextMenu={(event) => { event.preventDefault(); haptic('medium'); setOpen(true); }}
-        className={`max-w-[78%] min-w-[4.5rem] rounded-2xl border px-3 py-2 ${isSender ? 'border-blue-500 bg-blue-600 text-white' : 'border-white/10 bg-[#111] text-white'}`}
+        className={`max-w-[78%] min-w-[4.5rem] rounded-2xl border px-3 py-2 ${isSender ? 'border-blue-500 bg-blue-600 text-white' : 'border-white/10 bg-[#0A0A0A]/60 shadow-2xl backdrop-blur-2xl text-white'}`}
       >
         {!isSender && senderName && <p className="mb-0.5 text-[11px] font-semibold leading-none text-blue-400">{senderName}</p>}
         {(content.type === 'cipher_order' || content.type === 'order_request' || content.type === 'order_update') && (
@@ -254,8 +254,8 @@ export default function MessageBubble({ message, data, onAction, senderName, isP
     </motion.article>
     {open && (
       <div className="fixed inset-0 z-[75] flex items-end justify-center bg-black/70 p-3" onPointerDown={(event) => { if (event.target === event.currentTarget) setOpen(false); }}>
-        <div className="mb-safe w-full max-w-sm rounded-3xl border border-white/10 bg-[#0A0A0A] p-3" onPointerDown={(event) => event.stopPropagation()}>
-          <div className="mb-2 flex justify-between rounded-2xl bg-[#111] px-2 py-2">
+        <div className="mb-safe w-full max-w-sm rounded-3xl border border-white/10 bg-[#0A0A0A]/60 backdrop-blur-2xl p-3" onPointerDown={(event) => event.stopPropagation()}>
+          <div className="mb-2 flex justify-between rounded-2xl bg-white/5 px-2 py-2">
             {REACTION_CHOICES.map((emoji) => (
               <button key={emoji} type="button" aria-label={`React ${emoji}`} onClick={() => { haptic('light'); act('react', { emoji }); }} className="text-[22px] active:scale-95">{emoji}</button>
             ))}
@@ -273,7 +273,7 @@ export default function MessageBubble({ message, data, onAction, senderName, isP
     )}
       {showReactors && (
         <div className="fixed inset-0 z-[70] flex items-end justify-center bg-black/60 p-4" onClick={() => setShowReactors(false)}>
-          <div className="w-full max-w-sm rounded-2xl border border-white/10 bg-[#0A0A0A] p-4" onClick={(event) => event.stopPropagation()}>
+          <div className="w-full max-w-sm rounded-2xl border border-white/10 bg-[#0A0A0A]/60 backdrop-blur-2xl p-4" onClick={(event) => event.stopPropagation()}>
             <p className="mb-3 text-[15px] font-semibold text-white">{showReactors}</p>
             {(grouped.get(showReactors) || []).map((person) => (
               <p key={person.pubkey} className="border-b border-white/5 py-2 text-[13px] text-white/80">

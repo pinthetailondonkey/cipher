@@ -44,7 +44,7 @@ export default function ProfileModal({ pubkey, identity, onClose, onMessage }) {
 
   return (
     <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm" role="presentation">
-      <section role="dialog" aria-modal="true" aria-label="Profile" className="relative w-full max-w-sm rounded-3xl border border-white/10 bg-[#0A0A0A] p-6">
+      <section role="dialog" aria-modal="true" aria-label="Profile" className="relative w-full max-w-sm rounded-3xl border border-white/10 bg-[#0A0A0A]/60 backdrop-blur-2xl p-6">
         <button type="button" onClick={onClose} aria-label="Close profile" className={`absolute right-4 top-4 p-2 text-white/45 hover:text-white ${pressable}`}><X size={20} /></button>
         <div className="flex items-center gap-4 pr-8">
           <Avatar src={profile.picture} name={profile.displayName || profile.name || pubkey} className="!h-16 !w-16 text-xl" />
@@ -62,7 +62,7 @@ export default function ProfileModal({ pubkey, identity, onClose, onMessage }) {
             <MessageCircle size={17} /> Message
           </Button>
         )}
-        <div className="mt-5 flex items-center gap-2 rounded-xl border border-white/10 bg-[#111] px-4 py-3">
+        <div className="mt-5 flex items-center gap-2 rounded-xl border border-white/10 bg-[#0A0A0A]/60 shadow-2xl backdrop-blur-2xl px-4 py-3">
           <BadgeCheck size={19} className={vouchCount >= 3 ? 'text-blue-400' : 'text-white/35'} />
           <span className="flex-1 text-sm text-white/70">{loading ? 'Checking vouches…' : `${vouchCount} vouch${vouchCount === 1 ? '' : 'es'}`}</span>
           {vouchCount >= 3 && <span className="text-xs font-semibold text-blue-400">Trusted Vendor</span>}
