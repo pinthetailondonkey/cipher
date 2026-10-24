@@ -2,7 +2,7 @@ import { lazy, Suspense, useState, useEffect } from 'react'
 import {  
   User, Plus, AlertCircle, RefreshCw, 
   Lock, ChevronRight, ArrowLeft, Copy, CreditCard, Camera,
-  BarChart3, Package, KeyRound, ShieldAlert, Users, SlidersHorizontal
+  BarChart3, Package, KeyRound, ShieldAlert, Users, SlidersHorizontal, Shield
 } from 'lucide-react'
 import { uploadToBlossom } from '@nostr-wot/blossom'
 import { useProfiles, updateProfileCache } from './useProfiles'
@@ -16,6 +16,7 @@ import Logo from './components/Logo';
 import { compressImage } from './lib/imageCompression';
 import { scopedGet, scopedSet } from './lib/storage';
 import { loadVendorPaymentConfig, saveVendorPaymentConfig } from './lib/vendorPayments';
+import PrivacySettings from './components/chat/PrivacySettings';
 
 const VendorDashboard = lazy(() => import('./components/chat/VendorDashboard'));
 const ProfileEditor = lazy(() => import('./components/chat/ProfileEditor'));
@@ -247,6 +248,8 @@ export default function Wallet({ identity, onOpenChat }) {
   if (view === 'identity_backup') {
     return <IdentityBackup identity={identity} onClose={() => setView('main')} />;
   }
+
+  if (view === 'privacy') return <PrivacySettings onBack={() => setView('main')} />;
 
   if (view === 'profile_editor') {
     return <Suspense fallback={<div className="flex h-full items-center justify-center bg-black"><div className="h-7 w-7 animate-spin rounded-full border-2 border-white/20 border-t-blue-500" /></div>}><ProfileEditor identity={identity} onClose={() => setView('main')} /></Suspense>;
@@ -495,11 +498,20 @@ export default function Wallet({ identity, onOpenChat }) {
             <ChevronRight size={20} className="text-white/60" />
           </button>
 
-          <button onClick={() => setView('profile_editor')} className="w-full flex items-center gap-4 px-4 py-4 hover:bg-white/5 transition-colors">
+          <button onClick={() => setView('profile_editor')} className="w-full flex items-center gap-4 px-4 py-4 hover:bg-white/5 transition-colors border-b border-white/5">
             <User size={22} className="text-white/60" />
             <div className="flex-1 text-left">
               <p className="text-[15px] font-semibold text-white">Edit Profile</p>
               <p className="text-[13px] text-white/40">Change your display name and bio</p>
+            </div>
+            <ChevronRight size={20} className="text-white/60" />
+          </button>
+
+          <button onClick={() => setView('privacy')} className="w-full flex items-center gap-4 px-4 py-4 hover:bg-white/5 transition-colors">
+            <Shield size={22} className="text-white/60" />
+            <div className="flex-1 text-left">
+              <p className="text-[15px] font-semibold text-white">Privacy and Security</p>
+              <p className="text-[13px] text-white/40">Calls, last seen, read receipts, blocked</p>
             </div>
             <ChevronRight size={20} className="text-white/60" />
           </button>
