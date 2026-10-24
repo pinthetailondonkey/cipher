@@ -17,10 +17,10 @@ export default function DmView({ sendMessage, handleMessageAction, handleImageUp
   const scrollRef = useRef(null);
 
   useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
+    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
   }, [messages.length, activeDm]);
 
-  const visibleMessages = messages.filter((message) => !deletedMsgs.has(message.id));
+  const visibleMessages = messages.filter((message) => !(deletedMsgs instanceof Set && deletedMsgs.has(message.id)));
 
   return (
     <section className="relative flex h-full min-h-0 flex-col bg-black">

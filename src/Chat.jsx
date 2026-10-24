@@ -32,7 +32,7 @@ export default function Chat({ identity }) {
     sendGroupMessage, subscribeToGroups, pinMessage, unpinMessage, fetchPinnedMessage,
     sendGroupTypingIndicator, createGroup: createGroupHook, fetchGroupMembers,
   } = useNIP29Group({ identity });
-  const { sendReaction } = useReactions({ identity });
+  const { sendReaction, subscribeToReactions } = useReactions({ identity });
   const { sendVouch } = useReputation({ identity });
   const setGroups = useMyGroups(identity?.pk);
   const directory = useGroupDirectory({ identity, sendDM, createGroupHook, setGroups });
@@ -72,6 +72,19 @@ export default function Chat({ identity }) {
   useEffect(() => {
     bindCallTransport((pubkey, payload) => sendDM(pubkey, payload));
   }, [sendDM]);
+
+  const reactionKey = useChatStore((state) => {
+    const list = state.view === 'group'
+      ? (state.groupMessages[state.activeGroup?.id] || [])
+      : (state.dms[state.activeDm] || []);
+    return list.slice(-30).map((item) => item.id).filter((id) => id && !String(id).startsWith('temp')).join(',');
+  });
+
+  useEffect(() => {
+    const ids = reactionKey ? reactionKey.split(',').filter(Boolean) : [];
+    if (!ids.length) return undefined;
+    return subscribeToReactions(ids);
+  }, [reactionKey, subscribeToReactions]);
 
   const loading = useChatStore((state) => state.loading);
   const view = useChatStore((state) => state.view);
