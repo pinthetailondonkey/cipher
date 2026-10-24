@@ -5,6 +5,22 @@ import { useChatStore } from '../../store/chatStore';
 import { copyText } from '../../lib/copyText';
 import { haptic } from '../../lib/haptics';
 
+function readableText(msg) {
+  const data = msg?.data;
+  if (typeof data === 'string' && data.trim()) return data.trim();
+  if (typeof data?.message === 'string' && data.message.trim() && data.message !== 'Message unavailable') return data.message.trim();
+  if (typeof data?.caption === 'string' && data.caption.trim()) return data.caption.trim();
+  if (typeof data?.title === 'string' && data.title.trim()) return data.title.trim();
+  if (typeof msg?.text === 'string' && msg.text.trim() && msg.text !== 'Message unavailable') return msg.text.trim();
+  if (typeof msg?.rawContent === 'string' && msg.rawContent.trim() && !msg.rawContent.trim().startsWith('{')) return msg.rawContent.trim();
+  try {
+    const parsed = JSON.parse(msg?.rawContent || '');
+    return parsed.message || parsed.caption || parsed.title || '';
+  } catch {
+    return '';
+  }
+}
+
 export function useMessageCommands({
   identity,
   sendReaction,
@@ -34,7 +50,7 @@ export function useMessageCommands({
   const handleMessageAction = async (action, secondArg = null) => {
     let msg;
     let emojiOverride = null;
-    if (secondArg && typeof secondArg === 'object' && secondArg.id && secondArg.pubkey) {
+    if (secondArg && typeof secondArg === 'object' && secondArg.id) {
       msg = secondArg;
     } else if (typeof secondArg === 'string') {
       emojiOverride = secondArg;
@@ -59,8 +75,9 @@ export function useMessageCommands({
     }
     if (action === 'reply') { setReplyingTo(msg); setSelectedMessage(null); return; }
     if (action === 'copy') {
-      await copyText(msg.data?.message || msg.rawContent || msg.text || '');
-      setSelectedMessage(null); return;
+      await copyText(readableText(msg));
+      setSelectedMessage(null);
+      return;
     }
     if (action === 'forward') {
       const senderName = profiles[msg.pubkey]?.displayName || profiles[msg.pubkey]?.name || (msg.pubkey === identity.pk ? 'You' : `User ${msg.pubkey.slice(0, 4)}`);
@@ -69,12 +86,15 @@ export function useMessageCommands({
     }
     if (action === 'bookmark') {
       const chatId = activeDm || activeGroup?.id;
-      if (chatId) {
+      if (!chatId || !msg.id) {
+        setToast({ type: 'error', message: 'Could not save that message.' });
+      } else {
         useChatStore.getState().toggleBookmark(chatId, msg.id);
         const isBm = useChatStore.getState().isBookmarked(chatId, msg.id);
         setToast({ type: 'success', message: isBm ? 'Saved' : 'Unsaved' });
       }
-      setSelectedMessage(null); return;
+      setSelectedMessage(null);
+      return;
     }
     if (action === 'select') {
       useChatStore.getState().toggleSelectionMode();

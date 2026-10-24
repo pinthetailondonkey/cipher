@@ -46,7 +46,7 @@ export function usePeopleSearch({ identity }) {
     try {
       if (rawQuery.startsWith('http')) {
         const url = new URL(rawQuery);
-        const gp = url.searchParams.get('group');
+        const gp = url.searchParams.get('g') || url.searchParams.get('group') || url.searchParams.get('join');
         const np = url.searchParams.get('naddr');
         if (gp) { rawQuery = gp; } 
         else if (np) {
