@@ -624,18 +624,6 @@ export default function Wallet({ identity, onOpenChat }) {
         </div>
       </div>
 
-      
-      {/* POWERED BY NOSTR FOOTER */}
-      <div className="flex flex-col items-center justify-center mt-8 mb-12 opacity-40 hover:opacity-100 transition-opacity">
-        <div className="flex items-center gap-1.5 text-[12px] font-medium text-white tracking-wide">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-blue-500">
-            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
-          </svg>
-          Powered by Nostr
-        </div>
-        <p className="text-[10px] text-white/50 mt-1">Decentralized. Censorship-Resistant.</p>
-      </div>
-
       {/* PANIC CONFIRM MODAL */}
       {showPanicConfirm && (
         <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-fade-in">
