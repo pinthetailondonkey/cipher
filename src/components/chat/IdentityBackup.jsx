@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { copyText } from '../../lib/copyText';
+import { Copy, Download, Fingerprint, KeyRound, Shield } from 'lucide-react';
 import ScreenHeader from '../ui/ScreenHeader';
 import { pressable } from '../ui/Button';
 
@@ -112,42 +113,57 @@ export default function IdentityBackup({ identity, onClose }) {
   };
 
   return (
-    <div className="h-full overflow-y-auto bg-black pb-24">
-      <ScreenHeader title="Identity Backup" onBack={onClose} />
-      <p className="border-b border-white/5 px-4 py-3 text-[13px] text-amber-200/80">Your secret key controls this account. Never share it.</p>
-      {identity?.hasBiometric ? (
-        <p className="border-b border-white/5 px-4 py-3 text-[13px] text-emerald-300">Face ID is on for this account.</p>
-      ) : (
-        <button type="button" onClick={setupBiometric} disabled={!identity?.sk || enablingBiometric} className={`w-full border-b border-white/5 px-4 py-4 text-left text-[15px] font-semibold text-blue-500 disabled:opacity-40 ${pressable}`}>
-          {enablingBiometric ? 'Setting up…' : 'Set up Face ID'}
+    <div className="h-full overflow-y-auto bg-black pb-8">
+      <ScreenHeader title="Backup" onBack={onClose} />
+      <div className="space-y-4 p-4">
+        <div className="flex items-start gap-3 rounded-2xl border border-amber-400/20 bg-[#111] p-4 text-[13px] text-amber-200">
+          <Shield size={18} className="mt-0.5 shrink-0" />
+          Your secret key controls this account. Never share it.
+        </div>
+        <div className="overflow-hidden rounded-2xl border border-white/10 bg-[#111]">
+          {identity?.hasBiometric ? (
+            <p className="flex items-center gap-3 p-4 text-[15px] text-emerald-300"><Fingerprint size={18} /> Face ID is on</p>
+          ) : (
+            <button type="button" onClick={setupBiometric} disabled={!identity?.sk || enablingBiometric} className={`flex w-full items-center gap-3 p-4 text-left text-[15px] font-semibold text-white disabled:opacity-40 ${pressable}`}>
+              <Fingerprint size={18} className="text-white/40" /> {enablingBiometric ? 'Setting up…' : 'Set up Face ID'}
+            </button>
+          )}
+          {biometricMessage && <p role="status" className="border-t border-white/5 px-4 py-3 text-[13px] text-white/40">{biometricMessage}</p>}
+        </div>
+        <div className="overflow-hidden rounded-2xl border border-white/10 bg-[#111]">
+          <div className="flex items-center gap-3 border-b border-white/5 p-4">
+            <KeyRound size={18} className="shrink-0 text-white/40" />
+            <div className="min-w-0 flex-1">
+              <p className="text-[12px] text-white/40">Public key</p>
+              <p className="truncate font-mono text-[13px] text-white">{npub || 'Not loaded'}</p>
+            </div>
+            <button type="button" onClick={() => copy('npub', npub)} disabled={!npub} className={`text-[13px] font-semibold text-blue-500 ${pressable}`}>{copied === 'npub' ? 'Copied' : 'Copy'}</button>
+          </div>
+          <div className="flex items-center gap-3 p-4">
+            <KeyRound size={18} className="shrink-0 text-white/40" />
+            <div className="min-w-0 flex-1">
+              <p className="text-[12px] text-white/40">Secret key</p>
+              <p className="truncate font-mono text-[13px] text-white">{showSecret ? secretKey : '••••••••••••••••'}</p>
+            </div>
+            <button type="button" onClick={toggleSecret} className={`text-[13px] font-semibold text-blue-500 ${pressable}`}>{showSecret ? 'Hide' : 'Show'}</button>
+          </div>
+        </div>
+        <button type="button" onClick={() => copy('nsec')} disabled={!identity?.sk} className={`flex w-full items-center justify-center gap-2 rounded-2xl bg-blue-600 py-3.5 font-bold text-white hover:bg-blue-500 disabled:opacity-40 ${pressable}`}>
+          <Copy size={16} /> {copied === 'nsec' ? 'Copied' : 'Copy secret key'}
         </button>
-      )}
-      {biometricMessage && <p role="status" className="border-b border-white/5 px-4 py-3 text-[13px] text-white/40">{biometricMessage}</p>}
-      <div className="border-b border-white/5 px-4 py-3">
-        <p className="text-[13px] text-white/40">Public key</p>
-        <div className="mt-2 flex items-center gap-2">
-          <p className="min-w-0 flex-1 truncate font-mono text-[13px] text-white">{npub}</p>
-          <button type="button" onClick={() => copy('npub', npub)} disabled={!npub} className={`text-[13px] font-semibold text-blue-500 ${pressable}`}>{copied === 'npub' ? 'Copied' : 'Copy'}</button>
-        </div>
+        <button type="button" onClick={copyPhrase} disabled={!identity?.sk} className={`flex w-full items-center justify-center gap-2 rounded-2xl border border-white/10 bg-[#111] py-3.5 font-bold text-white disabled:opacity-40 ${pressable}`}>
+          <Copy size={16} /> {copied === 'phrase' ? 'Copied' : 'Copy 12-word phrase'}
+        </button>
+        <label className="flex items-start gap-3 rounded-2xl border border-white/10 bg-[#111] p-4 text-[13px] text-white/70">
+          <input type="checkbox" checked={exportReady} onChange={(event) => setExportReady(event.target.checked)} className="mt-0.5 h-5 w-5 accent-blue-600" />
+          I understand this file contains my secret key and 12-word phrase.
+        </label>
+        <button type="button" onClick={downloadRecoveryFile} disabled={!identity?.sk || exporting || !exportReady} className={`flex w-full items-center justify-center gap-2 rounded-2xl bg-blue-600 py-3.5 font-bold text-white hover:bg-blue-500 disabled:opacity-40 ${pressable}`}>
+          <Download size={16} /> {exporting ? 'Preparing…' : 'Download recovery backup'}
+        </button>
+        <p className="px-1 text-[13px] text-white/40">Store it privately. Never upload or share it.</p>
+        {copied && copied !== 'npub' && copied !== 'nsec' && copied !== 'phrase' && <p role="status" className="text-[13px] text-blue-500">{copied}</p>}
       </div>
-      <div className="border-b border-white/5 px-4 py-3">
-        <div className="flex items-center justify-between">
-          <p className="text-[13px] text-white/40">Secret key</p>
-          <button type="button" onClick={toggleSecret} className={`text-[13px] font-semibold text-blue-500 ${pressable}`}>{showSecret ? 'Hide' : 'Show'}</button>
-        </div>
-        <p className="mt-2 truncate font-mono text-[13px] text-white">{showSecret ? secretKey : '••••••••••••••••'}</p>
-        <button type="button" onClick={() => copy('nsec')} disabled={!identity?.sk} className={`mt-3 w-full border-t border-white/5 py-3 text-left text-[15px] font-semibold text-white ${pressable}`}>{copied === 'nsec' ? 'Copied' : 'Copy secret key'}</button>
-        <button type="button" onClick={copyPhrase} disabled={!identity?.sk} className={`w-full border-t border-white/5 py-3 text-left text-[15px] font-semibold text-blue-500 ${pressable}`}>{copied === 'phrase' ? 'Copied' : 'Copy 12-word phrase'}</button>
-      </div>
-      <label className="flex items-start gap-3 border-b border-white/5 px-4 py-3 text-[13px] text-white/70">
-        <input type="checkbox" checked={exportReady} onChange={(event) => setExportReady(event.target.checked)} className="mt-0.5 h-5 w-5 accent-blue-600" />
-        I understand this file contains my secret key and 12-word phrase.
-      </label>
-      <button type="button" onClick={downloadRecoveryFile} disabled={!identity?.sk || exporting || !exportReady} className={`w-full px-4 py-4 text-left text-[15px] font-semibold text-white disabled:opacity-40 ${pressable}`}>
-        {exporting ? 'Preparing…' : 'Download recovery backup'}
-      </button>
-      <p className="px-4 pb-6 text-[13px] text-white/40">Store it privately. Never upload or share it.</p>
-      {copied && copied !== 'npub' && copied !== 'nsec' && copied !== 'phrase' && <p role="status" className="px-4 text-[13px] text-blue-500">{copied}</p>}
     </div>
   );
 }

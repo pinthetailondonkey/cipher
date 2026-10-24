@@ -3,7 +3,7 @@ import { useProfiles, updateProfileCache } from '../../useProfiles';
 import { useChatStore } from '../../store/chatStore';
 import { getPrivacy } from '../../lib/privacy';
 import ScreenHeader from '../ui/ScreenHeader';
-import { pressable } from '../ui/Button';
+import { AtSign, Image, Type, User } from 'lucide-react';
 
 const PROFILE_RELAYS = ['wss://relay.primal.net', 'wss://nos.lol', 'wss://relay.damus.io'];
 
@@ -67,30 +67,49 @@ export default function ProfileEditor({ identity, onClose }) {
     }
   };
 
+  const set = (key) => (event) => setDraft((current) => ({ ...values, ...current, [key]: event.target.value }));
+  const field = 'w-full bg-transparent text-[15px] text-white outline-none placeholder:text-white/30';
+
   return (
-    <div className="h-full overflow-y-auto bg-black pb-24">
-      <form onSubmit={publishProfile}>
+    <div className="h-full overflow-y-auto bg-black pb-8">
+      <form onSubmit={publishProfile} className="space-y-4">
         <ScreenHeader title="Edit Profile" onBack={onClose} />
-        <label className="block border-b border-white/5 px-4 py-3">
-          <span className="text-[13px] text-white/40">Username</span>
-          <input value={values.name} onChange={(event) => setDraft((current) => ({ ...values, ...current, name: event.target.value }))} className="mt-1 w-full bg-transparent text-[15px] text-white outline-none" maxLength={64} />
-        </label>
-        <label className="block border-b border-white/5 px-4 py-3">
-          <span className="text-[13px] text-white/40">Display name</span>
-          <input value={values.displayName} onChange={(event) => setDraft((current) => ({ ...values, ...current, displayName: event.target.value }))} className="mt-1 w-full bg-transparent text-[15px] text-white outline-none" maxLength={64} />
-        </label>
-        <label className="block border-b border-white/5 px-4 py-3">
-          <span className="text-[13px] text-white/40">About</span>
-          <textarea value={values.about} onChange={(event) => setDraft((current) => ({ ...values, ...current, about: event.target.value }))} className="mt-1 w-full resize-none bg-transparent text-[15px] text-white outline-none" rows={3} maxLength={500} />
-        </label>
-        <label className="block border-b border-white/5 px-4 py-3">
-          <span className="text-[13px] text-white/40">Picture URL</span>
-          <input type="url" value={values.picture} onChange={(event) => setDraft((current) => ({ ...values, ...current, picture: event.target.value }))} className="mt-1 w-full bg-transparent text-[15px] text-white outline-none" maxLength={2048} />
-        </label>
-        {message && <p role="status" className={`px-4 py-3 text-[13px] ${/could not|unlock|error|no relay/i.test(message) ? 'text-red-400' : 'text-blue-500'}`}>{message}</p>}
-        <button type="submit" disabled={saving} className={`w-full px-4 py-4 text-left text-[15px] font-semibold text-blue-500 disabled:opacity-40 ${pressable}`}>
-          {saving ? 'Publishing…' : 'Publish profile'}
-        </button>
+        <div className="space-y-4 px-4">
+          <div className="overflow-hidden rounded-2xl border border-white/10 bg-[#111]">
+            <label className="flex items-center gap-3 border-b border-white/5 p-4">
+              <AtSign size={18} className="shrink-0 text-white/40" />
+              <span className="min-w-0 flex-1">
+                <span className="block text-[12px] text-white/40">Username</span>
+                <input value={values.name} onChange={set('name')} className={field} maxLength={64} />
+              </span>
+            </label>
+            <label className="flex items-center gap-3 border-b border-white/5 p-4">
+              <User size={18} className="shrink-0 text-white/40" />
+              <span className="min-w-0 flex-1">
+                <span className="block text-[12px] text-white/40">Display name</span>
+                <input value={values.displayName} onChange={set('displayName')} className={field} maxLength={64} />
+              </span>
+            </label>
+            <label className="flex items-start gap-3 border-b border-white/5 p-4">
+              <Type size={18} className="mt-1 shrink-0 text-white/40" />
+              <span className="min-w-0 flex-1">
+                <span className="block text-[12px] text-white/40">About</span>
+                <textarea value={values.about} onChange={set('about')} className={`${field} resize-none`} rows={3} maxLength={500} />
+              </span>
+            </label>
+            <label className="flex items-center gap-3 p-4">
+              <Image size={18} className="shrink-0 text-white/40" />
+              <span className="min-w-0 flex-1">
+                <span className="block text-[12px] text-white/40">Picture URL</span>
+                <input type="url" value={values.picture} onChange={set('picture')} className={field} maxLength={2048} placeholder="https://" />
+              </span>
+            </label>
+          </div>
+          {message && <p role="status" className={`text-[13px] ${/could not|unlock|error|no relay/i.test(message) ? 'text-red-400' : 'text-blue-500'}`}>{message}</p>}
+          <button type="submit" disabled={saving} className="w-full rounded-2xl bg-blue-600 py-3.5 font-bold text-white hover:bg-blue-500 active:scale-95 disabled:opacity-50">
+            {saving ? 'Publishing…' : 'Publish profile'}
+          </button>
+        </div>
       </form>
     </div>
   );

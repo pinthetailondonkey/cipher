@@ -29,10 +29,11 @@ export default function AccountSwitcher({ identity, onClose }) {
   return (
     <div className="h-full overflow-y-auto bg-black pb-24">
       <ScreenHeader title="Accounts" onBack={onClose} />
+      <div className="space-y-3 p-4">
       {accounts.map((account) => {
         const name = account.displayName || account.handle || 'Account';
         return (
-          <div key={account.pubkey} className="border-b border-white/5 px-4 py-3">
+          <div key={account.pubkey} className="overflow-hidden rounded-2xl border border-white/10 bg-[#111] p-4">
             <div className="flex items-center gap-3">
               <Avatar name={name} />
               <span className="min-w-0 flex-1">
@@ -43,18 +44,19 @@ export default function AccountSwitcher({ identity, onClose }) {
             </div>
             {!account.isActive && (
               <div className="mt-3 flex gap-2">
-                <label className="flex min-w-0 flex-1 items-center gap-2 bg-[#111] px-3">
+                <label className="flex min-w-0 flex-1 items-center gap-2 rounded-2xl border border-white/10 bg-black px-3">
                   <KeyRound size={16} className="shrink-0 text-white/40" />
                   <input type="password" inputMode="numeric" autoComplete="current-password" value={pins[account.pubkey] || ''} onChange={(event) => setPins((current) => ({ ...current, [account.pubkey]: event.target.value }))} placeholder="PIN" className="min-w-0 flex-1 bg-transparent py-3 text-[15px] text-white outline-none placeholder:text-white/30" />
                 </label>
-                <button type="button" disabled={pending === account.pubkey} onClick={() => handleSwitch(account)} className={`bg-blue-600 px-4 text-[15px] font-semibold text-white active:bg-blue-700 ${pressable}`}>{pending === account.pubkey ? '…' : 'Switch'}</button>
+                <button type="button" disabled={pending === account.pubkey} onClick={() => handleSwitch(account)} className={`rounded-2xl bg-blue-600 px-4 font-bold text-white active:bg-blue-700 ${pressable}`}>{pending === account.pubkey ? '…' : 'Switch'}</button>
               </div>
             )}
           </div>
         );
       })}
-      {accounts.length === 0 && <p className="px-4 py-10 text-center text-[13px] text-white/40">No saved accounts on this device.</p>}
-      {error && <p role="alert" className="px-4 py-3 text-[13px] text-red-400">{error}</p>}
+      {accounts.length === 0 && <p className="rounded-2xl border border-white/10 bg-[#111] px-4 py-10 text-center text-[13px] text-white/40">No saved accounts on this device.</p>}
+      {error && <p role="alert" className="text-[13px] text-red-400">{error}</p>}
+      </div>
     </div>
   );
 }

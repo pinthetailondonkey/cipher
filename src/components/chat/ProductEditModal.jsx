@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { X } from 'lucide-react';
+import { Image, Tag, Type, X } from 'lucide-react';
 
 export default function ProductEditModal({ editingProduct, onClose, onSubmit }) {
   const product = editingProduct?.msg?.data || editingProduct?.product || null;
@@ -35,17 +35,31 @@ export default function ProductEditModal({ editingProduct, onClose, onSubmit }) 
 
   return (
     <div className="fixed inset-0 z-[90] flex items-end justify-center bg-black/70 p-3" role="presentation" onClick={onClose}>
-      <form role="dialog" aria-modal="true" aria-label="Edit listing" onClick={(event) => event.stopPropagation()} onSubmit={save} className="w-full max-w-sm rounded-3xl border border-white/10 bg-[#0A0A0A] p-4">
-        <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-[17px] font-semibold text-white">Edit listing</h2>
+      <form role="dialog" aria-modal="true" aria-label="Edit listing" onClick={(event) => event.stopPropagation()} onSubmit={save} className="w-full max-w-sm space-y-4 rounded-3xl border border-white/10 bg-[#0A0A0A] p-5">
+        <div className="flex items-center justify-between">
+          <h2 className="text-2xl font-bold tracking-tight text-white">Edit listing</h2>
           <button type="button" onClick={onClose} aria-label="Close" className="p-2 text-white/50"><X size={18} /></button>
         </div>
-        <input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Name" className="w-full border-b border-white/5 bg-black px-1 py-3 text-[15px] text-white outline-none" />
-        <input value={price} onChange={(event) => setPrice(event.target.value)} inputMode="decimal" placeholder="Price" className="w-full border-b border-white/5 bg-black px-1 py-3 text-[15px] text-white outline-none" />
-        <input value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Note" className="w-full border-b border-white/5 bg-black px-1 py-3 text-[15px] text-white outline-none" />
-        <input value={image} onChange={(event) => setImage(event.target.value)} placeholder="Image URL" className="w-full border-b border-white/5 bg-black px-1 py-3 text-[15px] text-white outline-none" />
-        {error && <p role="alert" className="pt-3 text-[13px] text-red-400">{error}</p>}
-        <button type="submit" className="mt-3 w-full py-3 text-left text-[15px] font-semibold text-blue-500">Save listing</button>
+        <div className="overflow-hidden rounded-2xl border border-white/10 bg-[#111]">
+          <label className="flex items-center gap-3 border-b border-white/5 p-4">
+            <Type size={18} className="text-white/40" />
+            <input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Name" className="w-full bg-transparent text-[15px] text-white outline-none" />
+          </label>
+          <label className="flex items-center gap-3 border-b border-white/5 p-4">
+            <Tag size={18} className="text-white/40" />
+            <input value={price} onChange={(event) => setPrice(event.target.value)} inputMode="decimal" placeholder="Price" className="w-full bg-transparent text-[15px] text-white outline-none" />
+          </label>
+          <label className="flex items-center gap-3 border-b border-white/5 p-4">
+            <Type size={18} className="text-white/40" />
+            <input value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Note" className="w-full bg-transparent text-[15px] text-white outline-none" />
+          </label>
+          <label className="flex items-center gap-3 p-4">
+            <Image size={18} className="text-white/40" />
+            <input value={image} onChange={(event) => setImage(event.target.value)} placeholder="Image URL" className="w-full bg-transparent text-[15px] text-white outline-none" />
+          </label>
+        </div>
+        {error && <p role="alert" className="text-[13px] text-red-400">{error}</p>}
+        <button type="submit" className="w-full rounded-2xl bg-blue-600 py-3.5 font-bold text-white hover:bg-blue-500">Save listing</button>
       </form>
     </div>
   );
