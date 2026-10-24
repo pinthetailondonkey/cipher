@@ -55,24 +55,37 @@ export default function CallOverlay() {
   };
 
   return (
-    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black px-6">
-      <div className="flex w-full max-w-sm flex-col items-center rounded-3xl border border-white/10 bg-[#0A0A0A] px-6 py-8">
-        <Avatar src={profile.picture} name={name} className={`!h-24 !w-24 text-3xl ${call.status === 'ringing' || call.status === 'calling' ? 'animate-pulse' : ''}`} />
-        <h2 className="mt-4 max-w-full truncate text-2xl font-bold tracking-tight text-white">{name}</h2>
-        <p className="mt-1 text-[13px] text-blue-500">{status}</p>
-        <div className="mt-8 flex items-center gap-4">
-          {call.status === 'ringing' && call.direction === 'in' && (
-            <button type="button" onClick={answer} className={`flex h-14 w-14 items-center justify-center rounded-full bg-emerald-500 text-white active:bg-emerald-600 ${pressable}`} aria-label="Accept call"><Phone size={22} /></button>
-          )}
-          {call.status === 'active' && (
-            <button type="button" onClick={toggleMute} className={`flex h-14 w-14 items-center justify-center rounded-full border border-white/10 bg-[#111] text-white active:bg-white/10 ${pressable}`} aria-label={call.muted ? 'Unmute' : 'Mute'}>
-              {call.muted ? <MicOff size={22} /> : <Mic size={22} />}
-            </button>
-          )}
-          {live && (
-            <button type="button" onClick={decline} className={`flex h-14 w-14 items-center justify-center rounded-full bg-red-600 text-white active:bg-red-700 ${pressable}`} aria-label={call.direction === 'in' && call.status !== 'active' ? 'Decline call' : 'End call'}><PhoneOff size={22} /></button>
-          )}
-        </div>
+    <div className="fixed inset-0 z-[80] flex flex-col bg-black">
+      <div className="flex flex-1 flex-col items-center justify-center px-6">
+        <Avatar src={profile.picture} name={name} className={`!h-32 !w-32 text-4xl ${call.status === 'ringing' || call.status === 'calling' ? 'animate-pulse' : ''}`} />
+        <h2 className="mt-5 max-w-full truncate text-2xl font-bold tracking-tight text-white">{name}</h2>
+        <p className="mt-1 text-[15px] text-white/50">{status}</p>
+      </div>
+      <div className={`flex items-end justify-center gap-14 px-8 pb-16 ${call.status === 'ringing' && call.direction === 'in' ? '' : ''}`}>
+        {call.status === 'active' && (
+          <button type="button" onClick={toggleMute} className="flex flex-col items-center gap-2 text-white" aria-label={call.muted ? 'Unmute' : 'Mute'}>
+            <span className={`flex h-16 w-16 items-center justify-center rounded-full bg-[#111] active:bg-white/10 ${pressable}`}>{call.muted ? <MicOff size={24} /> : <Mic size={24} />}</span>
+            <span className="text-[13px] text-white/70">{call.muted ? 'Unmute' : 'Mute'}</span>
+          </button>
+        )}
+        {call.status === 'ringing' && call.direction === 'in' && (
+          <button type="button" onClick={decline} className="flex flex-col items-center gap-2" aria-label="Decline call">
+            <span className={`flex h-16 w-16 items-center justify-center rounded-full bg-red-600 text-white active:bg-red-700 ${pressable}`}><PhoneOff size={26} /></span>
+            <span className="text-[13px] text-white/70">Decline</span>
+          </button>
+        )}
+        {call.status === 'ringing' && call.direction === 'in' && (
+          <button type="button" onClick={answer} className="flex flex-col items-center gap-2" aria-label="Accept call">
+            <span className={`flex h-16 w-16 items-center justify-center rounded-full bg-emerald-500 text-white active:bg-emerald-600 ${pressable}`}><Phone size={26} /></span>
+            <span className="text-[13px] text-white/70">Accept</span>
+          </button>
+        )}
+        {live && !(call.status === 'ringing' && call.direction === 'in') && (
+          <button type="button" onClick={decline} className="flex flex-col items-center gap-2" aria-label="End call">
+            <span className={`flex h-16 w-16 items-center justify-center rounded-full bg-red-600 text-white active:bg-red-700 ${pressable}`}><PhoneOff size={26} /></span>
+            <span className="text-[13px] text-white/70">End</span>
+          </button>
+        )}
       </div>
     </div>
   );
