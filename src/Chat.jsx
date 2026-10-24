@@ -1312,56 +1312,88 @@ export default function Chat({ identity }) {
 
     if (rawQuery.startsWith('@')) {
       const usernameToFind = rawQuery.slice(1).toLowerCase().trim();
-      
+
+      const loadExactProfile = async (pool, targetPubkey, fallbackName) => {
+        let name = fallbackName;
+        let picture = null;
+        let profileEvents = await queryWithTimeout(
+          pool,
+          ['wss://relay.primal.net'],
+          { kinds: [0], authors: [targetPubkey] },
+          5000
+        );
+        if (profileEvents.length === 0) {
+          profileEvents = await queryWithTimeout(
+            pool,
+            ['wss://nos.lol'],
+            { kinds: [0], authors: [targetPubkey] },
+            4000
+          );
+        }
+        if (profileEvents.length > 0) {
+          try {
+            const parsed = JSON.parse(profileEvents[0].content);
+            name = parsed.display_name || parsed.name || fallbackName;
+            picture = parsed.picture || null;
+          } catch (e) {}
+        }
+        state.setSearchResults([{ type: 'user', pubkey: targetPubkey, name, picture }]);
+        state.setIsSearching(false);
+      };
+
       try {
         const pool = await getAuthenticatedPool(identity);
 
-        // 1. Check Local Vaults
+        // Exact pubkey from the local vault (works even before relays index the new account).
         const vaults = JSON.parse(localStorage.getItem('cipher_vaults') || '{}');
         for (const [pk, data] of Object.entries(vaults)) {
           if ((data.handle || '').toLowerCase() === usernameToFind) {
-            state.setSearchResults([{ type: 'user', pubkey: pk, name: '@' + usernameToFind, picture: null }]);
-            state.setIsSearching(false);
+            await loadExactProfile(pool, pk, '@' + usernameToFind);
             return;
           }
         }
 
-        // 2. Check Cipher Registry on YOUR relay
-        const regEvents = await queryWithTimeout(pool, ['wss://groups.aegispayhq.com'], { kinds: [10003], limit: 500 }, 3000);
-        const regMatches = regEvents.filter(ev => {
-          const usernameTag = ev.tags.find(t => t[0] === 'username')?.[1];
-          return usernameTag === usernameToFind;
+        // Kind 10003 username registry, published to the same relays as the profile.
+        const regEvents = await queryWithTimeout(
+          pool,
+          ['wss://relay.primal.net', 'wss://nos.lol'],
+          { kinds: [10003], '#t': ['cipher_username_' + usernameToFind], limit: 10 },
+          5000
+        );
+        const regMatch = regEvents.find((ev) => {
+          const usernameTag = ev.tags?.find((t) => t[0] === 'username')?.[1];
+          return !usernameTag || usernameTag.toLowerCase() === usernameToFind;
         });
-        
-        if (regMatches.length > 0) {
-          const targetPubkey = regMatches[0].pubkey;
-          // Fetch their profile picture from public relay
-          const pEvents = await queryWithTimeout(pool, ['wss://relay.primal.net'], { kinds: [0], authors: [targetPubkey] }, 3000);
-          let pic = null;
-          if (pEvents.length > 0) {
-            try { pic = JSON.parse(pEvents[0].content).picture; } catch(e){}
-          }
-          state.setSearchResults([{ type: 'user', pubkey: targetPubkey, name: '@' + usernameToFind, picture: pic }]);
-          state.setIsSearching(false);
+        if (regMatch) {
+          await loadExactProfile(pool, regMatch.pubkey, '@' + usernameToFind);
           return;
         }
 
-        // 3. NIP-50 SEARCH (Looks up the exact name on public relays)
+        // NIP-50 on Primal, then confirm that hit with an exact author query.
         console.log('🔍 [Search] Using NIP-50 to find profile...');
-        const searchEvents = await queryWithTimeout(pool, ['wss://relay.primal.net'], { kinds: [0], search: usernameToFind, limit: 10 }, 3000);
-        
-        if (searchEvents.length > 0) {
-          let pic = null;
-          try { pic = JSON.parse(searchEvents[0].content).picture; } catch(e){}
-          state.setSearchResults([{ type: 'user', pubkey: searchEvents[0].pubkey, name: '@' + usernameToFind, picture: pic }]);
-          state.setIsSearching(false);
+        const searchEvents = await queryWithTimeout(
+          pool,
+          ['wss://relay.primal.net'],
+          { kinds: [0], search: usernameToFind, limit: 20 },
+          5000
+        );
+        const exact = searchEvents.find((ev) => {
+          try {
+            const parsed = JSON.parse(ev.content);
+            const name = String(parsed.name || '').toLowerCase().replace(/^@/, '');
+            const display = String(parsed.display_name || '').toLowerCase().replace(/^@/, '');
+            return name === usernameToFind || display === usernameToFind;
+          } catch (e) { return false; }
+        });
+        const chosen = exact || searchEvents[0];
+        if (chosen) {
+          await loadExactProfile(pool, chosen.pubkey, '@' + usernameToFind);
           return;
         }
-
       } catch (err) {
         console.error('Username search failed:', err);
       }
-      
+
       state.setSearchResults([]);
       state.setIsSearching(false);
       return;
@@ -1423,8 +1455,13 @@ export default function Chat({ identity }) {
           }
         }
         state.setSearchResults([{ type: 'user', pubkey: targetPubkey, name: targetPubkey.slice(0, 8), picture: null }]);
-        
-        const profileEvents = await queryWithTimeout(pool, ['wss://groups.aegispayhq.com'], { kinds: [0], authors: [targetPubkey] }, 4000);
+
+        const profileEvents = await queryWithTimeout(
+          pool,
+          ['wss://relay.primal.net'],
+          { kinds: [0], authors: [targetPubkey] },
+          5000
+        );
 
         if (profileEvents.length > 0) {
           try {

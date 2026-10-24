@@ -153,38 +153,21 @@ export default function Wallet({ identity, onOpenChat }) {
     
     setIsPublishing(true); setStatus('Saving Profile...')
     const picToSave = overridePicture || picture
-    let pool;
-    const relays = ['wss://relay.primal.net'];
     try {
-      const { SimplePool, finalizeEvent } = await import('nostr-tools')
-      pool = new SimplePool()
-
-      const ev = finalizeEvent({
-        kind: 0, created_at: Math.floor(Date.now() / 1000), tags: [],
-        content: JSON.stringify({ name: username, display_name: displayName, about, picture: picToSave })
-      }, identity.sk)
-
-      const publishPromises = pool.publish(relays, ev)
-      const timeout = new Promise((resolve) => setTimeout(resolve, 3000))
-      await Promise.race([Promise.allSettled(publishPromises), timeout])
-      
-      if (username) {
-        try {
-          const usernameEv = finalizeEvent({
-            kind: 10003, created_at: Math.floor(Date.now() / 1000),
-            tags: [['d', 'username'], ['t', 'cipher_username_' + username], ['t', 'cipher_username'], ['username', username]],
-            content: ''
-          }, identity.sk)
-          const usernameRelays = ['wss://relay.primal.net', 'wss://groups.aegispayhq.com']
-          await Promise.race([Promise.allSettled(pool.publish(usernameRelays, usernameEv)), timeout])
-        } catch (e) { console.error(e) }
-      }
+      const { publishCipherProfile } = await import('./useIdentity')
+      const published = await publishCipherProfile(identity.sk, {
+        username,
+        displayName,
+        about,
+        picture: picToSave,
+      })
+      if (!published.profilePublished) throw new Error('No relay accepted the profile')
 
       updateProfileCache(identity.pk, { name: username, displayName, picture: picToSave, about })
       setStatus('Profile Saved!')
       setView('main')
-    } catch (err) { setStatus('Error: ' + err.message) } 
-    finally { pool?.close([...new Set([...relays, 'wss://groups.aegispayhq.com'])]); setIsPublishing(false); setTimeout(() => setStatus(''), 3000) }
+    } catch (err) { setStatus('Error: ' + err.message) }
+    finally { setIsPublishing(false); setTimeout(() => setStatus(''), 3000) }
   }
 
   const publishProduct = async () => {
