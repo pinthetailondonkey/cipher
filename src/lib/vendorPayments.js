@@ -4,6 +4,7 @@ import { scopeKey } from './storage';
 const CONFIG_KEY = 'advanced_vendor_payment_keys';
 const MAX_DERIVATION_INDEX = 10000;
 const settingsLocks = new Map();
+const moneroWallets = new Map();
 
 function defaultSettings() {
   return { btcXpub: '', xmrPrivateViewKey: '', btcIndex: 0, xmrIndex: 0, orders: {} };
@@ -89,17 +90,27 @@ async function deriveBitcoinAddress(xpub, index) {
   return bech32.encode('bc', [0, ...bech32.toWords(publicKeyHash)]);
 }
 
+export function moneroIndexesToCreate(highest, index) {
+  const start = Number(highest) + 1;
+  const end = Number(index);
+  if (!Number.isInteger(start) || !Number.isInteger(end) || end < start) return [];
+  const indexes = [];
+  for (let current = start; current <= end; current += 1) indexes.push(current);
+  return indexes;
+}
+
 async function deriveMoneroSubaddress(primaryAddress, privateViewKey, index, orderId) {
   if (!primaryAddress) throw new Error('Add the vendor Monero main address before enabling subaddress rotation.');
-  const [{ default: walletModule }, { default: configModule }] = await Promise.all([
-    import('monero-ts/dist/src/main/ts/wallet/MoneroWalletFull.js'),
-    import('monero-ts/dist/src/main/ts/wallet/model/MoneroWalletConfig.js'),
-  ]);
-  const MoneroWalletFull = walletModule.default || walletModule;
-  const MoneroWalletConfig = configModule.default || configModule;
-  let wallet;
-  try {
-    wallet = await MoneroWalletFull.createWallet(new MoneroWalletConfig({
+  const cacheKey = `${primaryAddress}:${privateViewKey}`;
+  let entry = moneroWallets.get(cacheKey);
+  if (!entry) {
+    const [{ default: walletModule }, { default: configModule }] = await Promise.all([
+      import('monero-ts/dist/src/main/ts/wallet/MoneroWalletFull.js'),
+      import('monero-ts/dist/src/main/ts/wallet/model/MoneroWalletConfig.js'),
+    ]);
+    const MoneroWalletFull = walletModule.default || walletModule;
+    const MoneroWalletConfig = configModule.default || configModule;
+    const wallet = await MoneroWalletFull.createWallet(new MoneroWalletConfig({
       networkType: 'mainnet',
       path: '',
       password: '',
@@ -108,22 +119,26 @@ async function deriveMoneroSubaddress(primaryAddress, privateViewKey, index, ord
       proxyToWorker: false,
       restoreHeight: 0,
     }));
-    let subaddress;
-    for (let currentIndex = 1; currentIndex <= index; currentIndex += 1) {
-      subaddress = await wallet.createSubaddress(0, `Cipher order ${orderId.slice(0, 8)} #${currentIndex}`);
-    }
-    const address = subaddress?.getAddress();
-    if (!address) throw new Error('Monero wallet did not return a subaddress.');
-    return address;
-  } finally {
-    if (wallet) {
-      try {
-        await wallet.close(false);
-      } catch (error) {
-        console.warn('[vendor-payments] Could not close the temporary Monero wallet:', error);
-      }
-    }
+    entry = { wallet, highest: 0 };
+    moneroWallets.set(cacheKey, entry);
   }
+  try {
+    const direct = await entry.wallet.getAddress(0, index);
+    if (direct) {
+      entry.highest = Math.max(entry.highest, index);
+      return direct;
+    }
+  } catch (error) {
+    console.warn('[vendor-payments] Direct Monero subaddress lookup failed, creating the missing indexes:', error);
+  }
+  let subaddress;
+  for (const currentIndex of moneroIndexesToCreate(entry.highest, index)) {
+    subaddress = await entry.wallet.createSubaddress(0, `Cipher order ${orderId.slice(0, 8)} #${currentIndex}`);
+  }
+  entry.highest = Math.max(entry.highest, index);
+  const address = subaddress?.getAddress();
+  if (!address) throw new Error('Monero wallet did not return a subaddress.');
+  return address;
 }
 
 async function withSettingsLock(pubkey, callback) {
