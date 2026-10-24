@@ -1,10 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Search, Users, Megaphone, Loader2 } from 'lucide-react';
-import Logo from './components/Logo';
 import { useChatStore } from './store/chatStore';
 import { loadGroupProfile } from './hooks/useNIP29Group';
 import { getMyGroups, setMyGroups } from './lib/myGroups';
-import { pressable } from './components/ui/Button';
 
 export default function Discover({ identity, onJoined }) {
   const [query, setQuery] = useState('');
@@ -91,22 +89,18 @@ export default function Discover({ identity, onJoined }) {
 
   return (
     <div className="relative flex h-full w-full flex-col bg-black">
-      <div className="sticky top-0 z-10 flex items-center gap-3 bg-black px-4 pb-2 pt-4">
-        <Logo size={32} />
-        <h1 className="text-2xl font-bold tracking-tight text-white">Discover</h1>
+      <div className="border-b border-white/5 px-4 py-3">
+        <h1 className="text-[17px] font-semibold text-white">Groups</h1>
       </div>
-
-      <div className="sticky top-[60px] z-10 bg-black px-4 py-3">
-        <div className="flex items-center gap-2 rounded-2xl border border-white/10 bg-[#111] px-4 py-3 focus-within:border-blue-500/50">
-          <Search size={18} className="text-white/40" />
-          <input
-            type="text"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search public groups..."
-            className="flex-1 bg-transparent text-[15px] text-white placeholder-white/30 focus:outline-none"
-          />
-        </div>
+      <div className="flex items-center gap-2 border-b border-white/5 px-4 py-3">
+        <Search size={16} className="text-white/40" />
+        <input
+          type="text"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search"
+          className="flex-1 bg-transparent text-[15px] text-white placeholder-white/30 focus:outline-none"
+        />
       </div>
 
       {error && <p role="alert" className="px-4 text-sm text-red-400">{error}</p>}
@@ -138,7 +132,7 @@ export default function Discover({ identity, onJoined }) {
                     <p className="text-[13px] text-white/40 line-clamp-1">{group.about}</p>
                   </div>
                 </div>
-                <button type="button" onClick={() => join(group)} disabled={joiningId === group.id} className={`rounded-2xl bg-blue-600 px-4 py-2 text-[13px] font-bold text-white hover:bg-blue-500 active:bg-blue-700 disabled:opacity-50 ${pressable}`}>
+                <button type="button" onClick={() => join(group)} disabled={joiningId === group.id} className="text-[15px] font-semibold text-blue-500 disabled:opacity-40">
                   {joiningId === group.id ? 'Joining…' : 'Join'}
                 </button>
               </div>
