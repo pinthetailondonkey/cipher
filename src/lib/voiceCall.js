@@ -5,9 +5,13 @@ const iceServers = [
   { urls: 'stun:stun1.l.google.com:19302' },
 ];
 
+const LIVE = new Set(['calling', 'ringing', 'connecting', 'active']);
+
 let transport = async () => {};
 let session = null;
 const listeners = new Set();
+const seenEvents = new Set();
+const earlyIce = new Map();
 let ringTimer = null;
 let audioCtx = null;
 
@@ -40,6 +44,14 @@ async function signal(peer, payload) {
   } catch (error) {
     console.warn('[call] Signal failed:', error);
   }
+}
+
+async function openMicrophone() {
+  if (!navigator.mediaDevices?.getUserMedia) throw new Error('This browser cannot place voice calls.');
+  return navigator.mediaDevices.getUserMedia({
+    audio: { echoCancellation: true, noiseSuppression: true },
+    video: false,
+  });
 }
 
 function beep() {
@@ -85,6 +97,7 @@ function attachRemoteAudio(pc) {
 }
 
 async function flushIce(current) {
+  if (!current?.pc?.remoteDescription) return;
   const pending = current.pendingIce || [];
   current.pendingIce = [];
   for (const candidate of pending) {
@@ -94,17 +107,27 @@ async function flushIce(current) {
   }
 }
 
+function queueIce(callId, candidate) {
+  if (!candidate) return;
+  if (session?.callId === callId) {
+    session.pendingIce = [...(session.pendingIce || []), candidate];
+    return;
+  }
+  const queued = earlyIce.get(callId) || [];
+  queued.push(candidate);
+  earlyIce.set(callId, queued);
+}
+
 function teardown(current) {
   stopRing();
   current?.local?.getTracks().forEach((track) => track.stop());
   try { current?.pc?.close(); } catch {}
-  if (current?.remoteAudio) {
-    current.remoteAudio.srcObject = null;
-  }
+  if (current?.remoteAudio) current.remoteAudio.srcObject = null;
 }
 
 function finish(status) {
   if (!session) return;
+  const endingId = session.callId;
   teardown(session);
   session = { ...session, status, pc: null, local: null, remoteAudio: null };
   emit();
@@ -112,25 +135,26 @@ function finish(status) {
   setTimeout(() => {
     if (session === ended) {
       session = null;
+      earlyIce.delete(endingId);
       emit();
     }
-  }, 1200);
+  }, 1400);
 }
 
 export async function startCall({ peer, name }) {
   if (!peer) return { ok: false, error: 'Open a chat before calling.' };
-  if (session && session.status !== 'ended') return { ok: false, error: 'You are already in a call.' };
-  if (!navigator.mediaDevices?.getUserMedia) return { ok: false, error: 'This browser cannot place voice calls.' };
+  if (session && LIVE.has(session.status)) return { ok: false, error: 'You are already in a call.' };
   const callId = crypto.randomUUID();
   try {
-    const local = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true }, video: false });
+    const local = await openMicrophone();
     const pc = new RTCPeerConnection({ iceServers });
     local.getTracks().forEach((track) => pc.addTrack(track, local));
     const remoteAudio = attachRemoteAudio(pc);
     session = {
       callId, peer, name: name || 'Voice call', direction: 'out', status: 'calling',
-      pc, local, remoteAudio, muted: false, startedAt: null, pendingIce: [],
+      pc, local, remoteAudio, muted: false, startedAt: null, pendingIce: earlyIce.get(callId) || [],
     };
+    earlyIce.delete(callId);
     emit();
     startRing();
     pc.onicecandidate = (event) => {
@@ -144,42 +168,43 @@ export async function startCall({ peer, name }) {
     console.error('[call] Could not start:', error);
     if (session?.callId === callId) finish('ended');
     const denied = error?.name === 'NotAllowedError' || error?.name === 'NotFoundError';
-    return { ok: false, error: denied ? 'Allow microphone access to place a call.' : 'Could not start the call.' };
+    return { ok: false, error: denied ? 'Allow microphone access to place a call.' : (error?.message || 'Could not start the call.') };
   }
 }
 
 export async function acceptCall() {
   if (!session || session.direction !== 'in' || session.status !== 'ringing') return;
+  const callId = session.callId;
+  const peer = session.peer;
+  const offer = session.offer;
+  patch({ status: 'connecting' });
   try {
-    const local = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true }, video: false });
+    const local = await openMicrophone();
     const pc = new RTCPeerConnection({ iceServers });
     local.getTracks().forEach((track) => pc.addTrack(track, local));
     const remoteAudio = attachRemoteAudio(pc);
-    const current = session;
-    current.pc = pc;
-    current.local = local;
-    current.remoteAudio = remoteAudio;
     pc.onicecandidate = (event) => {
-      if (event.candidate) signal(current.peer, { action: 'ice', callId: current.callId, candidate: event.candidate.toJSON() });
+      if (event.candidate) signal(peer, { action: 'ice', callId, candidate: event.candidate.toJSON() });
     };
-    await pc.setRemoteDescription(current.offer);
-    await flushIce(current);
+    patch({ pc, local, remoteAudio });
+    await pc.setRemoteDescription(offer);
+    await flushIce(session);
     const answer = await pc.createAnswer();
     await pc.setLocalDescription(answer);
-    await signal(current.peer, { action: 'answer', callId: current.callId, sdp: pc.localDescription });
+    await signal(peer, { action: 'answer', callId, sdp: pc.localDescription });
     stopRing();
-    patch({ status: 'active', startedAt: Date.now(), pc, local, remoteAudio });
+    patch({ status: 'active', startedAt: Date.now() });
   } catch (error) {
     console.error('[call] Could not answer:', error);
-    await signal(session?.peer, { action: 'reject', callId: session?.callId });
-    finish('ended');
+    await signal(peer, { action: 'reject', callId });
+    if (session?.callId === callId) finish('ended');
   }
 }
 
 export async function hangup() {
   if (!session) return;
   const { peer, callId, status, direction } = session;
-  const action = status === 'ringing' && direction === 'in' ? 'reject' : 'hangup';
+  const action = (status === 'ringing' || status === 'connecting') && direction === 'in' ? 'reject' : 'hangup';
   await signal(peer, { action, callId });
   finish(action === 'reject' ? 'declined' : 'ended');
 }
@@ -191,44 +216,71 @@ export function toggleMute() {
   patch({ muted });
 }
 
-export async function handleCallSignal({ data, from }) {
+export async function handleCallSignal({ data, from, eventId }) {
   if (!data?.callId || !from) return;
+  if (eventId) {
+    if (seenEvents.has(eventId)) return;
+    seenEvents.add(eventId);
+    if (seenEvents.size > 400) seenEvents.clear();
+  }
+
+  if (data.action === 'ice') {
+    if (session?.callId === data.callId && session.pc?.remoteDescription) {
+      try { await session.pc.addIceCandidate(data.candidate); } catch (error) {
+        console.warn('[call] ICE candidate dropped:', error);
+      }
+      return;
+    }
+    queueIce(data.callId, data.candidate);
+    return;
+  }
+
   if (data.action === 'offer') {
+    if (session?.callId === data.callId) return;
     if (getPrivacy().calls === 'nobody') {
       await signal(from, { action: 'reject', callId: data.callId, reason: 'privacy' });
       return;
     }
-    if (session && session.status !== 'ended') {
+    if (session && LIVE.has(session.status)) {
       await signal(from, { action: 'busy', callId: data.callId });
       return;
     }
     session = {
-      callId: data.callId, peer: from, name: '', direction: 'in', status: 'ringing',
-      offer: data.sdp, pc: null, local: null, remoteAudio: null, muted: false, pendingIce: [],
+      callId: data.callId,
+      peer: from,
+      name: '',
+      direction: 'in',
+      status: 'ringing',
+      offer: data.sdp,
+      pc: null,
+      local: null,
+      remoteAudio: null,
+      muted: false,
+      pendingIce: earlyIce.get(data.callId) || [],
     };
+    earlyIce.delete(data.callId);
     emit();
     startRing();
     return;
   }
+
   if (!session || session.callId !== data.callId) return;
-  if (data.action === 'answer' && session.pc) {
-    await session.pc.setRemoteDescription(data.sdp);
-    await flushIce(session);
-    stopRing();
-    patch({ status: 'active', startedAt: Date.now() });
-    return;
-  }
-  if (data.action === 'ice' && data.candidate) {
-    if (!session.pc?.remoteDescription) {
-      session.pendingIce = [...(session.pendingIce || []), data.candidate];
-      return;
-    }
-    try { await session.pc.addIceCandidate(data.candidate); } catch (error) {
-      console.warn('[call] ICE candidate dropped:', error);
+
+  if (data.action === 'answer') {
+    if (!session.pc || session.status === 'active') return;
+    try {
+      await session.pc.setRemoteDescription(data.sdp);
+      await flushIce(session);
+      stopRing();
+      patch({ status: 'active', startedAt: Date.now() });
+    } catch (error) {
+      console.error('[call] Could not apply the answer:', error);
     }
     return;
   }
+
   if (data.action === 'busy' || data.action === 'reject' || data.action === 'hangup') {
+    if (session.status === 'active' && data.action === 'busy') return;
     const status = data.reason === 'privacy' ? 'restricted' : data.action === 'busy' ? 'busy' : data.action === 'reject' ? 'declined' : 'ended';
     finish(status);
   }

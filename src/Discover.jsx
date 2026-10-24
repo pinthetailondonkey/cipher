@@ -4,6 +4,7 @@ import Logo from './components/Logo';
 import { useChatStore } from './store/chatStore';
 import { loadGroupProfile } from './hooks/useNIP29Group';
 import { getMyGroups, setMyGroups } from './lib/myGroups';
+import { pressable } from './components/ui/Button';
 
 export default function Discover({ identity, onJoined }) {
   const [query, setQuery] = useState('');
@@ -89,21 +90,21 @@ export default function Discover({ identity, onJoined }) {
   };
 
   return (
-    <div className="flex flex-col h-full w-full relative">
-      <div className="flex items-center gap-3 px-4 pt-4 pb-2 sticky top-0 z-10">
+    <div className="relative flex h-full w-full flex-col bg-black">
+      <div className="sticky top-0 z-10 flex items-center gap-3 bg-black px-4 pb-2 pt-4">
         <Logo size={32} />
         <h1 className="text-2xl font-bold tracking-tight text-white">Discover</h1>
       </div>
 
-      <div className="px-4 py-3 sticky top-[60px] z-10">
-        <div className="flex items-center gap-2 bg-[#111] border border-white/5 rounded-xl px-4 py-3 focus-within:border-blue-500/50 transition-colors">
+      <div className="sticky top-[60px] z-10 bg-black px-4 py-3">
+        <div className="flex items-center gap-2 rounded-2xl border border-white/10 bg-[#111] px-4 py-3 focus-within:border-blue-500/50">
           <Search size={18} className="text-white/40" />
-          <input 
-            type="text" 
+          <input
+            type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search public groups..." 
-            className="flex-1 bg-transparent text-[15px] text-white placeholder-white/40 focus:outline-none"
+            placeholder="Search public groups..."
+            className="flex-1 bg-transparent text-[15px] text-white placeholder-white/30 focus:outline-none"
           />
         </div>
       </div>
@@ -137,7 +138,7 @@ export default function Discover({ identity, onJoined }) {
                     <p className="text-[13px] text-white/40 line-clamp-1">{group.about}</p>
                   </div>
                 </div>
-                <button type="button" onClick={() => join(group)} disabled={joiningId === group.id} className="px-4 py-1.5 rounded-full border border-blue-500/50 text-blue-500 text-[13px] font-semibold hover:bg-blue-500/10 transition-colors disabled:opacity-50">
+                <button type="button" onClick={() => join(group)} disabled={joiningId === group.id} className={`rounded-2xl bg-blue-600 px-4 py-2 text-[13px] font-bold text-white hover:bg-blue-500 active:bg-blue-700 disabled:opacity-50 ${pressable}`}>
                   {joiningId === group.id ? 'Joining…' : 'Join'}
                 </button>
               </div>
