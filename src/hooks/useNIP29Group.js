@@ -5,6 +5,7 @@ import { showNotification } from '../lib/notifications';
 import { useChatStore } from '../store/chatStore';
 import { getAuthenticatedPool } from '../lib/pool';
 import { groupRelays, generalRelays, queryWithTimeout } from '../lib/relays';
+import { allowsTyping } from '../lib/privacy';
 import { getMyGroups, setMyGroups } from '../lib/myGroups';
 import { encodeGroupPayload, decodeGroupEvent } from '../lib/crypto/groupMessageCodec';
 import { putGroupKey, getCurrentGroupKey } from '../lib/crypto/groupKeyStore';
@@ -502,6 +503,7 @@ export function useNIP29Group({ identity }) {
   }, [identity]);
 
   const sendGroupTypingIndicator = useCallback(async (groupId) => {
+    if (!allowsTyping()) return;
     try {
       const encoded = await encodeGroupPayload({ groupId, payload: { type: 'typing' }, senderPubkey: identity.pk });
       if (encoded.pending) return;

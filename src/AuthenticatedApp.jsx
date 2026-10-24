@@ -1,8 +1,9 @@
 import React, { lazy, Suspense, useCallback, useState } from 'react';
 import { MessageSquare, Compass, User } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 import TutorialModal from './components/TutorialModal';
 import GlobalDialog from './components/GlobalDialog';
+import CallOverlay from './components/chat/CallOverlay';
 import { requestNotificationPermission } from './lib/notifications';
 import { useChatStore } from './store/chatStore';
 
@@ -32,19 +33,17 @@ export default function AuthenticatedApp({ identity }) {
       <div className="absolute top-0 left-0 right-0 h-64 bg-[radial-gradient(ellipse_at_top_left,_rgba(37,99,235,0.15),_transparent_60%)] pointer-events-none z-0" />
       <TutorialModal isOpen={showTutorial} onClose={() => { setShowTutorial(false); localStorage.removeItem('cipher_new_account'); }} />
       <GlobalDialog />
+      <CallOverlay />
 
       <main className="w-full max-w-md h-[calc(100dvh-4rem-env(safe-area-inset-bottom))] relative overflow-hidden z-10">
-        <AnimatePresence mode="wait">
-          <motion.div
-            key={activeTab}
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.15 }}
-            className="h-full"
-          >
+        <div className={`absolute inset-0 ${activeTab === 'chat' ? '' : 'invisible pointer-events-none'}`}>
+          <Suspense fallback={tabFallback}>
+            <Chat identity={identity} />
+          </Suspense>
+        </div>
+        {activeTab !== 'chat' && (
+          <div className="absolute inset-0 bg-black">
             <Suspense fallback={tabFallback}>
-              {activeTab === 'chat' && <Chat identity={identity} />}
               {activeTab === 'explore' && (
                 <div className="flex h-full flex-col bg-black">
                   <div className="flex gap-2 px-4 pt-3">
@@ -60,8 +59,8 @@ export default function AuthenticatedApp({ identity }) {
               )}
               {activeTab === 'profile' && <Wallet identity={identity} onOpenChat={openChatFromProfile} />}
             </Suspense>
-          </motion.div>
-        </AnimatePresence>
+          </div>
+        )}
       </main>
 
       <motion.nav

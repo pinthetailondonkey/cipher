@@ -6,6 +6,7 @@ import { scopedRemove } from '../../lib/storage';
 import { haptic } from '../../lib/haptics';
 import { compressImage } from '../../lib/imageCompression';
 import { blossomSigner, sortMessages } from './media';
+import { getPrivacy } from '../../lib/privacy';
 
 export function useComposer({ identity, sendDM, sendGroupMessage }) {
   const view = useChatStore((s) => s.view);
@@ -58,6 +59,7 @@ export function useComposer({ identity, sendDM, sendGroupMessage }) {
       return 0;
     })();
     if (_secs > 0 && !msgPayload.expires_at) msgPayload.expires_at = Math.floor(Date.now() / 1000) + _secs;
+    if (getPrivacy().forwarding === false) msgPayload = { ...msgPayload, noforward: true };
     const replyId = replyingTo ? replyingTo.id : null;
     const isDmView = view === 'dm';
     const chatId = isDmView ? activeDm : activeGroup?.id;

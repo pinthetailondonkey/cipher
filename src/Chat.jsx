@@ -1,4 +1,4 @@
-import { lazy, Suspense } from 'react';
+import { lazy, Suspense, useEffect } from 'react';
 import { useNIP44DM } from './hooks/useNIP44DM';
 import { useNIP29Group } from './hooks/useNIP29Group';
 import { useReactions } from './hooks/useReactions';
@@ -15,6 +15,7 @@ import { useCommerce } from './features/chat/useCommerce';
 import { useComposer } from './features/chat/useComposer';
 import { useMessageCommands } from './features/chat/useMessageCommands';
 import { usePeopleSearch } from './features/chat/usePeopleSearch';
+import { bindCallTransport } from './lib/voiceCall';
 
 const DmView = lazy(() => import('./components/chat/DmView'));
 const GroupView = lazy(() => import('./components/chat/GroupView'));
@@ -41,6 +42,7 @@ export default function Chat({ identity }) {
     subscribeToDMs,
     subscribeToGroups,
     sendTypingIndicator,
+    sendDM,
     sendGroupTypingIndicator,
     fetchGroupMembers,
     setGroups,
@@ -66,6 +68,10 @@ export default function Chat({ identity }) {
     startOrderWithVendor: commerce.startOrderWithVendor,
   });
   const { handleSearch } = usePeopleSearch({ identity });
+
+  useEffect(() => {
+    bindCallTransport((pubkey, payload) => sendDM(pubkey, payload));
+  }, [sendDM]);
 
   const loading = useChatStore((state) => state.loading);
   const view = useChatStore((state) => state.view);
