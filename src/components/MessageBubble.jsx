@@ -12,10 +12,18 @@ const REACTION_CHOICES = ['❤️', '👍', '🔥', '😂', '😮', '😢', '�
 
 function messageText(data) {
   if (!data) return '';
-  if (typeof data === 'string') return data;
+  if (typeof data === 'string') {
+    const trimmed = data.trim();
+    if (!trimmed) return '';
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (parsed && typeof parsed === 'object') return messageText(parsed);
+    } catch { /* plain text */ }
+    return trimmed;
+  }
   if (data.type === 'order_request' || data.type === 'cipher_order' || data.type === 'order_update') return '';
-  if (data.type === 'product') return data.title || 'Product listing';
-  return data.message || data.caption || '';
+  if (data.type === 'product') return data.title || data.name || 'Product';
+  return data.message || data.caption || data.text || data.body || '';
 }
 
 function orderLabel(status) {
@@ -52,7 +60,7 @@ function OrderReceipt({ content }) {
 
 export default function MessageBubble({ message, data, onAction, senderName, isPinnedListing = false, showAvatar = false, avatarUrl = '', avatarInitial = '?' }) {
   const content = data || message?.data || {};
-  const text = messageText(content) || (typeof message?.rawContent === 'string' && !message.rawContent.startsWith('{') ? message.rawContent : '');
+  const text = messageText(content) || messageText(message?.rawContent) || messageText(message?.text) || '';
   const isSender = !!message?.isSender;
   const timestamp = Number(message?.timestamp);
   const validTimestamp = Number.isFinite(timestamp) ? timestamp : null;
@@ -236,8 +244,8 @@ export default function MessageBubble({ message, data, onAction, senderName, isP
             ))}
           </div>
         )}
-        {!text && !content.url && !content.urls && !paymentRows.length && content.type !== 'image' && content.type !== 'audio' && content.type !== 'product' && content.type !== 'cipher_order' && content.type !== 'order_request' && content.type !== 'order_update' && (
-          <p className="text-[14px] leading-snug text-white/55">Message unavailable</p>
+        {!text && !content.url && !content.urls && !paymentRows.length && !['image', 'audio', 'product', 'cipher_order', 'order_request', 'order_update', 'text'].includes(content.type) && (
+          <p className="text-[13px] text-white/45">Couldn't open</p>
         )}
       </div>
     </motion.article>

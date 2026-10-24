@@ -530,31 +530,20 @@ export default function Wallet({ identity, onOpenChat }) {
 
         {/* VENDOR BANNER */}
         {!isVendor ? (
-          <div className="mx-4 mb-6 p-5 rounded-2xl bg-[#0f0f0f] border border-blue-500/20 shadow-[0_0_20px_rgba(37,99,235,0.05)]">
-            <h3 className="text-[17px] font-bold text-white mb-1">Start Selling</h3>
-            <p className="text-[13px] text-white/50 leading-relaxed mb-4">
-              Unlock your storefront, post product cards in groups, and accept BTC/XMR payments.
-            </p>
-            <button 
-              onClick={() => { setStatus(''); setView('vendor_setup'); }}
-              className="bg-white text-black px-5 py-2.5 rounded-full text-[13px] font-bold hover:bg-gray-200 transition-colors"
-            >
-              Set up Vendor mode
-            </button>
-          </div>
+          <button type="button" onClick={() => { setStatus(''); setView('vendor_setup'); }} className="w-full border-y border-white/5 bg-[#111] px-4 py-4 text-left active:bg-white/10">
+            <p className="text-[15px] font-semibold text-white">Start selling</p>
+            <p className="mt-0.5 text-[13px] text-white/40">Post items in groups and take payment directly.</p>
+          </button>
         ) : (
-          <div className="mx-4 mb-6 rounded-2xl border border-emerald-500/20 bg-emerald-500/[0.06] p-5">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <h3 className="text-[17px] font-bold text-white">Vendor mode is on</h3>
-                <p className="mt-1 text-[13px] text-emerald-300/70">Your storefront tools are ready.</p>
-              </div>
-              <span className="rounded-full bg-emerald-400/10 px-3 py-1 text-xs font-semibold text-emerald-300">ACTIVE</span>
-            </div>
-            <div className="mt-4 flex gap-2">
-              <button type="button" onClick={() => setView('vendor')} className="min-h-11 flex-1 rounded-xl bg-blue-600 text-sm font-semibold text-white hover:bg-blue-500">Dashboard</button>
-              <button type="button" onClick={() => setView('advanced')} className="min-h-11 flex-1 rounded-xl border border-white/10 bg-white/5 text-sm font-semibold text-white/80 hover:bg-white/10">Payment settings</button>
-            </div>
+          <div className="border-y border-white/5 bg-[#111]">
+            <button type="button" onClick={() => setView('vendor')} className="w-full border-b border-white/5 px-4 py-4 text-left active:bg-white/10">
+              <p className="text-[15px] font-semibold text-white">Vendor dashboard</p>
+              <p className="text-[13px] text-white/40">Orders and listings</p>
+            </button>
+            <button type="button" onClick={() => setView('advanced')} className="w-full px-4 py-4 text-left active:bg-white/10">
+              <p className="text-[15px] font-semibold text-white">Payment settings</p>
+              <p className="text-[13px] text-white/40">Addresses used for each order</p>
+            </button>
           </div>
         )}
 
