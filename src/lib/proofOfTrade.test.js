@@ -80,4 +80,6 @@ test('outcome is the vendor assertion at signing, not a dispute', () => {
   };
   assert.equal(canonicalReceipt({ ...base, outcome: 'confirmed' }).outcome, 'confirmed');
   assert.equal(canonicalReceipt({ ...base, outcome: 'disputed' }).outcome, '');
+  assert.throws(() => canonicalReceipt({ ...base, at: undefined }), /time/);
+  assert.throws(() => canonicalReceipt({ ...base, at: 0 }), /time/);
 });
