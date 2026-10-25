@@ -67,6 +67,11 @@ test('wallet transfers become a watcher report, and a miss stays pending', () =>
     { address: '8abc', txid: 'yes', confirmations: 2 },
   ], '8abc'), { source: 'watcher', txid: 'yes', confirmations: 2, confirmed: false });
   assert.deepEqual(reportFromTransfers([], '8abc'), { pending: true });
+  assert.equal(reportFromTransfers([
+    { address: 'bcrt1q', txid: 'small', confirmations: 3, amount: 0.00000001 },
+    { address: 'bcrt1q', txid: 'aaaa', confirmations: 3, amount: 0.02 },
+    { address: 'bcrt1q', txid: 'bbbb', confirmations: 3, amount: 0.02 },
+  ], 'bcrt1q', 'btc').txid, 'bbbb');
 });
 
 test('a stock-node scan of one address becomes a bitcoin report', () => {
