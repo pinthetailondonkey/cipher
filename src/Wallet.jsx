@@ -333,8 +333,8 @@ export default function Wallet({ identity, onOpenChat }) {
 
   // --- MAIN PROFILE TAB ---
   return (
-    <div className="animate-fade-in overflow-y-auto h-full pb-4">
-      {status && <div className="fixed top-20 left-1/2 -translate-x-1/2 bg-blue-600 text-white px-4 py-2 rounded-xl text-xs font-bold shadow-lg z-50 animate-bounce">{status}</div>}
+    <div className="animate-fade-in overflow-y-auto h-full pb-4 pb-[env(safe-area-inset-bottom)]">
+      {status && <div className="fixed left-1/2 -translate-x-1/2 bg-blue-600 text-white px-4 py-2 rounded-xl text-xs font-bold shadow-lg z-50 animate-bounce" style={{ top: `calc(5rem + env(safe-area-inset-top))` }}>{status}</div>}
 
       {/* HEADER PROFILE CARD */}
       <div className="flex flex-col items-center px-4 pb-2 pt-8">
@@ -347,7 +347,7 @@ export default function Wallet({ identity, onOpenChat }) {
         <h2 className="text-2xl font-bold tracking-tight text-white">{myProfile.displayName}</h2>
         <p className="mb-3 text-[13px] text-white/40">@{myProfile.name}</p>
         {myProfile.about && <p className="mb-3 px-6 text-center text-[13px] text-white/50">{myProfile.about}</p>}
-        <button onClick={copyNpub} className="flex items-center gap-2 rounded-full border border-white/10 bg-[#0A0A0A]/60 shadow-2xl backdrop-blur-2xl px-4 py-2 text-[12px] text-white/60">
+        <button onClick={copyNpub} className="flex min-h-[44px] items-center gap-2 rounded-full border border-white/10 bg-[#0A0A0A]/60 shadow-2xl backdrop-blur-2xl px-4 py-2 text-[12px] text-white/60">
           {copied ? 'Copied!' : `${identity.npub?.slice(0, 12)}...${identity.npub?.slice(-4)}`}
           <Copy size={12} />
         </button>
