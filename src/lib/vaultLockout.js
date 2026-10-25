@@ -22,6 +22,38 @@ export function recordPinFailure(storage, pubkey) {
   return { fails, remaining, lockedOut: fails >= PIN_FAILURE_LIMIT };
 }
 
+export const LOCKED_OUT_MESSAGE = 'Five wrong PINs. This account was removed from this device. Only its 12 words can bring it back.';
+
+// Removes one account's vault from this device. The legacy single-vault keys
+// go only when they hold this account's vault. Other accounts stay intact.
+export function removeAccountVault(storage, pubkey) {
+  let vaults = {};
+  try {
+    vaults = JSON.parse(storage.getItem('cipher_vaults') || '{}') || {};
+  } catch {
+    vaults = {};
+  }
+  const legacy = storage.getItem('cipher_vault');
+  const entry = pubkey ? vaults[pubkey] : null;
+  const legacyIsThis = !!legacy && (!pubkey || !entry || JSON.stringify(entry.vault) === legacy);
+  if (pubkey) delete vaults[pubkey];
+  storage.setItem('cipher_vaults', JSON.stringify(vaults));
+  if (legacyIsThis) {
+    storage.removeItem('cipher_vault');
+    storage.removeItem('cipher_handle');
+  }
+  if (!pubkey || storage.getItem('cipher_active_pubkey') === pubkey) storage.removeItem('cipher_active_pubkey');
+  resetPinFailures(storage, pubkey);
+}
+
+// Every path that decrypts a vault with a PIN counts a wrong PIN here, so the
+// fifth one locks that account out whichever screen it was typed on.
+export function failPinAttempt(storage, pubkey) {
+  const result = recordPinFailure(storage, pubkey);
+  if (result.lockedOut) removeAccountVault(storage, pubkey);
+  return result;
+}
+
 export function pinFailureMessage(remaining) {
   const left = remaining === 1 ? '1 attempt left' : `${remaining} attempts left`;
   const warning = remaining <= 2
