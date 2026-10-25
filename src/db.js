@@ -1,6 +1,10 @@
 // src/db.js
 import Dexie from 'dexie';
 import { mergeStoredMessage, patchStoredMessage } from './lib/messageMerge';
+import { createWriteQueue } from './lib/writeQueue';
+
+// Before openDBFor, writes queue here; opening the database applies them.
+const writeQueue = createWriteQueue();
 
 let _current = null;
 let _currentOwner = null;
@@ -51,6 +55,7 @@ export function openDBFor(pubkey) {
   const name = 'CipherDB_v7_' + pubkey.slice(0, 16);
   _current = makeDB(name);
   _currentOwner = pubkey;
+  writeQueue.flush(_current);
   return _current;
 }
 
@@ -61,6 +66,7 @@ try {
     const name = 'CipherDB_v7_' + saved.slice(0, 16);
     _current = makeDB(name);
     _currentOwner = saved;
+    writeQueue.flush(_current);
   }
 } catch (e) {}
 
@@ -92,23 +98,13 @@ export function deleteAccountDatabase(pubkey) {
   });
 }
 
-// Queue for messages that arrive before DB is open
-const pendingQueue = [];
-export function flushQueue() {
-  if (!_current) return;
-  const q = pendingQueue.splice(0);
-  q.forEach(item => {
-    try { _current[item.table][item.method](...item.args); } catch(e) {}
-  });
-}
-
 // Safe stub returned when accessed before openDBFor().
-// Reads return empty, writes no-op. Prevents pre-login crashes.
+// Reads return empty, and writes wait in writeQueue until the database opens.
 const stubTable = (tableName) => ({
   toArray: () => Promise.resolve([]),
   get: () => Promise.resolve(undefined),
-  put: (...args) => { pendingQueue.push({ table: tableName, method: 'put', args }); return Promise.resolve(); },
-  add: (...args) => { pendingQueue.push({ table: tableName, method: 'add', args }); return Promise.resolve(); },
+  put: (...args) => writeQueue.enqueue(tableName, 'put', args),
+  add: (...args) => writeQueue.enqueue(tableName, 'add', args),
   clear: () => Promise.resolve(),
   delete: () => Promise.resolve(),
   count: () => Promise.resolve(0),
