@@ -5,7 +5,7 @@ Read docs/VISION.md before starting any item.
 ## 1. One-command install for both boxes — DONE (1752f6f)
 Done when: from a clean clone, `npm run boxes` prints a watcher URL, and a wrong Node version fails naming it.
 
-## 2. Encrypt message history at rest
+## 2. Encrypt message history at rest — DONE (7e2f1d4)
 Done when:
 - New message rows are stored encrypted using the EXISTING vault key. No new key material, no new dependency. AES-GCM, same family as group messages.
 - Rows written before this change stay readable, and a reload shows old plaintext rows and new encrypted rows together in the same thread.
