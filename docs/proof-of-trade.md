@@ -19,9 +19,11 @@ Version 1 is one JSON object, UTF-8, with these keys in this order and no extra 
 | `amount` | string | Canonical decimal. `$` and commas are stripped. Leading zeros and trailing fractional zeros are stripped. `2.00` is `2`. `2.50` and `$2.50` are `2.5`. |
 | `txid` | string | The transaction the watcher reported. Not in the public view. |
 | `at` | number | Unix seconds, integer, zero or greater. Missing becomes `0`. |
-| `outcome` | string | One of `confirmed`, `disputed`, `rugged`, `refunded`. Anything else becomes `""`. |
+| `outcome` | string | The vendor's assertion at the moment of signing: `confirmed`, `rugged`, or `refunded`. Anything else, including `disputed`, becomes `""`. |
 
 `at` and `outcome` are part of version 1. Adding a field later is a new version, not a quiet extension of an old signature.
+
+`outcome` is not a dispute status. It is what the vendor asserts when they sign. A confirmed sale is `confirmed`. A rug or a refund is a new receipt the vendor signs with `rugged` or `refunded`, not an edit of the old bytes. A dispute is a separate order update and, if someone judges it, a separate arbitration statement over the receipt hash. Neither one rewrites `outcome`.
 
 The bytes that are hashed and signed are `JSON.stringify` of that object.
 
