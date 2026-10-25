@@ -6,6 +6,7 @@
 // The box stores a VAPID key and the phone subscriptions under ./data/push-gateway.
 // It watches CIPHER_RELAYS (default the message relay) for kind-4 events and
 // sends { "kind": "message" }. It does not decrypt them.
+// Registration is open: anyone with this box's URL can register any pubkey and learn when that key receives a message.
 
 import fs from 'node:fs';
 import http from 'node:http';
