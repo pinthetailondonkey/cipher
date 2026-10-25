@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
-import { eventShouldBuzz, eventShouldRing, notificationFromPush, payloadShouldBuzz, registerWithGateway, withBuzzTag } from './pushGateway.js';
+import { eventShouldBuzz, eventShouldRing, nativeTransport, notificationFromPush, payloadShouldBuzz, registerWithGateway, withBuzzTag } from './pushGateway.js';
 
 test('typing, read receipts, and key bundles are not tagged, so they do not buzz', () => {
   assert.equal(payloadShouldBuzz({ type: 'typing' }), false);
@@ -40,6 +40,23 @@ test('no gateway means no request, and a gateway that answers can register', asy
   const silent = await registerWithGateway({ gatewayUrl: '', pubkey: 'aa', fetchImpl: async () => { calls += 1; } });
   assert.equal(silent.buzzing, false);
   assert.equal(calls, 0);
+  assert.equal(nativeTransport('android'), 'fcm');
+  assert.equal(nativeTransport('ios'), 'apns');
+  assert.equal(nativeTransport('web'), null);
+  let nativeBody = null;
+  const native = await registerWithGateway({
+    gatewayUrl: 'https://push.example/ignored',
+    pubkey: 'aa',
+    fetchImpl: async (url, options) => {
+      nativeBody = JSON.parse(options.body);
+      return { ok: true, json: async () => ({ ok: true, buzzing: false, reason: 'no key' }) };
+    },
+    native: async () => ({ platform: 'android', token: 'device-token' }),
+  });
+  assert.equal(native.buzzing, false);
+  assert.equal(native.transport, 'fcm');
+  assert.equal(nativeBody.transport, 'fcm');
+  assert.equal(nativeBody.token, 'device-token');
   const urls = [];
   const registered = await registerWithGateway({
     gatewayUrl: 'https://push.example/ignored',
