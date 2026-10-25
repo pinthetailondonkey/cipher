@@ -60,7 +60,39 @@ export function urlBase64ToUint8Array(value) {
   return out;
 }
 
-export async function registerWithGateway({ gatewayUrl, pubkey, fetchImpl = globalThis.fetch, subscribe } = {}) {
+export function nativeTransport(platform) {
+  if (platform === 'android') return 'fcm';
+  if (platform === 'ios') return 'apns';
+  return null;
+}
+
+export function isNativeShell() {
+  const cap = globalThis.Capacitor;
+  return Boolean(cap && typeof cap.isNativePlatform === 'function' && cap.isNativePlatform());
+}
+
+export async function subscribeNative() {
+  if (!isNativeShell()) return null;
+  const { PushNotifications } = await import('@capacitor/push-notifications');
+  const platform = globalThis.Capacitor.getPlatform();
+  const perm = await PushNotifications.requestPermissions();
+  if (perm.receive !== 'granted') throw new Error('Notifications are blocked, so a locked phone will not buzz.');
+  const token = await new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('Native push did not return a token.')), 15000);
+    PushNotifications.addListener('registration', (row) => {
+      clearTimeout(timer);
+      resolve(row.value);
+    });
+    PushNotifications.addListener('registrationError', (error) => {
+      clearTimeout(timer);
+      reject(new Error(error?.error || 'Native push registration failed.'));
+    });
+    PushNotifications.register();
+  });
+  return { platform, token };
+}
+
+export async function registerWithGateway({ gatewayUrl, pubkey, fetchImpl = globalThis.fetch, subscribe, native } = {}) {
   const base = String(gatewayUrl || '').trim();
   if (!base) return { buzzing: false, reason: 'No push gateway is set. A locked phone will not buzz.' };
   let origin;
@@ -70,6 +102,26 @@ export async function registerWithGateway({ gatewayUrl, pubkey, fetchImpl = glob
     origin = url.origin;
   } catch {
     throw new Error('The push gateway address is not a URL.');
+  }
+  if (typeof native === 'function') {
+    const got = await native();
+    if (!got?.token) {
+      return { buzzing: false, reason: 'This installed app did not return a push token. Web Push does not run in the app shell.' };
+    }
+    const transport = nativeTransport(got.platform);
+    if (!transport) throw new Error('Native push is only for the installed Android or iOS app.');
+    const posted = await fetchImpl(new URL('/native', origin).href, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pubkey, transport, token: got.token }),
+    });
+    const body = await posted.json().catch(() => ({}));
+    if (!posted?.ok) throw new Error(body?.error || 'The push gateway refused this phone.');
+    return {
+      buzzing: false,
+      transport,
+      reason: body.reason || 'The token is stored. This gateway has no FCM or APNs key, so the installed app does not buzz yet.',
+    };
   }
   const descriptor = await fetchImpl(new URL('/cipher-push.json', origin).href, { headers: { Accept: 'application/json' } });
   if (!descriptor?.ok) throw new Error('The push gateway did not offer a key.');

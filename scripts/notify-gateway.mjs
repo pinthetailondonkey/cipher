@@ -22,7 +22,7 @@ function load() {
   try {
     return JSON.parse(fs.readFileSync(statePath, 'utf8'));
   } catch {
-    return { publicKey: '', privateKey: '', subs: [] };
+    return { publicKey: '', privateKey: '', subs: [], native: [] };
   }
 }
 
@@ -32,6 +32,8 @@ function save(state) {
 }
 
 const state = load();
+if (!Array.isArray(state.subs)) state.subs = [];
+if (!Array.isArray(state.native)) state.native = [];
 const recent = new Map();
 
 let webpush;
@@ -58,6 +60,8 @@ async function notify(pubkey, kind) {
   recent.set(recentKey, Date.now());
   const notice = kind === 'order' || kind === 'call' ? kind : 'message';
   const targets = state.subs.filter((row) => row.pubkey === pubkey);
+  const native = (state.native || []).filter((row) => row.pubkey === pubkey);
+  if (native.length) console.error('[push] A native token is stored for this key. FCM and APNs are not configured, so the installed app was not told.');
   await Promise.all(targets.map(async (row) => {
     try {
       await webpush.sendNotification(row.subscription, JSON.stringify({ kind: notice }));
@@ -105,6 +109,25 @@ const server = http.createServer(async (req, res) => {
       res.end(JSON.stringify({ ok: true }));
     } catch (error) {
       console.error('[push] Subscribe failed:', error.message);
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: error.message }));
+    }
+    return;
+  }
+  if (req.method === 'POST' && url.pathname === '/native') {
+    try {
+      const body = await readBody(req);
+      if (!body?.pubkey || !body?.token) throw new Error('A native subscription needs a pubkey and a token.');
+      if (body.transport !== 'fcm' && body.transport !== 'apns') throw new Error('Native push is FCM or APNs.');
+      state.native = state.native.filter((row) => row.token !== body.token);
+      state.native.push({ pubkey: body.pubkey, transport: body.transport, token: body.token });
+      save(state);
+      const reason = 'The token is stored. This gateway has no FCM or APNs key, so the installed app does not buzz yet.';
+      console.error(`[push] ${reason}`);
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: true, buzzing: false, reason }));
+    } catch (error) {
+      console.error('[push] Native subscribe failed:', error.message);
       res.writeHead(400, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: error.message }));
     }
