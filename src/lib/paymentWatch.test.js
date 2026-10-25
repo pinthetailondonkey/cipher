@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
-import { checkPayment, isPublicExplorer, paymentWatchUrl, reportFromTransfers, rowsFromScan } from './paymentWatch.js';
+import { atomicToCoins, checkPayment, isPublicExplorer, moneroRows, parseExactAmounts, paymentWatchUrl, reportFromTransfers, rowsFromScan } from './paymentWatch.js';
 
 test('an empty watcher and a public explorer are refused before any request', async () => {
   let called = false;
@@ -117,9 +117,62 @@ test('wallet transfers become a watcher report, and a miss stays pending', () =>
 test('a stock-node scan of one address becomes a bitcoin report', () => {
   const scan = { height: 104, unspents: [{ txid: 'aa', height: 102, amount: 0.01 }] };
   assert.deepEqual(reportFromTransfers(rowsFromScan(scan, 'bcrt1q'), 'bcrt1q', 'btc'), {
-    source: 'watcher', txid: 'aa', confirmations: 3, confirmed: true, amount: 0.01,
+    source: 'watcher', txid: 'aa', confirmations: 3, confirmed: true, amount: '0.01', outputAmount: '0.01',
   });
   const counted = { unspents: [{ txid: 'bb', confirmations: 1 }] };
   assert.equal(reportFromTransfers(rowsFromScan(counted, 'bc1q'), 'bc1q', 'btc').confirmed, false);
   assert.deepEqual(reportFromTransfers(rowsFromScan({ unspents: [] }, 'bc1q'), 'bc1q', 'btc'), { pending: true });
+});
+
+test('a Monero piconero amount is shifted to whole XMR before it is compared', async () => {
+  const watcherUrl = 'https://watch.example/payment?token=secret';
+  const answer = (rows) => async () => ({ ok: true, json: async () => reportFromTransfers(moneroRows(rows), '8sub', 'xmr') });
+  const full = reportFromTransfers(moneroRows([{ address: '8sub', txid: 'full', confirmations: 10, amount: 500000000000 }]), '8sub', 'xmr');
+  assert.equal(full.amount, '0.5');
+  assert.equal(full.outputAmount, '0.5');
+  const covered = await checkPayment({
+    watcherUrl, address: '8sub', currency: 'xmr', state: 'address_issued', amount: '0.5',
+    fetchImpl: answer([{ address: '8sub', txid: 'full', confirmations: 10, amount: 500000000000 }]),
+  });
+  assert.equal(covered.state, 'confirmed');
+  const over = await checkPayment({
+    watcherUrl, address: '8sub', currency: 'xmr', state: 'address_issued', amount: '0.6',
+    fetchImpl: answer([{ address: '8sub', txid: 'full', confirmations: 10, amount: 500000000000 }]),
+  });
+  assert.deepEqual(over, { moved: false, short: true, state: 'address_issued' });
+  const tiny = await checkPayment({
+    watcherUrl, address: '8sub', currency: 'xmr', state: 'address_issued', amount: '0.5',
+    fetchImpl: answer([{ address: '8sub', txid: 'tiny', confirmations: 10, amount: 1 }]),
+  });
+  assert.deepEqual(tiny, { moved: false, short: true, state: 'address_issued' });
+  assert.equal(atomicToCoins(1, 'xmr'), '0.000000000001');
+  assert.equal(atomicToCoins('9007199254740993', 'xmr'), '9007.199254740993');
+  assert.equal(atomicToCoins(0.5, 'xmr'), null);
+  assert.equal(parseExactAmounts('{"result":{"in":[{"amount":9007199254740993,"txid":"a"}]}}').result.in[0].amount, '9007199254740993');
+  const watcher = fs.readFileSync(new URL('../../scripts/payment-watcher.mjs', import.meta.url), 'utf8');
+  assert.match(watcher, /moneroRows\(\[/);
+  assert.match(watcher, /exactAmounts: true/);
+});
+
+test('a payment split across two outputs is summed, and the receipt keeps the largest', async () => {
+  const watcherUrl = 'https://watch.example/payment?token=secret';
+  const oneTx = { height: 110, unspents: [{ txid: 'aa', height: 108, amount: 0.006 }, { txid: 'aa', height: 108, amount: 0.004 }] };
+  const report = reportFromTransfers(rowsFromScan(oneTx, 'bc1q'), 'bc1q', 'btc');
+  assert.equal(report.amount, '0.01');
+  assert.equal(report.outputAmount, '0.006');
+  assert.equal(report.txid, 'aa');
+  const paid = await checkPayment({
+    watcherUrl, address: 'bc1q', currency: 'btc', state: 'address_issued', amount: '0.01',
+    fetchImpl: async () => ({ ok: true, json: async () => report }),
+  });
+  assert.equal(paid.state, 'confirmed');
+  assert.equal(paid.report.outputAmount, '0.006');
+  const twoTx = { height: 110, unspents: [{ txid: 'bb', height: 108, amount: 0.004 }, { txid: 'aa', height: 108, amount: 0.006 }] };
+  const split = reportFromTransfers(rowsFromScan(twoTx, 'bc1q'), 'bc1q', 'btc');
+  assert.equal(split.amount, '0.01');
+  assert.equal(split.txid, 'aa');
+  const shallow = { height: 110, unspents: [{ txid: 'aa', height: 108, amount: 0.006 }, { txid: 'bb', height: 110, amount: 0.004 }] };
+  const young = reportFromTransfers(rowsFromScan(shallow, 'bc1q'), 'bc1q', 'btc');
+  assert.equal(young.confirmations, 1);
+  assert.equal(young.confirmed, false);
 });

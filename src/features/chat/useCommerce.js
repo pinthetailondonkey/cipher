@@ -192,7 +192,9 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
           const confirmed = outcome.state === 'confirmed';
           if (confirmed) {
             if (!identity?.sk) throw new Error('Unlock the account before confirming. The receipt was not signed.');
-            const paid = outcome.report?.amount;
+            // The receipt names one transaction, so it signs the largest output,
+            // not the sum that covered the order.
+            const paid = outcome.report?.outputAmount ?? outcome.report?.amount;
             if (paid == null || paid === '') throw new Error('The watcher did not report an amount. The receipt was not signed.');
             const amount = typeof paid === 'number'
               ? paid.toFixed(12).replace(/0+$/, '').replace(/\.$/, '')
