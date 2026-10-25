@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { schnorr } from '@noble/curves/secp256k1.js';
-import { acceptPayment, canonicalReceipt, coSignPayment, normalizeAmount, publicReceipt, rankVolume, rankVolumeByStanding, signPublicView, signReceipt, verifyPublicView, verifyReceipt, verifyVendorView } from './proofOfTrade.js';
+import { acceptPayment, canonicalReceipt, coSignPayment, normalizeAmount, publicReceipt, publicViewChecks, rankVolume, rankVolumeByStanding, signPublicView, signReceipt, verifyPublicView, verifyReceipt, verifyVendorView } from './proofOfTrade.js';
 
 function hex(bytes) {
   return [...bytes].map((byte) => byte.toString(16).padStart(2, '0')).join('');
@@ -121,4 +121,20 @@ test('a self-trade does not verify', () => {
   });
   const copied = { ...receipt, sigs: { buyer: receipt.sigs.buyer, vendor: receipt.sigs.buyer } };
   assert.equal(verifyReceipt(copied), false);
+});
+
+test('a second ranking of the same views does not verify again', () => {
+  const buyerKey = schnorr.utils.randomSecretKey();
+  const vendorKey = schnorr.utils.randomSecretKey();
+  const buyer = hex(schnorr.getPublicKey(buyerKey));
+  const vendor = hex(schnorr.getPublicKey(vendorKey));
+  const view = { v: 1, hash: 'ab', amount: '1', currency: 'xmr', buyer, vendor };
+  const published = signPublicView(buyerKey, signPublicView(vendorKey, view));
+  const before = publicViewChecks();
+  const once = rankVolumeByStanding([published]);
+  const mid = publicViewChecks();
+  const twice = rankVolumeByStanding([published]);
+  assert.equal(publicViewChecks(), mid);
+  assert.ok(mid > before);
+  assert.equal(twice.countersigned[0].volume, once.countersigned[0].volume);
 });
