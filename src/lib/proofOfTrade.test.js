@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { schnorr } from '@noble/curves/secp256k1.js';
-import { acceptPayment, normalizeAmount, publicReceipt, rankVolume, receiptAtPayment, signReceipt, verifyReceipt } from './proofOfTrade.js';
+import { acceptPayment, normalizeAmount, publicReceipt, rankVolume, receiptAtPayment, signPublicView, signReceipt, verifyPublicView, verifyReceipt } from './proofOfTrade.js';
 
 function hex(bytes) {
   return [...bytes].map((byte) => byte.toString(16).padStart(2, '0')).join('');
@@ -51,6 +51,10 @@ test('both parties sign the same bytes, and one bad signature fails', () => {
   });
   assert.equal(JSON.stringify(view).includes('8secret'), false);
   assert.equal(JSON.stringify(view).includes('deadbeef'), false);
+  const published = signPublicView(vendorKey, view);
+  assert.equal(verifyPublicView(published), true);
+  assert.equal(verifyPublicView({ ...published, amount: '9' }), false);
+  assert.equal('body' in published, false);
   const ranked = rankVolume([
     view,
     { v: 1, hash: 'aa', amount: '5', currency: 'xmr', buyer: body.buyer, vendor: 'ff' },
