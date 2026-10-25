@@ -19,6 +19,14 @@ Nostr messenger and direct-deal shop. Vite + React. See AGENTS.md if present.
 - The vendor's own wallet is not a chain confirmation. Only a watcher is.
 - No public block explorer is ever called.
 
+## Bug classes to check
+- A unit crossing a trust edge. Piconero came in, whole coins were assumed,
+  and 1 piconero confirmed a 0.5 XMR order. Check every value that crosses
+  watcher to app for unit, scale, and type. A float is not a coin amount.
+- State that lives only in memory. Anything the UI depends on that is not
+  persisted dies on reload. A history fetch re-saves the relay copy over it,
+  so check that the change is written to the database and survives that.
+
 ## How to report back
 The SHA and whether it is pushed. Exact file paths, one line each. Raw
 build, lint and test output. A note on anything touched outside those files.
