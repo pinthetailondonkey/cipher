@@ -15,6 +15,16 @@ export function confirmationsRequired(currency, overrides = {}) {
   return count;
 }
 
+export function orderCoinAmount(product, currency) {
+  const unit = String(product?.currency || '').toLowerCase();
+  const wanted = String(currency || '').toLowerCase();
+  if (unit !== 'btc' && unit !== 'xmr') return null;
+  if (unit !== wanted) return null;
+  const text = String(product?.price ?? product?.amount ?? '').trim();
+  if (!/^\d+(\.\d+)?$/.test(text)) return null;
+  return text;
+}
+
 export function nextPaymentState(current, event) {
   const next = NEXT[current]?.[event];
   if (!next) throw new Error(`A payment that is ${current || 'missing'} cannot ${event}.`);
@@ -52,8 +62,13 @@ export function applyWatcherReport({ state, watcherUrl, report, currency, thresh
   if (!report || report.source !== 'watcher' || !report.txid) {
     throw new Error('Only a watcher report can move a payment to seen or confirmed.');
   }
-  if (amount != null && amount !== '' && !amountCovers(report.amount, amount, currency)) {
-    throw new Error('The payment is short of the order.');
+  if (amount != null && amount !== '') {
+    if (report.amount == null || report.amount === '') {
+      throw new Error('The watcher did not report an amount.');
+    }
+    if (!amountCovers(report.amount, amount, currency)) {
+      throw new Error('The payment is short of the order.');
+    }
   }
   let current = state;
   if (current === 'address_issued') current = nextPaymentState(current, 'see');

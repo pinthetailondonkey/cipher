@@ -124,6 +124,7 @@ export async function checkPayment({ watcherUrl, address, currency, state, amoun
     });
     return { moved: true, state: next, report };
   } catch (error) {
+    if (/short of the order/.test(error.message)) return { moved: false, short: true, state };
     if (/did not move/.test(error.message)) return { moved: false, state };
     throw error;
   }
