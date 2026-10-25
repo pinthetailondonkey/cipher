@@ -237,6 +237,19 @@ export async function getMnemonicFromVault(sk, pk) {
   }
 }
 
+// Storage cleanup happens inside failPinAttempt. The database needs IndexedDB.
+async function deleteLockedOutDatabase(pubkey) {
+  if (!pubkey) return
+  try {
+    const { deleteAccountDatabase } = await import('./db')
+    if (!(await deleteAccountDatabase(pubkey))) {
+      console.error('[identity] The locked-out account database may remain on this device.')
+    }
+  } catch (error) {
+    console.error('[identity] Could not delete the locked-out account database:', error)
+  }
+}
+
 export function useIdentity() {
   const [keys, setKeys] = useState({ sk: null, pk: null, npub: null })
   const [hasVault, setHasVault] = useState(false)
@@ -429,6 +442,7 @@ export function useIdentity() {
       } catch (wipeErr) { console.error('Lockout wipe failed:', wipeErr) }
       if (failure.lockedOut) {
         sessionStorage.removeItem('cipher_session_sk');
+        await deleteLockedOutDatabase(failureAccount);
         window.location.reload();
       }
       return { success: false, error: pinFailureMessage(failure.remaining), remaining: failure.remaining }
@@ -531,6 +545,7 @@ export function useIdentity() {
       skArray = await decryptKey(targetVault, pin);
     } catch {
       const { lockedOut, remaining } = failPinAttempt(localStorage, targetPk);
+      if (lockedOut) await deleteLockedOutDatabase(targetPk);
       return { success: false, error: lockedOut ? LOCKED_OUT_MESSAGE : pinFailureMessage(remaining) };
     }
 
@@ -742,6 +757,7 @@ export function useIdentity() {
         skArray = await decryptKey(vaults[targetPk].vault, pin);
       } catch {
         const { lockedOut, remaining } = failPinAttempt(localStorage, targetPk);
+        if (lockedOut) await deleteLockedOutDatabase(targetPk);
         return { success: false, error: lockedOut ? LOCKED_OUT_MESSAGE : pinFailureMessage(remaining) };
       }
       const { getPublicKey, nip19 } = await import('nostr-tools');
@@ -789,21 +805,9 @@ export function useIdentity() {
     window.location.reload();
   };
 
-  const removeAccount = (targetPk) => {
-    const vaults = getVaults();
-    delete vaults[targetPk];
-    saveVaults(vaults);
-    
-    if (getActivePubkey() === targetPk) {
-      sessionStorage.clear();
-      localStorage.removeItem('cipher_active_pubkey');
-      window.location.reload();
-    }
-  };
-
   return { 
     ...keys, hasVault, hasBiometric, loadingSession,
-    getAccounts, switchAccount, addNewAccount, removeAccount, getMnemonic, 
+    getAccounts, switchAccount, addNewAccount, getMnemonic, 
     unlock, unlockWithBiometric, enableBiometric, restoreFromRelays, restoreFromMnemonic, createVault, finalizeLogin, lockApp, panicWipe
   }
 }

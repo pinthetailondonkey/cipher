@@ -59,6 +59,26 @@ export function closeDB() {
 
 export function currentOwner() { return _currentOwner; }
 
+// Deletes one account's whole database: messages, group keys, grants, and its
+// outbox. Used when that account is locked out. False when it did not go.
+export function deleteAccountDatabase(pubkey) {
+  if (!pubkey || typeof indexedDB === 'undefined') return Promise.resolve(false);
+  if (_currentOwner === pubkey) closeDB();
+  const name = 'CipherDB_v7_' + pubkey.slice(0, 16);
+  return new Promise((resolve) => {
+    const request = indexedDB.deleteDatabase(name);
+    request.onsuccess = () => resolve(true);
+    request.onerror = () => {
+      console.error(`[db] Could not delete ${name}:`, request.error);
+      resolve(false);
+    };
+    request.onblocked = () => {
+      console.error(`[db] Deleting ${name} was blocked by another open tab.`);
+      resolve(false);
+    };
+  });
+}
+
 // Queue for messages that arrive before DB is open
 const pendingQueue = [];
 export function flushQueue() {
