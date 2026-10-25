@@ -3,7 +3,7 @@ import { useNIP44DM } from './hooks/useNIP44DM';
 import { useNIP29Group } from './hooks/useNIP29Group';
 import { useReactions } from './hooks/useReactions';
 import { useReputation } from './hooks/useReputation';
-import { useChatStore } from './store/chatStore';
+import { reactionSubscriptionKey, useChatStore } from './store/chatStore';
 import SearchView from './components/chat/SearchView';
 import MessageSearchResults from './components/chat/MessageSearchResults';
 import ChatLoading from './features/chat/ChatLoading';
@@ -74,12 +74,7 @@ export default function Chat({ identity }) {
     bindCallTransport((pubkey, payload) => sendDM(pubkey, payload));
   }, [sendDM]);
 
-  const reactionKey = useChatStore((state) => {
-    const list = state.view === 'group'
-      ? (state.groupMessages[state.activeGroup?.id] || [])
-      : (state.dms[state.activeDm] || []);
-    return list.slice(-30).map((item) => item.id).filter((id) => id && !String(id).startsWith('temp')).join(',');
-  });
+  const reactionKey = useChatStore(reactionSubscriptionKey);
 
   useEffect(() => {
     const ids = reactionKey ? reactionKey.split(',').filter(Boolean) : [];
