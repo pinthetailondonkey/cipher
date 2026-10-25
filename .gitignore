@@ -9,3 +9,5 @@ android/
 .vite/
 /cipher/
 /cipher-old/
+.vercel
+.env*
