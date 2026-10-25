@@ -5,36 +5,6 @@ import { useChatStore } from '../../store/chatStore';
 import { parseGroupReference, loadGroupProfile } from '../../hooks/useNIP29Group';
 
 export function usePeopleSearch({ identity }) {
-  const setToast = useChatStore((s) => s.setToast);
-  const setView = useChatStore((s) => s.setView);
-
-  const handleGlobalSearch = async (query) => {
-    if (!query.trim()) return;
-    const results = [];
-    const state = useChatStore.getState();
-    Object.entries(state.dms).forEach(([pubkey, msgs]) => {
-      msgs.forEach(msg => {
-        const text = msg.data?.message || '';
-        if (text.toLowerCase().includes(query.toLowerCase())) {
-          results.push({ type: 'dm', pubkey, msg, name: state.profiles[pubkey]?.displayName || pubkey.slice(0, 8), text });
-        }
-      });
-    });
-    Object.entries(state.groupMessages).forEach(([groupId, msgs]) => {
-      msgs.forEach(msg => {
-        try {
-          const parsed = JSON.parse(msg.rawContent || '{}');
-          if ((parsed.message || '').toLowerCase().includes(query.toLowerCase())) {
-            const group = state.groups.find(g => g.id === groupId);
-            results.push({ type: 'group', groupId, msg, name: group?.name || groupId.slice(0, 8), text: parsed.message });
-          }
-        } catch (e) {}
-      });
-    });
-    setToast({ type: 'info', message: `Found ${results.length} results for "${query}"` });
-    useChatStore.getState().setSearchResults(results);
-    setView('search');
-  };
 
   const handleSearch = async () => {
     const state = useChatStore.getState();
@@ -288,5 +258,5 @@ export function usePeopleSearch({ identity }) {
       state.setIsSearching(false); 
     }
   };
-  return { handleGlobalSearch, handleSearch };
+  return { handleSearch };
 }
