@@ -165,22 +165,7 @@ export const patchMessage = async (id, patch) => {
   }
 };
 
-export const getMessages = async (chatId) => {
-  return await db.messages.where('chatId').equals(chatId).sortBy('timestamp');
-};
-
 export const saveProfile = async (profile) => {
   try { await db.profiles.put(profile); } catch (e) { console.error(e); }
 };
 
-export const getProfile = async (pubkey) => {
-  return await db.profiles.get(pubkey);
-};
-
-export const searchProfilesLocal = async (query) => {
-  const lowerQuery = query.toLowerCase();
-  return await db.profiles.filter(p =>
-    (p.name && p.name.toLowerCase().includes(lowerQuery)) ||
-    (p.displayName && p.displayName.toLowerCase().includes(lowerQuery))
-  ).toArray();
-};

@@ -133,15 +133,6 @@ export async function deriveBitcoinAddress(xpub, index, network = 'bc') {
   return bech32.encode(bitcoinHrp(network), [0, ...bech32.toWords(publicKeyHash)]);
 }
 
-export function moneroIndexesToCreate(highest, index) {
-  const start = Number(highest) + 1;
-  const end = Number(index);
-  if (!Number.isInteger(start) || !Number.isInteger(end) || end < start) return [];
-  const indexes = [];
-  for (let current = start; current <= end; current += 1) indexes.push(current);
-  return indexes;
-}
-
 function deriveMoneroSubaddress(primaryAddress, privateViewKey, index) {
   if (!primaryAddress) throw new Error('Add the vendor Monero main address before enabling subaddress rotation.');
   return deriveMoneroAddress({ primaryAddress, privateViewKey, account: 0, index });
