@@ -206,11 +206,12 @@ export const patchMessage = async (id, patch) => {
 // transaction path as a real incoming message and a real vendor order update,
 // instead of raw IndexedDB puts.
 if (typeof window !== 'undefined') {
-  window.__cipherSaveMessage = saveMessage;
-  window.__cipherPatchMessage = patchMessage;
 }
 
 export const saveProfile = async (profile) => {
   try { await db.profiles.put(profile); } catch (e) { console.error(e); }
 };
 
+
+// Test seam: lets the UI specs drive the real save and patch paths.
+if (typeof window !== "undefined") window.__cipher = { saveMessage, patchMessage };
