@@ -1,0 +1,34 @@
+import { test } from '@playwright/test';
+
+test.describe('Visual regression', () => {
+  test('screenshot: home screen', async ({ page }) => {
+    await page.goto('/');
+    await page.waitForTimeout(2000);
+    await page.screenshot({ path: 'test-results/home.png', fullPage: true });
+  });
+
+  test('screenshot: explore tab', async ({ page }) => {
+    await page.goto('/');
+    await page.waitForTimeout(1000);
+
+    // Click explore tab if visible
+    const exploreBtn = page.locator('button:has-text("Shop")').or(page.locator('button:has-text("Explore")'));
+    if (await exploreBtn.count() > 0) {
+      await exploreBtn.first().click();
+      await page.waitForTimeout(1000);
+      await page.screenshot({ path: 'test-results/explore.png', fullPage: true });
+    }
+  });
+
+  test('screenshot: profile tab', async ({ page }) => {
+    await page.goto('/');
+    await page.waitForTimeout(1000);
+
+    const profileBtn = page.locator('button:has-text("Profile")');
+    if (await profileBtn.count() > 0) {
+      await profileBtn.first().click();
+      await page.waitForTimeout(1000);
+      await page.screenshot({ path: 'test-results/profile.png', fullPage: true });
+    }
+  });
+});
