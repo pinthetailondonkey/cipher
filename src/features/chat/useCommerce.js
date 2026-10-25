@@ -139,7 +139,6 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
             return true;
           }
           const confirmed = outcome.state === 'confirmed';
-          let receiptHash = '';
           if (confirmed) {
             if (!identity?.sk) throw new Error('Unlock the account before confirming. The receipt was not signed.');
             const signed = signReceipt(identity.sk, {
@@ -154,24 +153,38 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
               outcome: 'confirmed',
             });
             scopedSet(`receipt_${msg.id}`, signed);
-            receiptHash = publicReceipt(signed).hash;
+            const view = publicReceipt(signed);
+            const payload = {
+              type: 'order_update',
+              orderId: msg.id,
+              productName: msg.data.product?.title || msg.data.productName,
+              status: 'paid',
+              paymentState: outcome.state,
+              paymentSeenBy: 'watcher',
+              receipt: view,
+            };
+            await deliverOrderUpdate(
+              msg.pubkey,
+              payload,
+              { status: payload.status, paymentState: outcome.state, paymentSeenBy: 'watcher', receipt: view },
+              'Your watcher confirmed the payment.',
+            );
+          } else {
+            const payload = {
+              type: 'order_update',
+              orderId: msg.id,
+              productName: msg.data.product?.title || msg.data.productName,
+              status: msg.data.status || 'accepted',
+              paymentState: outcome.state,
+              paymentSeenBy: 'watcher',
+            };
+            await deliverOrderUpdate(
+              msg.pubkey,
+              payload,
+              { status: payload.status, paymentState: outcome.state, paymentSeenBy: 'watcher' },
+              'Your watcher has seen the payment. It is not confirmed yet.',
+            );
           }
-          const payload = {
-            type: 'order_update',
-            orderId: msg.id,
-            productName: msg.data.product?.title || msg.data.productName,
-            status: confirmed ? 'paid' : (msg.data.status || 'accepted'),
-            paymentState: outcome.state,
-            paymentSeenBy: 'watcher',
-            txid: outcome.report.txid,
-            ...(receiptHash ? { receiptHash } : {}),
-          };
-          await deliverOrderUpdate(
-            msg.pubkey,
-            payload,
-            { status: payload.status, paymentState: outcome.state, paymentSeenBy: 'watcher', txid: outcome.report.txid, ...(receiptHash ? { receiptHash } : {}) },
-            confirmed ? 'Your watcher confirmed the payment.' : 'Your watcher has seen the payment. It is not confirmed yet.',
-          );
         } catch (error) {
           console.error('[orders] Chain check failed:', error);
           setToast({ type: 'error', message: error?.message || 'The payment watcher could not be checked.' });

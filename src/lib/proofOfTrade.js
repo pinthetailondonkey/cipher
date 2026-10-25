@@ -73,5 +73,42 @@ export function verifyReceipt(signed) {
 }
 
 export function publicReceipt(signed) {
-  return { v: 1, hash: signed?.hash || '' };
+  const body = canonicalReceipt(signed?.body || {});
+  return {
+    v: 1,
+    hash: signed?.hash || receiptHash(body),
+    amount: body.amount,
+    currency: body.currency,
+    buyer: body.buyer,
+    vendor: body.vendor,
+  };
+}
+
+function amountUnits(amount) {
+  const text = String(amount ?? '').trim();
+  if (!/^\d+(\.\d+)?$/.test(text)) return null;
+  const [whole, frac = ''] = text.split('.');
+  return BigInt(whole) * 100000000n + BigInt((frac + '00000000').slice(0, 8));
+}
+
+function unitsToAmount(units) {
+  const whole = units / 100000000n;
+  const frac = (units % 100000000n).toString().padStart(8, '0').replace(/0+$/, '');
+  return frac ? `${whole}.${frac}` : `${whole}`;
+}
+
+export function rankVolume(events) {
+  const totals = new Map();
+  for (const event of events || []) {
+    if (!event || event.address || event.txid) continue;
+    const units = amountUnits(event.amount);
+    if (units == null || !event.vendor || !event.currency) continue;
+    const key = `${event.vendor}|${event.currency}`;
+    const row = totals.get(key) || { vendor: event.vendor, currency: event.currency, units: 0n };
+    row.units += units;
+    totals.set(key, row);
+  }
+  return [...totals.values()]
+    .sort((a, b) => (a.units > b.units ? -1 : a.units < b.units ? 1 : a.vendor.localeCompare(b.vendor)))
+    .map(({ vendor, currency, units }) => ({ vendor, currency, volume: unitsToAmount(units) }));
 }
