@@ -35,7 +35,7 @@ export default function Chat({ identity }) {
   const { sendReaction, subscribeToReactions, subscribeToGroupReactions } = useReactions({ identity });
   const { sendVouch } = useReputation({ identity });
   const setGroups = useMyGroups(identity?.pk);
-  const directory = useGroupDirectory({ identity, sendDM, createGroupHook, setGroups });
+  const directory = useGroupDirectory({ identity, createGroupHook, setGroups });
   const { fetchChats } = useChatBootstrap({
     identity,
     fetchDMs,
@@ -48,7 +48,6 @@ export default function Chat({ identity }) {
     fetchGroupMembers,
     setGroups,
     fetchGroups: directory.fetchGroups,
-    requestToJoinGroup: directory.requestToJoinGroup,
     joinGroupById: directory.joinGroupById,
   });
   const commerce = useCommerce({
