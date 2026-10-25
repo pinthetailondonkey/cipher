@@ -1,10 +1,13 @@
-import { uploadEncryptedBlob } from '@nostr-wot/blossom';
+import { sha256 } from '@noble/hashes/sha2.js';
+import { bytesToHex } from '@noble/hashes/utils.js';
+import { finalizeEvent, generateSecretKey } from 'nostr-tools';
 
 // Chat photos and voice notes are encrypted on this device before they leave
 // it. The media host stores ciphertext under a throwaway upload key, so it
 // cannot read the file or tie it to the sender. The AES key travels inside
 // the already-encrypted message, so only the people who can read the message
-// can open the file.
+// can open the file. The host still sees the sender's IP at upload, and each
+// reader's IP and the time they opened it.
 
 function toBase64(bytes) {
   let binary = '';
@@ -37,9 +40,64 @@ export async function decryptMedia(ciphertext, meta) {
   return new Blob([plain], { type: meta.mime || 'application/octet-stream' });
 }
 
+function base64Url(text) {
+  return btoa(String.fromCharCode(...new TextEncoder().encode(text))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+// A Blossom PUT over plain fetch, so a pasted http onion host works as well
+// as an https one. Each server gets its own throwaway key and an auth event
+// bound to that host. Redirects are refused, so the bytes and the auth go
+// only where the user pointed them.
+export async function uploadCiphertext(bytes, { servers = [], fetchImpl = globalThis.fetch } = {}) {
+  const hash = bytesToHex(sha256(bytes));
+  const reasons = [];
+  for (const base of servers) {
+    let server;
+    try {
+      server = new URL(base);
+      if (server.protocol !== 'https:' && server.protocol !== 'http:') throw new Error('not http or https');
+    } catch (error) {
+      reasons.push(`${base}: ${error.message}`);
+      continue;
+    }
+    const key = generateSecretKey();
+    try {
+      const now = Math.floor(Date.now() / 1000);
+      const auth = finalizeEvent({
+        kind: 24242,
+        created_at: now,
+        tags: [['t', 'upload'], ['x', hash], ['expiration', String(now + 300)], ['server', server.hostname.toLowerCase()]],
+        content: 'Upload blob',
+      }, key);
+      const response = await fetchImpl(`${server.href.replace(/\/$/, '')}/upload`, {
+        method: 'PUT',
+        redirect: 'error',
+        headers: { Authorization: `Nostr ${base64Url(JSON.stringify(auth))}`, 'Content-Type': 'application/octet-stream', 'X-SHA-256': hash },
+        body: bytes,
+      });
+      if (!response.ok) {
+        reasons.push(`${base}: ${response.status}`);
+        continue;
+      }
+      const descriptor = await response.json();
+      const url = new URL(String(descriptor?.url || ''));
+      if (descriptor.sha256 !== hash || descriptor.size !== bytes.length || !['https:', 'http:'].includes(url.protocol)) {
+        reasons.push(`${base}: the host answered for a different file`);
+        continue;
+      }
+      return { url: url.href };
+    } catch (error) {
+      reasons.push(`${base}: ${error?.message || error}`);
+    } finally {
+      key.fill(0);
+    }
+  }
+  throw new Error(`No media host took the encrypted file. ${reasons.join('; ')}`);
+}
+
 // There is no plaintext fallback. A host that refuses the encrypted file
 // means the attachment is not sent.
-export async function uploadPrivateMedia(file, servers, upload = uploadEncryptedBlob) {
+export async function uploadPrivateMedia(file, servers, upload = uploadCiphertext) {
   const { ciphertext, meta } = await encryptMedia(file);
   const blob = await upload(ciphertext, { servers });
   return { url: blob.url, ...meta };
