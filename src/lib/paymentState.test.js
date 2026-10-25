@@ -61,4 +61,24 @@ test('confirmation depth is per currency, and a flag alone cannot confirm', () =
     }),
     /did not move/,
   );
+  assert.throws(
+    () => applyWatcherReport({
+      state: 'address_issued',
+      watcherUrl: 'http://watcher.example',
+      currency: 'btc',
+      amount: '0.01',
+      report: { source: 'watcher', txid: 'dust', confirmations: 3, amount: '0.00000001' },
+    }),
+    /short of the order/,
+  );
+  assert.equal(
+    applyWatcherReport({
+      state: 'address_issued',
+      watcherUrl: 'http://watcher.example',
+      currency: 'btc',
+      amount: '0.01',
+      report: { source: 'watcher', txid: 'paid', confirmations: 3, amount: '0.01' },
+    }),
+    'confirmed',
+  );
 });
