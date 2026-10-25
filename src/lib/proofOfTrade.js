@@ -28,7 +28,7 @@ export function canonicalReceipt(input = {}) {
     amount: normalizeAmount(input.amount ?? '0'),
     txid: String(input.txid || ''),
     at: Number.isInteger(input.at) && input.at >= 0 ? input.at : 0,
-    outcome: ['confirmed', 'disputed', 'rugged', 'refunded'].includes(input.outcome) ? input.outcome : '',
+    outcome: ['confirmed', 'rugged', 'refunded'].includes(input.outcome) ? input.outcome : '',
   };
 }
 
