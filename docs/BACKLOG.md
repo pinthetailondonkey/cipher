@@ -22,3 +22,7 @@ Done when: the tap-target and clipping assertions run per tab, not just home.
 
 ## 4. README Vercel section
 Done when: the three stale claims are corrected.
+
+## 5. Proof-of-trade v2 — STARTED
+Done when: the implementation matches the spec (docs/proof-of-trade.md v2).
+The spec is written; implementation is a separate item.
