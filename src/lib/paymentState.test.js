@@ -1,6 +1,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { applyWatcherReport, confirmationsRequired, nextPaymentState } from './paymentState.js';
+import { applyWatcherReport, confirmationsRequired, nextPaymentState, orderCoinAmount } from './paymentState.js';
+
+test('a dollar price is not a coin amount', () => {
+  assert.equal(orderCoinAmount({ currency: 'USD', priceUsd: '40', price: '40' }, 'btc'), null);
+  assert.equal(orderCoinAmount({ currency: 'btc', price: '0.01', priceUsd: '40' }, 'btc'), '0.01');
+  assert.equal(orderCoinAmount({ currency: 'xmr', price: '0.2' }, 'btc'), null);
+});
 
 test('a payment moves created, address issued, seen, confirmed, and skips nothing', () => {
   assert.equal(nextPaymentState('created', 'issue'), 'address_issued');
@@ -70,6 +76,16 @@ test('confirmation depth is per currency, and a flag alone cannot confirm', () =
       report: { source: 'watcher', txid: 'dust', confirmations: 3, amount: '0.00000001' },
     }),
     /short of the order/,
+  );
+  assert.throws(
+    () => applyWatcherReport({
+      state: 'address_issued',
+      watcherUrl: 'http://watcher.example',
+      currency: 'btc',
+      amount: '0.01',
+      report: { source: 'watcher', txid: 'bare', confirmations: 3 },
+    }),
+    /did not report an amount/,
   );
   assert.equal(
     applyWatcherReport({

@@ -62,6 +62,41 @@ test('a watcher you run can mark seen, then confirmed, and silence is not a succ
   );
 });
 
+test('a short payment does not move, and a covering payment does', async () => {
+  const watcherUrl = 'https://watch.example/payment?token=secret';
+  const short = await checkPayment({
+    watcherUrl,
+    address: 'bcrt1q',
+    currency: 'btc',
+    state: 'address_issued',
+    amount: '0.01',
+    fetchImpl: async () => ({ ok: true, json: async () => ({ txid: 'dust', confirmations: 3, amount: '0.00000001' }) }),
+  });
+  assert.deepEqual(short, { moved: false, short: true, state: 'address_issued' });
+  const paid = await checkPayment({
+    watcherUrl,
+    address: 'bcrt1q',
+    currency: 'btc',
+    state: 'address_issued',
+    amount: '0.01',
+    fetchImpl: async () => ({ ok: true, json: async () => ({ txid: 'paid', confirmations: 3, amount: '0.01' }) }),
+  });
+  assert.equal(paid.moved, true);
+  assert.equal(paid.state, 'confirmed');
+  assert.equal(paid.report.amount, '0.01');
+  await assert.rejects(
+    () => checkPayment({
+      watcherUrl,
+      address: 'bcrt1q',
+      currency: 'btc',
+      state: 'address_issued',
+      amount: '0.01',
+      fetchImpl: async () => ({ ok: true, json: async () => ({ txid: 'bare', confirmations: 3 }) }),
+    }),
+    /did not report an amount/,
+  );
+});
+
 test('wallet transfers become a watcher report, and a miss stays pending', () => {
   assert.deepEqual(reportFromTransfers([
     { address: 'other', txid: 'no', confirmations: 3 },
