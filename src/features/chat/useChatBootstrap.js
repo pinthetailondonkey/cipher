@@ -12,6 +12,8 @@ import { resumeKeyRequestIds } from '../../lib/crypto/groupKeyRequest';
 import { useGroupKeyReconciler } from '../../hooks/useGroupKeyReconciler';
 import { flushSecuringGroupSends } from '../../hooks/useNIP29Group';
 import { bindMemberBaselinePublisher, sealMemberBaseline } from '../../lib/crypto/memberBaseline';
+import { activeUrl, entryById } from '../../lib/egress';
+import { registerWithGateway, subscribeBrowser } from '../../lib/pushGateway';
 
 export function useChatBootstrap({
   identity,
@@ -117,6 +119,36 @@ export function useChatBootstrap({
 
   useEffect(() => {
     if (identity?.pk) openDBFor(identity.pk);
+  }, [identity?.pk]);
+
+  useEffect(() => {
+    if (!identity?.pk) return undefined;
+    let cancelled = false;
+    let told = false;
+    const run = () => {
+      const gateway = activeUrl(entryById('push'));
+      if (!gateway) return;
+      registerWithGateway({
+        gatewayUrl: gateway,
+        pubkey: identity.pk,
+        subscribe: subscribeBrowser,
+      }).then((result) => {
+        if (cancelled || result.buzzing || told) return;
+        told = true;
+        console.warn('[push]', result.reason);
+        useChatStore.getState().setToast({ type: 'info', message: result.reason });
+      }).catch((error) => {
+        if (cancelled) return;
+        console.error('[push] Gateway registration failed:', error);
+        useChatStore.getState().setToast({ type: 'error', message: error?.message || 'The push gateway did not accept this phone.' });
+      });
+    };
+    run();
+    window.addEventListener('cipher:network', run);
+    return () => {
+      cancelled = true;
+      window.removeEventListener('cipher:network', run);
+    };
   }, [identity?.pk]);
 
   useEffect(() => {

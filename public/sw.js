@@ -54,3 +54,28 @@ self.addEventListener('fetch', (event) => {
     }),
   );
 });
+
+self.addEventListener('push', (event) => {
+  let kind = 'message';
+  try {
+    const data = event.data?.json();
+    if (data && data.kind === 'order') kind = 'order';
+  } catch { /* a push with no JSON is still just "new message" */ }
+  const title = kind === 'order' ? 'New order' : 'New message';
+  event.waitUntil(self.registration.showNotification(title, {
+    body: 'Open Cipher to view it.',
+    icon: '/icon-192.png',
+    data: { kind },
+  }));
+});
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  event.waitUntil((async () => {
+    const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    const open = windows.find((client) => 'focus' in client);
+    if (open) return open.focus();
+    if (self.clients.openWindow) return self.clients.openWindow('/');
+    return undefined;
+  })());
+});

@@ -205,6 +205,9 @@ export default function MessageBubble({ message, data, onAction, senderName, isP
         {(content.type === 'cipher_order' || content.type === 'order_request') && !isSender && content.status === 'accepted' && content.paymentState !== 'confirmed' && content.paymentSeenBy !== 'vendor' && (
           <button type="button" onClick={(event) => { event.stopPropagation(); onAction?.('confirm_payment', { ...message, data: content }); }} className="mb-1 min-h-11 text-left text-[15px] font-semibold text-white">I saw the payment</button>
         )}
+        {(content.type === 'cipher_order' || content.type === 'order_request') && !isSender && (content.status === 'accepted' || content.paymentState === 'seen' || content.paymentState === 'address_issued') && content.paymentState !== 'confirmed' && (
+          <button type="button" onClick={(event) => { event.stopPropagation(); onAction?.('check_chain', { ...message, data: content }); }} className="mb-1 min-h-11 text-left text-[15px] font-semibold text-white">Check the chain</button>
+        )}
         {content.type === 'image' && (
           <Picture src={content.url} link alt="Shared image" loading="lazy" className="max-h-64 max-w-full rounded-xl object-contain" />
         )}
