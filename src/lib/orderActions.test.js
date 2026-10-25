@@ -92,3 +92,19 @@ test('the action table and the handlers name the same actions, with nothing left
   assert.equal(bubble.includes("['accept_order', BadgeCheck"), false);
   assert.match(bubble, /orderActionsFor\(\{ \.\.\.message, data: content \}, chatMessages\)/);
 });
+
+test('every message action has a way in from the UI, and every menu item has a handler', () => {
+  const read = (path) => fs.readFileSync(new URL(path, import.meta.url), 'utf8');
+  const bubble = read('../components/MessageBubble.jsx');
+  const commands = read('../features/chat/useMessageCommands.js');
+  const handled = new Set([...commands.matchAll(/action === '([a-z_]+)'/g)].map((m) => m[1]));
+  const menu = new Set([...bubble.matchAll(/\['([a-z_]+)', [A-Z][A-Za-z0-9]+, '[^']+'\]/g)].map((m) => m[1]));
+  const direct = new Set([...bubble.matchAll(/(?:onAction\?\.|\bact)\('([a-z_]+)'/g)].map((m) => m[1]));
+  const offered = new Set([...menu, ...direct]);
+  for (const action of handled) assert.ok(offered.has(action), `${action} is handled but nothing offers it`);
+  for (const action of menu) assert.ok(handled.has(action), `${action} is offered but not handled`);
+  assert.ok(menu.has('view_vendor') && menu.has('edit_product'));
+  const overlays = read('../features/chat/ChatOverlays.jsx');
+  assert.match(overlays, /<VendorStorefront\s+isOpen=\{!!vendorStorefrontPubkey\}/);
+  assert.match(overlays, /<ProductEditModal editingProduct=\{editingProduct\}[^\n]*onSubmit=\{handleSaveEditedProduct\}/);
+});
