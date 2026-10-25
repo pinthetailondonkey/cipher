@@ -141,13 +141,18 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
           const confirmed = outcome.state === 'confirmed';
           if (confirmed) {
             if (!identity?.sk) throw new Error('Unlock the account before confirming. The receipt was not signed.');
+            const paid = outcome.report?.amount;
+            if (paid == null || paid === '') throw new Error('The watcher did not report an amount. The receipt was not signed.');
+            const amount = typeof paid === 'number'
+              ? paid.toFixed(12).replace(/0+$/, '').replace(/\.$/, '')
+              : String(paid);
             const signed = signReceipt(identity.sk, {
               orderId: msg.id,
               buyer: msg.pubkey,
               vendor: identity.pk,
               currency,
               address,
-              amount: msg.data?.product?.priceUsd ?? msg.data?.product?.price ?? '',
+              amount,
               txid: outcome.report.txid,
               at: Math.floor(Date.now() / 1000),
               outcome: 'confirmed',
