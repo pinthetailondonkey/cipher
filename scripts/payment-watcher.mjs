@@ -24,9 +24,17 @@ function tokenMatches(presented) {
 }
 
 async function rpc(url, body) {
-  const response = await fetch(url, {
+  const parsed = new URL(url);
+  const headers = { 'Content-Type': 'application/json' };
+  if (parsed.username || parsed.password) {
+    const token = Buffer.from(`${decodeURIComponent(parsed.username)}:${decodeURIComponent(parsed.password)}`).toString('base64');
+    headers.Authorization = `Basic ${token}`;
+    parsed.username = '';
+    parsed.password = '';
+  }
+  const response = await fetch(parsed.href, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers,
     body: JSON.stringify(body),
   });
   if (!response.ok) throw new Error(`Wallet RPC answered ${response.status}`);
