@@ -47,8 +47,6 @@ export const RELAY_SETS = {
   preview: ['link-preview'],
 };
 
-export const GROUP_RELAY_HTTP = 'https://groups.aegispayhq.com';
-
 let refreshBoundRelays = () => {};
 export function bindRelayRefresh(refresh) {
   refreshBoundRelays = typeof refresh === 'function' ? refresh : () => {};
@@ -230,10 +228,6 @@ export function iceServers(config = readNetworkConfig()) {
   const turn = iceServerFrom(activeUrl(entryById('turn'), config));
   if (turn) servers.push(turn);
   return servers;
-}
-
-export function visibleImage(url) {
-  return String(url || '').trim();
 }
 
 export function linkPreviewEndpoint(target, config) {
