@@ -36,13 +36,13 @@ function MainApp() {
   usePanicWipe(identity, panicWipeEnabled);
 
   if (identity.loadingSession) {
-    return <div className="h-screen bg-black flex items-center justify-center"><div className="w-8 h-8 border-4 border-white/20 border-t-white rounded-full animate-spin" /></div>;
+    return <div className="h-[100dvh] bg-black flex items-center justify-center"><div className="w-8 h-8 border-4 border-white/20 border-t-white rounded-full animate-spin" /></div>;
   }
 
   if (!identity.sk) return <LockScreen identity={identity} />;
 
   return (
-    <Suspense fallback={<div className="h-screen bg-black flex items-center justify-center"><div className="w-8 h-8 border-4 border-white/20 border-t-white rounded-full animate-spin" /></div>}>
+    <Suspense fallback={<div className="h-[100dvh] bg-black flex items-center justify-center"><div className="w-8 h-8 border-4 border-white/20 border-t-white rounded-full animate-spin" /></div>}>
       <AuthenticatedApp identity={identity} />
     </Suspense>
   );
