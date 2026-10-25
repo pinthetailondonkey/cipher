@@ -60,6 +60,7 @@ export default function Wallet({ identity, onOpenChat }) {
   const [btcAddress, setBtcAddress] = useState(() => scopedGet('btc_address', localStorage.getItem('cipher_btc_address') || localStorage.getItem('cipher_btc') || ''))
   const [xmrAddress, setXmrAddress] = useState(() => scopedGet('xmr_address', localStorage.getItem('cipher_xmr_address') || localStorage.getItem('cipher_xmr') || ''))
   const [btcXpub, setBtcXpub] = useState('')
+  const [btcNetwork, setBtcNetwork] = useState('bc')
   const [xmrPrivateViewKey, setXmrPrivateViewKey] = useState('')
   const [status, setStatus] = useState('')
   const [isPublishing, setIsPublishing] = useState(false)
@@ -81,6 +82,7 @@ export default function Wallet({ identity, onOpenChat }) {
         if (active) {
           setBtcXpub(config.btcXpub);
           setXmrPrivateViewKey(config.xmrPrivateViewKey);
+          setBtcNetwork(config.btcNetwork || 'bc');
         }
       })
       .catch((error) => {
@@ -95,7 +97,7 @@ export default function Wallet({ identity, onOpenChat }) {
     setSavingAdvanced(true);
     setStatus('');
     try {
-      await saveVendorPaymentConfig(identity, { btcXpub, xmrPrivateViewKey });
+      await saveVendorPaymentConfig(identity, { btcXpub, xmrPrivateViewKey, btcNetwork });
       scopedSet('btc_address', btcAddress);
       scopedSet('xmr_address', xmrAddress);
       localStorage.setItem('cipher_btc_address', btcAddress);
@@ -305,7 +307,11 @@ export default function Wallet({ identity, onOpenChat }) {
           <div className="overflow-hidden rounded-2xl border border-white/10 bg-[#0A0A0A]/60 shadow-2xl backdrop-blur-2xl">
             <input value={xmrAddress} onChange={(event) => setXmrAddress(event.target.value)} autoComplete="off" spellCheck="false" placeholder="Monero address" className="w-full border-b border-white/10 bg-white/5 px-4 py-4 text-[15px] text-white outline-none placeholder:text-white/30" />
             <input type="password" value={xmrPrivateViewKey} onChange={(event) => setXmrPrivateViewKey(event.target.value)} autoComplete="new-password" spellCheck="false" placeholder="Monero view key" className="w-full border-b border-white/10 bg-white/5 px-4 py-4 text-[15px] text-white outline-none placeholder:text-white/30" />
-            <input type="password" value={btcXpub} onChange={(event) => setBtcXpub(event.target.value)} autoComplete="off" spellCheck="false" placeholder="Bitcoin xpub" className="w-full bg-white/5 px-4 py-4 text-[15px] text-white outline-none placeholder:text-white/30" />
+            <input type="password" value={btcXpub} onChange={(event) => setBtcXpub(event.target.value)} autoComplete="off" spellCheck="false" placeholder="Bitcoin xpub" className="w-full border-b border-white/10 bg-white/5 px-4 py-4 text-[15px] text-white outline-none placeholder:text-white/30" />
+            <select value={btcNetwork} onChange={(event) => setBtcNetwork(event.target.value)} className="w-full bg-white/5 px-4 py-4 text-[15px] text-white outline-none">
+              <option value="bc">Bitcoin mainnet</option>
+              <option value="bcrt">Bitcoin regtest</option>
+            </select>
           </div>
           <button type="submit" disabled={savingAdvanced} className="w-full rounded-2xl bg-blue-600 py-3.5 font-bold text-white disabled:opacity-40">
             {savingAdvanced ? 'Saving…' : 'Save'}
