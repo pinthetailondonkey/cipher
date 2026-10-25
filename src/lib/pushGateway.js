@@ -1,8 +1,9 @@
 // A locked phone buzzes only after a gateway you run is pasted in Connections.
 // The notice is "New message", "New order", or "Incoming call". The gateway is not given the text.
-// Messages are tagged t=msg. Calls are tagged t=call. Typing, receipts, and key bundles are not.
+// Messages are tagged t=msg. Orders are tagged t=order. Calls are tagged t=call. Typing, receipts, and key bundles are not.
 
 export const BUZZ_TAG = 'msg';
+export const ORDER_TAG = 'order';
 export const CALL_TAG = 'call';
 const SILENT_TYPES = new Set(['typing', 'read', 'pin', 'gkey']);
 
@@ -10,6 +11,7 @@ export function buzzTagFor(payload) {
   if (!payload || typeof payload !== 'object') return null;
   if (payload.t === 'gkey' || payload.type === 'gkey') return null;
   if (payload.type === 'call' || payload.t === 'call') return CALL_TAG;
+  if (payload.type === 'order_request' || payload.type === 'order_update' || payload.t === 'order') return ORDER_TAG;
   if (SILENT_TYPES.has(payload.type) || SILENT_TYPES.has(payload.t)) return null;
   return BUZZ_TAG;
 }
@@ -35,8 +37,13 @@ export function eventShouldRing(event) {
   return Array.isArray(event?.tags) && event.tags.some((tag) => tag[0] === 't' && tag[1] === CALL_TAG);
 }
 
+export function eventShouldOrder(event) {
+  return Array.isArray(event?.tags) && event.tags.some((tag) => tag[0] === 't' && tag[1] === ORDER_TAG);
+}
+
 export function pushKind(event) {
   if (eventShouldRing(event)) return 'call';
+  if (eventShouldOrder(event)) return 'order';
   if (eventShouldBuzz(event)) return 'message';
   return null;
 }
