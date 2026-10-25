@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Phone, Eye, Image, Users, CheckCheck, Keyboard, Forward, Ban, Link2 } from 'lucide-react';
+import { Phone, Eye, Image, Users, CheckCheck, Keyboard, Ban, Link2 } from 'lucide-react';
 import ScreenHeader from '../ui/ScreenHeader';
 import { getPrivacy, setPrivacy } from '../../lib/privacy';
 import { useChatStore } from '../../store/chatStore';
@@ -69,7 +69,6 @@ export default function PrivacySettings({ onBack }) {
         <div className="overflow-hidden rounded-2xl border border-white/10 bg-[#0A0A0A]/60 shadow-2xl backdrop-blur-2xl">
           <Toggle icon={CheckCheck} label="Read receipts" hint="Let people know when you opened their chat." checked={privacy.readReceipts} onChange={(readReceipts) => update({ readReceipts })} />
           <Toggle icon={Keyboard} label="Typing" hint="Show when you are writing." checked={privacy.typing && privacy.lastSeen !== 'nobody'} onChange={(typing) => update({ typing })} />
-          <Toggle icon={Forward} label="Forwarding" hint="When off, new messages cannot be forwarded." checked={privacy.forwarding} onChange={(forwarding) => update({ forwarding })} />
           <Toggle icon={Link2} label="Link previews" hint="On sends every link in a chat you open to the preview host. Off keeps links plain." checked={privacy.linkPreviews === true} onChange={(linkPreviews) => update({ linkPreviews })} />
         </div>
         <div className="overflow-hidden rounded-2xl border border-white/10 bg-[#0A0A0A]/60 shadow-2xl backdrop-blur-2xl">
