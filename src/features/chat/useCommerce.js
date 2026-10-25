@@ -294,7 +294,7 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
             const payload = {
               type: 'order_update',
               orderId: msg.id,
-              productName: msg.data.product?.title,
+              productName: msg.data.product?.title || msg.data.productName,
               status: 'disputed',
               disputeReason: reason.trim(),
               ...(saved ? { receipt: saved } : {}),
