@@ -5,7 +5,7 @@ import { getOrderPaymentMethods } from '../../lib/vendorPayments';
 import { nextPaymentState } from '../../lib/paymentState';
 import { checkPayment } from '../../lib/paymentWatch';
 import { activeUrl, entryById } from '../../lib/egress';
-import { publicReceipt, signReceipt } from '../../lib/proofOfTrade';
+import { signReceipt } from '../../lib/proofOfTrade';
 
 export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, openChat }) {
   const setToast = useChatStore((s) => s.setToast);
@@ -153,7 +153,6 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
               outcome: 'confirmed',
             });
             scopedSet(`receipt_${msg.id}`, signed);
-            const view = publicReceipt(signed);
             const payload = {
               type: 'order_update',
               orderId: msg.id,
@@ -161,12 +160,12 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
               status: 'paid',
               paymentState: outcome.state,
               paymentSeenBy: 'watcher',
-              receipt: view,
+              receipt: signed,
             };
             await deliverOrderUpdate(
               msg.pubkey,
               payload,
-              { status: payload.status, paymentState: outcome.state, paymentSeenBy: 'watcher', receipt: view },
+              { status: payload.status, paymentState: outcome.state, paymentSeenBy: 'watcher', receipt: signed },
               'Your watcher confirmed the payment.',
             );
           } else {
