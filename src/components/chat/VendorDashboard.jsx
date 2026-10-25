@@ -1,15 +1,31 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Package, Plus } from 'lucide-react';
 import ScreenHeader from '../ui/ScreenHeader';
 import Picture from '../ui/Picture';
 import { useVendorStats } from '../../hooks/useVendorStats';
+import { rankVolumeByStanding, readPublicViews } from '../../lib/proofOfTrade';
+
+function VolumeList({ title, rows }) {
+  return (
+    <div className="overflow-hidden rounded-2xl border border-white/10 bg-[#0A0A0A]/60 shadow-2xl backdrop-blur-2xl">
+      <p className="border-b border-white/5 p-4 text-[13px] text-white/40">{title}</p>
+      {rows.length === 0 ? (
+        <p className="p-4 text-[13px] text-white/40">None yet.</p>
+      ) : rows.map((row) => (
+        <p key={`${row.vendor}-${row.currency}`} className="border-b border-white/5 p-4 text-[15px] text-white last:border-0">{row.volume} {row.currency}</p>
+      ))}
+    </div>
+  );
+}
 
 export default function VendorDashboard({ identity, products = [], onBack, onCreate }) {
   const { stats, loading, fetchStats } = useVendorStats({ identity });
+  const [standing, setStanding] = useState({ countersigned: [], vendor: [] });
 
   useEffect(() => {
     fetchStats();
-  }, [fetchStats]);
+    setStanding(rankVolumeByStanding(readPublicViews()));
+  }, [fetchStats, identity?.pk]);
 
   return (
     <div className="h-full overflow-y-auto bg-transparent pb-24">
@@ -31,6 +47,8 @@ export default function VendorDashboard({ identity, products = [], onBack, onCre
           {stats.xmr > 0 && <p className="p-4 text-[15px] text-white">{stats.xmr.toFixed(6)} XMR</p>}
         </div>
       )}
+      <VolumeList title="Countersigned" rows={standing.countersigned} />
+      <VolumeList title="Vendor signature only" rows={standing.vendor} />
       {onCreate && <button type="button" onClick={onCreate} className="flex w-full items-center justify-center gap-2 rounded-2xl bg-blue-600 py-3.5 font-bold text-white hover:bg-blue-500"><Plus size={16} /> List an item</button>}
       <div className="overflow-hidden rounded-2xl border border-white/10 bg-[#0A0A0A]/60 shadow-2xl backdrop-blur-2xl">
         {products.length === 0 ? (
