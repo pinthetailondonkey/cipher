@@ -1,5 +1,6 @@
 // src/db.js
 import Dexie from 'dexie';
+import { mergeStoredMessage, patchStoredMessage } from './lib/messageMerge';
 
 let _current = null;
 let _currentOwner = null;
@@ -117,14 +118,30 @@ export const saveMessage = async (chatId, msg) => {
     }
     await db.transaction('rw', db.messages, async () => {
       const existing = await db.messages.get(msg.id);
-      const merged = { ...existing, ...msg, chatId };
-      if (msg.deliveryStatus === undefined && existing?.deliveryStatus) {
-        merged.deliveryStatus = existing.deliveryStatus;
-      }
-      await db.messages.put(merged);
+      await db.messages.put(mergeStoredMessage(existing, msg, chatId));
     });
   } catch (error) {
     console.error('[db] Could not save message:', error);
+  }
+};
+
+// Records a change this device made to a stored message, so it survives the
+// next history fetch. False when nothing was written.
+export const patchMessage = async (id, patch) => {
+  if (!currentOwner()) return false;
+  try {
+    let written = false;
+    await db.transaction('rw', db.messages, async () => {
+      const existing = await db.messages.get(id);
+      if (!existing) return;
+      await db.messages.put(patchStoredMessage(existing, patch));
+      written = true;
+    });
+    if (!written) console.error('[db] No stored message to change:', id);
+    return written;
+  } catch (error) {
+    console.error('[db] Could not save the change to a message:', error);
+    return false;
   }
 };
 

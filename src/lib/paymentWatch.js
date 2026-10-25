@@ -1,4 +1,4 @@
-import { applyWatcherReport, confirmationsRequired } from './paymentState.js';
+import { applyWatcherReport, coinUnits, confirmationsRequired, unitsToCoins } from './paymentState.js';
 import { scopedGet } from './storage.js';
 
 // Public explorers. Pasting one is still a block-explorer call, so it is refused
@@ -46,6 +46,44 @@ export function paymentWatchUrl(watcherUrl, { address, currency } = {}) {
   return url.href;
 }
 
+// Whole coins as a canonical decimal string. Bitcoin Core already answers in
+// whole coins, so this only fixes the form, not the unit.
+function wholeCoins(value, currency) {
+  const units = coinUnits(value, currency);
+  return units == null ? null : unitsToCoins(units, currency);
+}
+
+// Monero wallet RPC answers in piconero. The integer is shifted twelve places
+// as a BigInt, never divided as a float. Anything that is not a whole number
+// of atomic units is dropped, so it cannot be counted toward the order.
+export function atomicToCoins(value, currency) {
+  let units;
+  if (typeof value === 'bigint') units = value;
+  else if (typeof value === 'number') {
+    if (!Number.isSafeInteger(value)) return null;
+    units = BigInt(value);
+  } else {
+    const text = String(value ?? '').trim();
+    if (!/^\d+$/.test(text)) return null;
+    units = BigInt(text);
+  }
+  return unitsToCoins(units, currency);
+}
+
+// A piconero amount can pass 2^53, where JSON.parse would round it. Quote
+// every integer amount before parsing so no digit is lost.
+export function parseExactAmounts(text) {
+  return JSON.parse(String(text).replace(/("amount"\s*:\s*)(\d+)/g, '$1"$2"'));
+}
+
+export function moneroRows(rows) {
+  return (Array.isArray(rows) ? rows : []).map((row) => {
+    const { amount, ...rest } = row || {};
+    const coins = atomicToCoins(amount, 'xmr');
+    return coins == null ? rest : { ...rest, amount: coins };
+  });
+}
+
 export function rowsFromScan(scan, address) {
   const tip = Number.isInteger(scan?.height) ? scan.height : null;
   return (Array.isArray(scan?.unspents) ? scan.unspents : [])
@@ -54,18 +92,21 @@ export function rowsFromScan(scan, address) {
       const counted = Number.isInteger(row.confirmations)
         ? row.confirmations
         : (tip != null && Number.isInteger(row.height) ? tip - row.height + 1 : 0);
-      return { txid: String(row.txid), address, confirmations: counted, amount: row.amount };
+      const out = { txid: String(row.txid), address, confirmations: counted };
+      const coins = wholeCoins(row.amount, 'btc');
+      if (coins != null) out.amount = coins;
+      return out;
     });
 }
 
-function largestUnspent(rows) {
-  // A receipt names one transaction. Summing every unspent would cover the
-  // order and then have no txid to sign, so the report names the largest.
+function largestUnspent(rows, currency) {
+  // A receipt names one transaction, so the report names the largest output.
   // Two of the same size take the greater txid, which does not change between scans.
+  const units = (row) => coinUnits(row.amount, currency) ?? -1n;
   return [...rows].sort((a, b) => {
-    const left = Number(a.amount) || 0;
-    const right = Number(b.amount) || 0;
-    if (left !== right) return right - left;
+    const left = units(a);
+    const right = units(b);
+    if (left !== right) return right > left ? 1 : -1;
     return String(b.txid).localeCompare(String(a.txid));
   })[0];
 }
@@ -73,16 +114,25 @@ function largestUnspent(rows) {
 export function reportFromTransfers(transfers, address, currency) {
   const wanted = String(address || '').trim();
   const rows = (Array.isArray(transfers) ? transfers : []).filter((row) => row && (row.address === wanted || row.addr === wanted) && row.txid);
-  const hit = rows.length ? largestUnspent(rows) : null;
+  const hit = rows.length ? largestUnspent(rows, currency) : null;
   if (!hit) return { pending: true };
-  const confirmations = Number(hit.confirmations) || 0;
+  // A payment split across outputs covers the order by its sum. It is only as
+  // deep as its shallowest part, so the sum cannot confirm before every part does.
+  const counted = rows.filter((row) => coinUnits(row.amount, currency) != null);
+  const depthOf = counted.length ? counted : [hit];
+  const confirmations = Math.min(...depthOf.map((row) => Number(row.confirmations) || 0));
   const report = {
     source: 'watcher',
     txid: String(hit.txid),
     confirmations,
     confirmed: confirmations >= confirmationsRequired(currency),
   };
-  if (hit.amount != null) report.amount = hit.amount;
+  if (counted.length) {
+    const sum = counted.reduce((total, row) => total + coinUnits(row.amount, currency), 0n);
+    report.amount = unitsToCoins(sum, currency);
+    const largest = coinUnits(hit.amount, currency);
+    if (largest != null) report.outputAmount = unitsToCoins(largest, currency);
+  }
   return report;
 }
 
@@ -113,6 +163,7 @@ export async function checkPayment({ watcherUrl, address, currency, state, amoun
     confirmations: Number(body.confirmations) || 0,
   };
   if (body.amount != null) report.amount = body.amount;
+  if (body.outputAmount != null) report.outputAmount = body.outputAmount;
   try {
     const next = applyWatcherReport({
       state,

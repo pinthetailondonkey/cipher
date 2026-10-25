@@ -9,8 +9,24 @@ import { enqueueNostrEvent, startOutboxSync } from '../lib/outbox';
 import { allowsTyping } from '../lib/privacy';
 import { publishOwnRelayList, relaysForPeer } from '../lib/dmRelays';
 import { withBuzzTag } from '../lib/pushGateway';
-import { acceptPayment, rememberPublicView } from '../lib/proofOfTrade';
+import { acceptPayment, rememberPublicView, sendCountersignOnce } from '../lib/proofOfTrade';
 import { scopedSet } from '../lib/storage';
+
+function sendCountersign(sendDM, counterparty, orderId, accepted) {
+  return sendCountersignOnce({
+    sendDM,
+    counterparty,
+    orderId,
+    accepted,
+    onFailure: (error) => {
+      console.error('[orders] The buyer signature was not sent:', error);
+      useChatStore.getState().setToast({
+        type: 'error',
+        message: 'Your signature on the payment receipt did not send. Cipher will try again the next time it loads your chats.',
+      });
+    },
+  });
+}
 
 const shouldSuppress = (chatId) => {
   const state = useChatStore.getState();
@@ -174,15 +190,7 @@ export function useNIP44DM({ identity }) {
                   scopedSet(`receipt_${data.orderId}`, accepted.receipt);
                   if (accepted.published) rememberPublicView(accepted.published);
                   data = { ...data, receipt: accepted.receipt, ...(accepted.published ? { published: accepted.published } : {}) };
-                  if (accepted.added) {
-                    sendDM(counterparty, {
-                      type: 'order_update',
-                      orderId: data.orderId,
-                      status: 'paid',
-                      receipt: accepted.receipt,
-                      ...(accepted.published ? { published: accepted.published } : {}),
-                    }).catch((error) => console.error('[orders] The buyer signature was not sent:', error));
-                  }
+                  sendCountersign(sendDM, counterparty, data.orderId, accepted);
                 }
               }
               // Audit H9: drop messages that already expired (delivery lag)
@@ -277,15 +285,7 @@ export function useNIP44DM({ identity }) {
             scopedSet(`receipt_${data.orderId}`, accepted.receipt);
             if (accepted.published) rememberPublicView(accepted.published);
             data = { ...data, receipt: accepted.receipt, ...(accepted.published ? { published: accepted.published } : {}) };
-            if (accepted.added) {
-              sendDM(counterparty, {
-                type: 'order_update',
-                orderId: data.orderId,
-                status: 'paid',
-                receipt: accepted.receipt,
-                ...(accepted.published ? { published: accepted.published } : {}),
-              }).catch((error) => console.error('[orders] The buyer signature was not sent:', error));
-            }
+            sendCountersign(sendDM, counterparty, data.orderId, accepted);
           }
         }
         if (data.expires_at && Math.floor(Date.now() / 1000) >= data.expires_at) continue;

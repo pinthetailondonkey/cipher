@@ -6,15 +6,24 @@
 // The box stores a VAPID key and the phone subscriptions under ./data/push-gateway.
 // It watches CIPHER_RELAYS (default the message relay) for kind-4 events and
 // sends { "kind": "message" }. It does not decrypt them.
+// Registration is open: anyone with this box's URL can register any pubkey and learn when that key receives a message.
 
 import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
 import { SimplePool } from 'nostr-tools';
 import { eventShouldBuzz, eventShouldOrder, eventShouldRing } from '../src/lib/pushGateway.js';
-import { keysReady, sendNative } from '../src/lib/nativePushSend.js';
+import { nativeRegistration, sendNative } from '../src/lib/nativePushSend.js';
 
 if (fs.existsSync('.env')) process.loadEnvFile('.env');
+
+// nostr-tools opens relays with the global WebSocket, which Node has only from
+// version 22. Without it every subscription fails inside the pool and nothing
+// is logged, so the box would answer phones and never see a message.
+if (typeof globalThis.WebSocket !== 'function') {
+  console.error(`[push] This box needs Node 22 or newer to watch a relay. This is Node ${process.version}, which has no WebSocket.`);
+  process.exit(1);
+}
 
 const port = Number(process.env.PUSH_PORT || 8787);
 const dir = process.env.CIPHER_PUSH_DIR || path.join(process.cwd(), 'data', 'push-gateway');
@@ -132,14 +141,12 @@ const server = http.createServer(async (req, res) => {
       state.native = state.native.filter((row) => row.token !== body.token);
       state.native.push({ pubkey: body.pubkey, transport: body.transport, token: body.token });
       save(state);
-      const ready = keysReady();
-      const canSend = (body.transport === 'fcm' && ready.fcm) || (body.transport === 'apns' && ready.apns);
-      const reason = canSend
-        ? 'The token is stored. A locked phone has not been shown to buzz from this box.'
-        : 'The token is stored. FCM_SERVICE_ACCOUNT or APNS_KEY_PATH is missing, so the installed app does not notify.';
+      watch();
+      const tokenStored = load().native.some((row) => row.token === body.token && row.transport === body.transport);
+      const { buzzing, reason } = nativeRegistration({ transport: body.transport, tokenStored });
       console.error(`[push] ${reason}`);
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ ok: true, buzzing: false, reason }));
+      res.end(JSON.stringify({ ok: true, buzzing, reason }));
     } catch (error) {
       console.error('[push] Native subscribe failed:', error.message);
       res.writeHead(400, { 'Content-Type': 'application/json' });

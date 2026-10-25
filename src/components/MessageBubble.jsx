@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import { BadgeCheck, Bookmark, Copy, Forward, Pencil, Pin, Radio, Reply, ShoppingBag, Trash2 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
-import { paymentUri } from '../lib/paymentUri';
+import { paymentRowsFor } from '../lib/paymentUri';
 import { haptic } from '../lib/haptics';
 import { securingPhase } from '../lib/crypto/groupKeyRequest';
 import { useChatStore } from '../store/chatStore';
@@ -82,12 +82,8 @@ export default function MessageBubble({ message, data, onAction, senderName, isP
   const inGroup = useChatStore((state) => !!state.activeGroup);
   const pressTimer = useRef(null);
   const pressPoint = useRef(null);
-  const paymentMethods = content.type === 'order_update' && content.status === 'accepted' ? content.paymentMethods || {} : {};
-  const paymentRows = [
-    ['BTC', paymentMethods.btc],
-    ['XMR', paymentMethods.xmr],
-  ].filter(([, address]) => address);
-  const qrSignature = `${message?.id || ''}:${paymentRows.map(([currency]) => currency).join(',')}`;
+  const paymentRows = paymentRowsFor(content);
+  const qrSignature = `${message?.id || ''}:${paymentRows.map((row) => row.currency).join(',')}`;
   const lastQrSignature = useRef('');
 
   useEffect(() => {
@@ -227,10 +223,11 @@ export default function MessageBubble({ message, data, onAction, senderName, isP
         )}
         {paymentRows.length > 0 && (
           <div className="mb-1 space-y-2">
-            {paymentRows.map(([currency, address]) => (
+            {paymentRows.map(({ currency, address, amount, uri }) => (
               <div key={currency} className="flex flex-col items-center rounded-xl bg-white p-2">
-                <QRCodeSVG value={paymentUri(currency, address, content.product?.price, content.product?.currency)} size={120} level="M" />
-                <span className="mt-1 break-all text-center font-mono text-[10px] text-black">{address}</span>
+                {amount && <p className="mb-1 select-all text-center font-mono text-[15px] font-bold text-black">Pay {amount} {currency}</p>}
+                <QRCodeSVG value={uri} size={120} level="M" />
+                <span className="mt-1 select-all break-all text-center font-mono text-[10px] text-black">{address}</span>
               </div>
             ))}
           </div>
