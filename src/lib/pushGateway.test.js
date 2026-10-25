@@ -1,7 +1,21 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
-import { notificationFromPush, registerWithGateway } from './pushGateway.js';
+import { eventShouldBuzz, notificationFromPush, payloadShouldBuzz, registerWithGateway, withBuzzTag } from './pushGateway.js';
+
+test('typing, read receipts, and key bundles are not tagged, so they do not buzz', () => {
+  assert.equal(payloadShouldBuzz({ type: 'typing' }), false);
+  assert.equal(payloadShouldBuzz({ type: 'read', at: 1 }), false);
+  assert.equal(payloadShouldBuzz({ t: 'gkey', gid: 'g', keys: [] }), false);
+  assert.equal(payloadShouldBuzz({ type: 'call', state: 'ringing' }), false);
+  const typing = withBuzzTag([['p', 'aa']], { type: 'typing' });
+  assert.equal(typing.some((tag) => tag[0] === 't'), false);
+  assert.equal(eventShouldBuzz({ tags: typing }), false);
+  const message = withBuzzTag([['p', 'aa']], { message: 'hello' });
+  assert.equal(eventShouldBuzz({ tags: message }), true);
+  const order = withBuzzTag([['p', 'aa']], { type: 'order_request' });
+  assert.equal(eventShouldBuzz({ tags: order }), true);
+});
 
 test('a push notice never carries the message', () => {
   assert.deepEqual(notificationFromPush({ kind: 'message', body: 'the secret drop is at 4th' }), {

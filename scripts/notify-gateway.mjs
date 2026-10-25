@@ -11,6 +11,7 @@ import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
 import { SimplePool } from 'nostr-tools';
+import { eventShouldBuzz } from '../src/lib/pushGateway.js';
 
 const port = Number(process.env.PUSH_PORT || 8787);
 const dir = process.env.CIPHER_PUSH_DIR || path.join(process.cwd(), 'data', 'push-gateway');
@@ -118,8 +119,9 @@ function watch() {
   try { closer(); } catch { /* the previous socket is already gone */ }
   const authors = [...new Set(state.subs.map((row) => row.pubkey).filter(Boolean))];
   if (!authors.length || !relays.length) return;
-  const sub = pool.subscribeMany(relays, { kinds: [4], '#p': authors }, {
+  const sub = pool.subscribeMany(relays, { kinds: [4], '#p': authors, '#t': ['msg'] }, {
     onevent(event) {
+      if (!eventShouldBuzz(event)) return;
       const who = event.tags?.find((tag) => tag[0] === 'p')?.[1];
       if (who) notify(who, 'message').catch((error) => console.error('[push]', error.message));
     },
