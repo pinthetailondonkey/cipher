@@ -74,7 +74,7 @@ What is published by default:
 
 The vendor signs that object with the same BIP-340 key. The signature is a sibling field, `sig`, and is not part of the signed bytes. `verifyPublicView` checks `sig` against `vendor` and does not need the receipt body. A changed amount, currency, or key fails. An object that still carries `address`, `txid`, or `body` is not a public view.
 
-Volume is the sum of `amount`, grouped by vendor and currency. Bitcoin uses 8 decimal places. Monero uses 12. A finer amount is not counted.
+Volume is the sum of `amount`, grouped by vendor and currency. Bitcoin uses 8 decimal places. Monero uses 12. A finer amount is rounded, half up, to that scale. It is not dropped.
 
 ## Reveal
 
