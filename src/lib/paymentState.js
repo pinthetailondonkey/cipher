@@ -46,6 +46,22 @@ function decimalUnits(value, scale) {
   return BigInt(whole) * (10n ** BigInt(scale)) + BigInt((frac || '0').padEnd(scale, '0'));
 }
 
+// Whole coins as exact integer units. Null when the value is not a plain
+// decimal, or is finer than the currency allows.
+export function coinUnits(value, currency) {
+  const scale = SCALE[String(currency || '').toLowerCase()];
+  if (scale == null) return null;
+  return decimalUnits(value, scale);
+}
+
+export function unitsToCoins(units, currency) {
+  const scale = SCALE[String(currency || '').toLowerCase()];
+  if (scale == null || typeof units !== 'bigint' || units < 0n) return null;
+  const factor = 10n ** BigInt(scale);
+  const frac = (units % factor).toString().padStart(scale, '0').replace(/0+$/, '');
+  return frac ? `${units / factor}.${frac}` : `${units / factor}`;
+}
+
 function amountCovers(reported, expected, currency) {
   const scale = SCALE[String(currency || '').toLowerCase()];
   if (scale == null) return false;

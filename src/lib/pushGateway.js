@@ -124,10 +124,12 @@ export async function registerWithGateway({ gatewayUrl, pubkey, fetchImpl = glob
     });
     const body = await posted.json().catch(() => ({}));
     if (!posted?.ok) throw new Error(body?.error || 'The push gateway refused this phone.');
+    // The gateway decides: true only when it stored the token and holds the key file.
+    const buzzing = body?.buzzing === true;
     return {
-      buzzing: false,
+      buzzing,
       transport,
-      reason: body.reason || 'The token is stored. This gateway has no FCM or APNs key, so the installed app does not buzz yet.',
+      reason: body.reason || (buzzing ? '' : 'The token is stored. This gateway has no FCM or APNs key, so the installed app does not buzz yet.'),
     };
   }
   const descriptor = await fetchImpl(new URL('/cipher-push.json', origin).href, { headers: { Accept: 'application/json' } });

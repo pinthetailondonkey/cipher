@@ -101,6 +101,47 @@ export function acceptPayment(payload, secretKey) {
   }
 }
 
+// The relay always serves the vendor's original, vendor-only receipt, so
+// acceptPayment reports a new signature on every history fetch. The buyer's
+// signature goes back once per receipt, and again only if that send failed.
+export function countersignToSend(accepted, sentHash) {
+  if (!accepted?.added || !accepted.receipt?.hash) return false;
+  return accepted.receipt.hash !== sentHash;
+}
+
+const countersignsInFlight = new Set();
+
+// The mark is written only after the send succeeds, so a failed send is tried
+// again on the next history fetch, and onFailure tells the buyer it failed.
+export async function sendCountersignOnce({ sendDM, counterparty, orderId, accepted, onFailure }) {
+  const sentKey = `countersign_sent_${orderId}`;
+  const hash = accepted?.receipt?.hash;
+  if (!countersignToSend(accepted, scopedGet(sentKey, '')) || countersignsInFlight.has(hash)) return false;
+  countersignsInFlight.add(hash);
+  try {
+    let result;
+    try {
+      result = await sendDM(counterparty, {
+        type: 'order_update',
+        orderId,
+        status: 'paid',
+        receipt: accepted.receipt,
+        ...(accepted.published ? { published: accepted.published } : {}),
+      });
+    } catch (error) {
+      result = { success: false, error: error?.message };
+    }
+    if (result?.success) {
+      scopedSet(sentKey, hash);
+      return true;
+    }
+    onFailure?.(result?.error || 'The signature did not send.');
+    return false;
+  } finally {
+    countersignsInFlight.delete(hash);
+  }
+}
+
 export function verifyReceipt(signed) {
   try {
     if (!signed?.body || !signed?.sigs?.buyer || !signed?.sigs?.vendor) return false;

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { schnorr } from '@noble/curves/secp256k1.js';
-import { acceptPayment, canonicalReceipt, coSignPayment, normalizeAmount, publicReceipt, publicViewChecks, rankVolume, rankVolumeByStanding, signPublicView, signReceipt, verifyPublicView, verifyReceipt, verifyVendorView } from './proofOfTrade.js';
+import { acceptPayment, canonicalReceipt, coSignPayment, countersignToSend, normalizeAmount, publicReceipt, publicViewChecks, rankVolume, rankVolumeByStanding, sendCountersignOnce, signPublicView, signReceipt, verifyPublicView, verifyReceipt, verifyVendorView } from './proofOfTrade.js';
 
 function hex(bytes) {
   return [...bytes].map((byte) => byte.toString(16).padStart(2, '0')).join('');
@@ -137,4 +137,67 @@ test('a second ranking of the same views does not verify again', () => {
   assert.equal(publicViewChecks(), mid);
   assert.ok(mid > before);
   assert.equal(twice.countersigned[0].volume, once.countersigned[0].volume);
+});
+function memoryStorage() {
+  const memory = new Map();
+  globalThis.localStorage = {
+    getItem: (key) => (memory.has(key) ? memory.get(key) : null),
+    setItem: (key, value) => memory.set(key, String(value)),
+    removeItem: (key) => memory.delete(key),
+    key: (index) => Array.from(memory.keys())[index] || null,
+    get length() { return memory.size; },
+  };
+}
+
+function vendorOnlyOrder(orderId) {
+  const buyerKey = schnorr.utils.randomSecretKey();
+  const vendorKey = schnorr.utils.randomSecretKey();
+  const vendor = hex(schnorr.getPublicKey(vendorKey));
+  const receipt = signReceipt(vendorKey, {
+    orderId, buyer: hex(schnorr.getPublicKey(buyerKey)), vendor, currency: 'btc',
+    address: 'bc1qorder', amount: '0.01', txid: 'aa', at: 1_700_000_000, outcome: 'confirmed',
+  });
+  return { buyerKey, vendor, relayCopy: { type: 'order_update', status: 'paid', orderId, receipt } };
+}
+
+test('opening the app twice sends the buyer signature to the vendor once', async () => {
+  memoryStorage();
+  const { buyerKey, vendor, relayCopy } = vendorOnlyOrder('order-twice');
+  const sends = [];
+  const sendDM = async (to, payload) => { sends.push({ to, payload }); return { success: true }; };
+  const first = acceptPayment(relayCopy, buyerKey);
+  assert.equal(first.added, true);
+  assert.equal(await sendCountersignOnce({ sendDM, counterparty: vendor, orderId: 'order-twice', accepted: first }), true);
+  // The relay serves the same vendor-only receipt again, so acceptPayment still says added.
+  const second = acceptPayment(relayCopy, buyerKey);
+  assert.equal(second.added, true);
+  assert.equal(countersignToSend(second, first.receipt.hash), false);
+  assert.equal(await sendCountersignOnce({ sendDM, counterparty: vendor, orderId: 'order-twice', accepted: second }), false);
+  assert.equal(sends.length, 1);
+  assert.equal(sends[0].to, vendor);
+  assert.equal(verifyReceipt(sends[0].payload.receipt), true);
+});
+
+test('a countersign that does not send says so, and the next load tries again', async () => {
+  memoryStorage();
+  const { buyerKey, vendor, relayCopy } = vendorOnlyOrder('order-retry');
+  const failures = [];
+  const onFailure = (error) => failures.push(error);
+  const accepted = acceptPayment(relayCopy, buyerKey);
+  const rejected = async () => ({ success: false, error: 'All relays rejected' });
+  assert.equal(await sendCountersignOnce({ sendDM: rejected, counterparty: vendor, orderId: 'order-retry', accepted, onFailure }), false);
+  const thrown = async () => { throw new Error('socket closed'); };
+  assert.equal(await sendCountersignOnce({ sendDM: thrown, counterparty: vendor, orderId: 'order-retry', accepted, onFailure }), false);
+  assert.deepEqual(failures, ['All relays rejected', 'socket closed']);
+  let sent = 0;
+  let release;
+  const slow = () => new Promise((resolve) => { sent += 1; release = () => resolve({ success: true }); });
+  const both = [
+    sendCountersignOnce({ sendDM: slow, counterparty: vendor, orderId: 'order-retry', accepted, onFailure }),
+    sendCountersignOnce({ sendDM: slow, counterparty: vendor, orderId: 'order-retry', accepted, onFailure }),
+  ];
+  await new Promise((resolve) => setImmediate(resolve));
+  release();
+  assert.deepEqual(await Promise.all(both), [true, false]);
+  assert.equal(sent, 1);
 });
