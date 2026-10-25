@@ -25,7 +25,7 @@ export function canonicalReceipt(input = {}) {
     vendor: String(input.vendor || '').toLowerCase(),
     currency: String(input.currency || '').toLowerCase(),
     address: String(input.address || ''),
-    amount: String(input.amount ?? ''),
+    amount: normalizeAmount(input.amount ?? '0'),
     txid: String(input.txid || ''),
     at: Number.isInteger(input.at) && input.at >= 0 ? input.at : 0,
     outcome: ['confirmed', 'disputed', 'rugged', 'refunded'].includes(input.outcome) ? input.outcome : '',
@@ -34,6 +34,19 @@ export function canonicalReceipt(input = {}) {
 
 export function receiptBytes(body) {
   return new TextEncoder().encode(JSON.stringify(canonicalReceipt(body)));
+}
+
+export function normalizeAmount(value) {
+  const raw = typeof value === 'number'
+    ? (Number.isFinite(value) ? String(value) : '')
+    : String(value ?? '').trim().replace(/[$,]/g, '');
+  if (!raw || /e/i.test(raw) || !/^\d+(\.\d+)?$/.test(raw)) {
+    throw new Error('The amount must be a decimal string.');
+  }
+  const [whole, frac = ''] = raw.split('.');
+  const digits = whole.replace(/^0+(?=\d)/, '') || '0';
+  const trimmed = frac.replace(/0+$/, '');
+  return trimmed ? `${digits}.${trimmed}` : digits;
 }
 
 export function receiptHash(body) {
@@ -82,8 +95,12 @@ export function publicReceipt(signed) {
 }
 
 function amountUnits(amount) {
-  const text = String(amount ?? '').trim();
-  if (!/^\d+(\.\d+)?$/.test(text)) return null;
+  let text;
+  try {
+    text = normalizeAmount(amount);
+  } catch {
+    return null;
+  }
   const [whole, frac = ''] = text.split('.');
   return BigInt(whole) * 100000000n + BigInt((frac + '00000000').slice(0, 8));
 }

@@ -147,7 +147,7 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
               vendor: identity.pk,
               currency,
               address,
-              amount: msg.data?.product?.price ?? msg.data?.product?.priceUsd ?? '',
+              amount: msg.data?.product?.priceUsd ?? msg.data?.product?.price ?? '',
               txid: outcome.report.txid,
               at: Math.floor(Date.now() / 1000),
               outcome: 'confirmed',
