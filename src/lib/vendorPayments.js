@@ -2,12 +2,19 @@ import { bech32 } from '@scure/base';
 import { deriveMoneroAddress } from './moneroAddress';
 import { scopeKey } from './storage';
 
+const BITCOIN_HRP = { bc: 'bc', bcrt: 'bcrt' };
+
+export function bitcoinHrp(network = 'bc') {
+  const hrp = BITCOIN_HRP[String(network || 'bc').toLowerCase()];
+  if (!hrp) throw new Error('Choose a Bitcoin network.');
+  return hrp;
+}
 const CONFIG_KEY = 'advanced_vendor_payment_keys';
 const MAX_DERIVATION_INDEX = 10000;
 const settingsLocks = new Map();
 
 function defaultSettings() {
-  return { btcXpub: '', xmrPrivateViewKey: '', btcIndex: 0, xmrIndex: 0, orders: {} };
+  return { btcXpub: '', xmrPrivateViewKey: '', btcNetwork: 'bc', btcIndex: 0, xmrIndex: 0, orders: {} };
 }
 
 async function deriveEncryptionKey(secretKey) {
@@ -50,13 +57,14 @@ async function writeSettings(identity, settings) {
 }
 
 export async function loadVendorPaymentConfig(identity) {
-  const { btcXpub, xmrPrivateViewKey } = await readSettings(identity);
-  return { btcXpub, xmrPrivateViewKey };
+  const { btcXpub, xmrPrivateViewKey, btcNetwork } = await readSettings(identity);
+  return { btcXpub, xmrPrivateViewKey, btcNetwork: bitcoinHrp(btcNetwork || 'bc') };
 }
 
-export async function saveVendorPaymentConfig(identity, { btcXpub, xmrPrivateViewKey }) {
+export async function saveVendorPaymentConfig(identity, { btcXpub, xmrPrivateViewKey, btcNetwork } = {}) {
   const normalizedXpub = (btcXpub || '').trim();
   const normalizedViewKey = (xmrPrivateViewKey || '').trim().toLowerCase();
+  const network = bitcoinHrp(btcNetwork || 'bc');
   if (normalizedXpub) {
     const { HDKey } = await import('@scure/bip32');
     const root = HDKey.fromExtendedKey(normalizedXpub);
@@ -72,11 +80,12 @@ export async function saveVendorPaymentConfig(identity, { btcXpub, xmrPrivateVie
       ...settings,
       btcXpub: normalizedXpub,
       xmrPrivateViewKey: normalizedViewKey,
+      btcNetwork: network,
     });
   });
 }
 
-async function deriveBitcoinAddress(xpub, index) {
+export async function deriveBitcoinAddress(xpub, index, network = 'bc') {
   const [{ HDKey }, { sha256 }, { ripemd160 }] = await Promise.all([
     import('@scure/bip32'),
     import('@noble/hashes/sha2.js'),
@@ -87,7 +96,7 @@ async function deriveBitcoinAddress(xpub, index) {
   const publicKey = root.deriveChild(0).deriveChild(index).publicKey;
   if (!publicKey) throw new Error('Could not derive a Bitcoin receiving key.');
   const publicKeyHash = ripemd160(sha256(publicKey));
-  return bech32.encode('bc', [0, ...bech32.toWords(publicKeyHash)]);
+  return bech32.encode(bitcoinHrp(network), [0, ...bech32.toWords(publicKeyHash)]);
 }
 
 export function moneroIndexesToCreate(highest, index) {
@@ -143,7 +152,7 @@ export async function getOrderPaymentMethods(identity, orderId, mainAddresses, p
     if (wantsBtc && settings.btcXpub) {
       nextBtcIndex += 1;
       if (nextBtcIndex > MAX_DERIVATION_INDEX) throw new Error('Bitcoin address derivation limit reached.');
-      paymentMethods.btc = await deriveBitcoinAddress(settings.btcXpub, nextBtcIndex);
+      paymentMethods.btc = await deriveBitcoinAddress(settings.btcXpub, nextBtcIndex, settings.btcNetwork || 'bc');
     }
     if (wantsXmr && settings.xmrPrivateViewKey) {
       nextXmrIndex += 1;
