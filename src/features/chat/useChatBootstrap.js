@@ -485,20 +485,6 @@ export function useChatBootstrap({
   }, [disappearingTimers, setDms, setGroupMessages]);
 
   useEffect(() => {
-    if (!identity?.pk) return;
-    const lastUser = localStorage.getItem('cipher_last_user');
-    if (lastUser && lastUser !== identity.pk) {
-      useChatStore.setState({ dms: {}, groups: [], groupMessages: {}, profiles: {}, reactions: {} });
-      useChatStore.getState().setUnreadCounts({});
-      useChatStore.getState().clearNotificationAck();
-      db.messages.clear().catch(console.error);
-      db.chatReads.clear().catch(console.error);
-      localStorage.removeItem('cipher_my_groups');
-    }
-    localStorage.setItem('cipher_last_user', identity.pk);
-  }, [identity?.pk]);
-
-  useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
     const directId = urlParams.get('g') || urlParams.get('group') || urlParams.get('join');
     const naddr = urlParams.get('naddr');
