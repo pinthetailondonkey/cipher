@@ -10,6 +10,7 @@ import LinkPreview, { firstUrl } from './chat/LinkPreview';
 import Picture from './ui/Picture';
 import { PrivateAudio, PrivateImage } from './ui/PrivateMedia';
 import { isPrivateMedia } from '../lib/mediaCrypto';
+import { allowsLinkPreviews } from '../lib/privacy';
 
 const EMPTY_REACTIONS = [];
 const REACTION_CHOICES = ['❤️', '👍', '🔥', '😂', '😮', '😢', '🙏'];
@@ -251,7 +252,7 @@ export default function MessageBubble({ message, data, onAction, senderName, isP
         ) : (
           <p className="clear-both text-[12px] leading-none">{time}</p>
         )}
-        {previewUrl && <LinkPreview url={previewUrl} />}
+        {previewUrl && allowsLinkPreviews() && <LinkPreview url={previewUrl} />}
         {securingStuck && (
           <button
             type="button"

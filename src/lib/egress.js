@@ -14,7 +14,7 @@ export const EGRESS = [
   { id: 'blossom-primal', role: 'Media host', url: 'https://blossom.primal.net', sees: 'Your IP and the file you upload' },
   { id: 'blossom-nostr-build', role: 'Media host', url: 'https://nostr.build', sees: 'Your IP and the file you upload' },
   { id: 'blossom-band', role: 'Media host', url: 'https://blossom.band', sees: 'Your IP and the file you upload' },
-  { id: 'link-preview', role: 'Link previews', url: 'https://api.microlink.io', sees: 'Your IP and every link a preview is fetched for' },
+  { id: 'link-preview', role: 'Link previews', url: 'https://api.microlink.io', sees: 'Nothing until you turn on Link previews in Privacy. Then your IP and every link a preview is fetched for.' },
   { id: 'stun-google', role: 'Call routing', url: 'stun:stun.l.google.com:19302', sees: 'Your real IP during a call. This bypasses Tor.', webrtc: true },
   { id: 'stun-google-1', role: 'Call routing', url: 'stun:stun1.l.google.com:19302', sees: 'Your real IP during a call. This bypasses Tor.', webrtc: true },
   { id: 'stun-twilio', role: 'Call routing', url: 'stun:global.stun.twilio.com:3478', sees: 'Your real IP during a call. This bypasses Tor.', webrtc: true },
