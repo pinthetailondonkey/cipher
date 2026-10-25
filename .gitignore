@@ -6,3 +6,6 @@ android/
 .env.local
 .idea/
 .vercel/
+.vite/
+/cipher/
+/cipher-old/
