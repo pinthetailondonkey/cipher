@@ -72,9 +72,25 @@ What is published by default:
 }
 ```
 
-The vendor signs that object with the same BIP-340 key. The signature is a sibling field, `sig`, and is not part of the signed bytes. `verifyPublicView` checks `sig` against `vendor` and does not need the receipt body. A changed amount, currency, or key fails. An object that still carries `address`, `txid`, or `body` is not a public view.
+The vendor signs that object first. The buyer signs the same bytes when the payment arrives. Both signatures sit in `sigs` and are not part of the signed bytes:
 
-Volume is the sum of `amount`, grouped by vendor and currency. Bitcoin uses 8 decimal places. Monero uses 12. A finer amount is rounded, half up, to that scale. It is not dropped.
+```json
+{
+  "v": 1,
+  "hash": "<sha256 hex>",
+  "amount": "<string>",
+  "currency": "<string>",
+  "buyer": "<hex>",
+  "vendor": "<hex>",
+  "sigs": { "buyer": "<hex>", "vendor": "<hex>" }
+}
+```
+
+`verifyPublicView` requires both signatures and does not need the private body. A changed amount, currency, or key fails. One valid signature and one invalid signature is not a countersigned view. An object that still carries `address`, `txid`, or `body` is not a public view. A bad amount or a bad time makes verification return false. It does not throw.
+
+A view with only the vendor's signature is legacy. It may carry `sig`, or `sigs.vendor` and no buyer signature. `verifyVendorView` accepts that and nothing else. It is not countersigned.
+
+Volume is summed twice, by the same vendor and currency: once from countersigned views, once from vendor-only views. An unsigned object is in neither. Bitcoin uses 8 decimal places. Monero uses 12. A finer amount is rounded, half up, to that scale. It is not dropped.
 
 ## Reveal
 
