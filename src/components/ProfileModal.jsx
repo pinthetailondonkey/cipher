@@ -1,11 +1,12 @@
 import { useState } from 'react';
-import { BadgeCheck, Copy, Heart, MessageCircle, X } from 'lucide-react';
+import { BadgeCheck, Ban, Copy, Heart, MessageCircle, X } from 'lucide-react';
 import { useProfiles } from '../useProfiles';
 import { useVouchCount } from '../hooks/useVouchCount';
 import { useReputation } from '../hooks/useReputation';
 import Avatar from './ui/Avatar';
 import Button, { pressable } from './ui/Button';
 import { copyText } from '../lib/copyText';
+import { useChatStore } from '../store/chatStore';
 
 export default function ProfileModal({ pubkey, identity, onClose, onMessage }) {
   const profiles = useProfiles(pubkey ? [pubkey] : []);
@@ -15,6 +16,8 @@ export default function ProfileModal({ pubkey, identity, onClose, onMessage }) {
   const [sending, setSending] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const blocked = useChatStore((state) => (pubkey ? state.blockedUsers.includes(pubkey) : false));
+  const toggleBlockUser = useChatStore((state) => state.toggleBlockUser);
   if (!pubkey) return null;
   const isSelf = identity?.pk === pubkey;
 
@@ -40,6 +43,24 @@ export default function ProfileModal({ pubkey, identity, onClose, onMessage }) {
     }
     setNotice(result.queued ? 'Your vouch is saved and will publish when connected.' : 'Your vouch was published.');
     refresh();
+  };
+
+  const block = () => {
+    if (blocked) {
+      toggleBlockUser(pubkey);
+      setNotice('Unblocked.');
+      return;
+    }
+    useChatStore.getState().openDialog({
+      title: 'Block this person?',
+      message: 'Their new messages, calls and group posts are dropped on this device. They are not told.',
+      type: 'danger',
+      confirmText: 'Block',
+      onConfirm: () => {
+        toggleBlockUser(pubkey);
+        setNotice('Blocked. Unblock from Privacy or here.');
+      },
+    });
   };
 
   return (
@@ -70,6 +91,11 @@ export default function ProfileModal({ pubkey, identity, onClose, onMessage }) {
         {!isSelf && identity?.sk && (
           <Button onClick={vouchForVendor} disabled={sending || hasVouched} className="mt-4 flex w-full items-center justify-center gap-2">
             <Heart size={16} /> {hasVouched ? 'You vouched' : sending ? 'Publishing…' : 'Vouch for this person'}
+          </Button>
+        )}
+        {!isSelf && identity?.sk && (
+          <Button variant="secondary" onClick={block} className="mt-3 flex w-full items-center justify-center gap-2 text-rose-300">
+            <Ban size={16} /> {blocked ? 'Unblock' : 'Block'}
           </Button>
         )}
         {notice && <p role="status" className="mt-3 text-center text-[13px] text-emerald-400">{notice}</p>}

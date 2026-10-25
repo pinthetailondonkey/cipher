@@ -1,6 +1,40 @@
 import { bech32 } from '@scure/base';
 import { deriveMoneroAddress } from './moneroAddress';
-import { scopeKey } from './storage';
+import { scopeKey, scopedGet, scopedSet } from './storage';
+
+const LEGACY_ADDRESS_KEYS = {
+  btc: ['cipher_btc_address', 'cipher_btc'],
+  xmr: ['cipher_xmr_address', 'cipher_xmr'],
+};
+
+// Older builds also wrote main addresses to device-wide keys, which handed
+// one account's address to the buyers of another. A device with one account
+// adopts them once. With more than one, nobody can say whose they were.
+function adoptLegacyAddresses(storage) {
+  if (!storage) return;
+  let accounts = 0;
+  try {
+    accounts = Object.keys(JSON.parse(storage.getItem('cipher_vaults') || '{}') || {}).length;
+  } catch {
+    accounts = 0;
+  }
+  for (const [coin, keys] of Object.entries(LEGACY_ADDRESS_KEYS)) {
+    const legacy = keys.map((key) => storage.getItem(key)).find(Boolean) || '';
+    if (legacy && accounts <= 1 && !scopedGet(`${coin}_address`, '')) scopedSet(`${coin}_address`, legacy.trim());
+    keys.forEach((key) => storage.removeItem(key));
+  }
+}
+
+// A main receiving address belongs to one account and is read only from its scope.
+export function readPaymentAddresses(storage = globalThis.localStorage) {
+  adoptLegacyAddresses(storage);
+  return { btc: scopedGet('btc_address', '') || '', xmr: scopedGet('xmr_address', '') || '' };
+}
+
+export function savePaymentAddresses({ btc = '', xmr = '' } = {}) {
+  scopedSet('btc_address', String(btc).trim());
+  scopedSet('xmr_address', String(xmr).trim());
+}
 
 const BITCOIN_HRP = { bc: 'bc', bcrt: 'bcrt' };
 
@@ -97,15 +131,6 @@ export async function deriveBitcoinAddress(xpub, index, network = 'bc') {
   if (!publicKey) throw new Error('Could not derive a Bitcoin receiving key.');
   const publicKeyHash = ripemd160(sha256(publicKey));
   return bech32.encode(bitcoinHrp(network), [0, ...bech32.toWords(publicKeyHash)]);
-}
-
-export function moneroIndexesToCreate(highest, index) {
-  const start = Number(highest) + 1;
-  const end = Number(index);
-  if (!Number.isInteger(start) || !Number.isInteger(end) || end < start) return [];
-  const indexes = [];
-  for (let current = start; current <= end; current += 1) indexes.push(current);
-  return indexes;
 }
 
 function deriveMoneroSubaddress(primaryAddress, privateViewKey, index) {

@@ -1,8 +1,8 @@
 import { useChatStore } from '../../store/chatStore';
 import { db, patchMessage, saveMessage } from '../../db';
 import { scopedGet, scopedSet } from '../../lib/storage';
-import { getOrderPaymentMethods } from '../../lib/vendorPayments';
-import { nextPaymentState, orderCoinAmount } from '../../lib/paymentState';
+import { getOrderPaymentMethods, readPaymentAddresses } from '../../lib/vendorPayments';
+import { ORDER_STATUS, RECEIPT_OUTCOME, nextPaymentState, orderCoinAmount } from '../../lib/paymentState';
 import { checkPayment } from '../../lib/paymentWatch';
 import { activeUrl, entryById } from '../../lib/egress';
 import { publicReceipt, rememberPublicView, signPublicView, signReceipt } from '../../lib/proofOfTrade';
@@ -59,8 +59,7 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
   
       if (action === 'accept_order') {
         const sendAcceptance = async (coinAmount, coinCurrency) => {
-          const baseBtc = scopedGet('btc_address', localStorage.getItem('cipher_btc_address') || localStorage.getItem('cipher_btc') || '');
-          const baseXmr = scopedGet('xmr_address', localStorage.getItem('cipher_xmr_address') || localStorage.getItem('cipher_xmr') || '');
+          const { btc: baseBtc, xmr: baseXmr } = readPaymentAddresses();
           let paymentMethods;
           try {
             paymentMethods = await getOrderPaymentMethods(
@@ -90,7 +89,7 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
             type: 'order_update', orderId: msg.id,
             productName: msg.data.product?.title || msg.data.productName,
             product: msg.data.product || null,
-            status: 'accepted',
+            status: ORDER_STATUS.ACCEPTED,
             paymentState: nextPaymentState('created', 'issue'),
             paymentMethods,
             coinAmount,
@@ -103,7 +102,7 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
             return;
           }
           const saved = await updateLocalOrder(msg.pubkey, msg.id, {
-            status: 'accepted',
+            status: ORDER_STATUS.ACCEPTED,
             paymentState: payload.paymentState,
             paymentMethods: payload.paymentMethods,
             coinAmount,
@@ -138,8 +137,8 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
         return true;
       }
       if (action === 'decline_order' || action === 'cancel_order') {
-        const payload = { type: 'order_update', orderId: msg.id, productName: msg.data.product?.title, status: 'cancelled' };
-        await deliverOrderUpdate(msg.pubkey, payload, { status: 'cancelled' }, 'Order cancelled');
+        const payload = { type: 'order_update', orderId: msg.id, productName: msg.data.product?.title, status: ORDER_STATUS.CANCELLED };
+        await deliverOrderUpdate(msg.pubkey, payload, { status: ORDER_STATUS.CANCELLED }, 'Order cancelled');
         return true;
       }
       if (action === 'confirm_payment') {
@@ -156,7 +155,7 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
           type: 'order_update',
           orderId: msg.id,
           productName: msg.data.product?.title || msg.data.productName,
-          status: 'paid',
+          status: ORDER_STATUS.PAID,
           paymentState,
           paymentSeenBy: 'vendor',
           shippingAddress: msg.data.shippingAddress,
@@ -164,7 +163,7 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
         await deliverOrderUpdate(
           msg.pubkey,
           payload,
-          { status: 'paid', paymentState, paymentSeenBy: 'vendor', shippingAddress: msg.data.shippingAddress },
+          { status: ORDER_STATUS.PAID, paymentState, paymentSeenBy: 'vendor', shippingAddress: msg.data.shippingAddress },
           'Marked seen in your wallet. The chain was not checked.',
         );
         return true;
@@ -216,14 +215,14 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
               amount,
               txid: outcome.report.txid,
               at: Math.floor(Date.now() / 1000),
-              outcome: 'confirmed',
+              outcome: RECEIPT_OUTCOME.CONFIRMED,
             });
             scopedSet(`receipt_${msg.id}`, signed);
             const payload = {
               type: 'order_update',
               orderId: msg.id,
               productName: msg.data.product?.title || msg.data.productName,
-              status: 'paid',
+              status: ORDER_STATUS.PAID,
               paymentState: outcome.state,
               paymentSeenBy: 'watcher',
               receipt: signed,
@@ -241,7 +240,7 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
               type: 'order_update',
               orderId: msg.id,
               productName: msg.data.product?.title || msg.data.productName,
-              status: msg.data.status || 'accepted',
+              status: msg.data.status || ORDER_STATUS.ACCEPTED,
               paymentState: outcome.state,
               paymentSeenBy: 'watcher',
             };
@@ -261,13 +260,13 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
       }
       if (action === 'mark_shipped') {
         const tracking = msg.data?.tracking || '';
-        const payload = { type: 'order_update', orderId: msg.id, productName: msg.data.product?.title || msg.data.productName, status: 'shipped', tracking };
-        await deliverOrderUpdate(msg.pubkey, payload, { status: 'shipped', tracking }, tracking ? 'Shipped' : 'Marked shipped');
+        const payload = { type: 'order_update', orderId: msg.id, productName: msg.data.product?.title || msg.data.productName, status: ORDER_STATUS.SHIPPED, tracking };
+        await deliverOrderUpdate(msg.pubkey, payload, { status: ORDER_STATUS.SHIPPED, tracking }, tracking ? 'Shipped' : 'Marked shipped');
         return true;
       }
       if (action === 'confirm_delivery') {
-        const payload = { type: 'order_update', orderId: msg.id, productName: msg.data.product?.title || msg.data.productName, status: 'completed' };
-        const sent = await deliverOrderUpdate(msg.pubkey, payload, { status: 'completed' }, 'Delivered');
+        const payload = { type: 'order_update', orderId: msg.id, productName: msg.data.product?.title || msg.data.productName, status: ORDER_STATUS.COMPLETED };
+        const sent = await deliverOrderUpdate(msg.pubkey, payload, { status: ORDER_STATUS.COMPLETED }, 'Delivered');
         if (sent && scopedGet('auto_vouch_on_delivery', true)) {
           const vouchResult = await sendVouch(msg.pubkey);
           if (!vouchResult?.success) {
@@ -295,12 +294,12 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
             const payload = {
               type: 'order_update',
               orderId: msg.id,
-              productName: msg.data.product?.title,
-              status: 'disputed',
+              productName: msg.data.product?.title || msg.data.productName,
+              status: ORDER_STATUS.DISPUTED,
               disputeReason: reason.trim(),
               ...(saved ? { receipt: saved } : {}),
             };
-            await deliverOrderUpdate(msg.pubkey, payload, { status: 'disputed', disputeReason: reason.trim() }, 'Issue reported');
+            await deliverOrderUpdate(msg.pubkey, payload, { status: ORDER_STATUS.DISPUTED, disputeReason: reason.trim() }, 'Issue reported');
           },
         });
         setSelectedMessage(null); return;
@@ -329,7 +328,7 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
       description: product.description || '',
     };
     const paymentMethod = scopedGet('preferred_payment_method', 'btc');
-    const payload = { type: 'order_request', status: 'pending', paymentState: 'created', paymentMethod, product: orderProduct };
+    const payload = { type: 'order_request', status: ORDER_STATUS.PENDING, paymentState: 'created', paymentMethod, product: orderProduct };
     const tempId = `temp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const optimisticMessage = {
       id: tempId,
@@ -411,20 +410,6 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
       setToast({ type: 'error', message: error?.message || 'Failed to update product' });
     }
   };
-  const handlePostListing = async (listingData) => {
-    const state = useChatStore.getState();
-    if (!state.postListingGroup) return;
-    const payload = {
-      type: 'product', title: listingData.title, priceUsd: listingData.priceUsd,
-      image: listingData.image, description: listingData.description,
-      dropUntil: listingData.dropUntil || null, stock: listingData.stock || null,
-    };
-    const res = await sendGroupMessage(state.postListingGroup.id, payload);
-    if (res?.error === 'NO_KEY') setToast({ type: 'success', message: 'Securing… the listing will send when the group key arrives.' });
-    else if (res.success) setToast({ type: 'success', message: 'Listing posted to group!' });
-    else setToast({ type: 'error', message: 'Failed to post listing' });
-  };
-
   const handleBroadcastSubmit = async (groupIds, product) => {
     const payload = {
       type: 'product',
@@ -453,7 +438,6 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
     handleOrderAction,
     startOrderWithVendor,
     handleSaveEditedProduct,
-    handlePostListing,
     handleBroadcastSubmit,
   };
 }

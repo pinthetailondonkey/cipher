@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
-import { BadgeCheck, Bookmark, Copy, Forward, Pencil, Pin, Radio, Reply, ShoppingBag, Trash2 } from 'lucide-react';
+import { BadgeCheck, Bookmark, Copy, Pencil, Pin, Radio, Reply, ShoppingBag, Store, Trash2 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { paymentRowsFor } from '../lib/paymentUri';
 import { haptic } from '../lib/haptics';
@@ -8,6 +8,11 @@ import { securingPhase } from '../lib/crypto/groupKeyRequest';
 import { useChatStore } from '../store/chatStore';
 import LinkPreview, { firstUrl } from './chat/LinkPreview';
 import Picture from './ui/Picture';
+import { MediaAudio, MediaImage } from './ui/PrivateMedia';
+import { attachmentsFor } from '../lib/mediaCrypto';
+import { allowsLinkPreviews } from '../lib/privacy';
+import { orderActionsFor, orderState } from '../lib/orderActions';
+import { orderPriceLabel } from '../lib/listing';
 
 const EMPTY_REACTIONS = [];
 const REACTION_CHOICES = ['❤️', '👍', '🔥', '😂', '😮', '😢', '🙏'];
@@ -31,7 +36,7 @@ function messageText(data) {
 function orderLabel(content) {
   if (content.paymentState === 'confirmed') return { text: 'Confirmed', className: 'bg-blue-600 text-white' };
   if (content.status === 'shipped') return { text: 'Shipped', className: 'bg-blue-600 text-white' };
-  if (content.status === 'delivered' || content.status === 'completed') return { text: 'Delivered', className: 'bg-emerald-500 text-white' };
+  if (content.status === 'completed') return { text: 'Delivered', className: 'bg-emerald-500 text-white' };
   if (content.status === 'cancelled') return { text: 'Cancelled', className: 'bg-white/15 text-white' };
   if (content.status === 'disputed') return { text: 'Disputed', className: 'bg-rose-500/20 text-rose-200' };
   if (content.paymentState === 'seen' && content.paymentSeenBy !== 'vendor') return { text: 'Seen on-chain', className: 'bg-blue-600 text-white' };
@@ -43,9 +48,7 @@ function orderLabel(content) {
 function OrderReceipt({ content }) {
   const product = content.product || {};
   const title = product.title || product.name || content.productName || 'Order';
-  const priceValue = product.priceUsd ?? product.price ?? content.amount ?? '';
-  const currency = product.currency || content.currency || 'USD';
-  const price = priceValue === '' ? '' : (currency === 'USD' ? `$${priceValue}` : `${priceValue} ${currency}`);
+  const price = orderPriceLabel(content);
   const address = content.shippingAddress || content.address || content.shipTo || '';
   const pill = orderLabel(content);
   return (
@@ -80,9 +83,12 @@ export default function MessageBubble({ message, data, onAction, senderName, isP
   const reactions = useChatStore((state) => (message?.id ? state.reactions[message.id] : undefined)) || EMPTY_REACTIONS;
   const profiles = useChatStore((state) => state.profiles);
   const inGroup = useChatStore((state) => !!state.activeGroup);
+  const activeDm = useChatStore((state) => state.activeDm);
+  const chatMessages = useChatStore((state) => (state.view === 'dm' ? state.dms[state.activeDm] : undefined));
   const pressTimer = useRef(null);
   const pressPoint = useRef(null);
   const paymentRows = paymentRowsFor(content);
+  const attachments = attachmentsFor(content);
   const qrSignature = `${message?.id || ''}:${paymentRows.map((row) => row.currency).join(',')}`;
   const lastQrSignature = useRef('');
 
@@ -158,13 +164,11 @@ export default function MessageBubble({ message, data, onAction, senderName, isP
   const menuActions = [
     ['reply', Reply, 'Reply'],
     ['copy', Copy, 'Copy'],
-    ['forward', Forward, 'Forward'],
     ['bookmark', Bookmark, 'Save'],
     ...(inGroup ? [['pin', Pin, 'Pin']] : []),
-    ...(content.type === 'product' && !isSender ? [['buy_product', ShoppingBag, 'Buy']] : []),
-    ...(content.type === 'product' && isSender ? [['broadcast_product', Radio, 'Share']] : []),
-    ...((content.type === 'order_request' || content.type === 'cipher_order') && !isSender ? [['accept_order', BadgeCheck, 'Accept']] : []),
-    ...(isSender && text ? [['edit', Pencil, 'Edit']] : []),
+    ...(content.type === 'product' && !isSender ? [['buy_product', ShoppingBag, 'Buy'], ['view_vendor', Store, 'Seller shop']] : []),
+    ...(content.type === 'product' && isSender ? [['broadcast_product', Radio, 'Share'], ['edit_product', Pencil, 'Edit listing']] : []),
+    ...(isSender && text && content.type !== 'product' ? [['edit', Pencil, 'Edit']] : []),
     ['delete', Trash2, 'Delete'],
   ];
 
@@ -193,30 +197,27 @@ export default function MessageBubble({ message, data, onAction, senderName, isP
       >
         {!isSender && senderName && <p className="mb-0.5 text-[11px] font-semibold leading-none text-blue-400">{senderName}</p>}
         {(content.type === 'cipher_order' || content.type === 'order_request' || content.type === 'order_update') && (
-          <OrderReceipt content={content} />
+          <OrderReceipt content={content.type === 'order_update' ? content : { ...content, ...orderState(chatMessages, message?.id, { data: content }) }} />
         )}
-        {(content.type === 'cipher_order' || content.type === 'order_request') && !isSender && content.status !== 'accepted' && content.status !== 'cancelled' && (
-          <button type="button" onClick={(event) => { event.stopPropagation(); onAction?.('accept_order', { ...message, data: content }); }} className="mb-1 min-h-11 text-left text-[15px] font-semibold text-blue-300">Accept order</button>
+        {orderActionsFor({ ...message, data: content }, chatMessages).map(({ action, label, target }) => {
+          // Vendor actions send to the buyer, msg.pubkey; buyer actions to the chat peer.
+          const subject = target === 'peer' ? { ...message, pubkey: activeDm, data: content } : { ...message, data: content };
+          const tone = action === 'accept_order' ? 'text-blue-300' : ['report_issue', 'decline_order', 'cancel_order'].includes(action) ? 'text-rose-300' : 'text-white';
+          return (
+            <button key={action} type="button" onClick={(event) => { event.stopPropagation(); onAction?.(action, subject); }} className={`mb-1 block min-h-11 text-left text-[15px] font-semibold ${tone}`}>{label}</button>
+          );
+        })}
+        {attachments.layout === 'single' && (
+          <MediaImage item={attachments.items[0]} className="max-h-64 max-w-full rounded-xl object-contain" />
         )}
-        {(content.type === 'cipher_order' || content.type === 'order_request') && !isSender && content.status === 'accepted' && content.paymentState !== 'confirmed' && content.paymentSeenBy !== 'vendor' && (
-          <button type="button" onClick={(event) => { event.stopPropagation(); onAction?.('confirm_payment', { ...message, data: content }); }} className="mb-1 min-h-11 text-left text-[15px] font-semibold text-white">I saw the payment</button>
-        )}
-        {(content.type === 'cipher_order' || content.type === 'order_request') && !isSender && (content.status === 'accepted' || content.paymentState === 'seen' || content.paymentState === 'address_issued') && content.paymentState !== 'confirmed' && (
-          <button type="button" onClick={(event) => { event.stopPropagation(); onAction?.('check_chain', { ...message, data: content }); }} className="mb-1 min-h-11 text-left text-[15px] font-semibold text-white">Check the chain</button>
-        )}
-        {content.type === 'image' && (
-          <Picture src={content.url} link alt="Shared image" loading="lazy" className="max-h-64 max-w-full rounded-xl object-contain" />
-        )}
-        {content.type === 'album' && Array.isArray(content.urls) && (
+        {attachments.layout === 'grid' && (
           <div className="grid grid-cols-2 gap-1">
-            {content.urls.map((url) => (
-              <Picture key={url} src={url} link alt="Shared image" loading="lazy" className="h-28 w-full rounded-lg object-cover" />
+            {attachments.items.map((item) => (
+              <MediaImage key={item.entry.url} item={item} className="h-28 w-full rounded-lg object-cover" />
             ))}
           </div>
         )}
-        {content.type === 'audio' && content.url && (
-          <audio controls preload="metadata" src={content.url} className="h-8 max-w-full" onClick={(event) => event.stopPropagation()} />
-        )}
+        {attachments.layout === 'audio' && <MediaAudio item={attachments.items[0]} className="h-8 max-w-full" />}
         {content.type === 'product' && <Picture src={content.image} alt="" loading="lazy" className="mb-1 max-h-40 rounded-xl object-cover" />}
         {content.type === 'product' && isPinnedListing && (
           <p className="mb-1 flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-amber-200"><BadgeCheck size={12} /> Pinned</p>
@@ -240,7 +241,7 @@ export default function MessageBubble({ message, data, onAction, senderName, isP
         ) : (
           <p className="clear-both text-[12px] leading-none">{time}</p>
         )}
-        {previewUrl && <LinkPreview url={previewUrl} />}
+        {previewUrl && allowsLinkPreviews() && <LinkPreview url={previewUrl} />}
         {securingStuck && (
           <button
             type="button"
@@ -268,7 +269,7 @@ export default function MessageBubble({ message, data, onAction, senderName, isP
             ))}
           </div>
         )}
-        {!text && !content.url && !content.urls && !paymentRows.length && !['image', 'audio', 'product', 'cipher_order', 'order_request', 'order_update', 'text'].includes(content.type) && (
+        {!text && !content.url && !content.urls && !content.media && !paymentRows.length && !['image', 'audio', 'product', 'cipher_order', 'order_request', 'order_update', 'text'].includes(content.type) && (
           <p className="text-[13px] text-white/45">Couldn't open</p>
         )}
       </div>

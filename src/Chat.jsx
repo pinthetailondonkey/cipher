@@ -5,7 +5,6 @@ import { useReactions } from './hooks/useReactions';
 import { useReputation } from './hooks/useReputation';
 import { reactionSubscriptionKey, useChatStore } from './store/chatStore';
 import SearchView from './components/chat/SearchView';
-import MessageSearchResults from './components/chat/MessageSearchResults';
 import ChatLoading from './features/chat/ChatLoading';
 import ChatHome from './features/chat/ChatHome';
 import ChatOverlays from './features/chat/ChatOverlays';
@@ -35,7 +34,7 @@ export default function Chat({ identity }) {
   const { sendReaction, subscribeToReactions, subscribeToGroupReactions } = useReactions({ identity });
   const { sendVouch } = useReputation({ identity });
   const setGroups = useMyGroups(identity?.pk);
-  const directory = useGroupDirectory({ identity, sendDM, createGroupHook, setGroups });
+  const directory = useGroupDirectory({ identity, createGroupHook, setGroups });
   const { fetchChats } = useChatBootstrap({
     identity,
     fetchDMs,
@@ -48,7 +47,6 @@ export default function Chat({ identity }) {
     fetchGroupMembers,
     setGroups,
     fetchGroups: directory.fetchGroups,
-    requestToJoinGroup: directory.requestToJoinGroup,
     joinGroupById: directory.joinGroupById,
   });
   const commerce = useCommerce({
@@ -63,8 +61,6 @@ export default function Chat({ identity }) {
     identity,
     sendReaction,
     pinMessage,
-    sendGroupMessage,
-    sendDM,
     handleOrderAction: commerce.handleOrderAction,
     startOrderWithVendor: commerce.startOrderWithVendor,
   });
@@ -86,8 +82,6 @@ export default function Chat({ identity }) {
   const view = useChatStore((state) => state.view);
   const activeDm = useChatStore((state) => state.activeDm);
   const activeGroup = useChatStore((state) => state.activeGroup);
-  const searchResults = useChatStore((state) => state.searchResults);
-  const setView = useChatStore((state) => state.setView);
 
   if (loading) return <ChatLoading />;
 
@@ -100,10 +94,6 @@ export default function Chat({ identity }) {
         fetchChats={fetchChats}
       />
     );
-  }
-
-  if (view === 'search' && searchResults.length > 0 && searchResults[0]?.msg) {
-    return <MessageSearchResults identity={identity} setView={setView} openChat={directory.openChat} />;
   }
 
   if (view === 'search') {
@@ -123,7 +113,6 @@ export default function Chat({ identity }) {
     handleImageUpload: composer.handleImageUpload,
     startRecording: composer.startRecording,
     stopRecording: composer.stopRecording,
-    handleForwardSubmit: commands.handleForwardSubmit,
   };
 
   if (view === 'dm' && activeDm) {
