@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
-import { BadgeCheck, Bookmark, Copy, Pencil, Pin, Radio, Reply, ShoppingBag, Trash2 } from 'lucide-react';
+import { BadgeCheck, Bookmark, Copy, Pencil, Pin, Radio, Reply, ShoppingBag, Store, Trash2 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { paymentRowsFor } from '../lib/paymentUri';
 import { haptic } from '../lib/haptics';
@@ -166,9 +166,9 @@ export default function MessageBubble({ message, data, onAction, senderName, isP
     ['copy', Copy, 'Copy'],
     ['bookmark', Bookmark, 'Save'],
     ...(inGroup ? [['pin', Pin, 'Pin']] : []),
-    ...(content.type === 'product' && !isSender ? [['buy_product', ShoppingBag, 'Buy']] : []),
-    ...(content.type === 'product' && isSender ? [['broadcast_product', Radio, 'Share']] : []),
-    ...(isSender && text ? [['edit', Pencil, 'Edit']] : []),
+    ...(content.type === 'product' && !isSender ? [['buy_product', ShoppingBag, 'Buy'], ['view_vendor', Store, 'Seller shop']] : []),
+    ...(content.type === 'product' && isSender ? [['broadcast_product', Radio, 'Share'], ['edit_product', Pencil, 'Edit listing']] : []),
+    ...(isSender && text && content.type !== 'product' ? [['edit', Pencil, 'Edit']] : []),
     ['delete', Trash2, 'Delete'],
   ];
 
