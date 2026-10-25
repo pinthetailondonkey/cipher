@@ -17,6 +17,14 @@ import { nativeRegistration, sendNative } from '../src/lib/nativePushSend.js';
 
 if (fs.existsSync('.env')) process.loadEnvFile('.env');
 
+// nostr-tools opens relays with the global WebSocket, which Node has only from
+// version 22. Without it every subscription fails inside the pool and nothing
+// is logged, so the box would answer phones and never see a message.
+if (typeof globalThis.WebSocket !== 'function') {
+  console.error(`[push] This box needs Node 22 or newer to watch a relay. This is Node ${process.version}, which has no WebSocket.`);
+  process.exit(1);
+}
+
 const port = Number(process.env.PUSH_PORT || 8787);
 const dir = process.env.CIPHER_PUSH_DIR || path.join(process.cwd(), 'data', 'push-gateway');
 const relays = (process.env.CIPHER_RELAYS || 'wss://relay.primal.net').split(',').map((item) => item.trim()).filter(Boolean);
