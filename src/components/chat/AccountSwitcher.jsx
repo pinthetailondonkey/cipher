@@ -1,14 +1,15 @@
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { Check, KeyRound } from 'lucide-react';
 import ScreenHeader from '../ui/ScreenHeader';
 import Avatar from '../ui/Avatar';
 import { pressable } from '../ui/Button';
 
 export default function AccountSwitcher({ identity, onClose }) {
-  const accounts = useMemo(() => identity?.getAccounts?.() || [], [identity]);
   const [pins, setPins] = useState({});
   const [pending, setPending] = useState('');
   const [error, setError] = useState('');
+  // Read on every render: a fifth wrong PIN removes that account from the list.
+  const accounts = identity?.getAccounts?.() || [];
 
   const handleSwitch = async (account) => {
     if (account.isActive) return;
