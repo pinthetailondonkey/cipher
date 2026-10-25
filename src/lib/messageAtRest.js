@@ -159,6 +159,19 @@ export function takeAtRestWrites(owner) {
   return list;
 }
 
+// An interrupted flush — the database changed hands mid-batch, or the vault
+// key went away again — puts its un-written rows back at the FRONT of the
+// queue, ahead of anything invoked after it, so their order is preserved.
+export function requeueAtRestWrites(owner, rows) {
+  if (!owner || !Array.isArray(rows)) return;
+  const kept = rows.filter((row) => row && typeof row === 'object');
+  if (!kept.length) return;
+  const list = pendingByOwner.get(owner) || [];
+  const next = [...kept, ...list];
+  if (next.length > MAX_PENDING) next.length = MAX_PENDING;
+  pendingByOwner.set(owner, next);
+}
+
 // Called when an account's database is deleted: those rows can never be
 // written, so do not keep their plaintext in memory waiting.
 export function dropAtRestWrites(owner) {

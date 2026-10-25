@@ -68,6 +68,22 @@ async function readOpenedRows(page) {
   });
 }
 
+// Waits for the app's per-account database and returns its name: openDBFor
+// names it CipherDB_v7_<pk[:16]> (src/db.js) and Dexie creates the file
+// lazily, so at any fixed timeout nothing may exist yet. If it never appears,
+// fail with the list of databases that was actually there.
+async function waitForAppDatabase(page, timeout = 10_000) {
+  const deadline = Date.now() + timeout;
+  let seen = [];
+  while (Date.now() < deadline) {
+    seen = await page.evaluate(async () => (await indexedDB.databases()).map((d) => d.name));
+    const dbName = seen.find((n) => n && n.startsWith('CipherDB_v7_')) || null;
+    if (dbName) return dbName;
+    await page.waitForTimeout(100);
+  }
+  throw new Error(`no CipherDB_v7_ database within ${timeout}ms; databases seen: ${JSON.stringify(seen)}`);
+}
+
 test.describe('Persistence', () => {
   test.beforeEach(async ({ page }) => {
     // Session key in place: the app loads past the lock screen with the vault
@@ -80,23 +96,7 @@ test.describe('Persistence', () => {
 
   test('new rows are sealed at rest and reload beside a legacy plaintext row', async ({ page }) => {
     await page.goto('/');
-
-    // Dexie creates the database file lazily, so at any fixed timeout nothing
-    // may exist yet. Wait for the app instead: openDBFor names the per-account
-    // database CipherDB_v7_<pk[:16]> (src/db.js). Poll databases() and, if it
-    // never appears, fail with the list that was actually there.
-    const deadline = Date.now() + 10_000;
-    let dbName = null;
-    let seen = [];
-    while (Date.now() < deadline) {
-      seen = await page.evaluate(async () => (await indexedDB.databases()).map((d) => d.name));
-      dbName = seen.find((n) => n && n.startsWith('CipherDB_v7_')) || null;
-      if (dbName) break;
-      await page.waitForTimeout(100);
-    }
-    if (!dbName) {
-      throw new Error(`no CipherDB_v7_ database within 10s; databases seen: ${JSON.stringify(seen)}`);
-    }
+    const dbName = await waitForAppDatabase(page);
 
     // The app created this database, so the messages store must already exist.
     // Open without a version: this test never creates or upgrades anything.
@@ -209,6 +209,114 @@ test.describe('Persistence', () => {
     // fills dms from db.messages.toArray() only after its relay fetches settle,
     // so wait on the DOM itself rather than a fixed sleep.
     await expect(page.getByText('test persistence')).toBeVisible({ timeout: 30_000 });
+  });
+
+  test('a message written before openDBFor is stored sealed, not plaintext', async ({ page }) => {
+    await page.goto('/');
+    const dbName = await waitForAppDatabase(page);
+
+    // Close the account's database, then write through the app seam: with no
+    // database open, the save waits in the write queue (src/db.js) and is
+    // applied when openDBFor runs again. Close, enqueue and reopen in one
+    // evaluate, so a background fetch cannot reopen it in between.
+    const peer = 'b'.repeat(64);
+    const chatId = `dm:${peer}`;
+    const message = {
+      id: 'queued_before_open_1',
+      chatId,
+      pubkey: peer,
+      timestamp: Math.floor(Date.now() / 1000),
+      data: { message: 'written before open', type: 'text' },
+      isSender: false,
+    };
+    await page.evaluate(async ({ chat, msg }) => {
+      if (typeof window.__cipher.closeDB !== 'function'
+        || typeof window.__cipher.openDBFor !== 'function') {
+        throw new Error('window.__cipher.closeDB/openDBFor missing — app hook did not load');
+      }
+      window.__cipher.closeDB();
+      await window.__cipher.saveMessage(chat, msg);
+      window.__cipher.openDBFor(localStorage.getItem('cipher_db_owner'));
+    }, { chat: chatId, msg: message });
+
+    // The queue is drained asynchronously when the database opens.
+    await expect.poll(
+      async () => (await readStoredMessage(page, { dbName, msgId: message.id })).msg,
+      { timeout: 10_000 },
+    ).toBeDefined();
+
+    // Done-when: the stored bytes do not contain the plaintext — the queued
+    // write took the at-rest view, not the raw store.
+    const stored = (await readStoredMessage(page, { dbName, msgId: message.id })).msg;
+    expect(stored.sealed?.ct, 'the queued write reached disk through the seal').toBeTruthy();
+    expect(JSON.stringify(stored).includes('written before open'), 'a queued write is never stored in plaintext').toBe(false);
+
+    // And the queued write opens to its own content through the app's read path.
+    const opened = await readOpenedRows(page);
+    expect(opened.find((r) => r.id === message.id)?.data?.message, 'the queued write opens to its own content')
+      .toBe('written before open');
+  });
+
+  test('a queued write flushed against an existing sealed row keeps its own content', async ({ page }) => {
+    await page.goto('/');
+    const dbName = await waitForAppDatabase(page);
+
+    // First version of the row, written through the app: sealed at rest.
+    const peer = 'c'.repeat(64);
+    const chatId = `dm:${peer}`;
+    const now = Math.floor(Date.now() / 1000);
+    const firstVersion = {
+      id: 'flush_keep_1',
+      chatId,
+      pubkey: peer,
+      timestamp: now,
+      data: { message: 'first note', type: 'text' },
+      isSender: false,
+    };
+    await page.evaluate(async ({ chat, msg }) => {
+      if (typeof window.__cipher.saveMessage !== 'function') {
+        throw new Error('window.__cipher.saveMessage missing — app hook did not load');
+      }
+      await window.__cipher.saveMessage(chat, msg);
+    }, { chat: chatId, msg: firstVersion });
+
+    const stored = await readStoredMessage(page, { dbName, msgId: firstVersion.id });
+    expect(stored.msg.sealed?.ct, 'the first version is sealed at rest').toBeTruthy();
+    expect(JSON.stringify(stored.msg).includes('first note'), 'nothing plaintext beside the envelope').toBe(false);
+
+    // Lock the vault in place — the session copy of the key is gone while the
+    // database stays open — then save a later version of the same row: the
+    // write cannot be sealed, so it is held in the at-rest queue
+    // (src/lib/messageAtRest.js) and nothing reaches disk.
+    await page.evaluate(() => sessionStorage.removeItem('cipher_session_sk'));
+    const secondVersion = { ...firstVersion, timestamp: now + 1, data: { message: 'second note', type: 'text' } };
+    await page.evaluate(async ({ chat, msg }) => {
+      await window.__cipher.saveMessage(chat, msg);
+    }, { chat: chatId, msg: secondVersion });
+
+    const held = await readStoredMessage(page, { dbName, msgId: firstVersion.id });
+    expect(JSON.stringify(held.msg).includes('second note'), 'the held write never touched disk').toBe(false);
+
+    // Unlock in place and reopen the database: flushAtRestWrites opens the
+    // existing sealed row, merges the held write over it, and re-seals. The
+    // envelope still on disk must NOT be carried into that merge — its payload
+    // is the row as of the first write, not this one.
+    await page.evaluate(() => {
+      sessionStorage.setItem('cipher_session_sk', JSON.stringify(Array(32).fill(170)));
+      window.__cipher.closeDB();
+      window.__cipher.openDBFor(localStorage.getItem('cipher_db_owner'));
+    });
+
+    await expect.poll(async () => {
+      const opened = await readOpenedRows(page);
+      return opened.find((r) => r.id === firstVersion.id)?.data?.message;
+    }, { timeout: 10_000 }).toBe('second note');
+
+    const flushed = await readStoredMessage(page, { dbName, msgId: firstVersion.id });
+    expect(flushed.msg.sealed?.ct, 'the flushed row is sealed again').toBeTruthy();
+    const flushedBytes = JSON.stringify(flushed.msg);
+    expect(flushedBytes.includes('second note'), 'no orphan plaintext fields beside the new envelope').toBe(false);
+    expect(flushedBytes.includes('first note'), 'no stale payload was written back').toBe(false);
   });
 
 });
