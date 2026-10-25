@@ -1,10 +1,10 @@
 import { bech32 } from '@scure/base';
+import { deriveMoneroAddress } from './moneroAddress';
 import { scopeKey } from './storage';
 
 const CONFIG_KEY = 'advanced_vendor_payment_keys';
 const MAX_DERIVATION_INDEX = 10000;
 const settingsLocks = new Map();
-const moneroWallets = new Map();
 
 function defaultSettings() {
   return { btcXpub: '', xmrPrivateViewKey: '', btcIndex: 0, xmrIndex: 0, orders: {} };
@@ -99,46 +99,9 @@ export function moneroIndexesToCreate(highest, index) {
   return indexes;
 }
 
-async function deriveMoneroSubaddress(primaryAddress, privateViewKey, index, orderId) {
+function deriveMoneroSubaddress(primaryAddress, privateViewKey, index) {
   if (!primaryAddress) throw new Error('Add the vendor Monero main address before enabling subaddress rotation.');
-  const cacheKey = `${primaryAddress}:${privateViewKey}`;
-  let entry = moneroWallets.get(cacheKey);
-  if (!entry) {
-    const [{ default: walletModule }, { default: configModule }] = await Promise.all([
-      import('monero-ts/dist/src/main/ts/wallet/MoneroWalletFull.js'),
-      import('monero-ts/dist/src/main/ts/wallet/model/MoneroWalletConfig.js'),
-    ]);
-    const MoneroWalletFull = walletModule.default || walletModule;
-    const MoneroWalletConfig = configModule.default || configModule;
-    const wallet = await MoneroWalletFull.createWallet(new MoneroWalletConfig({
-      networkType: 'mainnet',
-      path: '',
-      password: '',
-      primaryAddress,
-      privateViewKey,
-      proxyToWorker: false,
-      restoreHeight: 0,
-    }));
-    entry = { wallet, highest: 0 };
-    moneroWallets.set(cacheKey, entry);
-  }
-  try {
-    const direct = await entry.wallet.getAddress(0, index);
-    if (direct) {
-      entry.highest = Math.max(entry.highest, index);
-      return direct;
-    }
-  } catch (error) {
-    console.warn('[vendor-payments] Direct Monero subaddress lookup failed, creating the missing indexes:', error);
-  }
-  let subaddress;
-  for (const currentIndex of moneroIndexesToCreate(entry.highest, index)) {
-    subaddress = await entry.wallet.createSubaddress(0, `Cipher order ${orderId.slice(0, 8)} #${currentIndex}`);
-  }
-  entry.highest = Math.max(entry.highest, index);
-  const address = subaddress?.getAddress();
-  if (!address) throw new Error('Monero wallet did not return a subaddress.');
-  return address;
+  return deriveMoneroAddress({ primaryAddress, privateViewKey, account: 0, index });
 }
 
 async function withSettingsLock(pubkey, callback) {
@@ -185,11 +148,10 @@ export async function getOrderPaymentMethods(identity, orderId, mainAddresses, p
     if (wantsXmr && settings.xmrPrivateViewKey) {
       nextXmrIndex += 1;
       if (nextXmrIndex > MAX_DERIVATION_INDEX) throw new Error('Monero subaddress derivation limit reached.');
-      paymentMethods.xmr = await deriveMoneroSubaddress(
+      paymentMethods.xmr = deriveMoneroSubaddress(
         mainAddresses.xmr,
         settings.xmrPrivateViewKey,
         nextXmrIndex,
-        orderId,
       );
     }
 

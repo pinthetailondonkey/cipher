@@ -2,6 +2,7 @@ import { useChatStore } from '../../store/chatStore';
 import { db, saveMessage } from '../../db';
 import { scopedGet } from '../../lib/storage';
 import { getOrderPaymentMethods } from '../../lib/vendorPayments';
+import { nextPaymentState } from '../../lib/paymentState';
 
 export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, openChat }) {
   const setToast = useChatStore((s) => s.setToast);
@@ -20,6 +21,26 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
       const updated = msgs.map(m => m.id === orderId ? { ...m, data: { ...m.data, ...updateData } } : m);
       return { ...prev, [peerPubkey]: updated };
     });
+  };
+
+  const deliverOrderUpdate = async (peer, payload, localPatch, okText) => {
+    let result;
+    try {
+      result = await sendDM(peer, payload);
+    } catch (error) {
+      console.error('[orders] Update threw:', error);
+      setToast({ type: 'error', message: error?.message || 'The order update did not send.' });
+      return false;
+    }
+    if (!result?.success) {
+      console.error('[orders] Update was rejected:', result?.error);
+      setToast({ type: 'error', message: result?.error || 'The order update did not send.' });
+      return false;
+    }
+    updateLocalOrder(peer, payload.orderId, localPatch);
+    setToast({ type: 'success', message: result.queued ? `${okText} It will send when connected.` : okText });
+    setSelectedMessage(null);
+    return true;
   };
   const handleOrderAction = async (action, msg) => {
     if (!['accept_order', 'decline_order', 'cancel_order', 'confirm_payment', 'mark_shipped', 'confirm_delivery', 'report_issue'].includes(action)) {
@@ -52,7 +73,9 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
           type: 'order_update', orderId: msg.id,
           productName: msg.data.product?.title || msg.data.productName,
           product: msg.data.product || null,
-          status: 'accepted', paymentMethods,
+          status: 'accepted',
+          paymentState: nextPaymentState('created', 'issue'),
+          paymentMethods,
         };
         const result = await sendDM(msg.pubkey, payload);
         if (!result.success) {
@@ -60,42 +83,59 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
           setSelectedMessage(null);
           return true;
         }
-        updateLocalOrder(msg.pubkey, msg.id, { status: 'accepted', paymentMethods: payload.paymentMethods });
+        updateLocalOrder(msg.pubkey, msg.id, { status: 'accepted', paymentState: payload.paymentState, paymentMethods: payload.paymentMethods });
         setToast({ type: 'success', message: result.queued ? 'Acceptance queued; it will send when connected.' : 'Order accepted' });
         setSelectedMessage(null); return;
       }
       if (action === 'decline_order' || action === 'cancel_order') {
         const payload = { type: 'order_update', orderId: msg.id, productName: msg.data.product?.title, status: 'cancelled' };
-        await sendDM(msg.pubkey, payload);
-        updateLocalOrder(msg.pubkey, msg.id, { status: 'cancelled' });
-        setToast({ type: 'success', message: 'Order cancelled' });
-        setSelectedMessage(null); return;
+        await deliverOrderUpdate(msg.pubkey, payload, { status: 'cancelled' }, 'Order cancelled');
+        return true;
       }
       if (action === 'confirm_payment') {
-        const payload = { type: 'order_update', orderId: msg.id, productName: msg.data.product?.title || msg.data.productName, status: 'paid', shippingAddress: msg.data.shippingAddress };
-        await sendDM(msg.pubkey, payload);
-        updateLocalOrder(msg.pubkey, msg.id, { status: 'paid', shippingAddress: msg.data.shippingAddress });
-        setToast({ type: 'success', message: 'Payment confirmed' });
-        setSelectedMessage(null); return;
+        let paymentState;
+        try {
+          const current = msg.data?.paymentState || 'address_issued';
+          paymentState = nextPaymentState(current, 'see');
+        } catch (error) {
+          setToast({ type: 'error', message: error.message });
+          setSelectedMessage(null);
+          return true;
+        }
+        const payload = {
+          type: 'order_update',
+          orderId: msg.id,
+          productName: msg.data.product?.title || msg.data.productName,
+          status: 'paid',
+          paymentState,
+          paymentSeenBy: 'vendor',
+          shippingAddress: msg.data.shippingAddress,
+        };
+        await deliverOrderUpdate(
+          msg.pubkey,
+          payload,
+          { status: 'paid', paymentState, paymentSeenBy: 'vendor', shippingAddress: msg.data.shippingAddress },
+          'Marked seen in your wallet. The chain was not checked.',
+        );
+        return true;
       }
       if (action === 'mark_shipped') {
         const tracking = msg.data?.tracking || '';
         const payload = { type: 'order_update', orderId: msg.id, productName: msg.data.product?.title || msg.data.productName, status: 'shipped', tracking };
-        await sendDM(msg.pubkey, payload);
-        updateLocalOrder(msg.pubkey, msg.id, { status: 'shipped', tracking });
-        setToast({ type: 'success', message: tracking ? 'Shipped' : 'Marked shipped' });
-        setSelectedMessage(null); return;
+        await deliverOrderUpdate(msg.pubkey, payload, { status: 'shipped', tracking }, tracking ? 'Shipped' : 'Marked shipped');
+        return true;
       }
       if (action === 'confirm_delivery') {
         const payload = { type: 'order_update', orderId: msg.id, productName: msg.data.product?.title || msg.data.productName, status: 'completed' };
-        await sendDM(msg.pubkey, payload);
-        updateLocalOrder(msg.pubkey, msg.id, { status: 'completed' });
-        if (scopedGet('auto_vouch_on_delivery', true)) {
+        const sent = await deliverOrderUpdate(msg.pubkey, payload, { status: 'completed' }, 'Delivered');
+        if (sent && scopedGet('auto_vouch_on_delivery', true)) {
           const vouchResult = await sendVouch(msg.pubkey);
-          if (!vouchResult.success) console.error('[orders] Automatic delivery vouch failed:', vouchResult.error);
+          if (!vouchResult?.success) {
+            console.error('[orders] Automatic delivery vouch failed:', vouchResult?.error);
+            setToast({ type: 'error', message: vouchResult?.error || 'The delivery was sent. The vouch was not.' });
+          }
         }
-        setToast({ type: 'success', message: 'Delivered' });
-        setSelectedMessage(null); return;
+        return true;
       }
       if (action === 'report_issue') {
         useChatStore.getState().openDialog({
@@ -104,9 +144,7 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
           onConfirm: async (reason) => {
             if (!reason || !reason.trim()) return;
             const payload = { type: 'order_update', orderId: msg.id, productName: msg.data.product?.title, status: 'disputed', disputeReason: reason.trim() };
-            await sendDM(msg.pubkey, payload);
-            updateLocalOrder(msg.pubkey, msg.id, { status: 'disputed', disputeReason: reason.trim() });
-            setToast({ type: 'success', message: 'Issue reported' });
+            await deliverOrderUpdate(msg.pubkey, payload, { status: 'disputed', disputeReason: reason.trim() }, 'Issue reported');
           },
         });
         setSelectedMessage(null); return;
@@ -135,7 +173,7 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
       description: product.description || '',
     };
     const paymentMethod = scopedGet('preferred_payment_method', 'btc');
-    const payload = { type: 'order_request', status: 'pending', paymentMethod, product: orderProduct };
+    const payload = { type: 'order_request', status: 'pending', paymentState: 'created', paymentMethod, product: orderProduct };
     const tempId = `temp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const optimisticMessage = {
       id: tempId,
@@ -198,12 +236,23 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
         type: 'product', title: updatedProduct.title, priceUsd: updatedProduct.priceUsd,
         image: updatedProduct.image, description: updatedProduct.description, updatedFrom: msg.id,
       };
-      if (msg.isGroup && activeGroup) await sendGroupMessage(activeGroup.id, payload);
-      else if (activeDm) await sendDM(activeDm, payload);
+      if (msg.isGroup && activeGroup) {
+        const sent = await sendGroupMessage(activeGroup.id, payload);
+        if (sent?.error === 'NO_KEY') {
+          setToast({ type: 'success', message: 'Securing… the edit will send when the group key arrives.' });
+          setEditingProduct(null);
+          return;
+        }
+        if (sent && sent.success === false) throw new Error(sent.error || 'send failed');
+      } else if (activeDm) {
+        const sent = await sendDM(activeDm, payload);
+        if (!sent?.success) throw new Error(sent?.error || 'The product edit did not send.');
+      }
       setToast({ type: 'success', message: 'Product updated!' });
       setEditingProduct(null);
-    } catch (e) {
-      setToast({ type: 'error', message: 'Failed to update product' });
+    } catch (error) {
+      console.error('[orders] Product edit did not send:', error);
+      setToast({ type: 'error', message: error?.message || 'Failed to update product' });
     }
   };
   const handlePostListing = async (listingData) => {
@@ -215,7 +264,8 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
       dropUntil: listingData.dropUntil || null, stock: listingData.stock || null,
     };
     const res = await sendGroupMessage(state.postListingGroup.id, payload);
-    if (res.success) setToast({ type: 'success', message: 'Listing posted to group!' });
+    if (res?.error === 'NO_KEY') setToast({ type: 'success', message: 'Securing… the listing will send when the group key arrives.' });
+    else if (res.success) setToast({ type: 'success', message: 'Listing posted to group!' });
     else setToast({ type: 'error', message: 'Failed to post listing' });
   };
 
@@ -231,14 +281,15 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
     const results = await Promise.allSettled([...new Set(groupIds)].map((groupId) => sendGroupMessage(groupId, payload)));
     const delivered = results.filter((result) => result.status === 'fulfilled' && result.value?.success && !result.value.queued).length;
     const queued = results.filter((result) => result.status === 'fulfilled' && result.value?.success && result.value.queued).length;
-    const failed = results.length - delivered - queued;
+    const securing = results.filter((result) => result.status === 'fulfilled' && result.value?.error === 'NO_KEY').length;
+    const failed = results.length - delivered - queued - securing;
     results.forEach((result, index) => {
       if (result.status === 'rejected') console.error(`[broadcast] Failed to post to ${groupIds[index]}:`, result.reason);
-      else if (!result.value?.success) console.error(`[broadcast] Failed to post to ${groupIds[index]}:`, result.value?.error);
+      else if (!result.value?.success && result.value?.error !== 'NO_KEY') console.error(`[broadcast] Failed to post to ${groupIds[index]}:`, result.value?.error);
     });
     setToast({
       type: failed ? 'error' : 'success',
-      message: `Posted to ${delivered}; queued ${queued}; failed ${failed}.`,
+      message: `Posted to ${delivered}; queued ${queued}; securing ${securing}; failed ${failed}.`,
     });
     setBroadcastProduct(null);
   };
