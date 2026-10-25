@@ -29,6 +29,23 @@ export function keysReady(env = process.env) {
   };
 }
 
+// What the box can honestly say to a phone that registered a native token.
+// True means the token is stored and the key file is present, so this box will
+// send. It does not mean a locked phone has been seen to buzz.
+export function nativeRegistration({ transport, tokenStored, env = process.env } = {}) {
+  if (!tokenStored) return { buzzing: false, reason: 'The token was not stored, so the installed app does not notify.' };
+  const ready = keysReady(env);
+  if (transport === 'fcm' && ready.fcm) {
+    return { buzzing: true, reason: 'The token is stored and the Firebase key is present, so this box sends through FCM. A locked phone has not been confirmed to buzz.' };
+  }
+  if (transport === 'apns' && ready.apns) {
+    return { buzzing: true, reason: 'The token is stored and the APNs key is present, so this box sends through APNs. A locked phone has not been confirmed to buzz.' };
+  }
+  if (transport === 'fcm') return { buzzing: false, reason: 'The token is stored. FCM_SERVICE_ACCOUNT is missing or not a file, so the installed app does not notify.' };
+  if (transport === 'apns') return { buzzing: false, reason: 'The token is stored. APNS_KEY_PATH, APNS_KEY_ID, APNS_TEAM_ID, or APNS_TOPIC is missing, so the installed app does not notify.' };
+  return { buzzing: false, reason: 'That token is neither FCM nor APNs.' };
+}
+
 export function serviceAccountJwt(account, { scope, aud, now = Math.floor(Date.now() / 1000) }) {
   const header = b64url(JSON.stringify({ alg: 'RS256', typ: 'JWT' }));
   const claim = b64url(JSON.stringify({

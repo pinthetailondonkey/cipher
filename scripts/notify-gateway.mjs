@@ -13,7 +13,7 @@ import http from 'node:http';
 import path from 'node:path';
 import { SimplePool } from 'nostr-tools';
 import { eventShouldBuzz, eventShouldOrder, eventShouldRing } from '../src/lib/pushGateway.js';
-import { keysReady, sendNative } from '../src/lib/nativePushSend.js';
+import { nativeRegistration, sendNative } from '../src/lib/nativePushSend.js';
 
 if (fs.existsSync('.env')) process.loadEnvFile('.env');
 
@@ -133,14 +133,11 @@ const server = http.createServer(async (req, res) => {
       state.native = state.native.filter((row) => row.token !== body.token);
       state.native.push({ pubkey: body.pubkey, transport: body.transport, token: body.token });
       save(state);
-      const ready = keysReady();
-      const canSend = (body.transport === 'fcm' && ready.fcm) || (body.transport === 'apns' && ready.apns);
-      const reason = canSend
-        ? 'The token is stored. A locked phone has not been shown to buzz from this box.'
-        : 'The token is stored. FCM_SERVICE_ACCOUNT or APNS_KEY_PATH is missing, so the installed app does not notify.';
+      const tokenStored = load().native.some((row) => row.token === body.token && row.transport === body.transport);
+      const { buzzing, reason } = nativeRegistration({ transport: body.transport, tokenStored });
       console.error(`[push] ${reason}`);
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ ok: true, buzzing: false, reason }));
+      res.end(JSON.stringify({ ok: true, buzzing, reason }));
     } catch (error) {
       console.error('[push] Native subscribe failed:', error.message);
       res.writeHead(400, { 'Content-Type': 'application/json' });
