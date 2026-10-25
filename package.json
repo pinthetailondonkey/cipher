@@ -7,7 +7,7 @@
     "dev": "node scripts/with-app-env.mjs vite --config vite.config.js --host 0.0.0.0 --port 8080",
     "build": "node scripts/with-app-env.mjs vite --config vite.config.js build",
     "lint": "oxlint",
-    "preview": "node scripts/with-app-env.mjs vite --config vite.config.js preview --host 127.0.0.1 --port 4173 --strictPort",
+    "preview": "node scripts/with-app-env.mjs vite --config vite.config.js preview --host 127.0.0.1 --port 8081 --strictPort",
     "preview:restart": "node scripts/preview.mjs restart",
     "preview:stop": "node scripts/preview.mjs stop",
     "test:ui": "playwright test",

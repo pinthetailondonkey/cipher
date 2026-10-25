@@ -1,6 +1,11 @@
 import { test, expect } from '@playwright/test';
+import { seedVault } from './fixtures.js';
 
 test.describe('Persistence', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.addInitScript(seedVault);
+  });
+
   test('message survives reload in per-account database', async ({ page, context }) => {
     // Note: This test creates a new account flow, sends a message, and verifies
     // the database persists. In a real setup, this would need actual relay

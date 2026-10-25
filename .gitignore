@@ -11,3 +11,6 @@ android/
 /cipher-old/
 .vercel
 .env*
+test-results/
+playwright-report/
+.playwright/
