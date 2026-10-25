@@ -26,6 +26,10 @@ export const EGRESS = [
   { id: 'nip05', role: 'Name lookup', url: '', hint: 'The host after the @', sees: 'Your IP and the name you look up. The host is whatever sits after the @.', dynamic: true },
   { id: 'explorer', role: 'Payment watcher', url: '', hint: 'Not set', sees: 'Nothing until you paste a watcher you run. This device does not ask a block explorer. Until then a payment cannot be marked seen or confirmed from the chain.' },
   { id: 'push', role: 'Push gateway', url: '', hint: 'Not set', sees: 'Nothing until you paste a gateway you run. A locked phone does not buzz before that. The notice says New message and does not include the text.' },
+  { id: 'fcm', role: 'Android push', url: 'https://fcm.googleapis.com', sees: 'Nothing from the phone. The push box you run delivers a message or a call here when a Firebase key is set. The text is not included.', called: false },
+  { id: 'fcm-auth', role: 'Android push', url: 'https://oauth2.googleapis.com', sees: 'Nothing from the phone. The push box trades its service-account key for a short-lived token here.', called: false },
+  { id: 'fcm-scope', role: 'Android push', url: 'https://www.googleapis.com', sees: 'Nothing. The token request names this host as its permission scope. The box does not open a connection to it.', called: false },
+  { id: 'apns', role: 'iOS push', url: 'https://api.push.apple.com', sees: 'Nothing from the phone. The push box you run delivers a message or a call here when an APNs key is set. The text is not included.', called: false },
 ];
 
 export const RELAY_SETS = {
