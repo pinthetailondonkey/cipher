@@ -70,6 +70,14 @@ The installed Capacitor app is a different path. The decision for that shell is 
 
 Group messages are not watched. Orders travel as direct messages, so an order buzzes as a new message. The box was not left running here.
 
+## Proof of trade
+
+A confirmed payment can carry a receipt. The body is the order id, the buyer and vendor public keys, the currency, the address, the amount, and the txid. The vendor signs that canonical JSON with their Nostr key (BIP-340). The hash is sha256 of those same bytes.
+
+The order update publishes the hash and nothing else from the receipt. The address, the amount, and the txid stay on the vendor's phone, under `receipt_<order id>`. A dispute is the reveal: the report then includes the body and the signature. Anyone with the body can check that the hash matches and that the signature is the vendor's. A wrong txid or a swapped hash does not verify.
+
+The vendor still does not call a block explorer. The txid is the one the watcher reported. The receipt is not a second confirmation. It is a record of the confirmation that already happened.
+
 ## Left for later
 
 Image proxying and a copy-paste onion-plus-TURN deploy recipe are not required now that Tor-only is gone. The push box and the payment watcher are scripts, and neither is running. A locked phone still does not buzz, and a payment still cannot be confirmed, until those addresses are pasted in Connections. Reputation, recovery, and discovery wait until both are true.
