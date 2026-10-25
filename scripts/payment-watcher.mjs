@@ -12,13 +12,18 @@
 //   XMR_WALLET_RPC=http://127.0.0.1:18083 BTC_RPC_URL=http://user:pass@127.0.0.1:8332 node scripts/payment-watcher.mjs
 //
 // GET /payment?address=&currency=xmr|btc
-// 200 { txid, confirmations, amount } or { pending: true }
+// 200 { txid, confirmations, amount, outputAmount } or { pending: true }
 // 503 { error } when that currency's node is not configured.
+//
+// Every amount leaves here in whole coins, as a decimal string. Monero wallet
+// RPC answers in piconero, so it is shifted twelve places before it enters the
+// report. `amount` is the sum of every output to the address. `outputAmount`
+// and `txid` are the largest single output, which is what a receipt names.
 
 import http from 'node:http';
 import fs from 'node:fs';
 import { timingSafeEqual } from 'node:crypto';
-import { reportFromTransfers, rowsFromScan } from '../src/lib/paymentWatch.js';
+import { moneroRows, parseExactAmounts, reportFromTransfers, rowsFromScan } from '../src/lib/paymentWatch.js';
 
 if (fs.existsSync('.env')) process.loadEnvFile('.env');
 
@@ -34,7 +39,7 @@ function tokenMatches(presented) {
   return timingSafeEqual(a, b);
 }
 
-async function rpc(url, body) {
+async function rpc(url, body, { exactAmounts = false } = {}) {
   const parsed = new URL(url);
   const headers = { 'Content-Type': 'application/json' };
   if (parsed.username || parsed.password) {
@@ -49,7 +54,8 @@ async function rpc(url, body) {
     body: JSON.stringify(body),
   });
   if (!response.ok) throw new Error(`Wallet RPC answered ${response.status}`);
-  const payload = await response.json();
+  const text = await response.text();
+  const payload = exactAmounts ? parseExactAmounts(text) : JSON.parse(text);
   if (payload.error) throw new Error(payload.error.message || 'Wallet RPC rejected the request');
   return payload.result;
 }
@@ -60,8 +66,8 @@ async function moneroTransfers(address) {
     id: '0',
     method: 'get_transfers',
     params: { in: true, pending: true, pool: true },
-  });
-  const rows = [...(result?.in || []), ...(result?.pending || []), ...(result?.pool || [])];
+  }, { exactAmounts: true });
+  const rows = moneroRows([...(result?.in || []), ...(result?.pending || []), ...(result?.pool || [])]);
   return reportFromTransfers(rows, address, 'xmr');
 }
 
