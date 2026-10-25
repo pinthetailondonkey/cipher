@@ -278,24 +278,6 @@ export const useChatStore = create((set, get) => ({
   })),
   clearSelection: () => set({ selectionMode: false, selectedMsgs: [] }),
 
-  joinRequests: scopedGet('join_requests', {}),
-  addJoinRequest: (groupId, pubkey) => set(s => {
-    const next = { ...s.joinRequests };
-    if (!next[groupId]) next[groupId] = [];
-    if (!next[groupId].includes(pubkey)) next[groupId].push(pubkey);
-    scopedSet('join_requests', next);
-    return { joinRequests: next };
-  }),
-  removeJoinRequest: (groupId, pubkey) => set(s => {
-    const next = { ...s.joinRequests };
-    if (next[groupId]) {
-      next[groupId] = next[groupId].filter(x => x !== pubkey);
-      if (next[groupId].length === 0) delete next[groupId];
-    }
-    scopedSet('join_requests', next);
-    return { joinRequests: next };
-  }),
-
   postListingGroup: null,
   setPostListingGroup: (v) => set({ postListingGroup: v }),
   showMenu: false,
@@ -397,7 +379,6 @@ export const useChatStore = create((set, get) => ({
     disappearingTimers: scopedGet('disappearing_timers', {}),
     unreadCounts: scopedGet('unread', {}),
     notifAck: scopedGet('notif_ack', {}),
-    joinRequests: scopedGet('join_requests', {}),
     isVendor: scopedGet('is_vendor', false) === true,
     myProducts: scopedGet('my_products', []),
   }),

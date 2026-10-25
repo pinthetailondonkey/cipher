@@ -1,10 +1,10 @@
 import { useCallback } from 'react';
 import { db } from '../../db';
-import { getMyGroups, setMyGroups } from '../../lib/myGroups';
+import { getMyGroups } from '../../lib/myGroups';
 import { groupRelays, queryWithTimeout } from '../../lib/relays';
 import { getAuthenticatedPool } from '../../lib/pool';
 import { useChatStore } from '../../store/chatStore';
-import { parseGroupReference, loadGroupProfile, publishGroupJoin } from '../../hooks/useNIP29Group';
+import { joinGroup } from '../../lib/groupJoin';
 
 export function useMyGroups(pubkey) {
   const setGroupsStore = useChatStore((s) => s.setGroups);
@@ -18,10 +18,9 @@ export function useMyGroups(pubkey) {
   }, [pubkey, setGroupsStore]);
 }
 
-export function useGroupDirectory({ identity, sendDM, createGroupHook, setGroups }) {
+export function useGroupDirectory({ identity, createGroupHook, setGroups }) {
   const setLoading = useChatStore((s) => s.setLoading);
   const setToast = useChatStore((s) => s.setToast);
-  const profiles = useChatStore((s) => s.profiles);
   const setUnreadCounts = useChatStore((s) => s.setUnreadCounts);
   const setTypingUsers = useChatStore((s) => s.setTypingUsers);
   const setGroupTypingUsers = useChatStore((s) => s.setGroupTypingUsers);
@@ -47,35 +46,13 @@ export function useGroupDirectory({ identity, sendDM, createGroupHook, setGroups
     }
   };
 
-  const requestToJoinGroup = async (groupId, groupName, groupCreator) => {
-    if (!groupCreator) return joinGroupById(groupId, groupName);
-    const payload = {
-      type: 'join_request', groupId, groupName,
-      requester: identity.pk,
-      requesterName: profiles[identity.pk]?.displayName || identity.pk.slice(0, 8)
-    };
-    await sendDM(groupCreator, payload);
-    setToast({ type: 'success', message: "Join request sent to admin. You will be notified when approved." });
-    useChatStore.getState().addJoinRequest(groupId, identity.pk);
-  };
-
   const joinGroupById = async (groupId, passedName = null, channel = false) => {
     if (!groupId) return;
     setLoading(true);
     try {
-      const parsed = parseGroupReference(groupId);
-      const resolvedId = parsed.id;
-      if (!resolvedId) throw new Error('That group address could not be read.');
-      const profile = await loadGroupProfile(identity, resolvedId, passedName);
-      const newGroupObj = { ...profile, isChannel: !!(channel || profile.isChannel) };
-      const localGroups = getMyGroups(identity.pk);
-      const idx = localGroups.findIndex(g => g.id === newGroupObj.id);
-      if (idx === -1) localGroups.push(newGroupObj);
-      else localGroups[idx] = { ...localGroups[idx], ...newGroupObj };
-      setMyGroups(identity.pk, localGroups);
+      const newGroupObj = await joinGroup(identity, groupId, { name: passedName, channel });
       setGroups(prev => [newGroupObj, ...(prev || []).filter(g => g.id !== newGroupObj.id)]);
       openChat('group', newGroupObj.id, newGroupObj);
-      await publishGroupJoin(identity, newGroupObj.id);
       setToast({ type: 'success', message: 'Joined group' });
     } catch (err) {
       console.error('[joinGroupById] error:', err);
@@ -141,5 +118,5 @@ export function useGroupDirectory({ identity, sendDM, createGroupHook, setGroups
       setToast({ type: 'error', message: 'Failed to create group' });
     }
   };
-  return { markAsRead, openChat, requestToJoinGroup, joinGroupById, fetchGroups, createGroup };
+  return { markAsRead, openChat, joinGroupById, fetchGroups, createGroup };
 }

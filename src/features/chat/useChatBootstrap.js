@@ -27,7 +27,6 @@ export function useChatBootstrap({
   fetchGroupMembers,
   setGroups,
   fetchGroups,
-  requestToJoinGroup,
   joinGroupById,
 }) {
   const groups = useChatStore((s) => s.groups);
@@ -502,17 +501,8 @@ export function useChatBootstrap({
         }
       }
       if (!joinId || cancelled) return;
-      try {
-        const pool = await getAuthenticatedPool(identity);
-        const events = await queryWithTimeout(pool, groupRelays, { kinds: [9002], limit: 200 }, 3000);
-        const match = events.find(ev => ev.tags.find(t => t[0] === 'h')?.[1] === joinId);
-        const creator = match?.pubkey;
-        if (cancelled) return;
-        if (creator && creator !== identity.pk) await requestToJoinGroup(joinId, joinName, creator);
-        else joinGroupById(joinId, joinName);
-      } catch {
-        if (!cancelled) joinGroupById(joinId, joinName);
-      }
+      // Groups are open, so an invite joins directly.
+      joinGroupById(joinId, joinName);
     })();
     return () => { cancelled = true; };
   }, [identity?.pk]);
