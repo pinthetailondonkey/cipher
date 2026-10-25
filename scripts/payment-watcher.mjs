@@ -53,7 +53,7 @@ async function moneroTransfers(address) {
     params: { in: true, pending: true, pool: true },
   });
   const rows = [...(result?.in || []), ...(result?.pending || []), ...(result?.pool || [])];
-  return reportFromTransfers(rows, address);
+  return reportFromTransfers(rows, address, 'xmr');
 }
 
 function bitcoinDescriptor(address) {
