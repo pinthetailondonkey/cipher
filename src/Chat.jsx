@@ -5,7 +5,6 @@ import { useReactions } from './hooks/useReactions';
 import { useReputation } from './hooks/useReputation';
 import { reactionSubscriptionKey, useChatStore } from './store/chatStore';
 import SearchView from './components/chat/SearchView';
-import MessageSearchResults from './components/chat/MessageSearchResults';
 import ChatLoading from './features/chat/ChatLoading';
 import ChatHome from './features/chat/ChatHome';
 import ChatOverlays from './features/chat/ChatOverlays';
@@ -83,8 +82,6 @@ export default function Chat({ identity }) {
   const view = useChatStore((state) => state.view);
   const activeDm = useChatStore((state) => state.activeDm);
   const activeGroup = useChatStore((state) => state.activeGroup);
-  const searchResults = useChatStore((state) => state.searchResults);
-  const setView = useChatStore((state) => state.setView);
 
   if (loading) return <ChatLoading />;
 
@@ -97,10 +94,6 @@ export default function Chat({ identity }) {
         fetchChats={fetchChats}
       />
     );
-  }
-
-  if (view === 'search' && searchResults.length > 0 && searchResults[0]?.msg) {
-    return <MessageSearchResults identity={identity} setView={setView} openChat={directory.openChat} />;
   }
 
   if (view === 'search') {
