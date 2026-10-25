@@ -40,3 +40,11 @@ test('a message this device never changed is stored exactly as before', () => {
   assert.deepEqual(again.data, { type: 'text', message: 'hi' });
   assert.equal(patchStoredMessage(undefined, { status: 'accepted' }), null);
 });
+
+test('signing in never clears the message table: each account has its own database', async () => {
+  const fs = await import('node:fs');
+  const bootstrap = fs.readFileSync(new URL('../features/chat/useChatBootstrap.js', import.meta.url), 'utf8');
+  assert.equal(/db\.messages\.clear\(/.test(bootstrap), false);
+  assert.equal(/db\.chatReads\.clear\(/.test(bootstrap), false);
+  assert.equal(bootstrap.includes('cipher_last_user'), false);
+});
