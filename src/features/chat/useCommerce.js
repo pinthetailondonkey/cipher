@@ -2,7 +2,7 @@ import { useChatStore } from '../../store/chatStore';
 import { db, saveMessage } from '../../db';
 import { scopedGet, scopedSet } from '../../lib/storage';
 import { getOrderPaymentMethods } from '../../lib/vendorPayments';
-import { nextPaymentState } from '../../lib/paymentState';
+import { nextPaymentState, orderCoinAmount } from '../../lib/paymentState';
 import { checkPayment } from '../../lib/paymentWatch';
 import { activeUrl, entryById } from '../../lib/egress';
 import { publicReceipt, rememberPublicView, signPublicView, signReceipt } from '../../lib/proofOfTrade';
@@ -51,44 +51,83 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
     }
   
       if (action === 'accept_order') {
-        const baseBtc = scopedGet('btc_address', localStorage.getItem('cipher_btc_address') || localStorage.getItem('cipher_btc') || '');
-        const baseXmr = scopedGet('xmr_address', localStorage.getItem('cipher_xmr_address') || localStorage.getItem('cipher_xmr') || '');
-        let paymentMethods;
-        try {
-          paymentMethods = await getOrderPaymentMethods(
-            identity,
-            msg.data.orderId || msg.id,
-            { btc: baseBtc, xmr: baseXmr },
-            msg.data.paymentMethod || 'btc',
-          );
-        } catch (error) {
-          console.error('[orders] Could not prepare private payment addresses:', error);
-          setToast({ type: 'error', message: error?.message || 'Could not create order payment addresses.' });
+        const sendAcceptance = async (coinAmount, coinCurrency) => {
+          const baseBtc = scopedGet('btc_address', localStorage.getItem('cipher_btc_address') || localStorage.getItem('cipher_btc') || '');
+          const baseXmr = scopedGet('xmr_address', localStorage.getItem('cipher_xmr_address') || localStorage.getItem('cipher_xmr') || '');
+          let paymentMethods;
+          try {
+            paymentMethods = await getOrderPaymentMethods(
+              identity,
+              msg.data.orderId || msg.id,
+              { btc: baseBtc, xmr: baseXmr },
+              msg.data.paymentMethod || 'btc',
+            );
+          } catch (error) {
+            console.error('[orders] Could not prepare private payment addresses:', error);
+            setToast({ type: 'error', message: error?.message || 'Could not create order payment addresses.' });
+            setSelectedMessage(null);
+            return;
+          }
+          if (!paymentMethods.btc && !paymentMethods.xmr) {
+            setToast({ type: 'error', message: 'Set payment addresses in Profile first' });
+            setSelectedMessage(null);
+            return;
+          }
+          const currency = paymentMethods.xmr ? 'xmr' : 'btc';
+          if (currency !== coinCurrency) {
+            setToast({ type: 'error', message: `This order is paid in ${currency.toUpperCase()}. Enter that amount in coins.` });
+            setSelectedMessage(null);
+            return;
+          }
+          const payload = {
+            type: 'order_update', orderId: msg.id,
+            productName: msg.data.product?.title || msg.data.productName,
+            product: msg.data.product || null,
+            status: 'accepted',
+            paymentState: nextPaymentState('created', 'issue'),
+            paymentMethods,
+            coinAmount,
+            coinCurrency,
+          };
+          const result = await sendDM(msg.pubkey, payload);
+          if (!result.success) {
+            setToast({ type: 'error', message: result.error || 'Could not send order acceptance.' });
+            setSelectedMessage(null);
+            return;
+          }
+          updateLocalOrder(msg.pubkey, msg.id, {
+            status: 'accepted',
+            paymentState: payload.paymentState,
+            paymentMethods: payload.paymentMethods,
+            coinAmount,
+            coinCurrency,
+          });
+          setToast({ type: 'success', message: result.queued ? 'Acceptance queued; it will send when connected.' : 'Order accepted' });
           setSelectedMessage(null);
-          return true;
-        }
-        if (!paymentMethods.btc && !paymentMethods.xmr) {
-          setToast({ type: 'error', message: 'Set payment addresses in Profile first' });
-          setSelectedMessage(null);
-          return true;
-        }
-        const payload = {
-          type: 'order_update', orderId: msg.id,
-          productName: msg.data.product?.title || msg.data.productName,
-          product: msg.data.product || null,
-          status: 'accepted',
-          paymentState: nextPaymentState('created', 'issue'),
-          paymentMethods,
         };
-        const result = await sendDM(msg.pubkey, payload);
-        if (!result.success) {
-          setToast({ type: 'error', message: result.error || 'Could not send order acceptance.' });
-          setSelectedMessage(null);
+        const preference = msg.data.paymentMethod || 'btc';
+        const coinCurrency = preference === 'xmr' || preference === 'both' ? 'xmr' : 'btc';
+        const known = orderCoinAmount(msg.data.product, coinCurrency);
+        if (known) {
+          await sendAcceptance(known, coinCurrency);
           return true;
         }
-        updateLocalOrder(msg.pubkey, msg.id, { status: 'accepted', paymentState: payload.paymentState, paymentMethods: payload.paymentMethods });
-        setToast({ type: 'success', message: result.queued ? 'Acceptance queued; it will send when connected.' : 'Order accepted' });
-        setSelectedMessage(null); return;
+        useChatStore.getState().openDialog({
+          title: `How many ${coinCurrency.toUpperCase()}`,
+          hasInput: true,
+          placeholder: coinCurrency === 'btc' ? '0.001' : '0.1',
+          confirmText: 'Accept',
+          onConfirm: async (value) => {
+            const text = String(value || '').trim();
+            if (!/^\d+(\.\d+)?$/.test(text) || Number(text) <= 0) {
+              setToast({ type: 'error', message: 'Enter the amount in coins, not dollars.' });
+              return;
+            }
+            await sendAcceptance(text, coinCurrency);
+          },
+        });
+        setSelectedMessage(null);
+        return true;
       }
       if (action === 'decline_order' || action === 'cancel_order') {
         const payload = { type: 'order_update', orderId: msg.id, productName: msg.data.product?.title, status: 'cancelled' };
@@ -124,15 +163,27 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
       }
       if (action === 'check_chain') {
         const methods = msg.data?.paymentMethods || {};
-        const currency = methods.xmr ? 'xmr' : (methods.btc ? 'btc' : '');
+        const currency = msg.data?.coinCurrency || (methods.xmr ? 'xmr' : (methods.btc ? 'btc' : ''));
         const address = currency ? methods[currency] : '';
+        const amount = msg.data?.coinAmount;
+        if (!amount) {
+          setToast({ type: 'info', message: 'This order has no coin amount, so it cannot be checked.' });
+          setSelectedMessage(null);
+          return true;
+        }
         try {
           const outcome = await checkPayment({
             watcherUrl: activeUrl(entryById('explorer')),
             address,
             currency,
+            amount,
             state: msg.data?.paymentState || 'address_issued',
           });
+          if (outcome.short) {
+            setToast({ type: 'info', message: 'The payment is short of the order.' });
+            setSelectedMessage(null);
+            return true;
+          }
           if (!outcome.moved) {
             setToast({ type: 'info', message: 'Your watcher has not seen this payment yet.' });
             setSelectedMessage(null);
