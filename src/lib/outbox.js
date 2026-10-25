@@ -17,12 +17,14 @@ function notifyStatus(id, status) {
 
 async function updateMessageStatus(id, status, owner) {
   if (!owner || currentOwner() !== owner) return;
-  const messages = db.messages;
-  await db.transaction('rw', messages, async () => {
+  // db.messages is now the at-rest view (src/db.js), not a Dexie Table, so the
+  // transaction takes the table name; get/put go through the view so a sealed
+  // row is opened, patched, and re-sealed instead of written back in plaintext.
+  await db.transaction('rw', 'messages', async () => {
     if (currentOwner() !== owner) return;
-    const message = await messages.get(id);
+    const message = await db.messages.get(id);
     if (message && currentOwner() === owner) {
-      await messages.put({ ...message, deliveryStatus: status });
+      await db.messages.put({ ...message, deliveryStatus: status });
     }
   });
   if (currentOwner() === owner) notifyStatus(id, status);
