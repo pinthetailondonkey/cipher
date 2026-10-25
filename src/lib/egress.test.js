@@ -110,3 +110,13 @@ test('the network snapshot stays the same object until storage changes', () => {
     readNetworkConfig();
   }
 });
+
+test('people search publishes nothing, and its text goes only to the search rows', () => {
+  const search = fs.readFileSync(new URL('../features/chat/usePeopleSearch.js', import.meta.url), 'utf8');
+  assert.equal(/finalizeEvent|\.publish\(|5315/.test(search), false);
+  const searchCalls = search.match(/\n[^\n]*\n[^\n]*search: (rawQuery|usernameToFind)/g) || [];
+  assert.ok(searchCalls.length >= 2);
+  for (const call of searchCalls) assert.match(call, /searchRelays|publicSearchRelays/);
+  assert.match(search, /const publicSearchRelays = searchRelays;/);
+  assert.deepEqual(urlsFor('search'), ['wss://relay.primal.net', 'wss://relay.vertexlab.io', 'wss://relay.noswhere.com']);
+});
