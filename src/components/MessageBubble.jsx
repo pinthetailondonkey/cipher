@@ -11,6 +11,7 @@ import Picture from './ui/Picture';
 import { PrivateAudio, PrivateImage } from './ui/PrivateMedia';
 import { isPrivateMedia } from '../lib/mediaCrypto';
 import { allowsLinkPreviews } from '../lib/privacy';
+import { orderActionsFor } from '../lib/orderActions';
 
 const EMPTY_REACTIONS = [];
 const REACTION_CHOICES = ['❤️', '👍', '🔥', '😂', '😮', '😢', '🙏'];
@@ -83,6 +84,8 @@ export default function MessageBubble({ message, data, onAction, senderName, isP
   const reactions = useChatStore((state) => (message?.id ? state.reactions[message.id] : undefined)) || EMPTY_REACTIONS;
   const profiles = useChatStore((state) => state.profiles);
   const inGroup = useChatStore((state) => !!state.activeGroup);
+  const activeDm = useChatStore((state) => state.activeDm);
+  const chatMessages = useChatStore((state) => (state.view === 'dm' ? state.dms[state.activeDm] : undefined));
   const pressTimer = useRef(null);
   const pressPoint = useRef(null);
   const paymentRows = paymentRowsFor(content);
@@ -207,6 +210,17 @@ export default function MessageBubble({ message, data, onAction, senderName, isP
         {(content.type === 'cipher_order' || content.type === 'order_request') && !isSender && (content.status === 'accepted' || content.paymentState === 'seen' || content.paymentState === 'address_issued') && content.paymentState !== 'confirmed' && (
           <button type="button" onClick={(event) => { event.stopPropagation(); onAction?.('check_chain', { ...message, data: content }); }} className="mb-1 min-h-11 text-left text-[15px] font-semibold text-white">Check the chain</button>
         )}
+        {['order_request', 'cipher_order', 'order_update'].includes(content.type) && orderActionsFor({ ...message, data: content }, chatMessages).map(({ action, label, target }) => {
+          // The handlers send to msg.pubkey about order msg.id.
+          const subject = target === 'order'
+            ? { ...message, id: content.orderId, data: content }
+            : target === 'peer'
+              ? { ...message, pubkey: activeDm, data: content }
+              : { ...message, data: content };
+          return (
+            <button key={action} type="button" onClick={(event) => { event.stopPropagation(); onAction?.(action, subject); }} className={`mb-1 block min-h-11 text-left text-[15px] font-semibold ${action === 'report_issue' || action === 'decline_order' || action === 'cancel_order' ? 'text-rose-300' : 'text-white'}`}>{label}</button>
+          );
+        })}
         {content.type === 'image' && (isPrivateMedia(content)
           ? <PrivateImage entry={content} className="max-h-64 max-w-full rounded-xl object-contain" />
           : <Picture src={content.url} link alt="Shared image" loading="lazy" className="max-h-64 max-w-full rounded-xl object-contain" />
