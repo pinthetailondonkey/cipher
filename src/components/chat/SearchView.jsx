@@ -1,6 +1,7 @@
 import React from 'react';
 import { Search, Users, User } from 'lucide-react';
 import ScreenHeader from '../ui/ScreenHeader';
+import Picture from '../ui/Picture';
 import { useChatStore } from '../../store/chatStore';
 
 export default function SearchView({ handleSearch, joinGroupById, openChat }) {
@@ -62,13 +63,13 @@ export default function SearchView({ handleSearch, joinGroupById, openChat }) {
                 >
                   <span className="flex min-w-0 items-center gap-3">
                     <span className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-full border border-white/10 bg-white/5 text-blue-500">
-                      {result.picture ? (
-                        <img src={result.picture} alt="" loading="lazy" className="h-full w-full object-cover" />
-                      ) : result.type === 'group' ? (
-                        <Users size={20} />
-                      ) : (
-                        <User size={20} />
-                      )}
+                      <Picture
+                        src={result.picture}
+                        alt=""
+                        loading="lazy"
+                        className="h-full w-full object-cover"
+                        fallback={result.type === 'group' ? <Users size={20} /> : <User size={20} />}
+                      />
                     </span>
                     <span className="min-w-0">
                       <span className="block truncate text-[15px] font-semibold text-white">{result.name || `User ${result.pubkey?.slice(0, 6)}`}</span>

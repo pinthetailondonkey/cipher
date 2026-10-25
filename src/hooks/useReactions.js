@@ -2,6 +2,7 @@ import { useCallback } from 'react';
 import { useChatStore } from '../store/chatStore';
 import { getAuthenticatedPool } from '../lib/pool';
 import { generalRelays, groupRelays, queryWithTimeout } from '../lib/relays';
+import { mergeReactions, groupReactionFilters } from '../lib/reactions';
 
 export function useReactions({ identity }) {
   const setReactions = useChatStore((s) => s.setReactions);
@@ -64,11 +65,9 @@ export function useReactions({ identity }) {
             const targetId = ev.tags.find((t) => t[0] === 'e')?.[1];
             if (!targetId) return;
             if (!reactionMap[targetId]) reactionMap[targetId] = [];
-            if (!reactionMap[targetId].find((r) => r.pubkey === ev.pubkey && r.emoji === ev.content)) {
-              reactionMap[targetId].push({ emoji: ev.content, pubkey: ev.pubkey });
-            }
+            reactionMap[targetId].push({ emoji: ev.content, pubkey: ev.pubkey });
           });
-          setReactions((prev) => ({ ...prev, ...reactionMap }));
+          setReactions((prev) => mergeReactions(prev, reactionMap));
         }
 
         // 2. Subscribe to live reactions
@@ -78,11 +77,9 @@ export function useReactions({ identity }) {
               if (!isMounted) return;
               const targetId = ev.tags.find(t => t[0] === 'e')?.[1];
               if (!targetId) return;
-              setReactions(prev => {
-                const existing = prev[targetId] || [];
-                if (existing.find(r => r.pubkey === ev.pubkey && r.emoji === ev.content)) return prev;
-                return { ...prev, [targetId]: [...existing, { emoji: ev.content, pubkey: ev.pubkey }] };
-              });
+              setReactions((prev) => mergeReactions(prev, {
+                [targetId]: { emoji: ev.content, pubkey: ev.pubkey },
+              }));
             }
           });
         }
@@ -99,5 +96,63 @@ export function useReactions({ identity }) {
     };
   }, [identity, setReactions]);
 
-  return { sendReaction, subscribeToReactions };
+  const subscribeToGroupReactions = useCallback((groupIds) => {
+    const filters = groupReactionFilters(groupIds);
+    if (!filters.length || !identity?.sk) return () => {};
+    const subs = [];
+    const byGroup = new Map();
+    let isMounted = true;
+    const onLeft = (event) => {
+      const id = event.detail?.groupId;
+      const sub = byGroup.get(id);
+      if (!sub) return;
+      try { sub.close(); } catch { /* already closed */ }
+      byGroup.delete(id);
+    };
+    if (typeof window !== 'undefined') window.addEventListener('cipher:group-left', onLeft);
+
+    const apply = (ev) => {
+      const targetId = ev.tags?.find((tag) => tag[0] === 'e')?.[1];
+      if (!targetId) return;
+      setReactions((prev) => mergeReactions(prev, {
+        [targetId]: { emoji: ev.content, pubkey: ev.pubkey },
+      }));
+    };
+
+    const setup = async () => {
+      try {
+        const pool = await getAuthenticatedPool(identity);
+        const batches = await Promise.allSettled(filters.map((filter) => (
+          queryWithTimeout(pool, groupRelays, { ...filter, limit: 200 }, 4000)
+        )));
+        if (isMounted) {
+          for (const batch of batches) {
+            if (batch.status === 'fulfilled') batch.value.forEach(apply);
+          }
+        }
+        if (!isMounted) return;
+        for (const filter of filters) {
+          const sub = pool.subscribe(groupRelays, filter, {
+            onevent: (ev) => {
+              if (!isMounted) return;
+              apply(ev);
+            },
+          });
+          subs.push(sub);
+          byGroup.set(filter['#h'][0], sub);
+        }
+      } catch (e) {
+        console.error('[useReactions] group subscribe failed:', e);
+      }
+    };
+
+    setup();
+    return () => {
+      isMounted = false;
+      if (typeof window !== 'undefined') window.removeEventListener('cipher:group-left', onLeft);
+      for (const sub of subs) sub.close();
+    };
+  }, [identity, setReactions]);
+
+  return { sendReaction, subscribeToReactions, subscribeToGroupReactions };
 }

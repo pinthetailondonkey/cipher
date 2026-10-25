@@ -4,23 +4,44 @@ import { db, saveMessage } from '../db';
 import { showNotification } from '../lib/notifications';
 import { useChatStore } from '../store/chatStore';
 import { getAuthenticatedPool } from '../lib/pool';
-import { groupRelays, generalRelays, queryWithTimeout } from '../lib/relays';
+import { groupRelays, generalRelays, groupOnlyRelays, queryWithTimeout } from '../lib/relays';
 import { allowsTyping } from '../lib/privacy';
 import { getMyGroups, setMyGroups } from '../lib/myGroups';
 import { encodeGroupPayload, decodeGroupEvent } from '../lib/crypto/groupMessageCodec';
 import { getAllGroupKeys, getCurrentGroupKey, putGroupKey } from '../lib/crypto/groupKeyStore';
-import { authorizeGroupControl } from '../lib/crypto/groupMembership';
-import { loadMemberSnapshot, patchMemberSnapshot, rememberMembers, requesterMayReceiveKey, rotateGroupEpoch } from '../lib/crypto/groupKeyRotation';
+import { authorizeGroupControl, authorizeMemberSnapshot, groupRelayPubkey, groupTimelinePlans, isRestrictedRelayClose, pickMemberSnapshot } from '../lib/crypto/groupMembership';
+import { grantKeyRequest, loadMemberSnapshot, loadMemberSnapshotRecord, patchMemberSnapshot, rememberMembers, rotateGroupEpoch } from '../lib/crypto/groupKeyRotation';
 import { generateGroupKey } from '../lib/crypto/groupCipher';
-import { distributeGroupKey } from '../lib/crypto/groupKeyDistribution';
+import { distributeGroupKey, epochsToBackfill } from '../lib/crypto/groupKeyDistribution';
 import { enqueueNostrEvent, startOutboxSync } from '../lib/outbox';
+import { groupSocketUrl } from '../lib/egress';
+import { relaysForPeer } from '../lib/dmRelays';
+import { dropSecuringSend, forgetPendingKeyRequest, queueSecuringSend, resetKeyRequest, securingSendsFor } from '../lib/crypto/groupKeyRequest';
 
-const GROUP_RELAY_URL = 'wss://groups.aegispayhq.com';
+function currentGroupRelay() {
+  return groupSocketUrl() || '';
+}
 
 async function publishKeyDm(identity, dmEvent) {
+  const peer = dmEvent.tags?.find((tag) => tag[0] === 'p')?.[1];
+  const relays = peer ? await relaysForPeer(identity, peer) : generalRelays.slice();
   const pool = await getAuthenticatedPool(identity);
-  const results = await Promise.allSettled(pool.publish(generalRelays, dmEvent));
+  const results = await Promise.allSettled(pool.publish(relays.length ? relays : generalRelays, dmEvent));
   if (!results.some((result) => result.status === 'fulfilled')) throw new Error('dm rejected');
+}
+
+async function fetchRelayMemberSnapshot(identity, groupId) {
+  const relays = groupOnlyRelays.length ? groupOnlyRelays : groupRelays;
+  if (!relays.length) throw new Error('No group relay');
+  const pool = await getAuthenticatedPool(identity);
+  const relayPubkey = await groupRelayPubkey();
+  const [byDTag, byHTag] = await Promise.all([
+    queryWithTimeout(pool, relays, { kinds: [39002], '#d': [groupId] }),
+    queryWithTimeout(pool, relays, { kinds: [39002], '#h': [groupId] }),
+  ]);
+  const members = pickMemberSnapshot([...byDTag, ...byHTag], relayPubkey, groupId);
+  if (!members) throw new Error('No membership snapshot');
+  return members;
 }
 
 function controlContext(groupId) {
@@ -147,7 +168,7 @@ function sendAuthResponse(session, challenge) {
     kind: 22242,
     created_at: Math.floor(Date.now() / 1000),
     tags: [
-      ['relay', GROUP_RELAY_URL],
+      ['relay', session.relayUrl || currentGroupRelay()],
       ['challenge', challenge],
     ],
     content: '',
@@ -209,13 +230,20 @@ function connectGroupSocket(session) {
   session.authed = false;
   session.authSent = false;
   session.authEventId = null;
-  const ws = new WebSocket(GROUP_RELAY_URL);
+  const url = currentGroupRelay();
+  if (!url) {
+    console.warn('[group] The group relay is off.');
+    useChatStore.getState().setToast({ type: 'error', message: 'The group relay is off.' });
+    return;
+  }
+  session.relayUrl = url;
+  const ws = new WebSocket(url);
   session.ws = ws;
 
   ws.onopen = () => {
     session.attempt = 0;
     console.log('✅ Group WS connected');
-    window.dispatchEvent(new CustomEvent('cipher:relay-connected', { detail: { url: GROUP_RELAY_URL } }));
+    window.dispatchEvent(new CustomEvent('cipher:relay-connected', { detail: { url } }));
   };
 
   ws.onmessage = (event) => handleGroupSocketFrame(session, event.data);
@@ -330,6 +358,59 @@ const shouldSuppressGroup = (groupId) => {
   const isArchived = state.archivedChats?.includes(groupId);
   return isMuted || isArchived;
 };
+
+export async function flushSecuringGroupSends(identity, groupId) {
+  if (!identity?.sk || !groupId) return;
+  const items = securingSendsFor(identity.pk, groupId);
+  for (const item of items) {
+    const encoded = await encodeGroupPayload({ groupId: item.groupId, payload: item.payload, senderPubkey: identity.pk });
+    if (encoded.pending) return;
+    const tags = withGroupTag(item.groupId, encoded.tags);
+    if (item.id) tags.push(['client', item.id]);
+    if (item.replyId) tags.push(['e', item.replyId, '', 'reply']);
+    const event = finalizeEvent({
+      kind: 9,
+      created_at: Math.floor(Date.now() / 1000),
+      tags,
+      content: encoded.content,
+    }, identity.sk);
+    try {
+      await publishAuthedGroupEvent(identity, event);
+      dropSecuringSend(identity.pk, item.id);
+    } catch (error) {
+      console.warn('[group-key] Waiting message did not go out:', error);
+      return;
+    }
+  }
+  if (items.length && (await getCurrentGroupKey(groupId)) && securingSendsFor(identity.pk, groupId).length === 0) {
+    forgetPendingKeyRequest(identity.pk, groupId);
+  }
+}
+
+export async function publishGroupJoin(identity, groupId) {
+  if (!identity?.sk || !groupId) throw new Error('Unlock your account before joining.');
+  const event = finalizeEvent({
+    kind: 9021,
+    created_at: Math.floor(Date.now() / 1000),
+    tags: [['h', groupId]],
+    content: '',
+  }, identity.sk);
+  await publishAuthedGroupEvent(identity, event);
+  return event;
+}
+
+export async function retrySecuringGroup(identity, groupId) {
+  if (!identity?.sk || !groupId) throw new Error('Unlock your account first.');
+  resetKeyRequest(identity.pk, groupId);
+  const event = finalizeEvent({
+    kind: 9,
+    created_at: Math.floor(Date.now() / 1000),
+    tags: [['h', groupId]],
+    content: JSON.stringify({ type: 'gkey_req' }),
+  }, identity.sk);
+  await publishAuthedGroupEvent(identity, event);
+  await flushSecuringGroupSends(identity, groupId);
+}
 
 export function useNIP29Group({ identity }) {
   const setGroupsStore = useChatStore((s) => s.setGroups);
@@ -481,12 +562,16 @@ export function useNIP29Group({ identity }) {
     const updated = localGroups.filter(g => g.id !== groupId);
     setMyGroups(identity.pk, updated);
     setGroups(updated);
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('cipher:group-left', { detail: { groupId } }));
+    }
   }, [identity, setGroups, appendSystemMessage]);
 
   const sendGroupMessage = useCallback(async (groupId, payload, clientId = null, replyId = null) => {
     try {
       const encoded = await encodeGroupPayload({ groupId, payload, senderPubkey: identity.pk, waitForKey: true });
       if (encoded.pending) {
+        if (clientId) queueSecuringSend(identity.pk, { id: clientId, groupId, payload, replyId, since: Date.now() });
         try {
           const reqEvent = finalizeEvent({
             kind: 9,
@@ -532,7 +617,9 @@ export function useNIP29Group({ identity }) {
         content: JSON.stringify({ type: 'gkey_req' }),
       }, identity.sk);
       await publishAuthedGroupEvent(identity, ev);
-    } catch (e) {}
+    } catch (error) {
+      console.error('[group] Key request did not send:', error);
+    }
   }, [identity]);
 
   const sendGroupTypingIndicator = useCallback(async (groupId) => {
@@ -662,29 +749,54 @@ export function useNIP29Group({ identity }) {
   const subscribeToGroups = useCallback((groupIds, since) => {
     if (!groupIds || groupIds.length === 0 || !identity?.sk) return () => {};
     const session = openGroupRelaySession(identity);
-    const subId = `group-sub-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-    const filter = { kinds: [9], '#h': [...groupIds] };
-    if (Number.isFinite(since)) filter.since = since;
-    session.subs.set(subId, filter);
-    if (session.authed && session.ws?.readyState === WebSocket.OPEN) {
-      session.ws.send(JSON.stringify(['REQ', subId, filter]));
+    const plans = groupTimelinePlans(groupIds, since);
+    const subIds = new Map();
+    let notedRestricted = false;
+    for (const plan of plans) {
+      const subId = `group-sub-${plan.groupId.slice(0, 12)}-${Math.random().toString(36).slice(2, 8)}`;
+      subIds.set(subId, plan.groupId);
+      session.subs.set(subId, plan.filters);
+      if (session.authed && session.ws?.readyState === WebSocket.OPEN) {
+        session.ws.send(JSON.stringify(['REQ', subId, ...plan.filters]));
+      }
     }
 
     let keyHandler = null;
 
     const onFrame = async (msg) => {
-      if (msg[0] === 'CLOSED' && msg[1] === subId) {
-        console.log('❌ Group subscription closed:', msg[2]);
+      if (msg[0] === 'CLOSED' && subIds.has(msg[1])) {
+        const closedGroup = subIds.get(msg[1]);
+        const reason = String(msg[2] || '');
+        console.warn(`[group] Relay closed ${closedGroup}: ${reason || 'no reason'}`);
+        if (isRestrictedRelayClose(reason)) {
+          session.subs.delete(msg[1]);
+          if (!notedRestricted) {
+            notedRestricted = true;
+            useChatStore.getState().setToast({
+              type: 'error',
+              message: 'One group is unreachable. Your other groups are still live.',
+            });
+          }
+        }
         return;
       }
-      if (msg[0] !== 'EVENT' || msg[1] !== subId) return;
+      if (msg[0] !== 'EVENT' || !subIds.has(msg[1])) return;
       const event = msg[2];
       if (!event?.tags) return;
-      const hTag = event.tags.find(t => t[0] === 'h');
-      if (!hTag?.[1]) return;
-      const groupId = hTag[1];
-      if (!groupIds.includes(groupId)) return;
-      if ([9000, 9001, 9002, 9021, 9022, 39002].includes(event.kind)) {
+      const groupId = event.tags.find((tag) => tag[0] === 'h')?.[1] || event.tags.find((tag) => tag[0] === 'd')?.[1];
+      if (!groupId || !groupIds.includes(groupId)) return;
+      if (event.kind === 39002) {
+        const relayPubkey = await groupRelayPubkey();
+        if (!authorizeMemberSnapshot({ event, relayPubkey })) {
+          console.warn('[group] Ignored a membership snapshot not signed by the group relay', event.id);
+          return;
+        }
+        const members = pickMemberSnapshot([event], relayPubkey, groupId) || [];
+        await rememberMembers(groupId, members);
+        if (useChatStore.getState().activeGroup?.id === groupId) setGroupMembers(members);
+        return;
+      }
+      if ([9000, 9001, 9002, 9021, 9022].includes(event.kind)) {
         const { creator, members } = controlContext(groupId);
         const subject = event.kind === 9021 || event.kind === 9022
           ? event.pubkey
@@ -778,11 +890,20 @@ export function useNIP29Group({ identity }) {
         if (parsedQuick.type === 'gkey_req') {
           isGkeyReq = true;
           if (event.pubkey !== identity.pk) {
-            const snapshot = await loadMemberSnapshot(groupId);
-            if (!requesterMayReceiveKey(snapshot, event.pubkey)) return;
+            const record = await loadMemberSnapshotRecord(groupId);
             const current = await getCurrentGroupKey(groupId);
-            if (current) {
-              const prior = (await getAllGroupKeys(groupId)).filter((epoch) => epoch.epoch !== current.epoch);
+            const { creator } = controlContext(groupId);
+            const decision = await grantKeyRequest({
+              groupId,
+              requester: event.pubkey,
+              creator,
+              snapshot: record?.members || null,
+              updatedAt: record?.updatedAt,
+              keyObtainedAt: current?.obtainedAt,
+              fetchMembers: () => fetchRelayMemberSnapshot(identity, groupId),
+            });
+            if (decision === 'allow' && current) {
+              const prior = epochsToBackfill(await getAllGroupKeys(groupId), current.epoch);
               await distributeGroupKey({
                 senderPrivkey: identity.sk, senderPubkey: identity.pk,
                 groupId, epoch: current.epoch, keyBytes: current.bytes,
@@ -888,6 +1009,11 @@ export function useNIP29Group({ identity }) {
       const { groupId: gid } = e.detail || {};
       if (!groupIds.includes(gid)) return;
       try {
+        await flushSecuringGroupSends(identity, gid);
+      } catch (error) {
+        console.warn('[group-key] Could not send messages waiting on the key:', error);
+      }
+      try {
         const pool = await getAuthenticatedPool(identity);
         const events = await queryWithTimeout(pool, groupRelays, { kinds: [9], '#h': [gid], limit: 100 }, 4000);
         for (const event of events) {
@@ -924,9 +1050,11 @@ export function useNIP29Group({ identity }) {
 
     return () => {
       session.listeners.delete(onFrame);
-      session.subs.delete(subId);
-      if (session.ws?.readyState === WebSocket.OPEN) {
-        try { session.ws.send(JSON.stringify(['CLOSE', subId])); } catch (e) {}
+      for (const subId of subIds.keys()) {
+        session.subs.delete(subId);
+        if (session.ws?.readyState === WebSocket.OPEN) {
+          try { session.ws.send(JSON.stringify(['CLOSE', subId])); } catch { /* socket already gone */ }
+        }
       }
       if (keyHandler) window.removeEventListener('cipher:group-key-updated', keyHandler);
     };

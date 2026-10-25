@@ -1,5 +1,6 @@
 import { Package } from 'lucide-react';
 import ScreenHeader from '../ui/ScreenHeader';
+import Picture from '../ui/Picture';
 
 export default function MyOrders({ dms = {}, profiles = {}, onBack, onOpenChat }) {
   const orders = Object.entries(dms).flatMap(([vendorPubkey, messages]) => {
@@ -31,7 +32,7 @@ export default function MyOrders({ dms = {}, profiles = {}, onBack, onOpenChat }
             const status = update?.data.status || message.data.status || 'pending';
             return (
               <button type="button" key={message.id} onClick={() => onOpenChat?.(vendorPubkey)} className="flex w-full items-center gap-3 border-b border-white/5 p-4 text-left last:border-0 active:bg-white/5">
-                {product.image ? <img src={product.image} alt="" loading="lazy" className="h-12 w-12 shrink-0 rounded-xl object-cover" /> : <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-black text-white/40"><Package size={18} /></span>}
+                <Picture src={product.image} alt="" loading="lazy" className="h-12 w-12 shrink-0 rounded-xl object-cover" fallback={<span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-black text-white/40"><Package size={18} /></span>} />
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-[15px] font-semibold text-white">{product.title || product.name || 'Order'}</span>
                   <span className="block truncate text-[13px] text-white/40">{profiles[vendorPubkey]?.displayName || profiles[vendorPubkey]?.name || 'Seller'}</span>

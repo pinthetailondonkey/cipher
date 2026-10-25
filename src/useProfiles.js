@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { db, saveProfile } from './db'
+import { profileReadRelays } from './lib/relays'
 
 let listeners = new Set();
 
@@ -46,7 +47,7 @@ export function useProfiles(pubkeys) {
 
     let active = true;
     let pool;
-    const relays = ['wss://purplepag.es', 'wss://nos.lol', 'wss://relay.primal.net'];
+    const relays = profileReadRelays;
     const fetchProfiles = async () => {
       const validPubkeys = pubkeys.filter(pk => typeof pk === 'string' && pk.length >= 8)
       const missing = [];

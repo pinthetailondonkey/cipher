@@ -1,6 +1,6 @@
 import { db } from '../../db';
 import { getAuthenticatedPool } from '../../lib/pool';
-import { queryWithTimeout } from '../../lib/relays';
+import { queryWithTimeout, profileRelays, groupOnlyRelays } from '../../lib/relays';
 import { useChatStore } from '../../store/chatStore';
 import { parseGroupReference, loadGroupProfile } from '../../hooks/useNIP29Group';
 
@@ -65,14 +65,14 @@ export function usePeopleSearch({ identity }) {
         let picture = null;
         let profileEvents = await queryWithTimeout(
           pool,
-          ['wss://relay.primal.net'],
+          profileRelays.slice(0, 1),
           { kinds: [0], authors: [targetPubkey] },
           5000
         );
         if (profileEvents.length === 0) {
           profileEvents = await queryWithTimeout(
             pool,
-            ['wss://nos.lol'],
+            profileRelays.slice(1, 2),
             { kinds: [0], authors: [targetPubkey] },
             4000
           );
@@ -103,7 +103,7 @@ export function usePeopleSearch({ identity }) {
         // Kind 10003 username registry, published to the same relays as the profile.
         const regEvents = await queryWithTimeout(
           pool,
-          ['wss://relay.primal.net', 'wss://nos.lol'],
+          profileRelays,
           { kinds: [10003], '#t': ['cipher_username_' + usernameToFind], limit: 10 },
           5000
         );
@@ -120,7 +120,7 @@ export function usePeopleSearch({ identity }) {
         console.log('🔍 [Search] Using NIP-50 to find profile...');
         const searchEvents = await queryWithTimeout(
           pool,
-          ['wss://relay.primal.net'],
+          profileRelays.slice(0, 1),
           { kinds: [0], search: usernameToFind, limit: 20 },
           5000
         );
@@ -220,7 +220,7 @@ export function usePeopleSearch({ identity }) {
 
         const profileEvents = await queryWithTimeout(
           pool,
-          ['wss://relay.primal.net'],
+          profileRelays.slice(0, 1),
           { kinds: [0], authors: [targetPubkey] },
           5000
         );
@@ -250,10 +250,10 @@ export function usePeopleSearch({ identity }) {
           content: ''
         }, identity.sk);
 
-        await Promise.allSettled(dvmPool.publish(['wss://groups.aegispayhq.com'], requestEvent));
+        await Promise.allSettled(dvmPool.publish(groupOnlyRelays, requestEvent));
 
         const responseEvents = await Promise.race([
-          dvmPool.querySync(['wss://groups.aegispayhq.com'], { kinds: [6315], '#e': [requestEvent.id] }),
+          dvmPool.querySync(groupOnlyRelays, { kinds: [6315], '#e': [requestEvent.id] }),
           new Promise(resolve => setTimeout(() => resolve([]), 4000))
         ]);
 
@@ -262,7 +262,7 @@ export function usePeopleSearch({ identity }) {
           const pubkeys = JSON.parse(responseEvent.content).map(p => p.pubkey);
           
           if (pubkeys.length > 0) {
-            const profileEvents = await pool.querySync(['wss://groups.aegispayhq.com'], { kinds: [0], authors: pubkeys });
+            const profileEvents = await pool.querySync(groupOnlyRelays, { kinds: [0], authors: pubkeys });
             const profiles = profileEvents.map(ev => {
               const data = JSON.parse(ev.content);
               return { type: 'user', pubkey: ev.pubkey, name: data.display_name || data.name || ev.pubkey.slice(0, 8), picture: data.picture };
@@ -278,11 +278,11 @@ export function usePeopleSearch({ identity }) {
         dvmPool?.destroy();
       }
 
-      const publicSearchRelays = ['wss://groups.aegispayhq.com'];
+      const publicSearchRelays = groupOnlyRelays;
       const events = await Promise.race([
         Promise.all([
           pool.querySync(publicSearchRelays, { kinds: [0, 41], search: rawQuery, limit: 30 }),
-          pool.querySync(['wss://groups.aegispayhq.com'], { kinds: [9002], limit: 200 })
+          pool.querySync(groupOnlyRelays, { kinds: [9002], limit: 200 })
         ]).then(res => [...res[0], ...res[1]]),
         new Promise(resolve => setTimeout(() => resolve([]), 4000))
       ]);

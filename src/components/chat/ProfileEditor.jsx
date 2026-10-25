@@ -5,7 +5,7 @@ import { getPrivacy } from '../../lib/privacy';
 import ScreenHeader from '../ui/ScreenHeader';
 import { AtSign, Image, Type, User } from 'lucide-react';
 
-const PROFILE_RELAYS = ['wss://relay.primal.net', 'wss://nos.lol', 'wss://relay.damus.io'];
+import { profileEditorRelays } from '../../lib/relays';
 
 export default function ProfileEditor({ identity, onClose }) {
   const profiles = useProfiles([identity?.pk]);
@@ -45,7 +45,7 @@ export default function ProfileEditor({ identity, onClose }) {
           picture: getPrivacy().profilePhoto === 'nobody' ? '' : values.picture.trim(),
         }),
       }, identity.sk);
-      const results = await Promise.allSettled(pool.publish(PROFILE_RELAYS, nostrEvent));
+      const results = await Promise.allSettled(pool.publish(profileEditorRelays, nostrEvent));
       const published = results.some((result) => result.status === 'fulfilled');
       if (!published) throw new Error('No relay accepted the profile update.');
       const updated = {
@@ -62,7 +62,7 @@ export default function ProfileEditor({ identity, onClose }) {
       setMessage(text);
       useChatStore.getState().setToast({ type: 'error', message: text });
     } finally {
-      pool?.close(PROFILE_RELAYS);
+      pool?.close(profileEditorRelays);
       setSaving(false);
     }
   };

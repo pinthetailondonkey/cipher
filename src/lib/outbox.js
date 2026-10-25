@@ -28,11 +28,11 @@ async function updateMessageStatus(id, status, owner) {
   if (currentOwner() === owner) notifyStatus(id, status);
 }
 
-export async function enqueueNostrEvent(event) {
+export async function enqueueNostrEvent(event, relays = null) {
   const owner = currentOwner();
   if (!owner) throw new Error('Local account database is not open.');
   const outbox = db.outbox;
-  await outbox.put(outboxRow(event));
+  await outbox.put(outboxRow(event, Date.now(), relays));
   await updateMessageStatus(event.id, 'queued', owner);
 }
 
@@ -46,8 +46,8 @@ export function shouldFlushOutboxRow(row, now, force = false) {
   return (row?.nextRetryAt || 0) <= now;
 }
 
-export function outboxRow(event, now = Date.now()) {
-  return {
+export function outboxRow(event, now = Date.now(), relays = null) {
+  const row = {
     id: event.id,
     kind: event.kind,
     event,
@@ -57,6 +57,8 @@ export function outboxRow(event, now = Date.now()) {
     queuedAt: now,
     created_at: event.created_at,
   };
+  if (Array.isArray(relays) && relays.length) row.relays = relays;
+  return row;
 }
 
 export function settleOutboxAttempt(queued, { accepted, now = Date.now(), error = '' }) {
@@ -90,7 +92,9 @@ export async function flushNostrOutbox(identity, { force = false } = {}) {
       await outbox.update(queued.id, { status: 'sending' });
       await updateMessageStatus(queued.id, 'sending', identity.pk);
       try {
-        const relays = queued.kind === 9 ? groupRelays : generalRelays;
+        const relays = queued.relays?.length
+          ? queued.relays
+          : (queued.kind === 9 ? groupRelays : generalRelays);
         const results = await Promise.allSettled(pool.publish(relays, queued.event));
         if (currentOwner() !== identity.pk) return;
         const accepted = results.some((result) => result.status === 'fulfilled');

@@ -3,8 +3,11 @@ import { getCurrentGroupKey, getAllGroupKeys, getGrantedEpochsFor, putGroupKey }
 import { distributeGroupKey } from '../lib/crypto/groupKeyDistribution';
 import { generateGroupKey } from '../lib/crypto/groupCipher';
 import { getAuthenticatedPool } from '../lib/pool';
-import { generalRelays } from '../lib/relays';
-import { db, currentOwner } from '../db';
+import { generalRelays, queryWithTimeout } from '../lib/relays';
+import { relaysForPeer } from '../lib/dmRelays';
+import { currentOwner } from '../db';
+import { rememberMembers, loadMemberSnapshot, reconcileRunKey } from '../lib/crypto/groupKeyRotation';
+import { decryptMemberBaselines, MEMBER_BASELINE_KIND, memberBaselineTag } from '../lib/crypto/memberBaseline';
 const completedRuns = new Map();
 const inFlightRuns = new Map();
 const memberPubkeys = (members) => Array.from(new Set(
@@ -114,18 +117,22 @@ export async function reconcileGroupKeys({ groupId, members, isOwner, identity }
   if (!groupId || !identity?.sk || !identity?.pk || !isOwner || !currentOwner()) return;
   const normalizedMembers = memberPubkeys(members);
   const signature = `${normalizedMembers.join(',')}|${identity.pk}`;
-  if (completedRuns.get(groupId) === signature) return;
+  const current = await getCurrentGroupKey(groupId);
+  const epoch = current?.epoch ?? 0;
+  const runKey = reconcileRunKey(signature, epoch);
+  if (completedRuns.get(groupId) === runKey) return;
   const existing = inFlightRuns.get(groupId);
-  if (existing?.signature === signature) return existing.promise;
+  if (existing?.runKey === runKey) return existing.promise;
   const promise = reconcile({ groupId, members: normalizedMembers, isOwner, identity })
     .then((result) => {
-      completedRuns.set(groupId, signature);
+      const doneEpoch = Number.isInteger(result?.epoch) ? result.epoch : epoch;
+      completedRuns.set(groupId, reconcileRunKey(signature, doneEpoch));
       return result;
     })
     .finally(() => {
       if (inFlightRuns.get(groupId)?.promise === promise) inFlightRuns.delete(groupId);
     });
-  inFlightRuns.set(groupId, { signature, promise });
+  inFlightRuns.set(groupId, { runKey, promise });
   return promise;
 }
 
@@ -133,7 +140,9 @@ async function reconcile({ groupId, members, isOwner, identity }) {
   if (!isOwner) return;
   const pool = await getAuthenticatedPool(identity);
   const publish = async (ev) => {
-    const results = await Promise.allSettled(pool.publish(generalRelays, ev));
+    const peer = ev.tags?.find((tag) => tag[0] === 'p')?.[1];
+    const relays = peer ? await relaysForPeer(identity, peer) : generalRelays.slice();
+    const results = await Promise.allSettled(pool.publish(relays.length ? relays : generalRelays, ev));
     if (!results.some(r => r.status === 'fulfilled')) throw new Error('all relays rejected');
   };
   let current = await getCurrentGroupKey(groupId);
@@ -143,9 +152,9 @@ async function reconcile({ groupId, members, isOwner, identity }) {
     current = { epoch: 1, bytes: key };
     await distributeGroupKey({ senderPrivkey: identity.sk, senderPubkey: identity.pk, groupId, epoch: 1, keyBytes: key, recipients: dedupe([...members, identity.pk]), publish });
     await safePutSnapshot(groupId, members);
-    return;
+    return { epoch: 1 };
   }
-  const prev = await safeGetSnapshot(groupId);
+  const prev = await baselineMembers(groupId, identity, pool);
   const prevSet = new Set(prev || []);
   const currentSet = new Set(members);
   const removed = [...prevSet].filter(pk => !currentSet.has(pk));
@@ -156,7 +165,7 @@ async function reconcile({ groupId, members, isOwner, identity }) {
     const priorEpochs = (await getAllGroupKeys(groupId)).filter(e => e.epoch !== nextEpoch);
     await distributeGroupKey({ senderPrivkey: identity.sk, senderPubkey: identity.pk, groupId, epoch: nextEpoch, keyBytes: newKey, recipients: dedupe([...members, identity.pk]), extraEpochs: priorEpochs, publish });
     await safePutSnapshot(groupId, members);
-    return;
+    return { epoch: nextEpoch };
   }
   await safePutSnapshot(groupId, members);
 
@@ -166,7 +175,7 @@ async function reconcile({ groupId, members, isOwner, identity }) {
     const granted = await getGrantedEpochsFor(groupId, pk);
     if (!granted.has(current.epoch)) recipients.push(pk);
   }
-  if (!recipients.length) return;
+  if (!recipients.length) return { epoch: current.epoch };
   await distributeGroupKey({
     senderPrivkey: identity.sk,
     senderPubkey: identity.pk,
@@ -177,24 +186,40 @@ async function reconcile({ groupId, members, isOwner, identity }) {
     extraEpochs: allEpochs.filter(e => e.epoch !== current.epoch),
     publish,
   });
+  return { epoch: current.epoch };
+}
+async function baselineMembers(groupId, identity, pool) {
+  const local = await safeGetSnapshot(groupId);
+  if (local && local.length) return local;
+  try {
+    const events = await queryWithTimeout(pool, generalRelays, {
+      kinds: [MEMBER_BASELINE_KIND],
+      authors: [identity.pk],
+      '#d': [memberBaselineTag(groupId)],
+    });
+    const restored = await decryptMemberBaselines(events, identity.sk, identity.pk, groupId);
+    if (restored?.members?.length) {
+      await rememberMembers(groupId, restored.members);
+      return memberPubkeys(restored.members);
+    }
+  } catch (error) {
+    console.warn('[group-key] Could not restore the membership baseline:', error);
+  }
+  return null;
 }
 async function safeGetSnapshot(groupId) {
   try {
-    const row = await db.groupMemberSigs.get(groupId);
-    return row?.members ? memberPubkeys(row.members) : null;
+    const members = await loadMemberSnapshot(groupId);
+    return members ? memberPubkeys(members) : null;
   } catch {
     return null;
   }
 }
 async function safePutSnapshot(groupId, members) {
-  const normalized = memberPubkeys(members);
   try {
-    await db.groupMemberSigs.put({
-      groupId,
-      signature: normalized.join(','),
-      members: normalized,
-      updatedAt: Math.floor(Date.now() / 1000),
-    });
-  } catch {}
+    await rememberMembers(groupId, members);
+  } catch (error) {
+    console.error('[group-key] Could not store the membership snapshot:', error);
+  }
 }
 function dedupe(arr) { return Array.from(new Set(arr.filter(Boolean))); }
