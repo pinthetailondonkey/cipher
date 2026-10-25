@@ -11,7 +11,7 @@ import Picture from './ui/Picture';
 import { MediaAudio, MediaImage } from './ui/PrivateMedia';
 import { attachmentsFor } from '../lib/mediaCrypto';
 import { allowsLinkPreviews } from '../lib/privacy';
-import { orderActionsFor } from '../lib/orderActions';
+import { orderActionsFor, orderState } from '../lib/orderActions';
 import { orderPriceLabel } from '../lib/listing';
 
 const EMPTY_REACTIONS = [];
@@ -36,7 +36,7 @@ function messageText(data) {
 function orderLabel(content) {
   if (content.paymentState === 'confirmed') return { text: 'Confirmed', className: 'bg-blue-600 text-white' };
   if (content.status === 'shipped') return { text: 'Shipped', className: 'bg-blue-600 text-white' };
-  if (content.status === 'delivered' || content.status === 'completed') return { text: 'Delivered', className: 'bg-emerald-500 text-white' };
+  if (content.status === 'completed') return { text: 'Delivered', className: 'bg-emerald-500 text-white' };
   if (content.status === 'cancelled') return { text: 'Cancelled', className: 'bg-white/15 text-white' };
   if (content.status === 'disputed') return { text: 'Disputed', className: 'bg-rose-500/20 text-rose-200' };
   if (content.paymentState === 'seen' && content.paymentSeenBy !== 'vendor') return { text: 'Seen on-chain', className: 'bg-blue-600 text-white' };
@@ -168,7 +168,6 @@ export default function MessageBubble({ message, data, onAction, senderName, isP
     ...(inGroup ? [['pin', Pin, 'Pin']] : []),
     ...(content.type === 'product' && !isSender ? [['buy_product', ShoppingBag, 'Buy']] : []),
     ...(content.type === 'product' && isSender ? [['broadcast_product', Radio, 'Share']] : []),
-    ...((content.type === 'order_request' || content.type === 'cipher_order') && !isSender ? [['accept_order', BadgeCheck, 'Accept']] : []),
     ...(isSender && text ? [['edit', Pencil, 'Edit']] : []),
     ['delete', Trash2, 'Delete'],
   ];
@@ -198,26 +197,14 @@ export default function MessageBubble({ message, data, onAction, senderName, isP
       >
         {!isSender && senderName && <p className="mb-0.5 text-[11px] font-semibold leading-none text-blue-400">{senderName}</p>}
         {(content.type === 'cipher_order' || content.type === 'order_request' || content.type === 'order_update') && (
-          <OrderReceipt content={content} />
+          <OrderReceipt content={content.type === 'order_update' ? content : { ...content, ...orderState(chatMessages, message?.id, { data: content }) }} />
         )}
-        {(content.type === 'cipher_order' || content.type === 'order_request') && !isSender && content.status !== 'accepted' && content.status !== 'cancelled' && (
-          <button type="button" onClick={(event) => { event.stopPropagation(); onAction?.('accept_order', { ...message, data: content }); }} className="mb-1 min-h-11 text-left text-[15px] font-semibold text-blue-300">Accept order</button>
-        )}
-        {(content.type === 'cipher_order' || content.type === 'order_request') && !isSender && content.status === 'accepted' && content.paymentState !== 'confirmed' && content.paymentSeenBy !== 'vendor' && (
-          <button type="button" onClick={(event) => { event.stopPropagation(); onAction?.('confirm_payment', { ...message, data: content }); }} className="mb-1 min-h-11 text-left text-[15px] font-semibold text-white">I saw the payment</button>
-        )}
-        {(content.type === 'cipher_order' || content.type === 'order_request') && !isSender && (content.status === 'accepted' || content.paymentState === 'seen' || content.paymentState === 'address_issued') && content.paymentState !== 'confirmed' && (
-          <button type="button" onClick={(event) => { event.stopPropagation(); onAction?.('check_chain', { ...message, data: content }); }} className="mb-1 min-h-11 text-left text-[15px] font-semibold text-white">Check the chain</button>
-        )}
-        {['order_request', 'cipher_order', 'order_update'].includes(content.type) && orderActionsFor({ ...message, data: content }, chatMessages).map(({ action, label, target }) => {
-          // The handlers send to msg.pubkey about order msg.id.
-          const subject = target === 'order'
-            ? { ...message, id: content.orderId, data: content }
-            : target === 'peer'
-              ? { ...message, pubkey: activeDm, data: content }
-              : { ...message, data: content };
+        {orderActionsFor({ ...message, data: content }, chatMessages).map(({ action, label, target }) => {
+          // Vendor actions send to the buyer, msg.pubkey; buyer actions to the chat peer.
+          const subject = target === 'peer' ? { ...message, pubkey: activeDm, data: content } : { ...message, data: content };
+          const tone = action === 'accept_order' ? 'text-blue-300' : ['report_issue', 'decline_order', 'cancel_order'].includes(action) ? 'text-rose-300' : 'text-white';
           return (
-            <button key={action} type="button" onClick={(event) => { event.stopPropagation(); onAction?.(action, subject); }} className={`mb-1 block min-h-11 text-left text-[15px] font-semibold ${action === 'report_issue' || action === 'decline_order' || action === 'cancel_order' ? 'text-rose-300' : 'text-white'}`}>{label}</button>
+            <button key={action} type="button" onClick={(event) => { event.stopPropagation(); onAction?.(action, subject); }} className={`mb-1 block min-h-11 text-left text-[15px] font-semibold ${tone}`}>{label}</button>
           );
         })}
         {attachments.layout === 'single' && (

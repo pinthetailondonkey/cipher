@@ -1,49 +1,73 @@
+import { ORDER_STATUS as S, isOrderStatus } from './paymentState.js';
+
 const REQUEST_TYPES = new Set(['order_request', 'cipher_order']);
-const CLOSED = new Set(['cancelled', 'completed', 'disputed']);
+
+const ACTION = {
+  accept_order: 'Accept order',
+  decline_order: 'Decline',
+  confirm_payment: 'I saw the payment',
+  check_chain: 'Check the chain',
+  mark_shipped: 'Mark shipped',
+  cancel_order: 'Cancel order',
+  confirm_delivery: 'Confirm delivery',
+  report_issue: 'Report an issue',
+};
+
+export const ORDER_ACTIONS = Object.freeze(Object.keys(ACTION));
 
 function isRequest(data) {
   return REQUEST_TYPES.has(data?.type);
 }
 
-// The order's state is the newest update either side sent for it. The
-// request card itself only carries what this device changed locally.
+// The order's state is the newest update either side sent for it, over what
+// this device changed on the request card itself.
 export function orderState(messages, orderId, request) {
   const updates = (Array.isArray(messages) ? messages : [])
     .filter((message) => message?.data?.type === 'order_update' && message.data.orderId === orderId)
     .sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0) || String(a.id).localeCompare(String(b.id)));
   const latest = updates[updates.length - 1] || null;
-  const status = latest?.data?.status || request?.data?.status || 'pending';
-  const paid = status === 'paid'
-    || request?.data?.paymentState === 'confirmed'
-    || updates.some((update) => update.data.paymentState === 'confirmed');
-  return { status, paid, latestId: latest?.id || null };
+  const withPayment = [...updates].reverse().find((update) => update.data.paymentState);
+  return {
+    status: latest?.data?.status || request?.data?.status || S.PENDING,
+    paymentState: withPayment?.data.paymentState || request?.data?.paymentState || 'created',
+    paymentSeenBy: withPayment?.data.paymentSeenBy || request?.data?.paymentSeenBy || '',
+  };
 }
 
-// Buttons for one order card. `target` says which message the action is
-// about: the request, so the handler gets the buyer's or the vendor's key,
-// or the order itself, named by its id and sent to the vendor.
-export function orderActionsFor(message, messages) {
-  const data = message?.data;
-  if (!data) return [];
-  if (isRequest(data)) {
-    const { status, paid } = orderState(messages, message.id, message);
-    if (CLOSED.has(status)) return [];
-    if (!message.isSender) {
-      const actions = [];
-      if (status === 'pending') actions.push({ action: 'decline_order', label: 'Decline', target: 'request' });
-      if (paid && status !== 'shipped') actions.push({ action: 'mark_shipped', label: 'Mark shipped', target: 'request' });
-      return actions;
-    }
-    return status === 'pending' ? [{ action: 'cancel_order', label: 'Cancel order', target: 'peer' }] : [];
+// The one table of what each side may do with an order in each state. Every
+// order button renders from this. A status it does not know is an error.
+export function allowedActionsFor(order, viewer) {
+  const { status, paymentState = 'created', paymentSeenBy = '' } = order || {};
+  if (!isOrderStatus(status)) throw new Error(`Unknown order status: ${status}`);
+  const named = (...actions) => actions.map((action) => ({ action, label: ACTION[action] }));
+  if (viewer === 'vendor') {
+    if (status === S.PENDING) return named('accept_order', 'decline_order');
+    const actions = [];
+    if (status === S.ACCEPTED && paymentSeenBy !== 'vendor' && paymentState !== 'confirmed') actions.push('confirm_payment');
+    if ((status === S.ACCEPTED || status === S.PAID) && paymentState !== 'confirmed') actions.push('check_chain');
+    if (status === S.PAID) actions.push('mark_shipped');
+    return named(...actions);
   }
-  if (data.type !== 'order_update' || message.isSender) return [];
-  const request = (Array.isArray(messages) ? messages : []).find((item) => item?.id === data.orderId && isRequest(item.data));
-  // Only the buyer acts on the vendor's updates, and only on the newest one.
-  if (!request?.isSender) return [];
-  const { status, latestId } = orderState(messages, data.orderId, request);
-  if (latestId !== message.id || CLOSED.has(status)) return [];
-  const actions = [];
-  if (status === 'shipped') actions.push({ action: 'confirm_delivery', label: 'Confirm delivery', target: 'order' });
-  if (['accepted', 'paid', 'shipped'].includes(status)) actions.push({ action: 'report_issue', label: 'Report an issue', target: 'order' });
-  return actions;
+  if (viewer === 'buyer') {
+    if (status === S.PENDING) return named('cancel_order');
+    if (status === S.SHIPPED) return named('confirm_delivery', 'report_issue');
+    if (status === S.ACCEPTED || status === S.PAID) return named('report_issue');
+    return [];
+  }
+  throw new Error(`Unknown order viewer: ${viewer}`);
+}
+
+// Buttons for one card. Only the request card carries them, so each order
+// has one place to act. The vendor's actions go to the buyer, msg.pubkey on
+// that card; the buyer's go to the vendor, the chat peer.
+export function orderActionsFor(message, messages) {
+  if (!isRequest(message?.data)) return [];
+  const viewer = message.isSender ? 'buyer' : 'vendor';
+  try {
+    return allowedActionsFor(orderState(messages, message.id, message), viewer)
+      .map((item) => ({ ...item, target: viewer === 'vendor' ? 'request' : 'peer' }));
+  } catch (error) {
+    console.warn('[orders] No actions for this order:', error.message);
+    return [];
+  }
 }

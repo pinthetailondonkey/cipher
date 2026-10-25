@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { ORDER_STATUS } from './lib/paymentState';
 import { Search, ShoppingBag, Loader2 } from 'lucide-react';
 import OneTapCheckout from './components/OneTapCheckout';
 import { useNIP44DM } from './hooks/useNIP44DM';
@@ -65,7 +66,7 @@ export default function Shop({ identity, setActiveTab }) {
   const confirmOrder = async (order) => {
     const payload = order?.type === 'cipher_order' ? order : {
       type: 'cipher_order',
-      status: 'pending',
+      status: ORDER_STATUS.PENDING,
       vendorPubkey: order?.vendorPubkey || '',
       product: orderProduct(order),
     };
