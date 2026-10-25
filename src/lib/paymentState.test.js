@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { applyWatcherReport, nextPaymentState } from './paymentState.js';
+import { applyWatcherReport, confirmationsRequired, nextPaymentState } from './paymentState.js';
 
 test('a payment moves created, address issued, seen, confirmed, and skips nothing', () => {
   assert.equal(nextPaymentState('created', 'issue'), 'address_issued');
@@ -27,5 +27,38 @@ test('the vendor device cannot confirm a payment, and an empty watcher refuses',
   assert.equal(
     applyWatcherReport({ state: 'address_issued', watcherUrl: 'http://watcher.example', report: { source: 'watcher', txid: 'ab', confirmations: 10 } }),
     'confirmed',
+  );
+});
+
+test('confirmation depth is per currency, and a flag alone cannot confirm', () => {
+  assert.equal(confirmationsRequired('btc'), 3);
+  assert.equal(confirmationsRequired('xmr'), 10);
+  assert.equal(confirmationsRequired('btc', { btc: 6 }), 6);
+  assert.equal(
+    applyWatcherReport({
+      state: 'address_issued',
+      watcherUrl: 'http://watcher.example',
+      currency: 'btc',
+      report: { source: 'watcher', txid: 'ab', confirmations: 3, confirmed: false },
+    }),
+    'confirmed',
+  );
+  assert.throws(
+    () => applyWatcherReport({
+      state: 'seen',
+      watcherUrl: 'http://watcher.example',
+      currency: 'btc',
+      report: { source: 'watcher', txid: 'ab', confirmations: 2, confirmed: true },
+    }),
+    /did not move/,
+  );
+  assert.throws(
+    () => applyWatcherReport({
+      state: 'seen',
+      watcherUrl: 'http://watcher.example',
+      currency: 'xmr',
+      report: { source: 'watcher', txid: 'ab', confirmations: 9, confirmed: true },
+    }),
+    /did not move/,
   );
 });

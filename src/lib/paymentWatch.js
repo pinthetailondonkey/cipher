@@ -1,4 +1,5 @@
-import { applyWatcherReport } from './paymentState.js';
+import { applyWatcherReport, confirmationsRequired } from './paymentState.js';
+import { scopedGet } from './storage.js';
 
 // Public explorers. Pasting one is still a block-explorer call, so it is refused
 // before any request. A watcher you run is a different host.
@@ -37,12 +38,15 @@ export function paymentWatchUrl(watcherUrl, { address, currency } = {}) {
   if (url.protocol !== 'https:' && url.protocol !== 'http:') {
     throw new Error('The payment watcher address is not a URL.');
   }
+  const token = url.searchParams.get('token') || '';
+  if (!token) throw new Error('The payment watcher URL needs a token.');
   url.searchParams.set('address', String(address || '').trim());
   url.searchParams.set('currency', String(currency || '').trim());
+  url.searchParams.set('token', token);
   return url.href;
 }
 
-export function reportFromTransfers(transfers, address) {
+export function reportFromTransfers(transfers, address, currency) {
   const wanted = String(address || '').trim();
   const hit = (Array.isArray(transfers) ? transfers : []).find((row) => row && (row.address === wanted || row.addr === wanted) && row.txid);
   if (!hit) return { pending: true };
@@ -51,16 +55,17 @@ export function reportFromTransfers(transfers, address) {
     source: 'watcher',
     txid: String(hit.txid),
     confirmations,
-    confirmed: hit.confirmed === true || confirmations >= 10,
+    confirmed: confirmations >= confirmationsRequired(currency),
   };
 }
 
 export async function checkPayment({ watcherUrl, address, currency, state, fetchImpl = globalThis.fetch } = {}) {
   const endpoint = paymentWatchUrl(watcherUrl, { address, currency });
   if (!String(address || '').trim()) throw new Error('This order has no payment address to check.');
+  const token = new URL(endpoint).searchParams.get('token');
   let response;
   try {
-    response = await fetchImpl(endpoint, { headers: { Accept: 'application/json' } });
+    response = await fetchImpl(endpoint, { headers: { Accept: 'application/json', Authorization: `Bearer ${token}` } });
   } catch (error) {
     console.error('[payments] Watcher did not answer:', error);
     throw new Error('The payment watcher did not answer.');
@@ -79,10 +84,15 @@ export async function checkPayment({ watcherUrl, address, currency, state, fetch
     source: 'watcher',
     txid: String(body.txid),
     confirmations: Number(body.confirmations) || 0,
-    confirmed: body.confirmed === true,
   };
   try {
-    const next = applyWatcherReport({ state, watcherUrl, report });
+    const next = applyWatcherReport({
+      state,
+      watcherUrl,
+      report,
+      currency,
+      threshold: confirmationsRequired(currency, scopedGet('confirmations', {}) || {}),
+    });
     return { moved: true, state: next, report };
   } catch (error) {
     if (/did not move/.test(error.message)) return { moved: false, state };

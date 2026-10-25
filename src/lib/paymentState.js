@@ -4,6 +4,17 @@ const NEXT = {
   seen: { confirm: 'confirmed' },
 };
 
+const DEFAULT_CONFIRMATIONS = { btc: 3, xmr: 10 };
+
+export function confirmationsRequired(currency, overrides = {}) {
+  const key = String(currency || '').toLowerCase();
+  const fallback = DEFAULT_CONFIRMATIONS[key] ?? 10;
+  const chosen = overrides && overrides[key] != null ? overrides[key] : fallback;
+  const count = Number(chosen);
+  if (!Number.isInteger(count) || count < 1) return fallback;
+  return count;
+}
+
 export function nextPaymentState(current, event) {
   const next = NEXT[current]?.[event];
   if (!next) throw new Error(`A payment that is ${current || 'missing'} cannot ${event}.`);
@@ -12,7 +23,8 @@ export function nextPaymentState(current, event) {
 
 // The vendor's phone must not call this. A watcher you run is the only caller.
 // There is no fetch here, and an empty watcher URL is a hard stop.
-export function applyWatcherReport({ state, watcherUrl, report } = {}) {
+// `confirmed: true` on the report is not enough. The count has to clear the threshold.
+export function applyWatcherReport({ state, watcherUrl, report, currency, threshold } = {}) {
   if (!String(watcherUrl || '').trim()) {
     throw new Error('No payment watcher is set. This device does not check a block explorer.');
   }
@@ -21,7 +33,8 @@ export function applyWatcherReport({ state, watcherUrl, report } = {}) {
   }
   let current = state;
   if (current === 'address_issued') current = nextPaymentState(current, 'see');
-  const confirmed = report.confirmed === true || Number(report.confirmations) >= 10;
+  const need = threshold == null ? confirmationsRequired(currency) : Number(threshold);
+  const confirmed = Number(report.confirmations) >= need;
   if (confirmed) {
     if (current !== 'seen') throw new Error('A payment has to be seen before it can be confirmed.');
     current = nextPaymentState(current, 'confirm');
