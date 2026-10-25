@@ -49,6 +49,56 @@ function keepIfUnchanged(state, key, next) {
   return sameShallow(state[key], next) ? state : { [key]: next };
 }
 
+const EMPTY_LIST = [];
+const EMPTY_COUNTS = {};
+let reactionSource = EMPTY_LIST;
+let reactionKeyCached = '';
+let unreadSource = null;
+let unreadTotalCached = 0;
+let notifSource = null;
+let notifAckSource = null;
+let notifTotalCached = 0;
+
+export function reactionSubscriptionKey(state) {
+  const list = state?.view === 'group'
+    ? (state.groupMessages?.[state.activeGroup?.id] || EMPTY_LIST)
+    : (state?.dms?.[state.activeDm] || EMPTY_LIST);
+  if (list === reactionSource) return reactionKeyCached;
+  reactionSource = list;
+  const ids = [];
+  const start = Math.max(0, list.length - 30);
+  for (let i = start; i < list.length; i += 1) {
+    const id = list[i]?.id;
+    if (id && !String(id).startsWith('temp')) ids.push(id);
+  }
+  reactionKeyCached = ids.join(',');
+  return reactionKeyCached;
+}
+
+export function unreadTotalOf(state) {
+  const counts = state?.unreadCounts || EMPTY_COUNTS;
+  if (counts === unreadSource) return unreadTotalCached;
+  unreadSource = counts;
+  let sum = 0;
+  for (const key of Object.keys(counts)) sum += Number(counts[key]) || 0;
+  unreadTotalCached = sum;
+  return sum;
+}
+
+export function notifTotalOf(state) {
+  const counts = state?.unreadCounts || EMPTY_COUNTS;
+  const ack = state?.notifAck || EMPTY_COUNTS;
+  if (counts === notifSource && ack === notifAckSource) return notifTotalCached;
+  notifSource = counts;
+  notifAckSource = ack;
+  let sum = 0;
+  for (const id of Object.keys(counts)) {
+    sum += Math.max(0, (Number(counts[id]) || 0) - (Number(ack[id]) || 0));
+  }
+  notifTotalCached = sum;
+  return sum;
+}
+
 export const useChatStore = create((set, get) => ({
   hideNotifContent: scopedGet('hide_notif_content', true),
   setHideNotifContent: (v) => { scopedSet('hide_notif_content', v); set({ hideNotifContent: v }); },
