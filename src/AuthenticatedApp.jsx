@@ -76,7 +76,8 @@ export default function AuthenticatedApp({ identity }) {
 
       <motion.nav
         initial={{ y: 50 }} animate={{ y: 0 }} transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-        className="fixed bottom-4 left-4 right-4 z-20 mx-auto max-w-md rounded-3xl border border-white/10 bg-white/5 shadow-2xl backdrop-blur-xl pb-[env(safe-area-inset-bottom)]"
+        className="fixed left-4 right-4 z-20 mx-auto max-w-md rounded-3xl border border-white/10 bg-white/5 shadow-2xl backdrop-blur-xl"
+        style={{ bottom: `calc(1rem + env(safe-area-inset-bottom))` }}
       >
         <div className="flex justify-around items-center min-h-[44px] max-w-md mx-auto px-6">
           <button onClick={() => setActiveTab('chat')} className={`relative flex flex-col items-center gap-1 w-16 min-h-[44px] active:scale-95 transition-transform duration-100 ${activeTab === 'chat' ? 'text-blue-500' : 'text-white/40'}`}>
