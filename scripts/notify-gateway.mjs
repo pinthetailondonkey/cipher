@@ -14,6 +14,8 @@ import { SimplePool } from 'nostr-tools';
 import { eventShouldBuzz, eventShouldRing } from '../src/lib/pushGateway.js';
 import { keysReady, sendNative } from '../src/lib/nativePushSend.js';
 
+if (fs.existsSync('.env')) process.loadEnvFile('.env');
+
 const port = Number(process.env.PUSH_PORT || 8787);
 const dir = process.env.CIPHER_PUSH_DIR || path.join(process.cwd(), 'data', 'push-gateway');
 const relays = (process.env.CIPHER_RELAYS || 'wss://relay.primal.net').split(',').map((item) => item.trim()).filter(Boolean);
