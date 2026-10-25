@@ -9,6 +9,7 @@ Nostr messenger and direct-deal shop. Vite + React. See AGENTS.md if present.
 - No new dependencies without a reason.
 - Read docs/VOICE.md before changing user-facing text. Words only, do not restyle.
 - Push each commit. Pin every read to the SHA, never to /main.
+- If a push fails twice, push by hand: git push origin <branch>. Do not back off and wait.
 
 ## Facts
 - Bitcoin 8 decimals, Monero 12. Round half up, never drop.
