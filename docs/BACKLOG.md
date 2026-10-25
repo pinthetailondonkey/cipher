@@ -17,7 +17,7 @@ Constraints:
 - State in the commit: what happens to history if the vault key is lost.
 - State in the commit: whether content search still works.
 
-## 3. Extend the UI harness to every screen
+## 3. Extend the UI harness to every screen — DONE (147ec14)
 Done when: the tap-target and clipping assertions run per tab, not just home.
 
 ## 4. README Vercel section
