@@ -30,7 +30,7 @@ If you are developing a production application, we recommend using TypeScript wi
 
 For IP privacy, use Tor Browser or a VPN. The app does not manage this.
 
-The app used to have a Tor-only switch. That only policed hosts the app chose to call. A browser or system proxy covers images, previews, DNS, and calls, and a web page cannot set its own proxy. The switch is gone. There is no clearnet banner and no onion probe.
+The app used to have a Tor-only switch. That only policed hosts the app chose to call. A browser or system proxy covers images, previews, DNS, and calls, and a web page cannot set its own proxy. Decision: Tor-only is out. It gates no row. Not groups, not messages, not profiles, not search, not pictures, not calls. A pasted onion replaces only the row you paste it on. There is no clearnet banner and no onion probe.
 
 Profile → Connections lists every host. That list is `src/lib/egress.js`. A test fails if a new `wss://`, `https://`, or `stun:` host appears anywhere else in `src`. Defaults are hardcoded and work with nothing pasted. Advanced, hidden until opened, is where a row can be pointed at an `.onion` or a box you run. Type `off` to drop that host. An onion relay needs Tor Browser or Orbot. From an HTTPS page, a plain `ws://` onion is blocked as mixed content. Restart after changing a relay.
 
