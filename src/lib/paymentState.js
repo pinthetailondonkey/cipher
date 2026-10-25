@@ -1,3 +1,24 @@
+// Every status an order message can carry. The order actions write only
+// these, and the order card reads only these.
+export const ORDER_STATUS = Object.freeze({
+  PENDING: 'pending',
+  ACCEPTED: 'accepted',
+  PAID: 'paid',
+  SHIPPED: 'shipped',
+  COMPLETED: 'completed',
+  CANCELLED: 'cancelled',
+  DISPUTED: 'disputed',
+});
+export const ORDER_STATUSES = Object.freeze(Object.values(ORDER_STATUS));
+export const PAYMENT_STATES = Object.freeze(['created', 'address_issued', 'seen', 'confirmed']);
+// What a vendor may assert when signing a receipt (docs/proof-of-trade.md).
+export const RECEIPT_OUTCOME = Object.freeze({ CONFIRMED: 'confirmed', RUGGED: 'rugged', REFUNDED: 'refunded' });
+export const RECEIPT_OUTCOMES = Object.freeze(Object.values(RECEIPT_OUTCOME));
+
+export function isOrderStatus(status) {
+  return ORDER_STATUSES.includes(status);
+}
+
 const NEXT = {
   created: { issue: 'address_issued' },
   address_issued: { see: 'seen' },

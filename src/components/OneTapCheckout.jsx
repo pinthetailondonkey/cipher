@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { ORDER_STATUS } from '../lib/paymentState';
 import { Check, Copy, Loader2, X } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { copyText } from '../lib/copyText';
@@ -7,7 +8,7 @@ import { orderProduct, priceLabel } from '../lib/listing';
 function cipherOrder(product) {
   return {
     type: 'cipher_order',
-    status: 'pending',
+    status: ORDER_STATUS.PENDING,
     vendorPubkey: product?.vendorPubkey || '',
     product: orderProduct(product),
   };
