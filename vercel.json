@@ -1,4 +1,12 @@
 {
+  "redirects": [
+    {
+      "source": "/(.*)",
+      "has": [{ "type": "host", "value": "cipher-beta-eight.vercel.app" }],
+      "destination": "https://sonic-cobalt-4m6q5vj.vercel.app/$1",
+      "permanent": true
+    }
+  ],
   "rewrites": [
     {
       "source": "/(.*)",
@@ -11,7 +19,7 @@
       "headers": [
         {
           "key": "Content-Security-Policy",
-          "value": "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; media-src 'self' blob:; font-src 'self' data:; worker-src 'self' blob:; connect-src 'self' https: wss://relay.primal.net wss://groups.aegispayhq.com wss://relay.vertexlab.io wss://relay.noswhere.com wss://nos.lol wss://relay.damus.io wss://relay.nostr.band; upgrade-insecure-requests"
+          "value": "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https: http://*.onion; media-src 'self' blob:; font-src 'self' data:; worker-src 'self' blob:; connect-src 'self' https: http: wss: ws: stun: stuns: turn: turns:"
         },
         {
           "key": "Strict-Transport-Security",

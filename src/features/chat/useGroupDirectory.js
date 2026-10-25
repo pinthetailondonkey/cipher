@@ -4,7 +4,7 @@ import { getMyGroups, setMyGroups } from '../../lib/myGroups';
 import { groupRelays, queryWithTimeout } from '../../lib/relays';
 import { getAuthenticatedPool } from '../../lib/pool';
 import { useChatStore } from '../../store/chatStore';
-import { parseGroupReference, loadGroupProfile } from '../../hooks/useNIP29Group';
+import { parseGroupReference, loadGroupProfile, publishGroupJoin } from '../../hooks/useNIP29Group';
 
 export function useMyGroups(pubkey) {
   const setGroupsStore = useChatStore((s) => s.setGroups);
@@ -75,6 +75,7 @@ export function useGroupDirectory({ identity, sendDM, createGroupHook, setGroups
       setMyGroups(identity.pk, localGroups);
       setGroups(prev => [newGroupObj, ...(prev || []).filter(g => g.id !== newGroupObj.id)]);
       openChat('group', newGroupObj.id, newGroupObj);
+      await publishGroupJoin(identity, newGroupObj.id);
       setToast({ type: 'success', message: 'Joined group' });
     } catch (err) {
       console.error('[joinGroupById] error:', err);

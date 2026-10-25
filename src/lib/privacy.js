@@ -1,4 +1,4 @@
-import { scopedGet, scopedSet } from './storage';
+import { scopeKey, scopedSet } from './storage';
 
 export const DEFAULT_PRIVACY = {
   calls: 'everyone',
@@ -10,15 +10,39 @@ export const DEFAULT_PRIVACY = {
   forwarding: true,
 };
 
+let privacyKey = '';
+let privacyRaw;
+let privacySnapshot = DEFAULT_PRIVACY;
+
 export function getPrivacy() {
-  const stored = scopedGet('privacy', {});
-  return { ...DEFAULT_PRIVACY, ...(stored && typeof stored === 'object' ? stored : {}) };
+  const storageKey = scopeKey('privacy');
+  let raw = null;
+  try {
+    raw = globalThis.localStorage?.getItem(storageKey) ?? null;
+  } catch {
+    raw = null;
+  }
+  if (storageKey === privacyKey && raw === privacyRaw) return privacySnapshot;
+  privacyKey = storageKey;
+  privacyRaw = raw;
+  let stored = {};
+  if (raw) {
+    try {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) stored = parsed;
+    } catch {
+      stored = {};
+    }
+  }
+  privacySnapshot = { ...DEFAULT_PRIVACY, ...stored };
+  return privacySnapshot;
 }
 
 export function setPrivacy(patch) {
   const next = { ...getPrivacy(), ...patch };
   scopedSet('privacy', next);
-  return next;
+  privacyRaw = undefined;
+  return getPrivacy();
 }
 
 export function allowsTyping() {

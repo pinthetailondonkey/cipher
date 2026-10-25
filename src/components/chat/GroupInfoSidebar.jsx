@@ -3,6 +3,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { BadgeCheck, Link2, LogOut, Package, Pencil, Store, Users, X } from 'lucide-react';
 import { useChatStore } from '../../store/chatStore';
 import Avatar from '../ui/Avatar';
+import Picture from '../ui/Picture';
 import { pressable } from '../ui/Button';
 import { copyText } from '../../lib/copyText';
 
@@ -213,7 +214,7 @@ export default function GroupInfoSidebar({
                   const isPinned = pinnedId === message.id;
                   return (
                     <div key={message.id} className="flex items-center gap-3 border-b border-white/5 px-4 py-3 last:border-0">
-                      {product.image ? <img src={product.image} alt="" loading="lazy" className="h-10 w-10 rounded-xl object-cover" /> : <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-black text-white/30"><Package size={16} /></span>}
+                      <Picture src={product.image} alt="" loading="lazy" className="h-10 w-10 rounded-xl object-cover" fallback={<span className="flex h-10 w-10 items-center justify-center rounded-xl bg-black text-white/30"><Package size={16} /></span>} />
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-[15px] font-semibold text-white">{product.title || product.name || 'Product'}</p>
                         <p className="truncate text-[13px] text-blue-500">{product.price || product.priceUsd || 'Ask'}</p>

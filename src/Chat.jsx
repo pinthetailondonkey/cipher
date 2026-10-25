@@ -32,7 +32,7 @@ export default function Chat({ identity }) {
     sendGroupMessage, subscribeToGroups, pinMessage, unpinMessage, fetchPinnedMessage,
     sendGroupTypingIndicator, createGroup: createGroupHook, fetchGroupMembers,
   } = useNIP29Group({ identity });
-  const { sendReaction, subscribeToReactions } = useReactions({ identity });
+  const { sendReaction, subscribeToReactions, subscribeToGroupReactions } = useReactions({ identity });
   const { sendVouch } = useReputation({ identity });
   const setGroups = useMyGroups(identity?.pk);
   const directory = useGroupDirectory({ identity, sendDM, createGroupHook, setGroups });
@@ -41,6 +41,7 @@ export default function Chat({ identity }) {
     fetchDMs,
     subscribeToDMs,
     subscribeToGroups,
+    subscribeToGroupReactions,
     sendTypingIndicator,
     sendDM,
     sendGroupTypingIndicator,

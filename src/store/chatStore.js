@@ -28,6 +28,27 @@ const normalizeBookmarks = (saved) => {
   return [];
 };
 
+function sameShallow(prev, next) {
+  if (Object.is(prev, next)) return true;
+  if (!prev || !next || typeof prev !== 'object' || typeof next !== 'object') return false;
+  if (Array.isArray(prev) || Array.isArray(next)) {
+    if (!Array.isArray(prev) || !Array.isArray(next) || prev.length !== next.length) return false;
+    for (let i = 0; i < prev.length; i += 1) if (!Object.is(prev[i], next[i])) return false;
+    return true;
+  }
+  const prevKeys = Object.keys(prev);
+  const nextKeys = Object.keys(next);
+  if (prevKeys.length !== nextKeys.length) return false;
+  for (const key of prevKeys) {
+    if (!Object.prototype.hasOwnProperty.call(next, key) || !Object.is(prev[key], next[key])) return false;
+  }
+  return true;
+}
+
+function keepIfUnchanged(state, key, next) {
+  return sameShallow(state[key], next) ? state : { [key]: next };
+}
+
 export const useChatStore = create((set, get) => ({
   hideNotifContent: scopedGet('hide_notif_content', true),
   setHideNotifContent: (v) => { scopedSet('hide_notif_content', v); set({ hideNotifContent: v }); },
@@ -92,7 +113,7 @@ export const useChatStore = create((set, get) => ({
   reactions: {},
   deletedMsgs: new Set(),
 
-  setDms: (v) => set((s) => ({ dms: typeof v === 'function' ? v(s.dms) : v })),
+  setDms: (v) => set((s) => keepIfUnchanged(s, 'dms', typeof v === 'function' ? v(s.dms) : v)),
   setGroups: (v) => set((s) => {
     const next = typeof v === 'function' ? v(s.groups) : v;
     const prev = Array.isArray(s.groups) ? s.groups : [];
@@ -110,8 +131,8 @@ export const useChatStore = create((set, get) => ({
     });
     return same ? s : { groups: incoming };
   }),
-  setGroupMessages: (v) => set((s) => ({ groupMessages: typeof v === 'function' ? v(s.groupMessages) : v })),
-  setProfiles: (v) => set((s) => ({ profiles: typeof v === 'function' ? v(s.profiles) : v })),
+  setGroupMessages: (v) => set((s) => keepIfUnchanged(s, 'groupMessages', typeof v === 'function' ? v(s.groupMessages) : v)),
+  setProfiles: (v) => set((s) => keepIfUnchanged(s, 'profiles', typeof v === 'function' ? v(s.profiles) : v)),
   setGroupMembers: (v) => set((s) => ({ groupMembers: typeof v === 'function' ? v(Array.isArray(s.groupMembers) ? s.groupMembers : []) : v })),
   setPinnedMessages: (v) => set((s) => ({ pinnedMessages: typeof v === 'function' ? v(s.pinnedMessages) : v })),
   setDisappearingTimer: (chatId, duration) => set((s) => {
@@ -199,17 +220,14 @@ export const useChatStore = create((set, get) => ({
     return normalizeBookmarks(s.bookmarks).some((item) => item.chatId === chatId && item.msgId === msgId);
   },
 
-  // BULK SELECTION MODE
   selectionMode: false,
   selectedMsgs: [],
   toggleSelectionMode: () => set(s => ({ selectionMode: !s.selectionMode, selectedMsgs: [] })),
-  toggleSelectedMsg: (id) => set(s => {
-    const next = s.selectedMsgs.includes(id) ? s.selectedMsgs.filter(x => x !== id) : [...s.selectedMsgs, id];
-    return { selectedMsgs: next };
-  }),
+  toggleSelectedMsg: (id) => set(s => ({
+    selectedMsgs: s.selectedMsgs.includes(id) ? s.selectedMsgs.filter(x => x !== id) : [...s.selectedMsgs, id],
+  })),
   clearSelection: () => set({ selectionMode: false, selectedMsgs: [] }),
 
-  // JOIN REQUESTS
   joinRequests: scopedGet('join_requests', {}),
   addJoinRequest: (groupId, pubkey) => set(s => {
     const next = { ...s.joinRequests };
@@ -221,17 +239,15 @@ export const useChatStore = create((set, get) => ({
   removeJoinRequest: (groupId, pubkey) => set(s => {
     const next = { ...s.joinRequests };
     if (next[groupId]) {
-      next[groupId] = next[groupId].filter(p => p !== pubkey);
+      next[groupId] = next[groupId].filter(x => x !== pubkey);
       if (next[groupId].length === 0) delete next[groupId];
     }
     scopedSet('join_requests', next);
     return { joinRequests: next };
   }),
 
-  // UI MODALS
   postListingGroup: null,
   setPostListingGroup: (v) => set({ postListingGroup: v }),
-
   showMenu: false,
   showCreateGroup: false,
   showGroupInfo: false,
@@ -248,8 +264,6 @@ export const useChatStore = create((set, get) => ({
   setSelectedMessage: (v) => set({ selectedMessage: v }),
   setProfilePubkey: (v) => set({ profilePubkey: v }),
   setCheckoutProduct: (v) => set({ checkoutProduct: v }),
-
-  // CHAT UI STATE — migrated from Chat.jsx useState (Step 4)
   reviewTarget: null,
   setReviewTarget: (v) => set({ reviewTarget: v }),
   vendorStorefrontPubkey: null,
@@ -275,7 +289,6 @@ export const useChatStore = create((set, get) => ({
   showEmojiPicker: false,
   setShowEmojiPicker: (v) => set({ showEmojiPicker: v }),
 
-  // INPUT
   newMessage: '',
   newGroupName: '',
   newGroupAbout: '',
