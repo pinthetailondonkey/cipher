@@ -1,5 +1,6 @@
 import { schnorr } from '@noble/curves/secp256k1.js';
 import { sha256 } from '@noble/hashes/sha2.js';
+import { scopedGet, scopedSet } from './storage.js';
 
 // Spec: docs/proof-of-trade.md, version 1.
 
@@ -264,6 +265,19 @@ function standingOf(event) {
   if (standingCache.size > 2000) standingCache.clear();
   standingCache.set(key, standing);
   return standing;
+}
+
+export function rememberPublicView(view) {
+  if (!view?.hash || !view.vendor) return;
+  const current = scopedGet('public_views', []);
+  const rows = Array.isArray(current) ? current.filter((row) => row && row.hash !== view.hash) : [];
+  rows.push(view);
+  scopedSet('public_views', rows.slice(-200));
+}
+
+export function readPublicViews() {
+  const current = scopedGet('public_views', []);
+  return Array.isArray(current) ? current : [];
 }
 
 export function rankVolumeByStanding(events) {
