@@ -21,12 +21,13 @@ export default function FloatingMenu() {
               className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm"
               onClick={() => setShowMenu(false)}
             />
-            <motion.div 
+            <motion.div
               initial={{ opacity: 0, y: 20, scale: 0.9 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 20, scale: 0.9 }}
               transition={{ type: "spring", stiffness: 400, damping: 25 }}
-              className="fixed bottom-40 right-6 flex flex-col gap-3 items-end z-50"
+              className="fixed right-6 flex flex-col gap-3 items-end z-50"
+              style={{ bottom: `calc(10rem + env(safe-area-inset-bottom))` }}
             >
               <button 
                 onClick={() => { setShowMenu(false); setView('search'); }} 
@@ -56,10 +57,11 @@ export default function FloatingMenu() {
         )}
       </AnimatePresence>
 
-      <motion.button 
+      <motion.button
         animate={{ rotate: showMenu ? 45 : 0 }}
-        onClick={() => setShowMenu(!showMenu)} 
-        className={`fixed bottom-24 right-6 z-50 rounded-full bg-blue-600 p-4 text-white shadow-[0_0_20px_rgba(37,99,235,0.4)] active:bg-blue-700 ${pressable}`}
+        onClick={() => setShowMenu(!showMenu)}
+        className={`fixed right-6 z-50 rounded-full bg-blue-600 p-4 text-white shadow-[0_0_20px_rgba(37,99,235,0.4)] active:bg-blue-700 ${pressable}`}
+        style={{ bottom: `calc(6rem + env(safe-area-inset-bottom))` }}
       >
         <Plus size={24} strokeWidth={2.5} />
       </motion.button>

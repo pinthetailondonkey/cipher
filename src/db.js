@@ -201,7 +201,17 @@ export const patchMessage = async (id, patch) => {
   }
 };
 
+// Test hook: lets the Playwright suite write through the app's own saveMessage
+// and patchMessage, so a seeded row takes the same merge + tombstone
+// transaction path as a real incoming message and a real vendor order update,
+// instead of raw IndexedDB puts.
+if (typeof window !== 'undefined') {
+}
+
 export const saveProfile = async (profile) => {
   try { await db.profiles.put(profile); } catch (e) { console.error(e); }
 };
 
+
+// Test seam: lets the UI specs drive the real save and patch paths.
+if (typeof window !== "undefined") window.__cipher = { saveMessage, patchMessage };

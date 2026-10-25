@@ -32,9 +32,9 @@ export default function AuthenticatedApp({ identity }) {
 
   return (
     <div className="relative flex h-[100dvh] w-full justify-center overflow-hidden bg-black text-white">
-      <div className="pointer-events-none fixed inset-0">
+      <div className="pointer-events-none fixed inset-0 overflow-hidden">
         <div className="absolute left-[-10%] top-[-10%] h-[50%] w-[50%] rounded-full bg-blue-600/20 blur-[120px]" />
-        <div className="absolute bottom-[-10%] right-[-10%] h-[50%] w-[50%] rounded-full bg-purple-600/10 blur-[120px]" />
+        <div className="absolute bottom-0 right-[-10%] h-[30%] w-[50%] rounded-full bg-purple-600/10 blur-[100px]" />
       </div>
       <TutorialModal isOpen={showTutorial} onClose={() => { setShowTutorial(false); localStorage.removeItem('cipher_new_account'); }} />
       <GlobalDialog />
@@ -57,8 +57,8 @@ export default function AuthenticatedApp({ identity }) {
                   </div>
                   <div className="relative z-10 px-4 pb-1 pt-3">
                     <div className="grid grid-cols-2 rounded-2xl border border-white/15 bg-white/10 p-1 shadow-2xl backdrop-blur-2xl">
-                      <button type="button" onClick={() => setExploreMode('shop')} className={`rounded-xl py-2.5 text-[13px] font-bold ${exploreMode === 'shop' ? 'bg-blue-600 text-white shadow-lg' : 'text-white/60'}`}>Shop</button>
-                      <button type="button" onClick={() => setExploreMode('groups')} className={`rounded-xl py-2.5 text-[13px] font-bold ${exploreMode === 'groups' ? 'bg-blue-600 text-white shadow-lg' : 'text-white/60'}`}>Groups</button>
+                      <button type="button" onClick={() => setExploreMode('shop')} className={`min-h-[44px] rounded-xl py-2.5 text-[13px] font-bold ${exploreMode === 'shop' ? 'bg-blue-600 text-white shadow-lg' : 'text-white/60'}`}>Shop</button>
+                      <button type="button" onClick={() => setExploreMode('groups')} className={`min-h-[44px] rounded-xl py-2.5 text-[13px] font-bold ${exploreMode === 'groups' ? 'bg-blue-600 text-white shadow-lg' : 'text-white/60'}`}>Groups</button>
                     </div>
                   </div>
                   <div className="relative z-10 min-h-0 flex-1">
@@ -76,19 +76,20 @@ export default function AuthenticatedApp({ identity }) {
 
       <motion.nav
         initial={{ y: 50 }} animate={{ y: 0 }} transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-        className="fixed bottom-4 left-4 right-4 z-20 mx-auto max-w-md rounded-3xl border border-white/10 bg-white/5 shadow-2xl backdrop-blur-xl"
+        className="fixed left-4 right-4 z-20 mx-auto max-w-md rounded-3xl border border-white/10 bg-white/5 shadow-2xl backdrop-blur-xl"
+        style={{ bottom: `calc(1rem + env(safe-area-inset-bottom))` }}
       >
-        <div className="flex justify-around items-center h-16 max-w-md mx-auto px-6">
-          <button onClick={() => setActiveTab('chat')} className={`relative flex flex-col items-center gap-1 w-16 active:scale-95 transition-transform duration-100 ${activeTab === 'chat' ? 'text-blue-500' : 'text-white/40'}`}>
+        <div className="flex justify-around items-center min-h-[44px] max-w-md mx-auto px-6">
+          <button onClick={() => setActiveTab('chat')} className={`relative flex flex-col items-center gap-1 w-16 min-h-[44px] active:scale-95 transition-transform duration-100 ${activeTab === 'chat' ? 'text-blue-500' : 'text-white/40'}`}>
             <MessageSquare size={22} strokeWidth={activeTab === 'chat' ? 2.5 : 2} />
             {unreadTotal > 0 && <span className="absolute top-1 right-3 flex h-[16px] min-w-[16px] items-center justify-center rounded-full bg-blue-500 px-1.5 text-[10px] font-bold text-white">{unreadTotal > 99 ? '99+' : unreadTotal}</span>}
             <span className="text-[10px] font-medium">Chats</span>
           </button>
-          <button onClick={() => setActiveTab('explore')} className={`flex flex-col items-center gap-1 w-16 transition-all active:scale-90 ${activeTab === 'explore' ? 'text-blue-500' : 'text-white/40 hover:text-white/60'}`}>
+          <button onClick={() => setActiveTab('explore')} className={`flex flex-col items-center gap-1 w-16 min-h-[44px] transition-all active:scale-90 ${activeTab === 'explore' ? 'text-blue-500' : 'text-white/40 hover:text-white/60'}`}>
             <Compass size={22} strokeWidth={activeTab === 'explore' ? 2.5 : 2} />
             <span className="text-[10px] font-medium">Shop</span>
           </button>
-          <button onClick={() => setActiveTab('profile')} className={`relative flex flex-col items-center gap-1 w-16 active:scale-95 transition-transform duration-100 ${activeTab === 'profile' ? 'text-blue-500' : 'text-white/40'}`}>
+          <button onClick={() => setActiveTab('profile')} className={`relative flex flex-col items-center gap-1 w-16 min-h-[44px] active:scale-95 transition-transform duration-100 ${activeTab === 'profile' ? 'text-blue-500' : 'text-white/40'}`}>
             <User size={22} strokeWidth={activeTab === 'profile' ? 2.5 : 2} />
             {notifTotal > 0 && <span className="absolute top-1 right-3 flex h-[16px] min-w-[16px] items-center justify-center rounded-full bg-blue-500 px-1.5 text-[10px] font-bold text-white">{notifTotal > 99 ? '99+' : notifTotal}</span>}
             <span className="text-[10px] font-medium">Profile</span>
