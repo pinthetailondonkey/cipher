@@ -80,10 +80,10 @@ test.describe('Persistence', () => {
     // tombstone transaction path as a real incoming message. saveMessage
     // swallows its own errors, so the write is verified below.
     await page.evaluate(async ({ chatId: chat, msg }) => {
-      if (typeof window.__cipherSaveMessage !== 'function') {
-        throw new Error('window.__cipherSaveMessage missing — app hook did not load');
+      if (typeof window.__cipher.saveMessage !== 'function') {
+        throw new Error('window.__cipher.saveMessage missing — app hook did not load');
       }
-      await window.__cipherSaveMessage(chat, msg);
+      await window.__cipher.saveMessage(chat, msg);
     }, { chatId, msg: testMessage });
 
     const seeded = await readStoredMessage(page, { dbName, msgId: testMessage.id });
@@ -107,14 +107,14 @@ test.describe('Persistence', () => {
       isSender: true,
     };
     await page.evaluate(async ({ chat, order }) => {
-      if (typeof window.__cipherSaveMessage !== 'function'
-        || typeof window.__cipherPatchMessage !== 'function') {
-        throw new Error('app hooks missing — window.__cipherSaveMessage/__cipherPatchMessage did not load');
+      if (typeof window.__cipher.saveMessage !== 'function'
+        || typeof window.__cipher.patchMessage !== 'function') {
+        throw new Error('app hooks missing — window.__cipher.saveMessage/__cipherPatchMessage did not load');
       }
-      await window.__cipherSaveMessage(chat, order);
-      await window.__cipherPatchMessage(order.id, { state: 'confirmed' });
+      await window.__cipher.saveMessage(chat, order);
+      await window.__cipher.patchMessage(order.id, { state: 'confirmed' });
       // A history fetch re-saves the plain relay copy (src/hooks/useNIP44DM.js).
-      await window.__cipherSaveMessage(chat, order);
+      await window.__cipher.saveMessage(chat, order);
     }, { chat: orderChat, order: orderMessage });
 
     const seededOrder = await readStoredMessage(page, { dbName, msgId: orderMessage.id });
