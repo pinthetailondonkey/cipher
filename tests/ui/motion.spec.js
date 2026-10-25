@@ -9,11 +9,14 @@ test.describe('Motion and accessibility', () => {
   test('respects prefers-reduced-motion', async ({ page }) => {
     await page.emulateMedia({ reducedMotion: 'reduce' });
     await page.goto('/');
-    await page.waitForTimeout(1000);
+    // Wait for the tab bar: the app lazy-loads past the lock screen, so a
+    // fixed timeout races the mount. The nav transform is stable immediately
+    // once it exists, because reducedMotion="user" skips the spring.
+    const nav = page.locator('nav').last();
+    await nav.waitFor();
 
     // Sample nav transform twice 100ms apart - with MotionConfig reducedMotion="user",
     // framer-motion skips transform animations so both samples should be identical
-    const nav = await page.locator('nav').last();
     const transform1 = await nav.evaluate(el => window.getComputedStyle(el).transform);
     await page.waitForTimeout(100);
     const transform2 = await nav.evaluate(el => window.getComputedStyle(el).transform);
@@ -23,7 +26,9 @@ test.describe('Motion and accessibility', () => {
 
   test('focusable elements show visible outline on tab', async ({ page }) => {
     await page.goto('/');
-    await page.waitForTimeout(1000);
+    // Wait for the tab bar so the app is mounted before tabbing; a fixed
+    // timeout let this race the lazy load and flake under suite load.
+    await page.locator('nav').last().waitFor();
 
     // Tab through first few focusable elements
     await page.keyboard.press('Tab');

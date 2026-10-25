@@ -24,47 +24,52 @@ test.describe('Safe area and viewport', () => {
 
     const viewport = page.viewportSize();
 
-    // Check for clipping - find elements that extend beyond viewport
+    // With overflow-hidden on blur wrappers, no elements should overflow
     const allElements = await page.locator('body *').all();
-    const clipped = [];
     for (const el of allElements) {
       const box = await el.boundingBox();
-      if (box && box.y + box.height > viewport.height) {
-        const tag = await el.evaluate(node => node.tagName);
-        const classes = await el.evaluate(node => node.className);
-        clipped.push(`${tag}.${classes}: bottom at ${box.y + box.height}px`);
+      if (box) {
+        expect(box.y + box.height).toBeLessThanOrEqual(viewport.height);
       }
     }
-
-    if (clipped.length > 0) {
-      console.log('Clipped elements:', clipped.slice(0, 5));
-    }
-
-    // Allow some overflow for animations/transforms but catch real clipping
-    expect(clipped.length).toBeLessThan(5);
   });
 
   test('every interactive element has 44x44 minimum tap target', async ({ page }) => {
     await page.goto('/');
     await page.waitForTimeout(1000);
 
-    const selectors = [
-      'button:visible',
-      '[role="button"]:visible',
-      'a:not([href*="#"]):visible',
-    ];
-
+    const tabs = ['chat', 'explore', 'profile'];
     const failures = [];
 
-    for (const selector of selectors) {
-      const elements = await page.locator(selector).all();
-      for (const el of elements) {
-        const box = await el.boundingBox();
-        if (box && (box.width < 44 || box.height < 44)) {
-          const html = await el.evaluate(node => node.outerHTML.slice(0, 100));
-          failures.push(`${html}: ${box.width}x${box.height}`);
+    for (const tab of tabs) {
+      // Navigate to tab
+      if (tab !== 'chat') {
+        const tabBtn = page.locator(`button:has-text("${tab === 'explore' ? 'Shop' : 'Profile'}")`);
+        await tabBtn.click();
+        await page.waitForTimeout(500);
+      }
+
+      const selectors = [
+        'button:visible',
+        '[role="button"]:visible',
+        'a:not([href*="#"]):visible',
+      ];
+
+      let screenCount = 0;
+      for (const selector of selectors) {
+        const elements = await page.locator(selector).all();
+        for (const el of elements) {
+          const box = await el.boundingBox();
+          if (box) {
+            screenCount++;
+            if (box.width < 44 || box.height < 44) {
+              const html = await el.evaluate(node => node.outerHTML.slice(0, 100));
+              failures.push(`[${tab}] ${html}: ${box.width}x${box.height}`);
+            }
+          }
         }
       }
+      console.log(`${tab} screen: ${screenCount} interactive elements`);
     }
 
     if (failures.length > 0) {
@@ -73,7 +78,7 @@ test.describe('Safe area and viewport', () => {
     expect(failures).toHaveLength(0);
   });
 
-  test('tab bar responds to clicks at center and near bottom', async ({ page }) => {
+  test('tab bar responds to touchscreen taps', async ({ page }) => {
     await page.goto('/');
     await page.waitForTimeout(1000);
 
@@ -82,15 +87,14 @@ test.describe('Safe area and viewport', () => {
 
     expect(box).toBeTruthy();
 
-    // Click at vertical center
-    await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+    // Tap at vertical center using touchscreen
+    await page.touchscreen.tap(box.x + box.width / 2, box.y + box.height / 2);
     await page.waitForTimeout(300);
 
-    // Click 4px from bottom
-    await page.mouse.click(box.x + box.width / 2, box.y + box.height - 4);
+    // Tap 4px from bottom edge
+    await page.touchscreen.tap(box.x + box.width / 2, box.y + box.height - 4);
     await page.waitForTimeout(300);
 
-    // If we get here without errors, clicks registered
     expect(true).toBe(true);
   });
 });
