@@ -3,9 +3,8 @@ import { db, saveMessage } from '../../db';
 import { useChatStore } from '../../store/chatStore';
 import { scopedRemove } from '../../lib/storage';
 import { haptic } from '../../lib/haptics';
-import { compressImage } from '../../lib/imageCompression';
 import { sortMessages } from './media';
-import { uploadPrivateMedia } from '../../lib/mediaCrypto';
+import { sendPrivateImage, uploadPrivateMedia } from '../../lib/mediaCrypto';
 import { blossomServers } from '../../lib/egress';
 
 export function useComposer({ identity, sendDM, sendGroupMessage }) {
@@ -180,8 +179,7 @@ export function useComposer({ identity, sendDM, sendGroupMessage }) {
     try {
       const media = [];
       for (const file of files) {
-        const compressedFile = await compressImage(file);
-        media.push(await uploadPrivateMedia(compressedFile, blossomServers()));
+        media.push(await sendPrivateImage(file, blossomServers()));
       }
       await sendMessage(caption, { type: 'album', media, message: caption });
       setToast({ type: 'success', message: media.length > 1 ? 'Album sent!' : 'Image sent!' });
