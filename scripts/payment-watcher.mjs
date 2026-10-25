@@ -12,8 +12,8 @@
 //   XMR_WALLET_RPC=http://127.0.0.1:18083 BTC_RPC_URL=http://user:pass@127.0.0.1:8332 node scripts/payment-watcher.mjs
 //
 // GET /payment?address=&currency=xmr|btc
-// 200 { txid, confirmations } or { pending: true }
-// 503 { error } when that currency's wallet is not configured.
+// 200 { txid, confirmations, amount } or { pending: true }
+// 503 { error } when that currency's node is not configured.
 
 import http from 'node:http';
 import fs from 'node:fs';

@@ -44,7 +44,7 @@ A payment moves created → address issued → seen → confirmed. Accepting an 
 
 Bitcoin confirms at 3. Monero confirms at 10. A `confirmed: true` flag with fewer confirmations does not count. Change the phone with the `cipher_confirmations` setting, shaped `{ "btc": 3, "xmr": 10 }`. The watcher you run must be started with `WATCH_TOKEN`. It asks a Monero wallet RPC or a Bitcoin node only if you set `XMR_WALLET_RPC` or `BTC_RPC_URL`. Bitcoin uses `scantxoutset` on that node. It does not need a wallet or a transaction index, and it does not see a payment until the payment is in a block. It does not call a public explorer. On Bitcoin, seen means mined. There is no zero-confirmation path. One or two confirmations is the window where the vendor can see the money and must not ship. Confirmed is three blocks, and not before. With neither RPC set, it answers that it is not connected to a wallet. With no token, it refuses the check.
 
-The watcher speaks `GET /payment?address=&currency=xmr|btc&token=` and answers `{ "txid", "confirmations" }` or `{ "pending": true }`. `npm run watch` is that box. It will not listen until `WATCH_TOKEN` is set and at least one wallet RPC is set. Start `monero-wallet-rpc` on the same machine, then `WATCH_TOKEN=a-long-secret XMR_WALLET_RPC=http://127.0.0.1:18083 npm run watch`, and paste the URL it prints into Connections.
+The watcher speaks `GET /payment?address=&currency=xmr|btc&token=` and answers `{ "txid", "confirmations", "amount" }` or `{ "pending": true }`. `npm run watch` is that box. It will not listen until `WATCH_TOKEN` is set and at least one of `XMR_WALLET_RPC` or `BTC_RPC_URL` is set. Copy `.env.example` to `.env`, fill the token, and run `npm run watch`. Paste the URL it prints into Connections.
 
 ## Group keys
 
