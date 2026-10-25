@@ -78,7 +78,7 @@ A confirmed payment can carry a receipt. The body is the order id, the buyer and
 
 The order update publishes a selective view: the hash, the amount, the currency, and the two public keys. That is enough to rank volume, and it does not include the address or the txid. Those stay on the vendor's phone, under `receipt_<order id>`, until a dispute. A dispute is the reveal: the report then includes the body and both signatures. Anyone with the body can check that the hash matches and that both signatures belong to the buyer and the vendor named in the body. A wrong txid, a swapped hash, or one bad signature does not verify.
 
-The vendor still does not call a block explorer. The txid is the one the watcher reported. The receipt is not a second confirmation. It is a record of the confirmation that already happened.
+The vendor signs when the watcher confirms and sends that receipt in the private order update. The buyer's app co-signs it when the payment arrives, and sends the second signature back. A normal order then verifies. Signing during a dispute remains the fallback if that reply never happened. The vendor still does not call a block explorer. The txid is the one the watcher reported. The receipt is not a second confirmation. It is a record of the confirmation that already happened.
 
 ## Trust
 
