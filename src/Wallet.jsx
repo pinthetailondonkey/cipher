@@ -347,7 +347,7 @@ export default function Wallet({ identity, onOpenChat }) {
         <h2 className="text-2xl font-bold tracking-tight text-white">{myProfile.displayName}</h2>
         <p className="mb-3 text-[13px] text-white/40">@{myProfile.name}</p>
         {myProfile.about && <p className="mb-3 px-6 text-center text-[13px] text-white/50">{myProfile.about}</p>}
-        <button onClick={copyNpub} className="flex items-center gap-2 rounded-full border border-white/10 bg-[#0A0A0A]/60 shadow-2xl backdrop-blur-2xl px-4 py-2 text-[12px] text-white/60">
+        <button onClick={copyNpub} className="flex min-h-[44px] items-center gap-2 rounded-full border border-white/10 bg-[#0A0A0A]/60 shadow-2xl backdrop-blur-2xl px-4 py-2 text-[12px] text-white/60">
           {copied ? 'Copied!' : `${identity.npub?.slice(0, 12)}...${identity.npub?.slice(-4)}`}
           <Copy size={12} />
         </button>

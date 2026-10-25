@@ -32,9 +32,9 @@ export default function AuthenticatedApp({ identity }) {
 
   return (
     <div className="relative flex h-[100dvh] w-full justify-center overflow-hidden bg-black text-white">
-      <div className="pointer-events-none fixed inset-0">
+      <div className="pointer-events-none fixed inset-0 overflow-hidden">
         <div className="absolute left-[-10%] top-[-10%] h-[50%] w-[50%] rounded-full bg-blue-600/20 blur-[120px]" />
-        <div className="absolute bottom-[-10%] right-[-10%] h-[50%] w-[50%] rounded-full bg-purple-600/10 blur-[120px]" />
+        <div className="absolute bottom-0 right-[-10%] h-[30%] w-[50%] rounded-full bg-purple-600/10 blur-[100px]" />
       </div>
       <TutorialModal isOpen={showTutorial} onClose={() => { setShowTutorial(false); localStorage.removeItem('cipher_new_account'); }} />
       <GlobalDialog />
@@ -57,8 +57,8 @@ export default function AuthenticatedApp({ identity }) {
                   </div>
                   <div className="relative z-10 px-4 pb-1 pt-3">
                     <div className="grid grid-cols-2 rounded-2xl border border-white/15 bg-white/10 p-1 shadow-2xl backdrop-blur-2xl">
-                      <button type="button" onClick={() => setExploreMode('shop')} className={`rounded-xl py-2.5 text-[13px] font-bold ${exploreMode === 'shop' ? 'bg-blue-600 text-white shadow-lg' : 'text-white/60'}`}>Shop</button>
-                      <button type="button" onClick={() => setExploreMode('groups')} className={`rounded-xl py-2.5 text-[13px] font-bold ${exploreMode === 'groups' ? 'bg-blue-600 text-white shadow-lg' : 'text-white/60'}`}>Groups</button>
+                      <button type="button" onClick={() => setExploreMode('shop')} className={`min-h-[44px] rounded-xl py-2.5 text-[13px] font-bold ${exploreMode === 'shop' ? 'bg-blue-600 text-white shadow-lg' : 'text-white/60'}`}>Shop</button>
+                      <button type="button" onClick={() => setExploreMode('groups')} className={`min-h-[44px] rounded-xl py-2.5 text-[13px] font-bold ${exploreMode === 'groups' ? 'bg-blue-600 text-white shadow-lg' : 'text-white/60'}`}>Groups</button>
                     </div>
                   </div>
                   <div className="relative z-10 min-h-0 flex-1">
