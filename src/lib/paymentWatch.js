@@ -46,6 +46,18 @@ export function paymentWatchUrl(watcherUrl, { address, currency } = {}) {
   return url.href;
 }
 
+export function rowsFromScan(scan, address) {
+  const tip = Number.isInteger(scan?.height) ? scan.height : null;
+  return (Array.isArray(scan?.unspents) ? scan.unspents : [])
+    .filter((row) => row?.txid)
+    .map((row) => {
+      const counted = Number.isInteger(row.confirmations)
+        ? row.confirmations
+        : (tip != null && Number.isInteger(row.height) ? tip - row.height + 1 : 0);
+      return { txid: String(row.txid), address, confirmations: counted };
+    });
+}
+
 export function reportFromTransfers(transfers, address, currency) {
   const wanted = String(address || '').trim();
   const hit = (Array.isArray(transfers) ? transfers : []).find((row) => row && (row.address === wanted || row.addr === wanted) && row.txid);
