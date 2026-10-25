@@ -1,10 +1,7 @@
 import { schnorr } from '@noble/curves/secp256k1.js';
 import { sha256 } from '@noble/hashes/sha2.js';
 
-// Spec: docs live in the README under "Proof of trade".
-// Both parties sign the same canonical JSON bytes with BIP-340.
-// A receipt is valid only when both signatures verify.
-// What gets published by default is the selective public view, not the address or txid.
+// Spec: docs/proof-of-trade.md, version 1.
 
 function bytesToHex(bytes) {
   let out = '';
