@@ -220,13 +220,23 @@ export function toggleMute() {
   patch({ muted });
 }
 
-export async function handleCallSignal({ data, from, eventId }) {
+// The live DM subscription replays a week of history on every launch. A call
+// signal older than this is history, not a call: it neither rings nor gets a
+// busy or reject sent back to whoever placed it.
+export const CALL_SIGNAL_MAX_AGE_SEC = 60;
+
+export function isStaleCallSignal(createdAt, now = Math.floor(Date.now() / 1000)) {
+  return Number.isFinite(createdAt) && now - createdAt > CALL_SIGNAL_MAX_AGE_SEC;
+}
+
+export async function handleCallSignal({ data, from, eventId, createdAt }) {
   if (!data?.callId || !from) return;
   if (eventId) {
     if (seenEvents.has(eventId)) return;
     seenEvents.add(eventId);
     if (seenEvents.size > 400) seenEvents.clear();
   }
+  if (isStaleCallSignal(createdAt)) return;
   if (data.action === 'ice') {
     if (session?.callId === data.callId && session.pc?.remoteDescription) {
       try { await session.pc.addIceCandidate(data.candidate); }
