@@ -62,7 +62,9 @@ It buzzes only while the app is open, or the page is in the background with noti
 
 `node scripts/notify-gateway.mjs` is that box. Paste its address on the Push gateway row. The phone fetches `/cipher-push.json`, subscribes with the browser's push API, and posts the subscription to `/subscribe`. The box watches the message relay for a kind-4 event that is tagged `t=msg` and addressed to that key, and sends `{ "kind": "message" }`. Typing indicators, read receipts, calls, and key bundles are not tagged, so they do not buzz. The notice is "New message" or "New order". The text is not in it. The box learns that a message arrived, not what it said.
 
-This does not create an Apple or Google developer account. Delivery while the phone is locked still goes through the browser's own push service, which on Chrome is Google's and on Safari is Apple's. That is the pipe. There is no FCM key and no APNs key in this app. A browser with no push API still only notifies while Cipher is open, and it says so.
+Web Push covers a browser tab and an installed PWA only. Delivery while that page is locked still goes through the browser's own push service: Google's on Chrome, Apple's on Safari. That is the pipe. There is no FCM key and no APNs key in this repo.
+
+The installed Capacitor app is a different path. The decision for that shell is FCM on Android and APNs on iOS, through a Capacitor push plugin, when that plugin is added. Native push goes through Google and Apple. It is not built. Until then the installed app can only schedule a local notification while its process is alive. Nothing here should be read as the installed app buzzing without Google or Apple.
 
 Group messages are not watched. Orders travel as direct messages, so an order buzzes as a new message. The box was not left running here.
 
