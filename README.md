@@ -46,6 +46,8 @@ Bitcoin confirms at 3. Monero confirms at 10. A `confirmed: true` flag with fewe
 
 The watcher speaks `GET /payment?address=&currency=xmr|btc&token=` and answers `{ "txid", "confirmations", "amount" }` or `{ "pending": true }`. `npm run watch` is that box. It will not listen until `WATCH_TOKEN` is set and at least one of `XMR_WALLET_RPC` or `BTC_RPC_URL` is set. Copy `.env.example` to `.env`, fill the token, and run `npm run watch`. Paste the URL it prints into Connections.
 
+`npm run boxes` is the one-command install for both boxes. From a fresh clone it installs the dependencies, writes `.env` from `.env.example` with a generated `WATCH_TOKEN` (kept, so the pasted URL survives a restart), starts the push box and the watcher together, and prints both addresses to paste into Connections. It needs Node 22 or newer, because the push box watches a relay and the global WebSocket arrived in Node 22. Ctrl-C stops both.
+
 ## Group keys
 
 A group key arrives as a direct message with `t: 'gkey'`, not `type`. That message is installed into the member's key store and is never shown as a chat bubble. The install lives in `src/hooks/useGroupKeyMember.js`, called from the direct-message path, so a member who is not the owner still receives the key. A request for a missed key sends every epoch that member does not have, not only the newest one.
