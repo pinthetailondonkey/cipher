@@ -3,6 +3,8 @@ import { db, saveMessage } from '../../db';
 import { scopedGet } from '../../lib/storage';
 import { getOrderPaymentMethods } from '../../lib/vendorPayments';
 import { nextPaymentState } from '../../lib/paymentState';
+import { checkPayment } from '../../lib/paymentWatch';
+import { activeUrl, entryById } from '../../lib/egress';
 
 export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, openChat }) {
   const setToast = useChatStore((s) => s.setToast);
@@ -43,7 +45,7 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
     return true;
   };
   const handleOrderAction = async (action, msg) => {
-    if (!['accept_order', 'decline_order', 'cancel_order', 'confirm_payment', 'mark_shipped', 'confirm_delivery', 'report_issue'].includes(action)) {
+    if (!['accept_order', 'decline_order', 'cancel_order', 'confirm_payment', 'check_chain', 'mark_shipped', 'confirm_delivery', 'report_issue'].includes(action)) {
       return false;
     }
   
@@ -117,6 +119,45 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
           { status: 'paid', paymentState, paymentSeenBy: 'vendor', shippingAddress: msg.data.shippingAddress },
           'Marked seen in your wallet. The chain was not checked.',
         );
+        return true;
+      }
+      if (action === 'check_chain') {
+        const methods = msg.data?.paymentMethods || {};
+        const currency = methods.xmr ? 'xmr' : (methods.btc ? 'btc' : '');
+        const address = currency ? methods[currency] : '';
+        try {
+          const outcome = await checkPayment({
+            watcherUrl: activeUrl(entryById('explorer')),
+            address,
+            currency,
+            state: msg.data?.paymentState || 'address_issued',
+          });
+          if (!outcome.moved) {
+            setToast({ type: 'info', message: 'Your watcher has not seen this payment yet.' });
+            setSelectedMessage(null);
+            return true;
+          }
+          const confirmed = outcome.state === 'confirmed';
+          const payload = {
+            type: 'order_update',
+            orderId: msg.id,
+            productName: msg.data.product?.title || msg.data.productName,
+            status: confirmed ? 'paid' : (msg.data.status || 'accepted'),
+            paymentState: outcome.state,
+            paymentSeenBy: 'watcher',
+            txid: outcome.report.txid,
+          };
+          await deliverOrderUpdate(
+            msg.pubkey,
+            payload,
+            { status: payload.status, paymentState: outcome.state, paymentSeenBy: 'watcher', txid: outcome.report.txid },
+            confirmed ? 'Your watcher confirmed the payment.' : 'Your watcher has seen the payment. It is not confirmed yet.',
+          );
+        } catch (error) {
+          console.error('[orders] Chain check failed:', error);
+          setToast({ type: 'error', message: error?.message || 'The payment watcher could not be checked.' });
+          setSelectedMessage(null);
+        }
         return true;
       }
       if (action === 'mark_shipped') {

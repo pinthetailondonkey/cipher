@@ -25,6 +25,7 @@ export const EGRESS = [
   { id: 'app-host', role: 'App host', url: 'https://sonic-cobalt-4m6q5vj.vercel.app', hint: '', sees: 'Your IP if you open the website here. The installed app loads its own files and does not contact this host when it opens.', app: true },
   { id: 'nip05', role: 'Name lookup', url: '', hint: 'The host after the @', sees: 'Your IP and the name you look up. The host is whatever sits after the @.', dynamic: true },
   { id: 'explorer', role: 'Payment watcher', url: '', hint: 'Not set', sees: 'Nothing until you paste a watcher you run. This device does not ask a block explorer. Until then a payment cannot be marked seen or confirmed from the chain.' },
+  { id: 'push', role: 'Push gateway', url: '', hint: 'Not set', sees: 'Nothing until you paste a gateway you run. A locked phone does not buzz before that. The notice says New message and does not include the text.' },
 ];
 
 export const RELAY_SETS = {
