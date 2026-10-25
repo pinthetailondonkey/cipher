@@ -133,6 +133,7 @@ const server = http.createServer(async (req, res) => {
       state.native = state.native.filter((row) => row.token !== body.token);
       state.native.push({ pubkey: body.pubkey, transport: body.transport, token: body.token });
       save(state);
+      watch();
       const tokenStored = load().native.some((row) => row.token === body.token && row.transport === body.transport);
       const { buzzing, reason } = nativeRegistration({ transport: body.transport, tokenStored });
       console.error(`[push] ${reason}`);
