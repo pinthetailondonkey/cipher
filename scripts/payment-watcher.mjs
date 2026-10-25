@@ -10,8 +10,11 @@
 // 503 { error } when that currency's wallet is not configured.
 
 import http from 'node:http';
+import fs from 'node:fs';
 import { timingSafeEqual } from 'node:crypto';
 import { reportFromTransfers, rowsFromScan } from '../src/lib/paymentWatch.js';
+
+if (fs.existsSync('.env')) process.loadEnvFile('.env');
 
 const port = Number(process.env.PORT || process.env.WATCH_PORT || 8788);
 const xmrRpc = String(process.env.XMR_WALLET_RPC || '').trim();
