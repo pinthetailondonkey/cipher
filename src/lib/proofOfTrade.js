@@ -208,9 +208,13 @@ function amountUnits(amount, currency) {
     return null;
   }
   const [whole, frac = ''] = text.split('.');
-  if (frac.length > scale) return null;
   const factor = 10n ** BigInt(scale);
-  return BigInt(whole) * factor + BigInt(frac.padEnd(scale, '0'));
+  if (frac.length <= scale) {
+    return BigInt(whole) * factor + BigInt((frac || '0').padEnd(scale, '0'));
+  }
+  let units = BigInt(whole) * factor + BigInt(frac.slice(0, scale) || '0');
+  if (Number(frac[scale]) >= 5) units += 1n;
+  return units;
 }
 
 function unitsToAmount(units, currency) {

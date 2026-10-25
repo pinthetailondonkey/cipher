@@ -79,7 +79,8 @@ test('both parties sign the same bytes, and one bad signature fails', () => {
     { hash: 'p1', amount: '0.000000000001', currency: 'xmr', buyer: 'aa', vendor: 'pp' },
     { hash: 'p2', amount: '0.000000000001', currency: 'xmr', buyer: 'aa', vendor: 'pp' },
   ])[0].volume, '0.000000000002');
-  assert.deepEqual(rankVolume([{ hash: 'dust', amount: '0.000000001', currency: 'btc', buyer: 'aa', vendor: 'pp' }]), []);
+  assert.equal(rankVolume([{ hash: 'dust', amount: '0.000000001', currency: 'btc', buyer: 'aa', vendor: 'pp' }])[0].volume, '0');
+  assert.equal(rankVolume([{ hash: 'up', amount: '1.000000005', currency: 'btc', buyer: 'aa', vendor: 'pp' }])[0].volume, '1.00000001');
   assert.deepEqual(ranked, [
     { vendor: 'ff', currency: 'xmr', volume: '5' },
     { vendor: body.vendor, currency: 'xmr', volume: '2' },
