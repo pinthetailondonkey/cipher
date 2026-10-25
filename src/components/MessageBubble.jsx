@@ -4,8 +4,10 @@ import { BadgeCheck, Bookmark, Copy, Forward, Pencil, Pin, Radio, Reply, Shoppin
 import { QRCodeSVG } from 'qrcode.react';
 import { paymentUri } from '../lib/paymentUri';
 import { haptic } from '../lib/haptics';
+import { securingPhase } from '../lib/crypto/groupKeyRequest';
 import { useChatStore } from '../store/chatStore';
 import LinkPreview, { firstUrl } from './chat/LinkPreview';
+import Picture from './ui/Picture';
 
 const EMPTY_REACTIONS = [];
 const REACTION_CHOICES = ['❤️', '👍', '🔥', '😂', '😮', '😢', '🙏'];
@@ -26,13 +28,16 @@ function messageText(data) {
   return data.message || data.caption || data.text || data.body || '';
 }
 
-function orderLabel(status) {
-  if (status === 'accepted') return { text: 'Accepted', className: 'bg-blue-600 text-white' };
-  if (status === 'paid' || status === 'confirmed') return { text: 'Paid', className: 'bg-blue-600 text-white' };
-  if (status === 'shipped') return { text: 'Shipped', className: 'bg-blue-600 text-white' };
-  if (status === 'delivered') return { text: 'Delivered', className: 'bg-emerald-500 text-white' };
-  if (status === 'cancelled') return { text: 'Cancelled', className: 'bg-white/15 text-white' };
-  return { text: 'Awaiting Payment', className: 'bg-amber-400 text-black' };
+function orderLabel(content) {
+  if (content.paymentState === 'confirmed') return { text: 'Confirmed', className: 'bg-blue-600 text-white' };
+  if (content.status === 'shipped') return { text: 'Shipped', className: 'bg-blue-600 text-white' };
+  if (content.status === 'delivered' || content.status === 'completed') return { text: 'Delivered', className: 'bg-emerald-500 text-white' };
+  if (content.status === 'cancelled') return { text: 'Cancelled', className: 'bg-white/15 text-white' };
+  if (content.status === 'disputed') return { text: 'Disputed', className: 'bg-rose-500/20 text-rose-200' };
+  if (content.paymentState === 'seen' && content.paymentSeenBy !== 'vendor') return { text: 'Seen on-chain', className: 'bg-blue-600 text-white' };
+  if (content.status === 'paid' || content.paymentSeenBy === 'vendor') return { text: 'Marked paid', className: 'bg-blue-600 text-white' };
+  if (content.status === 'accepted' || content.paymentState === 'address_issued') return { text: 'Address sent', className: 'bg-amber-400 text-black' };
+  return { text: 'Awaiting payment', className: 'bg-amber-400 text-black' };
 }
 
 function OrderReceipt({ content }) {
@@ -42,16 +47,19 @@ function OrderReceipt({ content }) {
   const currency = product.currency || content.currency || 'USD';
   const price = priceValue === '' ? '' : (currency === 'USD' ? `$${priceValue}` : `${priceValue} ${currency}`);
   const address = content.shippingAddress || content.address || content.shipTo || '';
-  const pill = orderLabel(content.status);
+  const pill = orderLabel(content);
   return (
     <div className="mb-1 overflow-hidden rounded-2xl border border-white/10 bg-[#0A0A0A]/60 shadow-2xl backdrop-blur-2xl text-left">
-      {product.image && <img src={product.image} alt="" className="h-28 w-full object-cover" />}
+      <Picture src={product.image} alt="" className="h-28 w-full object-cover" />
       <div className="p-3">
         <div className="flex items-start justify-between gap-2">
           <p className="text-[15px] font-semibold text-white">{title}</p>
           <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold ${pill.className}`}>{pill.text}</span>
         </div>
         {price && <p className="mt-1 text-[13px] font-bold text-blue-500">{price}</p>}
+        {content.paymentSeenBy === 'vendor' && content.paymentState !== 'confirmed' && (
+          <p className="mt-1 text-[13px] text-amber-300">Not checked on-chain.</p>
+        )}
         {address && <p className="mt-1 text-[13px] text-white/40">Ship to {address}</p>}
       </div>
     </div>
@@ -66,6 +74,7 @@ export default function MessageBubble({ message, data, onAction, senderName, isP
   const validTimestamp = Number.isFinite(timestamp) ? timestamp : null;
   const [open, setOpen] = useState(false);
   const [showReactors, setShowReactors] = useState(false);
+  const [clock, setClock] = useState(() => Date.now());
   const mountedAt = useRef(Date.now() / 1000);
   const deleted = useChatStore((state) => state.deletedMsgs);
   const reactions = useChatStore((state) => (message?.id ? state.reactions[message.id] : undefined)) || EMPTY_REACTIONS;
@@ -88,11 +97,20 @@ export default function MessageBubble({ message, data, onAction, senderName, isP
     }
   }, [paymentRows.length, qrSignature]);
 
+  useEffect(() => {
+    if (message?.deliveryStatus !== 'securing') return undefined;
+    const id = setInterval(() => setClock(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [message?.deliveryStatus, message?.id]);
+
   const avatarColor = ['text-blue-400', 'text-sky-400', 'text-indigo-300', 'text-cyan-300'][(message?.pubkey?.charCodeAt(0) || 0) % 4];
+  const securingSince = message?.securingSince || message?.local_timestamp || (validTimestamp ? validTimestamp * 1000 : 0);
+  const securingStuck = message?.deliveryStatus === 'securing' && securingPhase(securingSince, clock) === 'stuck';
   const deliveryLabel = {
     sending: 'Sending',
     queued: 'Queued',
     failed: 'Failed',
+    securing: securingStuck ? '' : 'Securing…',
   }[message?.deliveryStatus];
   const read = message?.read || message?.deliveryStatus === 'read';
   const checks = isSender && !deliveryLabel
@@ -164,11 +182,7 @@ export default function MessageBubble({ message, data, onAction, senderName, isP
       className={`flex w-full items-end gap-2 px-3 py-1 ${isSender ? 'justify-end' : 'justify-start'}`}
     >
       {!isSender && showAvatar && (
-        avatarUrl ? (
-          <img src={avatarUrl} alt="" className="mb-0.5 h-7 w-7 shrink-0 rounded-full object-cover" />
-        ) : (
-          <span className={`mb-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#161616] text-[11px] font-semibold ${avatarColor}`}>{avatarInitial}</span>
-        )
+        <Picture src={avatarUrl} alt="" className="mb-0.5 h-7 w-7 shrink-0 rounded-full object-cover" fallback={<span className={`mb-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#161616] text-[11px] font-semibold ${avatarColor}`}>{avatarInitial}</span>} />
       )}
       <div
         role="button"
@@ -185,29 +199,26 @@ export default function MessageBubble({ message, data, onAction, senderName, isP
         {(content.type === 'cipher_order' || content.type === 'order_request' || content.type === 'order_update') && (
           <OrderReceipt content={content} />
         )}
-        {(content.type === 'cipher_order' || content.type === 'order_request') && !isSender && content.status !== 'accepted' && (
-          <button type="button" onClick={(event) => { event.stopPropagation(); onAction?.('accept_order', { ...message, data: content }); }} className="mb-1 text-[13px] font-semibold text-blue-400">Accept order</button>
+        {(content.type === 'cipher_order' || content.type === 'order_request') && !isSender && content.status !== 'accepted' && content.status !== 'cancelled' && (
+          <button type="button" onClick={(event) => { event.stopPropagation(); onAction?.('accept_order', { ...message, data: content }); }} className="mb-1 min-h-11 text-left text-[15px] font-semibold text-blue-300">Accept order</button>
         )}
-        {content.type === 'image' && content.url && (
-          <a href={content.url} target="_blank" rel="noreferrer" className="block" onClick={(event) => event.stopPropagation()}>
-            <img src={content.url} alt="Shared image" loading="lazy" className="max-h-64 max-w-full rounded-xl object-contain" />
-          </a>
+        {(content.type === 'cipher_order' || content.type === 'order_request') && !isSender && content.status === 'accepted' && content.paymentState !== 'confirmed' && content.paymentSeenBy !== 'vendor' && (
+          <button type="button" onClick={(event) => { event.stopPropagation(); onAction?.('confirm_payment', { ...message, data: content }); }} className="mb-1 min-h-11 text-left text-[15px] font-semibold text-white">I saw the payment</button>
+        )}
+        {content.type === 'image' && (
+          <Picture src={content.url} link alt="Shared image" loading="lazy" className="max-h-64 max-w-full rounded-xl object-contain" />
         )}
         {content.type === 'album' && Array.isArray(content.urls) && (
           <div className="grid grid-cols-2 gap-1">
             {content.urls.map((url) => (
-              <a key={url} href={url} target="_blank" rel="noreferrer" onClick={(event) => event.stopPropagation()}>
-                <img src={url} alt="Shared image" loading="lazy" className="h-28 w-full rounded-lg object-cover" />
-              </a>
+              <Picture key={url} src={url} link alt="Shared image" loading="lazy" className="h-28 w-full rounded-lg object-cover" />
             ))}
           </div>
         )}
         {content.type === 'audio' && content.url && (
           <audio controls preload="metadata" src={content.url} className="h-8 max-w-full" onClick={(event) => event.stopPropagation()} />
         )}
-        {content.type === 'product' && content.image && (
-          <img src={content.image} alt="" loading="lazy" className="mb-1 max-h-40 rounded-xl object-cover" />
-        )}
+        {content.type === 'product' && <Picture src={content.image} alt="" loading="lazy" className="mb-1 max-h-40 rounded-xl object-cover" />}
         {content.type === 'product' && isPinnedListing && (
           <p className="mb-1 flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-amber-200"><BadgeCheck size={12} /> Pinned</p>
         )}
@@ -230,6 +241,16 @@ export default function MessageBubble({ message, data, onAction, senderName, isP
           <p className="clear-both text-[12px] leading-none">{time}</p>
         )}
         {previewUrl && <LinkPreview url={previewUrl} />}
+        {securingStuck && (
+          <button
+            type="button"
+            onPointerDown={(event) => event.stopPropagation()}
+            onClick={(event) => { event.stopPropagation(); haptic('light'); onAction?.('retry_secure', message); }}
+            className={`mt-2 block min-h-11 w-full text-left text-[15px] font-semibold underline active:scale-95 ${isSender ? 'text-white' : 'text-blue-300'}`}
+          >
+            Still securing — retry
+          </button>
+        )}
         {grouped.size > 0 && (
           <div className="mt-1 flex flex-wrap gap-1">
             {[...grouped.entries()].map(([emoji, people]) => (
