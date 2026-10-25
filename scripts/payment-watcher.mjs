@@ -100,12 +100,22 @@ const server = http.createServer(async (req, res) => {
 });
 
 if (process.argv[1] && process.argv[1].endsWith('payment-watcher.mjs')) {
+  if (!watchToken || (!xmrRpc && !btcRpc)) {
+    console.error('[watcher] A vendor runs this. It will not listen until both of these are set:');
+    console.error('  WATCH_TOKEN=a-long-secret');
+    console.error('  XMR_WALLET_RPC=http://127.0.0.1:18083   or   BTC_RPC_URL=http://user:pass@127.0.0.1:8332');
+    console.error('Start the Monero wallet first:');
+    console.error('  monero-wallet-rpc --rpc-bind-ip 127.0.0.1 --rpc-bind-port 18083 --disable-rpc-login --wallet-file YOUR_WALLET --password YOUR_PASSWORD');
+    console.error('Then: WATCH_TOKEN=a-long-secret XMR_WALLET_RPC=http://127.0.0.1:18083 npm run watch');
+    console.error('Paste http://THIS_MACHINE:8788/payment?token=a-long-secret into Connections. The phone never calls a block explorer.');
+    process.exit(1);
+  }
   server.listen(port, '0.0.0.0', () => {
-    console.log(`[watcher] http://127.0.0.1:${port}/payment`);
-    if (!watchToken) console.log('[watcher] WATCH_TOKEN is not set. Every check will be refused.');
+    console.log(`[watcher] http://127.0.0.1:${port}/payment?token=${watchToken}`);
     if (!xmrRpc) console.log('[watcher] XMR_WALLET_RPC is not set. Monero checks will fail loudly.');
     if (!btcRpc) console.log('[watcher] BTC_RPC_URL is not set. Bitcoin checks will fail loudly.');
     console.log('[watcher] The phone confirms Bitcoin at 3 and Monero at 10, unless cipher_confirmations overrides it.');
+    console.log('[watcher] Paste that URL into Connections. This process asks your wallet. It does not ask a block explorer.');
   });
 }
 

@@ -13,7 +13,7 @@ import { useGroupKeyReconciler } from '../../hooks/useGroupKeyReconciler';
 import { flushSecuringGroupSends } from '../../hooks/useNIP29Group';
 import { bindMemberBaselinePublisher, sealMemberBaseline } from '../../lib/crypto/memberBaseline';
 import { activeUrl, entryById } from '../../lib/egress';
-import { registerWithGateway, subscribeBrowser } from '../../lib/pushGateway';
+import { isNativeShell, registerWithGateway, subscribeBrowser, subscribeNative } from '../../lib/pushGateway';
 
 export function useChatBootstrap({
   identity,
@@ -128,10 +128,12 @@ export function useChatBootstrap({
     const run = () => {
       const gateway = activeUrl(entryById('push'));
       if (!gateway) return;
+      const shell = isNativeShell();
       registerWithGateway({
         gatewayUrl: gateway,
         pubkey: identity.pk,
-        subscribe: subscribeBrowser,
+        subscribe: shell ? undefined : subscribeBrowser,
+        native: shell ? subscribeNative : undefined,
       }).then((result) => {
         if (cancelled || result.buzzing || told) return;
         told = true;

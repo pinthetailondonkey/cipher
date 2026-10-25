@@ -44,7 +44,7 @@ A payment moves created → address issued → seen → confirmed. Accepting an 
 
 Bitcoin confirms at 3. Monero confirms at 10. A `confirmed: true` flag with fewer confirmations does not count. Change the phone with the `cipher_confirmations` setting, shaped `{ "btc": 3, "xmr": 10 }`. The watcher you run must be started with `WATCH_TOKEN`. It asks a Monero wallet RPC or a Bitcoin RPC only if you set `XMR_WALLET_RPC` or `BTC_RPC_URL`. It does not call a public explorer. With neither RPC set, it answers that it is not connected to a wallet. With no token, it refuses the check.
 
-The watcher speaks `GET /payment?address=&currency=xmr|btc&token=` and answers `{ "txid", "confirmations" }` or `{ "pending": true }`. `node scripts/payment-watcher.mjs` is that box.
+The watcher speaks `GET /payment?address=&currency=xmr|btc&token=` and answers `{ "txid", "confirmations" }` or `{ "pending": true }`. `npm run watch` is that box. It will not listen until `WATCH_TOKEN` is set and at least one wallet RPC is set. Start `monero-wallet-rpc` on the same machine, then `WATCH_TOKEN=a-long-secret XMR_WALLET_RPC=http://127.0.0.1:18083 npm run watch`, and paste the URL it prints into Connections.
 
 ## Group keys
 
@@ -64,9 +64,7 @@ It buzzes only while the app is open, or the page is in the background with noti
 
 `node scripts/notify-gateway.mjs` is that box. Paste its address on the Push gateway row. The phone fetches `/cipher-push.json`, subscribes with the browser's push API, and posts the subscription to `/subscribe`. The box watches the message relay for a kind-4 event that is tagged `t=msg` or `t=call` and addressed to that key. A message sends `{ "kind": "message" }`. A call sends `{ "kind": "call" }`. Typing indicators, read receipts, and key bundles are not tagged, so they do not buzz. The notice is "New message", "New order", or "Incoming call". The text is not in it. The box learns that something arrived, not what it said.
 
-Web Push covers a browser tab and an installed PWA only. Delivery while that page is locked still goes through the browser's own push service: Google's on Chrome, Apple's on Safari. That is the pipe. There is no FCM key and no APNs key in this repo.
-
-The installed Capacitor app is a different path. The decision for that shell is FCM on Android and APNs on iOS, through a Capacitor push plugin, when that plugin is added. Native push goes through Google and Apple. It is not built. Until then the installed app can only schedule a local notification while its process is alive. Nothing here should be read as the installed app buzzing without Google or Apple.
+Web Push covers a browser tab and an installed PWA only. It does not exist inside the Capacitor webview. The installed app registers through FCM on Android and APNs on iOS. The gateway stores that token at `/native` and says so. It does not send it on. There is no FCM key and no APNs key in this repo, so the installed app still does not buzz. Nothing here should be read as the installed app buzzing without Google or Apple.
 
 Group messages are not watched. Orders travel as direct messages, so an order buzzes as a new message. The box was not left running here.
 
