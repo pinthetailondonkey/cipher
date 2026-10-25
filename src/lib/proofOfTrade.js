@@ -105,12 +105,12 @@ export function acceptPayment(payload, secretKey) {
 }
 
 export function verifyReceipt(signed) {
-  if (!signed?.body || !signed?.sigs?.buyer || !signed?.sigs?.vendor) return false;
-  const body = canonicalReceipt(signed.body);
-  const message = receiptBytes(body);
-  if (bytesToHex(sha256(message)) !== signed.hash) return false;
-  if (body.buyer === body.vendor) return false;
   try {
+    if (!signed?.body || !signed?.sigs?.buyer || !signed?.sigs?.vendor) return false;
+    const body = canonicalReceipt(signed.body);
+    const message = receiptBytes(body);
+    if (bytesToHex(sha256(message)) !== signed.hash) return false;
+    if (body.buyer === body.vendor) return false;
     const buyerOk = schnorr.verify(hexToBytes(signed.sigs.buyer), message, hexToBytes(body.buyer));
     const vendorOk = schnorr.verify(hexToBytes(signed.sigs.vendor), message, hexToBytes(body.vendor));
     return buyerOk && vendorOk;
@@ -131,14 +131,18 @@ function publicBody(input = {}) {
 }
 
 export function publicReceipt(signed) {
-  const body = signed?.body ? canonicalReceipt(signed.body) : {};
-  return publicBody({
-    hash: signed?.hash || (signed?.body ? receiptHash(body) : ''),
-    amount: signed?.amount || body.amount,
-    currency: signed?.currency || body.currency,
-    buyer: signed?.buyer || body.buyer,
-    vendor: signed?.vendor || body.vendor,
-  });
+  try {
+    const body = signed?.body ? canonicalReceipt(signed.body) : {};
+    return publicBody({
+      hash: signed?.hash || (signed?.body ? receiptHash(body) : ''),
+      amount: signed?.amount || body.amount,
+      currency: signed?.currency || body.currency,
+      buyer: signed?.buyer || body.buyer,
+      vendor: signed?.vendor || body.vendor,
+    });
+  } catch {
+    return null;
+  }
 }
 
 function publicMessage(body) {
