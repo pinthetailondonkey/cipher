@@ -154,7 +154,11 @@ export function verifyPublicView(view) {
   }
 }
 
-function amountUnits(amount) {
+const AMOUNT_SCALE = { btc: 8, xmr: 12 };
+
+function amountUnits(amount, currency) {
+  const scale = AMOUNT_SCALE[String(currency || '').toLowerCase()];
+  if (scale == null) return null;
   let text;
   try {
     text = normalizeAmount(amount);
@@ -162,12 +166,16 @@ function amountUnits(amount) {
     return null;
   }
   const [whole, frac = ''] = text.split('.');
-  return BigInt(whole) * 100000000n + BigInt((frac + '00000000').slice(0, 8));
+  if (frac.length > scale) return null;
+  const factor = 10n ** BigInt(scale);
+  return BigInt(whole) * factor + BigInt(frac.padEnd(scale, '0'));
 }
 
-function unitsToAmount(units) {
-  const whole = units / 100000000n;
-  const frac = (units % 100000000n).toString().padStart(8, '0').replace(/0+$/, '');
+function unitsToAmount(units, currency) {
+  const scale = AMOUNT_SCALE[String(currency || '').toLowerCase()];
+  const factor = 10n ** BigInt(scale);
+  const whole = units / factor;
+  const frac = (units % factor).toString().padStart(scale, '0').replace(/0+$/, '');
   return frac ? `${whole}.${frac}` : `${whole}`;
 }
 
@@ -175,7 +183,7 @@ export function rankVolume(events) {
   const totals = new Map();
   for (const event of events || []) {
     if (!event || event.address || event.txid) continue;
-    const units = amountUnits(event.amount);
+    const units = amountUnits(event.amount, event.currency);
     if (units == null || !event.vendor || !event.currency) continue;
     const key = `${event.vendor}|${event.currency}`;
     const row = totals.get(key) || { vendor: event.vendor, currency: event.currency, units: 0n };
@@ -184,5 +192,5 @@ export function rankVolume(events) {
   }
   return [...totals.values()]
     .sort((a, b) => (a.units > b.units ? -1 : a.units < b.units ? 1 : a.vendor.localeCompare(b.vendor)))
-    .map(({ vendor, currency, units }) => ({ vendor, currency, volume: unitsToAmount(units) }));
+    .map(({ vendor, currency, units }) => ({ vendor, currency, volume: unitsToAmount(units, currency) }));
 }
