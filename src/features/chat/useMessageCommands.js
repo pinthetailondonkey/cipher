@@ -26,8 +26,6 @@ export function useMessageCommands({
   identity,
   sendReaction,
   pinMessage,
-  sendGroupMessage,
-  sendDM,
   handleOrderAction,
   startOrderWithVendor,
 }) {
@@ -35,18 +33,13 @@ export function useMessageCommands({
   const setSelectedMessage = useChatStore((s) => s.setSelectedMessage);
   const setReplyingTo = useChatStore((s) => s.setReplyingTo);
   const setToast = useChatStore((s) => s.setToast);
-  const profiles = useChatStore((s) => s.profiles);
   const activeGroup = useChatStore((s) => s.activeGroup);
   const activeDm = useChatStore((s) => s.activeDm);
-  const setForwardingMsg = useChatStore((s) => s.setForwardingMsg);
   const setDms = useChatStore((s) => s.setDms);
   const setGroupMessages = useChatStore((s) => s.setGroupMessages);
   const setVendorStorefrontPubkey = useChatStore((s) => s.setVendorStorefrontPubkey);
   const setBroadcastProduct = useChatStore((s) => s.setBroadcastProduct);
   const setEditingProduct = useChatStore((s) => s.setEditingProduct);
-  const forwardingMsg = useChatStore((s) => s.forwardingMsg);
-  const dms = useChatStore((s) => s.dms);
-  const groupMessages = useChatStore((s) => s.groupMessages);
 
   const handleMessageAction = async (action, secondArg = null) => {
     let msg;
@@ -101,11 +94,6 @@ export function useMessageCommands({
       setSelectedMessage(null);
       return;
     }
-    if (action === 'forward') {
-      const senderName = profiles[msg.pubkey]?.displayName || profiles[msg.pubkey]?.name || (msg.pubkey === identity.pk ? 'You' : `User ${msg.pubkey.slice(0, 4)}`);
-      setForwardingMsg({ data: msg.data || { type: 'text', message: msg.rawContent }, originalSenderName: senderName, id: msg.id });
-      setSelectedMessage(null); return;
-    }
     if (action === 'bookmark') {
       const chatId = activeDm || activeGroup?.id;
       if (!chatId || !msg.id) {
@@ -117,11 +105,6 @@ export function useMessageCommands({
       }
       setSelectedMessage(null);
       return;
-    }
-    if (action === 'select') {
-      useChatStore.getState().toggleSelectionMode();
-      useChatStore.getState().toggleSelectedMsg(msg.id);
-      setSelectedMessage(null); return;
     }
     if (action === 'edit') {
       useChatStore.getState().openDialog({
@@ -188,10 +171,6 @@ export function useMessageCommands({
       setToast({ type: 'success', message: 'Pinned' });
       setSelectedMessage(null); return;
     }
-    if (action === 'report_scam' || action === 'report') {
-      setToast({ type: 'success', message: 'Report submitted' });
-      setSelectedMessage(null); return;
-    }
     if (action === 'view_vendor') {
       setVendorStorefrontPubkey(msg.pubkey);
       setSelectedMessage(null); return;
@@ -203,73 +182,10 @@ export function useMessageCommands({
     }
     if (action === 'broadcast_product') { setBroadcastProduct(msg.data); setSelectedMessage(null); return; }
     if (action === 'edit_product') { setEditingProduct({ msg, product: msg.data }); setSelectedMessage(null); return; }
-    if (action === 'mark_sold_out') {
-      try {
-        const updatedPayload = { ...(msg.data || {}), soldOut: true };
-        if (activeGroup) await sendGroupMessage(activeGroup.id, updatedPayload);
-        setToast({ type: 'success', message: 'Marked sold out' });
-      } catch (e) { setToast({ type: 'error', message: 'Failed' }); }
-      setSelectedMessage(null); return;
-    }
     // Order actions delegated to handleOrderAction
     if (await handleOrderAction(action, msg)) return;
     setSelectedMessage(null);
   };
 
-  const handleForwardSubmit = async (targetId, isGroup) => {
-    if (!forwardingMsg) return;
-    const data = forwardingMsg.data || {};
-    if (data.noforward) {
-      setToast({ type: 'info', message: 'This message can’t be forwarded.' });
-      setForwardingMsg(null);
-      return;
-    }
-    try {
-      if (isGroup) await sendGroupMessage(targetId, data, null, null);
-      else await sendDM(targetId, data, null, null);
-      setToast({ type: 'success', message: 'Message forwarded!' });
-      setForwardingMsg(null);
-    } catch (e) {
-      console.error('Forward failed:', e);
-      setToast({ type: 'error', message: 'Failed to forward message' });
-    }
-  };
-  const handleBulkForward = () => {
-    const selectedIds = useChatStore.getState().selectedMsgs;
-    if (selectedIds.length === 0) return;
-    setToast({ type: 'info', message: 'Select a chat to forward ' + selectedIds.length + ' messages' });
-    const firstId = selectedIds[0];
-    const msgs = activeDm ? (dms[activeDm] || []) : (groupMessages[activeGroup?.id] || []);
-    const msg = msgs.find(m => m.id === firstId);
-    if (msg) {
-      setForwardingMsg({ data: msg.data || { type: 'text', message: msg.rawContent }, originalSenderName: 'You', id: msg.id });
-    }
-    useChatStore.getState().clearSelection();
-  };
-
-  const handleBulkDelete = () => {
-    const selectedIds = useChatStore.getState().selectedMsgs;
-    if (selectedIds.length === 0) return;
-    useChatStore.getState().openDialog({
-      title: 'Delete Messages',
-      message: `Delete ${selectedIds.length} message${selectedIds.length !== 1 ? 's' : ''}? This cannot be undone.`,
-      type: 'danger', confirmText: 'Delete',
-      onConfirm: async () => {
-        const chatId = activeDm || activeGroup?.id;
-        if (!chatId) return;
-        const current = useChatStore.getState().deletedMsgs;
-        const nextDeleted = new Set(current instanceof Set ? current : []);
-        selectedIds.forEach((id) => nextDeleted.add(id));
-        useChatStore.getState().setDeletedMsgs(nextDeleted);
-        if (activeDm) setDms((prev) => ({ ...prev, [activeDm]: (prev[activeDm] || []).filter((item) => !selectedIds.includes(item.id)) }));
-        else if (activeGroup?.id) setGroupMessages((prev) => ({ ...prev, [activeGroup.id]: (prev[activeGroup.id] || []).filter((item) => !selectedIds.includes(item.id)) }));
-        for (const id of selectedIds) {
-          try { await db.messages.delete(id); } catch (error) { console.error('[Chat] Local delete failed:', error); }
-        }
-        useChatStore.getState().clearSelection();
-        setToast({ type: 'success', message: 'Messages deleted' });
-      },
-    });
-  };
-  return { handleMessageAction, handleForwardSubmit, handleBulkForward, handleBulkDelete };
+  return { handleMessageAction };
 }

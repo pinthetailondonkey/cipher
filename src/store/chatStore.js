@@ -270,14 +270,6 @@ export const useChatStore = create((set, get) => ({
     return normalizeBookmarks(s.bookmarks).some((item) => item.chatId === chatId && item.msgId === msgId);
   },
 
-  selectionMode: false,
-  selectedMsgs: [],
-  toggleSelectionMode: () => set(s => ({ selectionMode: !s.selectionMode, selectedMsgs: [] })),
-  toggleSelectedMsg: (id) => set(s => ({
-    selectedMsgs: s.selectedMsgs.includes(id) ? s.selectedMsgs.filter(x => x !== id) : [...s.selectedMsgs, id],
-  })),
-  clearSelection: () => set({ selectionMode: false, selectedMsgs: [] }),
-
   postListingGroup: null,
   setPostListingGroup: (v) => set({ postListingGroup: v }),
   showMenu: false,
@@ -314,10 +306,6 @@ export const useChatStore = create((set, get) => ({
   setShowFullEmoji: (v) => set({ showFullEmoji: v }),
   replyText: '',
   setReplyText: (v) => set({ replyText: v }),
-  forwardingMsg: null,
-  setForwardingMsg: (v) => set({ forwardingMsg: v }),
-  showForwardModal: false,
-  setShowForwardModal: (v) => set({ showForwardModal: v }),
   showEmojiPicker: false,
   setShowEmojiPicker: (v) => set({ showEmojiPicker: v }),
 

@@ -71,3 +71,15 @@ test('blocking from a profile is kept for that account and reaches the ingest fi
   const dm = fs.readFileSync(new URL('../hooks/useNIP44DM.js', import.meta.url), 'utf8');
   assert.ok(dm.indexOf('blocked.includes(counterparty)') < dm.indexOf("data.type === 'call'"));
 });
+
+test('no message action is offered that leads nowhere', () => {
+  const bubble = fs.readFileSync(new URL('../components/MessageBubble.jsx', import.meta.url), 'utf8');
+  const commands = fs.readFileSync(new URL('../features/chat/useMessageCommands.js', import.meta.url), 'utf8');
+  const settings = fs.readFileSync(new URL('../components/chat/PrivacySettings.jsx', import.meta.url), 'utf8');
+  assert.equal(bubble.includes("'forward'"), false);
+  for (const gone of ["'forward'", "'select'", "'report'", "'report_scam'", "'mark_sold_out'", 'handleForwardSubmit', 'Report submitted']) {
+    assert.equal(commands.includes(gone), false, gone);
+  }
+  assert.equal(settings.includes('Forwarding'), false);
+  assert.equal('forwarding' in getPrivacy(), false);
+});

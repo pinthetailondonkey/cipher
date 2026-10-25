@@ -62,8 +62,6 @@ export default function Chat({ identity }) {
     identity,
     sendReaction,
     pinMessage,
-    sendGroupMessage,
-    sendDM,
     handleOrderAction: commerce.handleOrderAction,
     startOrderWithVendor: commerce.startOrderWithVendor,
   });
@@ -122,7 +120,6 @@ export default function Chat({ identity }) {
     handleImageUpload: composer.handleImageUpload,
     startRecording: composer.startRecording,
     stopRecording: composer.stopRecording,
-    handleForwardSubmit: commands.handleForwardSubmit,
   };
 
   if (view === 'dm' && activeDm) {

@@ -7,7 +7,6 @@ export const DEFAULT_PRIVACY = {
   groups: 'everyone',
   readReceipts: true,
   typing: true,
-  forwarding: true,
   // A preview sends the link to a third-party host, so it is opt-in.
   linkPreviews: false,
 };

@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
-import { BadgeCheck, Bookmark, Copy, Forward, Pencil, Pin, Radio, Reply, ShoppingBag, Trash2 } from 'lucide-react';
+import { BadgeCheck, Bookmark, Copy, Pencil, Pin, Radio, Reply, ShoppingBag, Trash2 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { paymentRowsFor } from '../lib/paymentUri';
 import { haptic } from '../lib/haptics';
@@ -164,7 +164,6 @@ export default function MessageBubble({ message, data, onAction, senderName, isP
   const menuActions = [
     ['reply', Reply, 'Reply'],
     ['copy', Copy, 'Copy'],
-    ['forward', Forward, 'Forward'],
     ['bookmark', Bookmark, 'Save'],
     ...(inGroup ? [['pin', Pin, 'Pin']] : []),
     ...(content.type === 'product' && !isSender ? [['buy_product', ShoppingBag, 'Buy']] : []),
