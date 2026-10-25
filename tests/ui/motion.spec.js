@@ -9,19 +9,16 @@ test.describe('Motion and accessibility', () => {
   test('respects prefers-reduced-motion', async ({ page }) => {
     await page.emulateMedia({ reducedMotion: 'reduce' });
     await page.goto('/');
-    await page.waitForTimeout(500);
+    await page.waitForTimeout(1000);
 
-    // Check that animated nav has no active transition
+    // Sample nav transform twice 100ms apart - with MotionConfig reducedMotion="user",
+    // framer-motion skips transform animations so both samples should be identical
     const nav = await page.locator('nav').last();
-    const hasTransition = await nav.evaluate(el => {
-      const style = window.getComputedStyle(el);
-      return style.transitionDuration !== '0s';
-    });
+    const transform1 = await nav.evaluate(el => window.getComputedStyle(el).transform);
+    await page.waitForTimeout(100);
+    const transform2 = await nav.evaluate(el => window.getComputedStyle(el).transform);
 
-    // Note: framer-motion doesn't fully respect prefers-reduced-motion in all contexts
-    // This test verifies the flag is set, not that all animations stop
-    // Real fix would be to add transition: none !important in @media (prefers-reduced-motion)
-    expect(typeof hasTransition).toBe('boolean');
+    expect(transform1).toBe(transform2);
   });
 
   test('focusable elements show visible outline on tab', async ({ page }) => {
