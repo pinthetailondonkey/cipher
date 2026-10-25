@@ -410,20 +410,6 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
       setToast({ type: 'error', message: error?.message || 'Failed to update product' });
     }
   };
-  const handlePostListing = async (listingData) => {
-    const state = useChatStore.getState();
-    if (!state.postListingGroup) return;
-    const payload = {
-      type: 'product', title: listingData.title, priceUsd: listingData.priceUsd,
-      image: listingData.image, description: listingData.description,
-      dropUntil: listingData.dropUntil || null, stock: listingData.stock || null,
-    };
-    const res = await sendGroupMessage(state.postListingGroup.id, payload);
-    if (res?.error === 'NO_KEY') setToast({ type: 'success', message: 'Securing… the listing will send when the group key arrives.' });
-    else if (res.success) setToast({ type: 'success', message: 'Listing posted to group!' });
-    else setToast({ type: 'error', message: 'Failed to post listing' });
-  };
-
   const handleBroadcastSubmit = async (groupIds, product) => {
     const payload = {
       type: 'product',
@@ -452,7 +438,6 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
     handleOrderAction,
     startOrderWithVendor,
     handleSaveEditedProduct,
-    handlePostListing,
     handleBroadcastSubmit,
   };
 }

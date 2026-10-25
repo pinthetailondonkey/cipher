@@ -99,10 +99,7 @@ export function notifTotalOf(state) {
   return sum;
 }
 
-export const useChatStore = create((set, get) => ({
-  hideNotifContent: scopedGet('hide_notif_content', true),
-  setHideNotifContent: (v) => { scopedSet('hide_notif_content', v); set({ hideNotifContent: v }); },
-
+export const useChatStore = create((set) => ({
   // NAVIGATION
   view: 'list',
   activeDm: null,
@@ -228,8 +225,6 @@ export const useChatStore = create((set, get) => ({
   }),
 
   // SEARCH
-  chatSearch: '',
-  setChatSearch: (v) => set({ chatSearch: v }),
   searchQuery: '',
   searchResults: [],
   isSearching: false,
@@ -270,13 +265,10 @@ export const useChatStore = create((set, get) => ({
     return normalizeBookmarks(s.bookmarks).some((item) => item.chatId === chatId && item.msgId === msgId);
   },
 
-  postListingGroup: null,
-  setPostListingGroup: (v) => set({ postListingGroup: v }),
   showMenu: false,
   showCreateGroup: false,
   showGroupInfo: false,
   showMyProfile: false,
-  showAddProduct: false,
   selectedMessage: null,
   profilePubkey: null,
   checkoutProduct: null,
@@ -284,12 +276,9 @@ export const useChatStore = create((set, get) => ({
   setShowCreateGroup: (v) => set({ showCreateGroup: v }),
   setShowGroupInfo: (v) => set({ showGroupInfo: v }),
   setShowMyProfile: (v) => set({ showMyProfile: v }),
-  setShowAddProduct: (v) => set({ showAddProduct: v }),
   setSelectedMessage: (v) => set({ selectedMessage: v }),
   setProfilePubkey: (v) => set({ profilePubkey: v }),
   setCheckoutProduct: (v) => set({ checkoutProduct: v }),
-  reviewTarget: null,
-  setReviewTarget: (v) => set({ reviewTarget: v }),
   vendorStorefrontPubkey: null,
   setVendorStorefrontPubkey: (v) => set({ vendorStorefrontPubkey: v }),
   editingProduct: null,
@@ -302,12 +291,6 @@ export const useChatStore = create((set, get) => ({
   setShowNotifCenter: (v) => set({ showNotifCenter: v }),
   showBookmarks: false,
   setShowBookmarks: (v) => set({ showBookmarks: v }),
-  showFullEmoji: false,
-  setShowFullEmoji: (v) => set({ showFullEmoji: v }),
-  replyText: '',
-  setReplyText: (v) => set({ replyText: v }),
-  showEmojiPicker: false,
-  setShowEmojiPicker: (v) => set({ showEmojiPicker: v }),
 
   newMessage: '',
   newGroupName: '',
@@ -321,22 +304,8 @@ export const useChatStore = create((set, get) => ({
   setReplyingTo: (v) => set({ replyingTo: v }),
 
   // PROFILE EDITOR
-  myName: '',
   myUsername: '',
-  myAbout: '',
-  setMyName: (v) => set({ myName: v }),
   setMyUsername: (v) => set({ myUsername: v }),
-  setMyAbout: (v) => set({ myAbout: v }),
-
-  // PRODUCTS
-  myProducts: scopedGet('my_products', []),
-  newProduct: { name: '', priceUsd: '', image: '' },
-  setMyProducts: (v) => {
-    const products = typeof v === 'function' ? v(get().myProducts) : v;
-    set({ myProducts: products });
-    scopedSet('my_products', products);
-  },
-  setNewProduct: (v) => set({ newProduct: v }),
 
   // LOADING
   panicWipeEnabled: safeStorage.getItem('cipher_panic_wipe') === 'true',
@@ -368,7 +337,6 @@ export const useChatStore = create((set, get) => ({
     unreadCounts: scopedGet('unread', {}),
     notifAck: scopedGet('notif_ack', {}),
     isVendor: scopedGet('is_vendor', false) === true,
-    myProducts: scopedGet('my_products', []),
   }),
 
   // TOAST

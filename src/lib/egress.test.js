@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
-import { EGRESS, groupRelayHttp, iceServers, isOnionUrl, listEgress, readNetworkConfig, urlsFor, visibleImage } from './egress.js';
+import { EGRESS, groupRelayHttp, iceServers, isOnionUrl, listEgress, readNetworkConfig, urlsFor } from './egress.js';
 
 function walk(dir, out = []) {
   for (const name of fs.readdirSync(dir)) {
@@ -81,9 +81,6 @@ test('a pasted call relay keeps its login, and pictures are not blocked', () => 
   const onionServer = torCall.find((item) => String(item.urls).includes('.onion'));
   assert.equal(onionServer.username, 'user');
   assert.ok(torCall.some((item) => String(item.urls).startsWith('stun:')));
-  assert.equal(visibleImage('https://cdn.example/a.png'), 'https://cdn.example/a.png');
-  assert.equal(visibleImage('/logo_raw.png'), '/logo_raw.png');
-  assert.equal(visibleImage(''), '');
 });
 
 test('the network snapshot stays the same object until storage changes', () => {

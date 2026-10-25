@@ -9,7 +9,6 @@
 export const GKEY_RETRY_BASE_MS = 2000;
 export const GKEY_RETRY_CAP_MS = 5 * 60 * 1000;
 export const GKEY_RETRY_JITTER = 0.3;
-export const GKEY_RETRY_DELAYS_MS = [2000, 4000, 8000, 16000, 32000];
 export const GKEY_RETRY_MAX_ATTEMPTS = 12;
 export const SECURING_STUCK_MS = 3 * 60 * 1000;
 
@@ -135,19 +134,6 @@ export function keyRequestRecord(pubkey, groupId, storage) {
   return loadKeyRequestRecords(pubkey, storage).find((record) => record.id === groupId) || null;
 }
 
-export function savePendingKeyRequests(pubkey, groupIds, storage) {
-  const existing = loadKeyRequestRecords(pubkey, storage);
-  const want = [...new Set((groupIds || []).filter((id) => typeof id === 'string' && id))];
-  const next = [];
-  for (const id of want) {
-    next.push(existing.find((record) => record.id === id) || blankKeyRequest(id, Date.now()));
-  }
-  for (const record of existing) {
-    if (record.exhausted && !want.includes(record.id)) next.push(record);
-  }
-  saveKeyRequestRecords(pubkey, next, storage);
-}
-
 export function rememberPendingKeyRequest(pubkey, groupId, storage) {
   if (!pubkey || !groupId) return;
   const records = loadKeyRequestRecords(pubkey, storage);
@@ -242,15 +228,6 @@ export function dropSecuringSend(pubkey, id, storage) {
   );
 }
 
-export function dropSecuringSendsForGroup(pubkey, groupId, storage) {
-  if (!pubkey || !groupId) return;
-  saveSecuringSends(
-    pubkey,
-    loadSecuringSends(pubkey, storage).filter((item) => item.groupId !== groupId),
-    storage,
-  );
-}
-
 export function securingSendsFor(pubkey, groupId, storage) {
   return loadSecuringSends(pubkey, storage).filter((item) => item.groupId === groupId);
 }
@@ -266,14 +243,6 @@ export function securingPhase(since, now = Date.now(), threshold = SECURING_STUC
 export function shouldFlushSecuring({ groupId, sends, exhausted = false } = {}) {
   const ids = (sends || []).filter((item) => item?.groupId === groupId).map((item) => item.id);
   return { flush: ids.length > 0, ids, exhausted: !!exhausted };
-}
-
-export function markSecuringRetry(pubkey, groupId, storage, now = Date.now()) {
-  if (!pubkey || !groupId) return;
-  const next = loadSecuringSends(pubkey, storage).map((item) => (
-    item.groupId === groupId ? { ...item, since: now } : item
-  ));
-  saveSecuringSends(pubkey, next, storage);
 }
 
 export function stopGroupKeyRequests(groupId) {

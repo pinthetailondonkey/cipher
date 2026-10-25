@@ -41,13 +41,6 @@ export function eventShouldOrder(event) {
   return Array.isArray(event?.tags) && event.tags.some((tag) => tag[0] === 't' && tag[1] === ORDER_TAG);
 }
 
-export function pushKind(event) {
-  if (eventShouldRing(event)) return 'call';
-  if (eventShouldOrder(event)) return 'order';
-  if (eventShouldBuzz(event)) return 'message';
-  return null;
-}
-
 export function notificationFromPush(raw) {
   const kind = raw && typeof raw === 'object' && (raw.kind === 'order' || raw.kind === 'call') ? raw.kind : 'message';
   const title = kind === 'order' ? 'New order' : kind === 'call' ? 'Incoming call' : 'New message';
