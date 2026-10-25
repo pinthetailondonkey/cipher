@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { MIN_PIN_LENGTH, pinFailureMessage, recordPinFailure, resetPinFailures } from './lib/vaultLockout'
+import { LOCKED_OUT_MESSAGE, MIN_PIN_LENGTH, failPinAttempt, pinFailureMessage, resetPinFailures } from './lib/vaultLockout'
 import { profileRelays as PROFILE_RELAYS } from './lib/relays'
 
 // Derive 32-byte secret key from BIP39 mnemonic
@@ -423,30 +423,15 @@ export function useIdentity() {
       setKeys({ sk, pk, npub: nip19.npubEncode(pk) })
       return { success: true }
     } catch (e) {
-      const { lockedOut, remaining } = recordPinFailure(localStorage, failureAccount)
-      if (lockedOut) {
-        // Only wipe THIS account's vault — other accounts stay intact
-        const activePk = getActivePubkey();
-        try {
-          const vaults = getVaults();
-          const legacyVault = localStorage.getItem('cipher_vault');
-          // Only remove the legacy single-vault if it belongs to the locked-out account
-          // (or there is no multi-account entry, i.e. it IS the locked-out account).
-          const legacyBelongsToActive = !activePk || !vaults[activePk] ||
-            (legacyVault && JSON.stringify(vaults[activePk].vault) === legacyVault);
-          if (activePk) delete vaults[activePk];
-          saveVaults(vaults);
-          if (legacyVault && legacyBelongsToActive) {
-            localStorage.removeItem('cipher_vault');
-            localStorage.removeItem('cipher_handle');
-          }
-          localStorage.removeItem('cipher_active_pubkey');
-          resetPinFailures(localStorage, activePk);
-        } catch (wipeErr) { console.error('Lockout wipe failed:', wipeErr) }
+      let failure = { lockedOut: false, remaining: 0 }
+      try {
+        failure = failPinAttempt(localStorage, failureAccount)
+      } catch (wipeErr) { console.error('Lockout wipe failed:', wipeErr) }
+      if (failure.lockedOut) {
         sessionStorage.removeItem('cipher_session_sk');
         window.location.reload();
       }
-      return { success: false, error: pinFailureMessage(remaining), remaining }
+      return { success: false, error: pinFailureMessage(failure.remaining), remaining: failure.remaining }
     }
   }
 
@@ -541,8 +526,15 @@ export function useIdentity() {
       return { success: false, error: 'Account not found on this device. Use your 12-word recovery phrase if you are on a new device.' };
     }
 
+    let skArray;
     try {
-      const skArray = await decryptKey(targetVault, pin);
+      skArray = await decryptKey(targetVault, pin);
+    } catch {
+      const { lockedOut, remaining } = failPinAttempt(localStorage, targetPk);
+      return { success: false, error: lockedOut ? LOCKED_OUT_MESSAGE : pinFailureMessage(remaining) };
+    }
+
+    try {
       const { getPublicKey, nip19 } = await import('nostr-tools');
       const sk = Uint8Array.from(skArray);
       const pk = getPublicKey(sk);
@@ -744,12 +736,18 @@ export function useIdentity() {
     try {
       const vaults = getVaults();
       if (!vaults[targetPk]) throw new Error('Account not found');
-      
-      const skArray = await decryptKey(vaults[targetPk].vault, pin);
+
+      let skArray;
+      try {
+        skArray = await decryptKey(vaults[targetPk].vault, pin);
+      } catch {
+        const { lockedOut, remaining } = failPinAttempt(localStorage, targetPk);
+        return { success: false, error: lockedOut ? LOCKED_OUT_MESSAGE : pinFailureMessage(remaining) };
+      }
       const { getPublicKey, nip19 } = await import('nostr-tools');
       const sk = Uint8Array.from(skArray);
       const pk = getPublicKey(sk);
-      
+
       if (pk !== targetPk) throw new Error('Invalid PIN for this account');
       
       setActivePubkey(targetPk);
