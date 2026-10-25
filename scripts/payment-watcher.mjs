@@ -1,5 +1,7 @@
-// A payment watcher you run. The phone asks this. This process asks a wallet
-// RPC you point it at. It does not call a public block explorer.
+// A payment watcher you run. The phone asks this. This process asks a Monero
+// wallet RPC, or a Bitcoin node, that you point it at. Bitcoin is a
+// scantxoutset scan of the address. It does not need a wallet or an index.
+// It does not call a public block explorer.
 //
 //   XMR_WALLET_RPC=http://127.0.0.1:18083 BTC_RPC_URL=http://user:pass@127.0.0.1:8332 node scripts/payment-watcher.mjs
 //
@@ -9,7 +11,7 @@
 
 import http from 'node:http';
 import { timingSafeEqual } from 'node:crypto';
-import { reportFromTransfers } from '../src/lib/paymentWatch.js';
+import { reportFromTransfers, rowsFromScan } from '../src/lib/paymentWatch.js';
 
 const port = Number(process.env.PORT || process.env.WATCH_PORT || 8788);
 const xmrRpc = String(process.env.XMR_WALLET_RPC || '').trim();
@@ -54,15 +56,22 @@ async function moneroTransfers(address) {
   return reportFromTransfers(rows, address);
 }
 
+function bitcoinDescriptor(address) {
+  const text = String(address || '').trim();
+  if (!/^(bc1|tb1|bcrt1|[123mn2])[a-zA-Z0-9]{10,100}$/.test(text)) {
+    throw Object.assign(new Error('That is not a Bitcoin address this watcher can scan.'), { status: 400 });
+  }
+  return `addr(${text})`;
+}
+
 async function bitcoinTransfers(address) {
-  const result = await rpc(btcRpc, {
+  const scan = await rpc(btcRpc, {
     jsonrpc: '1.0',
     id: 'cipher',
-    method: 'listtransactions',
-    params: ['*', 200],
+    method: 'scantxoutset',
+    params: ['start', [bitcoinDescriptor(address)]],
   });
-  const rows = (Array.isArray(result) ? result : []).filter((row) => row.category === 'receive');
-  return reportFromTransfers(rows, address);
+  return reportFromTransfers(rowsFromScan(scan, address), address, 'btc');
 }
 
 const server = http.createServer(async (req, res) => {

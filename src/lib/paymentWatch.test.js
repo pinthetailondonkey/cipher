@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { checkPayment, isPublicExplorer, paymentWatchUrl, reportFromTransfers } from './paymentWatch.js';
+import { checkPayment, isPublicExplorer, paymentWatchUrl, reportFromTransfers, rowsFromScan } from './paymentWatch.js';
 
 test('an empty watcher and a public explorer are refused before any request', async () => {
   let called = false;
@@ -67,4 +67,14 @@ test('wallet transfers become a watcher report, and a miss stays pending', () =>
     { address: '8abc', txid: 'yes', confirmations: 2 },
   ], '8abc'), { source: 'watcher', txid: 'yes', confirmations: 2, confirmed: false });
   assert.deepEqual(reportFromTransfers([], '8abc'), { pending: true });
+});
+
+test('a stock-node scan of one address becomes a bitcoin report', () => {
+  const scan = { height: 104, unspents: [{ txid: 'aa', height: 102, amount: 0.01 }] };
+  assert.deepEqual(reportFromTransfers(rowsFromScan(scan, 'bcrt1q'), 'bcrt1q', 'btc'), {
+    source: 'watcher', txid: 'aa', confirmations: 3, confirmed: true,
+  });
+  const counted = { unspents: [{ txid: 'bb', confirmations: 1 }] };
+  assert.equal(reportFromTransfers(rowsFromScan(counted, 'bc1q'), 'bc1q', 'btc').confirmed, false);
+  assert.deepEqual(reportFromTransfers(rowsFromScan({ unspents: [] }, 'bc1q'), 'bc1q', 'btc'), { pending: true });
 });
