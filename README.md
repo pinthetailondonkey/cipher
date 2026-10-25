@@ -72,9 +72,9 @@ Group messages are not watched. Orders travel as direct messages, so an order bu
 
 ## Proof of trade
 
-A confirmed payment can carry a receipt. The body is the order id, the buyer and vendor public keys, the currency, the address, the amount, the txid, the unix time `at`, and the outcome (`confirmed`, `disputed`, `rugged`, or `refunded`). The vendor signs that canonical JSON with their Nostr key (BIP-340). The hash is sha256 of those same bytes. `at` and `outcome` are part of version 1, so a later field cannot be slipped in under an old signature.
+A confirmed payment can carry a receipt. The body is the order id, the buyer and vendor public keys, the currency, the address, the amount, the txid, the unix time `at`, and the outcome (`confirmed`, `disputed`, `rugged`, or `refunded`). Both public keys sit in the body. Both parties sign that same canonical JSON with their Nostr keys (BIP-340). The hash is sha256 of those bytes. Verification requires both signatures. One valid signature and one invalid signature is not a receipt. `at` and `outcome` are part of version 1, so a later field cannot be slipped in under an old signature.
 
-The order update publishes the hash and nothing else from the receipt. The address, the amount, and the txid stay on the vendor's phone, under `receipt_<order id>`. A dispute is the reveal: the report then includes the body and the signature. Anyone with the body can check that the hash matches and that the signature is the vendor's. A wrong txid or a swapped hash does not verify.
+The order update publishes the hash and nothing else from the receipt. The address and the txid stay on the vendor's phone, under `receipt_<order id>`, until the buyer adds their signature. A dispute is the reveal: the report then includes the body and both signatures. Anyone with the body can check that the hash matches and that both signatures belong to the buyer and the vendor named in the body. A wrong txid, a swapped hash, or one bad signature does not verify.
 
 The vendor still does not call a block explorer. The txid is the one the watcher reported. The receipt is not a second confirmation. It is a record of the confirmation that already happened.
 
