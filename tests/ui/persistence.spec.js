@@ -1,5 +1,4 @@
 import { test, expect } from '@playwright/test';
-import { seedVault } from './fixtures.js';
 
 // Opens the app's per-account database by name without a version, so this never
 // creates or upgrades anything. The app must have made the database and its
@@ -33,12 +32,53 @@ async function readStoredMessage(page, { dbName, msgId }) {
   }, { dbName, msgId });
 }
 
+// A direct IndexedDB put, bypassing the app entirely: this is how a row written
+// before the at-rest change looks on disk, plaintext and without a `sealed`
+// field. The app must still read and show it next to sealed rows.
+async function writeRawMessage(page, { dbName, row }) {
+  const result = await page.evaluate(({ dbName: name, row: r }) => {
+    const request = indexedDB.open(name);
+    return new Promise((resolve, reject) => {
+      request.onsuccess = () => {
+        const db = request.result;
+        try {
+          const tx = db.transaction(['messages'], 'readwrite');
+          const put = tx.objectStore('messages').put(r);
+          put.onsuccess = () => resolve({ store: true, written: true });
+          put.onerror = () => reject(put.error);
+        } finally {
+          db.close();
+        }
+      };
+      request.onerror = () => reject(request.error);
+      request.onblocked = () => reject(new Error('database blocked by another connection'));
+    });
+  }, { dbName, row });
+  expect(result, 'legacy plaintext row was written straight to IndexedDB').toMatchObject({ store: true, written: true });
+}
+
+// The app's own view of the rows (window.__cipher.readStoredRows, src/db.js):
+// sealed rows come back unsealed, legacy rows as they are stored.
+async function readOpenedRows(page) {
+  return page.evaluate(async () => {
+    if (typeof window.__cipher?.readStoredRows !== 'function') {
+      throw new Error('window.__cipher.readStoredRows missing — app hook did not load');
+    }
+    return window.__cipher.readStoredRows();
+  });
+}
+
 test.describe('Persistence', () => {
   test.beforeEach(async ({ page }) => {
-    await page.addInitScript(seedVault);
+    // Session key in place: the app loads past the lock screen with the vault
+    // open. sessionStorage survives reloads within the tab, so the app is
+    // still unlocked after page.reload().
+    await page.addInitScript(() => {
+      sessionStorage.setItem('cipher_session_sk', JSON.stringify(Array(32).fill(170)));
+    });
   });
 
-  test('message written through saveMessage survives reload in per-account database', async ({ page }) => {
+  test('new rows are sealed at rest and reload beside a legacy plaintext row', async ({ page }) => {
     await page.goto('/');
 
     // Dexie creates the database file lazily, so at any fixed timeout nothing
@@ -64,21 +104,35 @@ test.describe('Persistence', () => {
     expect(pre.store, 'the app database has a messages store').toBe(true);
 
     // A chat with a peer other than the account itself, so no history fetch for
-    // an open chat can touch this row.
+    // an open chat can touch this row. Both rows below share the thread, so the
+    // reload shows a pre-change plaintext row and a sealed row together.
     const peerPk = 'f'.repeat(64);
     const chatId = `dm:${peerPk}`;
+    const now = Math.floor(Date.now() / 1000);
+    const legacyRow = {
+      id: 'legacy_message_1',
+      chatId,
+      pubkey: peerPk,
+      timestamp: now - 60,
+      data: { message: 'legacy plaintext note', type: 'text' },
+      isSender: false,
+    };
     const testMessage = {
       id: 'test_message_123',
       pubkey: peerPk,
-      timestamp: Math.floor(Date.now() / 1000),
+      timestamp: now,
       data: { message: 'test persistence', type: 'text' },
       isSender: false,
     };
 
-    // Write through the app's own saveMessage — exposed at window
-    // .__cipherSaveMessage (src/db.js) — so the row takes the same merge +
-    // tombstone transaction path as a real incoming message. saveMessage
-    // swallows its own errors, so the write is verified below.
+    // The row written before the at-rest change: put directly into IndexedDB,
+    // bypassing the app's save path entirely.
+    await writeRawMessage(page, { dbName, row: legacyRow });
+
+    // Write through the app's own saveMessage — window.__cipher (src/db.js) —
+    // so the row takes the same merge + tombstone transaction path as a real
+    // incoming message. saveMessage swallows its own errors, so the write is
+    // verified below.
     await page.evaluate(async ({ chatId: chat, msg }) => {
       if (typeof window.__cipher.saveMessage !== 'function') {
         throw new Error('window.__cipher.saveMessage missing — app hook did not load');
@@ -86,9 +140,13 @@ test.describe('Persistence', () => {
       await window.__cipher.saveMessage(chat, msg);
     }, { chatId, msg: testMessage });
 
+    // Done-when (c): the stored bytes for a new row do not contain the
+    // plaintext. Read the raw on-disk row, not the app's opened view.
     const seeded = await readStoredMessage(page, { dbName, msgId: testMessage.id });
-    expect(seeded.store, 'the app database has a messages store').toBe(true);
     expect(seeded.msg, 'write through saveMessage landed in IndexedDB').toBeDefined();
+    expect(seeded.msg.sealed?.ct, 'the stored row carries a sealed envelope').toBeTruthy();
+    const storedBytes = JSON.stringify(seeded.msg);
+    expect(storedBytes.includes('test persistence'), 'stored bytes do not contain the plaintext').toBe(false);
 
     // The vendor's changes to an order are stored as localPatch on the row
     // (src/lib/messageMerge.js, via updateLocalOrder -> patchMessage). A
@@ -102,14 +160,14 @@ test.describe('Persistence', () => {
     const orderMessage = {
       id: 'test_order_1',
       pubkey: orderPeer,
-      timestamp: Math.floor(Date.now() / 1000),
+      timestamp: now,
       data: { message: 'order placed', type: 'text' },
       isSender: true,
     };
     await page.evaluate(async ({ chat, order }) => {
       if (typeof window.__cipher.saveMessage !== 'function'
         || typeof window.__cipher.patchMessage !== 'function') {
-        throw new Error('app hooks missing — window.__cipher.saveMessage/__cipherPatchMessage did not load');
+        throw new Error('app hooks missing — window.__cipher.saveMessage/patchMessage did not load');
       }
       await window.__cipher.saveMessage(chat, order);
       await window.__cipher.patchMessage(order.id, { state: 'confirmed' });
@@ -118,26 +176,90 @@ test.describe('Persistence', () => {
     }, { chat: orderChat, order: orderMessage });
 
     const seededOrder = await readStoredMessage(page, { dbName, msgId: orderMessage.id });
-    expect(seededOrder.store, 'the app database has a messages store').toBe(true);
     expect(seededOrder.msg, 'order write through saveMessage landed in IndexedDB').toBeDefined();
 
-    // Reload page and wait for the app shell, then require the row both in
-    // IndexedDB and in the DOM.
+    // Reload page and wait for the app shell, then require the rows both in
+    // IndexedDB and in the app's read path.
     await page.reload();
     await page.locator('nav').last().waitFor();
 
     const reloaded = await readStoredMessage(page, { dbName, msgId: testMessage.id });
-    expect(reloaded.store, 'the app database has a messages store after reload').toBe(true);
     expect(reloaded.msg, 'row survived the reload in IndexedDB').toBeDefined();
+    expect(reloaded.msg.sealed?.ct, 'the reloaded row is still sealed at rest').toBeTruthy();
+    expect(JSON.stringify(reloaded.msg).includes('test persistence'), 'reloaded stored bytes stay sealed').toBe(false);
+
+    // Done-when (b): through the app's own read path, the old plaintext row
+    // and the new encrypted row of the same thread come back together, both
+    // readable.
+    const opened = await readOpenedRows(page);
+    const threadRows = opened.filter((r) => r.id === legacyRow.id || r.id === testMessage.id);
+    expect(threadRows.map((r) => r.id).sort(), 'both rows of the thread are readable after reload')
+      .toEqual([legacyRow.id, testMessage.id].sort());
+    const legacyOpened = threadRows.find((r) => r.id === legacyRow.id);
+    const sealedOpened = threadRows.find((r) => r.id === testMessage.id);
+    expect(legacyOpened.data?.message, 'the pre-change plaintext row reads as stored').toBe('legacy plaintext note');
+    expect(sealedOpened.data?.message, 'the sealed row opens to its plaintext').toBe('test persistence');
 
     // The vendor's patch survived the re-save and the reload: the merge laid
-    // localPatch back over the plain relay copy.
-    const reloadedOrder = await readStoredMessage(page, { dbName, msgId: orderMessage.id });
-    expect(reloadedOrder.msg?.data?.state, 'vendor patch survives a history re-save and reload').toBe('confirmed');
+    // localPatch back over the plain relay copy, and the opened view shows it.
+    const reloadedOrder = opened.find((r) => r.id === orderMessage.id);
+    expect(reloadedOrder?.data?.state, 'vendor patch survives a history re-save and reload').toBe('confirmed');
 
     // The chat list shows the last message body as the row preview. Bootstrap
     // fills dms from db.messages.toArray() only after its relay fetches settle,
     // so wait on the DOM itself rather than a fixed sleep.
     await expect(page.getByText('test persistence')).toBeVisible({ timeout: 30_000 });
   });
+
+});
+
+// Outside the describe above on purpose: that describe seeds the session key
+// with addInitScript, which would re-seed this test's "locked" reload too.
+test('with the vault locked the app renders without crashing', async ({ page }) => {
+  const pageErrors = [];
+  page.on('pageerror', (error) => pageErrors.push(String(error)));
+
+  // No seeded session key: the app shows the lock screen first. Unlocking
+  // here means putting the session key in place by hand, exactly what the
+  // unlock paths do (src/useIdentity.js).
+  await page.goto('/');
+  await page.evaluate(() => {
+    sessionStorage.setItem('cipher_session_sk', JSON.stringify(Array(32).fill(170)));
+  });
+  await page.reload();
+  await page.locator('nav').last().waitFor();
+
+  // Dexie creates the database file lazily — wait for the app to open it.
+  const deadline = Date.now() + 10_000;
+  let dbName = null;
+  while (Date.now() < deadline) {
+    const names = await page.evaluate(async () => (await indexedDB.databases()).map((d) => d.name));
+    dbName = names.find((n) => n && n.startsWith('CipherDB_v7_')) || null;
+    if (dbName) break;
+    await page.waitForTimeout(100);
+  }
+  expect(dbName, 'the unlocked app opened its per-account database').toBeTruthy();
+
+  await page.evaluate(async () => {
+    if (typeof window.__cipher.saveMessage !== 'function') {
+      throw new Error('window.__cipher.saveMessage missing — app hook did not load');
+    }
+    await window.__cipher.saveMessage('dm:' + 'd'.repeat(64), {
+      id: 'locked_test_1',
+      pubkey: 'd'.repeat(64),
+      timestamp: Math.floor(Date.now() / 1000),
+      data: { message: 'locked vault note', type: 'text' },
+      isSender: false,
+    });
+  });
+
+  // Lock the app the way lockApp does: the session copy of the vault key
+  // goes away. On reload the vault is locked while the sealed rows sit in
+  // IndexedDB.
+  await page.evaluate(() => sessionStorage.removeItem('cipher_session_sk'));
+  await page.reload();
+
+  // The lock screen renders and nothing threw.
+  await expect(page.locator('h1')).toBeVisible({ timeout: 15_000 });
+  expect(pageErrors, 'no uncaught error while locked').toEqual([]);
 });
