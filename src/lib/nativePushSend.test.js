@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import test from 'node:test';
-import { apnsJwt, noticeFor, sendApns, sendFcm, sendNative, serviceAccountJwt } from './nativePushSend.js';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { apnsJwt, nativeRegistration, noticeFor, sendApns, sendFcm, sendNative, serviceAccountJwt } from './nativePushSend.js';
 
 test('a native notice is only a message or a call, and it is not sent without a key', async () => {
   assert.equal(noticeFor('typing'), null);
@@ -55,4 +58,24 @@ test('a native notice is only a message or a call, and it is not sent without a 
   assert.equal(ring.sent, true);
   assert.equal(apnsBody.topic, 'app.cipher');
   assert.equal(JSON.parse(apnsBody.body).kind, 'call');
+});
+
+test('buzzing is true only when the token is stored and the key file is present', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cipher-push-'));
+  const keyFile = path.join(dir, 'key.json');
+  fs.writeFileSync(keyFile, '{}');
+  const fcmEnv = { FCM_SERVICE_ACCOUNT: keyFile };
+  const apnsEnv = { APNS_KEY_PATH: keyFile, APNS_KEY_ID: 'k', APNS_TEAM_ID: 't', APNS_TOPIC: 'app' };
+  const ready = nativeRegistration({ transport: 'fcm', tokenStored: true, env: fcmEnv });
+  assert.equal(ready.buzzing, true);
+  assert.match(ready.reason, /has not been confirmed to buzz/);
+  assert.equal(nativeRegistration({ transport: 'apns', tokenStored: true, env: apnsEnv }).buzzing, true);
+  assert.equal(nativeRegistration({ transport: 'fcm', tokenStored: false, env: fcmEnv }).buzzing, false);
+  const noKey = nativeRegistration({ transport: 'fcm', tokenStored: true, env: {} });
+  assert.equal(noKey.buzzing, false);
+  assert.match(noKey.reason, /FCM_SERVICE_ACCOUNT/);
+  assert.equal(nativeRegistration({ transport: 'fcm', tokenStored: true, env: { FCM_SERVICE_ACCOUNT: path.join(dir, 'gone.json') } }).buzzing, false);
+  assert.equal(nativeRegistration({ transport: 'apns', tokenStored: true, env: { ...apnsEnv, APNS_TOPIC: '' } }).buzzing, false);
+  assert.equal(nativeRegistration({ transport: 'apns', tokenStored: true, env: fcmEnv }).buzzing, false);
+  fs.rmSync(dir, { recursive: true, force: true });
 });

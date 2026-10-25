@@ -60,6 +60,21 @@ test('no gateway means no request, and a gateway that answers can register', asy
   assert.equal(native.transport, 'fcm');
   assert.equal(nativeBody.transport, 'fcm');
   assert.equal(nativeBody.token, 'device-token');
+  const ready = await registerWithGateway({
+    gatewayUrl: 'https://push.example',
+    pubkey: 'aa',
+    fetchImpl: async () => ({ ok: true, json: async () => ({ ok: true, buzzing: true, reason: 'key present' }) }),
+    native: async () => ({ platform: 'ios', token: 'apns-token' }),
+  });
+  assert.equal(ready.buzzing, true);
+  assert.equal(ready.transport, 'apns');
+  const fudged = await registerWithGateway({
+    gatewayUrl: 'https://push.example',
+    pubkey: 'aa',
+    fetchImpl: async () => ({ ok: true, json: async () => ({ ok: true, buzzing: 'yes' }) }),
+    native: async () => ({ platform: 'android', token: 'device-token' }),
+  });
+  assert.equal(fudged.buzzing, false);
   const urls = [];
   const registered = await registerWithGateway({
     gatewayUrl: 'https://push.example/ignored',
