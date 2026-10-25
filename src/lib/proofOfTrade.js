@@ -235,12 +235,42 @@ export function rankVolume(events) {
     .map(({ vendor, currency, units }) => ({ vendor, currency, volume: unitsToAmount(units, currency) }));
 }
 
+const standingCache = new Map();
+let standingMisses = 0;
+
+function viewKey(event) {
+  if (!event || typeof event !== 'object') return '';
+  const sigs = event.sigs || {};
+  return [
+    event.v ?? '', event.hash || '', event.amount || '', event.currency || '',
+    event.buyer || '', event.vendor || '', sigs.buyer || '', sigs.vendor || '', event.sig || '',
+    event.address ? 'a' : '', event.txid ? 't' : '', event.body ? 'b' : '',
+  ].join('|');
+}
+
+export function publicViewChecks() {
+  return standingMisses;
+}
+
+function standingOf(event) {
+  const key = viewKey(event);
+  if (!key.replace(/\|/g, '')) return '';
+  const cached = standingCache.get(key);
+  if (cached != null) return cached;
+  standingMisses += 1;
+  const standing = verifyPublicView(event) ? 'countersigned' : verifyVendorView(event) ? 'vendor' : '';
+  if (standingCache.size > 2000) standingCache.clear();
+  standingCache.set(key, standing);
+  return standing;
+}
+
 export function rankVolumeByStanding(events) {
   const countersigned = [];
   const vendor = [];
   for (const event of events || []) {
-    if (verifyPublicView(event)) countersigned.push(event);
-    else if (verifyVendorView(event)) vendor.push(event);
+    const standing = standingOf(event);
+    if (standing === 'countersigned') countersigned.push(event);
+    else if (standing === 'vendor') vendor.push(event);
   }
   return { countersigned: rankVolume(countersigned), vendor: rankVolume(vendor) };
 }
