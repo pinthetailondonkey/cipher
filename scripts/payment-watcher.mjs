@@ -3,6 +3,12 @@
 // scantxoutset scan of the address. It does not need a wallet or an index.
 // It does not call a public block explorer.
 //
+// On Bitcoin, seen means the payment is already in a block. There is no
+// zero-confirmation path, because a scan of the UTXO set cannot see a
+// transaction that is only in the mempool. One or two confirmations is the
+// window where the vendor can see the money and must not ship. The order
+// is confirmed at three blocks, and not before.
+//
 //   XMR_WALLET_RPC=http://127.0.0.1:18083 BTC_RPC_URL=http://user:pass@127.0.0.1:8332 node scripts/payment-watcher.mjs
 //
 // GET /payment?address=&currency=xmr|btc
