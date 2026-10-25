@@ -88,12 +88,14 @@ export function acceptPayment(payload, secretKey) {
     if (published) {
       try {
         published = signPublicView(secretKey, published);
-      } catch {
+      } catch (error) {
+        console.error('[orders] The public view was not co-signed:', error);
         published = payload.published;
       }
     }
     return { receipt, added: !already, published };
-  } catch {
+  } catch (error) {
+    console.error('[orders] The buyer signature was not added:', error);
     return null;
   }
 }
