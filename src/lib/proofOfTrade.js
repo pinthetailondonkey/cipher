@@ -1,6 +1,7 @@
 import { schnorr } from '@noble/curves/secp256k1.js';
 import { sha256 } from '@noble/hashes/sha2.js';
 import { scopedGet, scopedSet } from './storage.js';
+import { ORDER_STATUS, RECEIPT_OUTCOMES } from './paymentState.js';
 
 // Spec: docs/proof-of-trade.md, version 1.
 
@@ -34,7 +35,7 @@ export function canonicalReceipt(input = {}) {
     amount: normalizeAmount(input.amount ?? '0'),
     txid: String(input.txid || ''),
     at: requireAt(input.at),
-    outcome: ['confirmed', 'rugged', 'refunded'].includes(input.outcome) ? input.outcome : '',
+    outcome: RECEIPT_OUTCOMES.includes(input.outcome) ? input.outcome : '',
   };
 }
 
@@ -124,7 +125,7 @@ export async function sendCountersignOnce({ sendDM, counterparty, orderId, accep
       result = await sendDM(counterparty, {
         type: 'order_update',
         orderId,
-        status: 'paid',
+        status: ORDER_STATUS.PAID,
         receipt: accepted.receipt,
         ...(accepted.published ? { published: accepted.published } : {}),
       });

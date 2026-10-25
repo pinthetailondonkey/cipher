@@ -1,0 +1,52 @@
+// A listing's price is an amount and a unit. Only USD is dollars: a listing
+// priced in BTC or XMR keeps its coin amount all the way to the order card,
+// where the vendor's acceptance reads it as the coin amount to collect.
+
+export function priceLabel(amount, currency) {
+  const text = String(amount ?? '').trim();
+  if (!text) return '';
+  const unit = String(currency || 'USD').toUpperCase();
+  return unit === 'USD' ? `$${text}` : `${text} ${unit}`;
+}
+
+export function listingFromEvent(event) {
+  const tag = (name) => event.tags.find((item) => item[0] === name);
+  const priceTag = tag('price');
+  const amount = String(priceTag?.[1] || '').trim();
+  const currency = String(priceTag?.[2] || 'USD').toUpperCase();
+  const payments = event.tags.filter((item) => item[0] === 'payment').map((item) => item[1] || '');
+  return {
+    id: tag('d')?.[1] || event.id,
+    name: tag('title')?.[1] || 'Unnamed Product',
+    price: amount,
+    currency,
+    ...(currency === 'USD' ? { priceUsd: amount } : {}),
+    image: tag('image')?.[1] || '',
+    vendorPubkey: event.pubkey,
+    btc: payments.find((value) => value.startsWith('btc:'))?.slice(4) || '',
+    xmr: payments.find((value) => value.startsWith('xmr:'))?.slice(4) || '',
+  };
+}
+
+// The product block an order carries. A coin price stays a coin price.
+export function orderProduct(listing) {
+  const currency = String(listing?.currency || (listing?.priceUsd ? 'USD' : '')).toUpperCase() || 'USD';
+  const price = String(listing?.price ?? listing?.priceUsd ?? '').replace(/^\$/, '').trim();
+  return {
+    id: listing?.id || null,
+    title: listing?.name || listing?.title || 'Product',
+    name: listing?.name || listing?.title || 'Product',
+    price,
+    currency,
+    ...(currency === 'USD' ? { priceUsd: price } : {}),
+    image: listing?.image || '',
+  };
+}
+
+// What the order card shows for an order's price.
+export function orderPriceLabel(content) {
+  const product = content?.product || {};
+  const currency = String(product.currency || content?.currency || (product.priceUsd != null ? 'USD' : '')).toUpperCase() || 'USD';
+  const amount = currency === 'USD' ? (product.priceUsd ?? product.price ?? content?.amount) : (product.price ?? content?.amount);
+  return priceLabel(amount, currency);
+}

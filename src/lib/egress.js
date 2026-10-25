@@ -11,10 +11,10 @@ export const EGRESS = [
   { id: 'search-vertex', role: 'Search relay', url: 'wss://relay.vertexlab.io', sees: 'Your IP and the text you search' },
   { id: 'search-noswhere', role: 'Search relay', url: 'wss://relay.noswhere.com', sees: 'Your IP and the text you search' },
   { id: 'policy-nostr-band', role: 'Unused relay', url: 'wss://relay.nostr.band', sees: 'Nothing. The old page policy allowed it. The app does not call it.', called: false },
-  { id: 'blossom-primal', role: 'Media host', url: 'https://blossom.primal.net', sees: 'Your IP and the file you upload' },
-  { id: 'blossom-nostr-build', role: 'Media host', url: 'https://nostr.build', sees: 'Your IP and the file you upload' },
-  { id: 'blossom-band', role: 'Media host', url: 'https://blossom.band', sees: 'Your IP and the file you upload' },
-  { id: 'link-preview', role: 'Link previews', url: 'https://api.microlink.io', sees: 'Your IP and every link a preview is fetched for' },
+  { id: 'blossom-primal', role: 'Media host', url: 'https://blossom.primal.net', sees: 'Chat photos and voice notes: your IP and the encrypted file when you send, under a throwaway key; each reader\u2019s IP and when they opened it. Not the content. Profile and product pictures are public and stored as they are.' },
+  { id: 'blossom-nostr-build', role: 'Media host', url: 'https://nostr.build', sees: 'Chat photos and voice notes: your IP and the encrypted file when you send, under a throwaway key; each reader\u2019s IP and when they opened it. Not the content. Profile and product pictures are public and stored as they are.' },
+  { id: 'blossom-band', role: 'Media host', url: 'https://blossom.band', sees: 'Chat photos and voice notes: your IP and the encrypted file when you send, under a throwaway key; each reader\u2019s IP and when they opened it. Not the content. Profile and product pictures are public and stored as they are.' },
+  { id: 'link-preview', role: 'Link previews', url: 'https://api.microlink.io', sees: 'Nothing until you turn on Link previews in Privacy. Then your IP and every link a preview is fetched for.' },
   { id: 'stun-google', role: 'Call routing', url: 'stun:stun.l.google.com:19302', sees: 'Your real IP during a call. This bypasses Tor.', webrtc: true },
   { id: 'stun-google-1', role: 'Call routing', url: 'stun:stun1.l.google.com:19302', sees: 'Your real IP during a call. This bypasses Tor.', webrtc: true },
   { id: 'stun-twilio', role: 'Call routing', url: 'stun:global.stun.twilio.com:3478', sees: 'Your real IP during a call. This bypasses Tor.', webrtc: true },
@@ -46,8 +46,6 @@ export const RELAY_SETS = {
   stun: ['stun-google', 'stun-google-1', 'stun-twilio'],
   preview: ['link-preview'],
 };
-
-export const GROUP_RELAY_HTTP = 'https://groups.aegispayhq.com';
 
 let refreshBoundRelays = () => {};
 export function bindRelayRefresh(refresh) {
@@ -230,10 +228,6 @@ export function iceServers(config = readNetworkConfig()) {
   const turn = iceServerFrom(activeUrl(entryById('turn'), config));
   if (turn) servers.push(turn);
   return servers;
-}
-
-export function visibleImage(url) {
-  return String(url || '').trim();
 }
 
 export function linkPreviewEndpoint(target, config) {

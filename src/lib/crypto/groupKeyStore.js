@@ -28,7 +28,6 @@ export async function putGroupKey(groupId, epoch, raw, meta = {}) {
     window.dispatchEvent(new CustomEvent('cipher:group-key-updated', { detail: { groupId, epoch } }));
   }
 }
-export async function hasGroupKey(groupId, epoch) { return !!(await getGroupKey(groupId, epoch)); }
 export async function getGrantedEpochsFor(groupId, pubkey) {
   if (!ready()) return new Set();
   const rows = await db.groupKeyGrants.where('[groupId+pubkey+epoch]').between([groupId, pubkey, -Infinity], [groupId, pubkey, Infinity]).toArray();

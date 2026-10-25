@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import test from 'node:test';
-import { getPrivacy, setPrivacy } from './privacy.js';
+import { allowsLinkPreviews, getPrivacy, setPrivacy } from './privacy.js';
 import { scopedGet, scopedSet } from './storage.js';
 
 const memory = new Map();
@@ -41,4 +42,44 @@ test('scoped storage does not allocate a new value on every read', () => {
   const first = scopedGet('example', {});
   assert.equal(scopedGet('example', {}), first);
   assert.deepEqual(first, { ok: true });
+});
+
+test('link previews are off until the user turns them on', () => {
+  localStorage.setItem('cipher_active_pubkey', 'ef'.repeat(32));
+  assert.equal(getPrivacy().linkPreviews, false);
+  assert.equal(allowsLinkPreviews(), false);
+  setPrivacy({ linkPreviews: true });
+  assert.equal(allowsLinkPreviews(), true);
+  setPrivacy({ linkPreviews: false });
+  assert.equal(allowsLinkPreviews(), false);
+  const bubble = fs.readFileSync(new URL('../components/MessageBubble.jsx', import.meta.url), 'utf8');
+  assert.match(bubble, /previewUrl && allowsLinkPreviews\(\) && <LinkPreview/);
+});
+
+test('blocking from a profile is kept for that account and reaches the ingest filter', async () => {
+  localStorage.setItem('cipher_active_pubkey', '12'.repeat(32));
+  const { useChatStore } = await import('../store/chatStore.js');
+  const someone = '34'.repeat(32);
+  useChatStore.getState().toggleBlockUser(someone);
+  assert.equal(useChatStore.getState().blockedUsers.includes(someone), true);
+  assert.deepEqual(scopedGet('blocked', []), [someone]);
+  useChatStore.getState().toggleBlockUser(someone);
+  assert.deepEqual(scopedGet('blocked', []), []);
+  const profile = fs.readFileSync(new URL('../components/ProfileModal.jsx', import.meta.url), 'utf8');
+  assert.match(profile, /toggleBlockUser\(pubkey\)/);
+  assert.match(profile, /blocked \? 'Unblock' : 'Block'/);
+  const dm = fs.readFileSync(new URL('../hooks/useNIP44DM.js', import.meta.url), 'utf8');
+  assert.ok(dm.indexOf('blocked.includes(counterparty)') < dm.indexOf("data.type === 'call'"));
+});
+
+test('no message action is offered that leads nowhere', () => {
+  const bubble = fs.readFileSync(new URL('../components/MessageBubble.jsx', import.meta.url), 'utf8');
+  const commands = fs.readFileSync(new URL('../features/chat/useMessageCommands.js', import.meta.url), 'utf8');
+  const settings = fs.readFileSync(new URL('../components/chat/PrivacySettings.jsx', import.meta.url), 'utf8');
+  assert.equal(bubble.includes("'forward'"), false);
+  for (const gone of ["'forward'", "'select'", "'report'", "'report_scam'", "'mark_sold_out'", 'handleForwardSubmit', 'Report submitted']) {
+    assert.equal(commands.includes(gone), false, gone);
+  }
+  assert.equal(settings.includes('Forwarding'), false);
+  assert.equal('forwarding' in getPrivacy(), false);
 });
