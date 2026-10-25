@@ -5,7 +5,7 @@ import TutorialModal from './components/TutorialModal';
 import GlobalDialog from './components/GlobalDialog';
 import CallOverlay from './components/chat/CallOverlay';
 import { requestNotificationPermission } from './lib/notifications';
-import { useChatStore } from './store/chatStore';
+import { notifTotalOf, unreadTotalOf, useChatStore } from './store/chatStore';
 
 const Shop = lazy(() => import('./Shop'));
 const Discover = lazy(() => import('./Discover'));
@@ -14,11 +14,8 @@ const Wallet = lazy(() => import('./Wallet'));
 
 export default function AuthenticatedApp({ identity }) {
   const [activeTab, setActiveTab] = useState('chat');
-  const unreadTotal = useChatStore((state) => Object.values(state.unreadCounts || {}).reduce((sum, count) => sum + (Number(count) || 0), 0));
-  const notifTotal = useChatStore((state) => Object.entries(state.unreadCounts || {}).reduce((sum, [id, count]) => {
-    const fresh = Math.max(0, (Number(count) || 0) - (Number(state.notifAck?.[id]) || 0));
-    return sum + fresh;
-  }, 0));
+  const unreadTotal = useChatStore(unreadTotalOf);
+  const notifTotal = useChatStore(notifTotalOf);
   const [exploreMode, setExploreMode] = useState('shop');
   const openChatFromProfile = useCallback((pubkey) => {
     useChatStore.getState().openChat('dm', pubkey);

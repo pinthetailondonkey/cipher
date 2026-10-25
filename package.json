@@ -11,7 +11,7 @@
     "preview:restart": "node scripts/preview.mjs restart",
     "preview:stop": "node scripts/preview.mjs stop",
     "typecheck": "oxlint src/useIdentity.js src/Chat.jsx src/hooks/useNIP44DM.js src/hooks/useNIP29Group.js src/db.js",
-    "test": "node --import ./scripts/resolve-extensionless.mjs --test src/lib/vaultLockout.test.js src/lib/outboxPolicy.test.js src/lib/moneroIndexes.test.js src/lib/moneroAddress.test.js src/lib/paymentState.test.js src/lib/paymentWatch.test.js src/lib/pushGateway.test.js src/lib/privacy.test.js src/lib/crypto/groupCipher.test.js src/lib/crypto/groupKeyGrant.test.js src/lib/crypto/groupKeyMember.test.js src/lib/crypto/memberBaseline.test.js src/lib/crypto/groupKeyRequest.test.js src/lib/crypto/groupMembership.test.js src/lib/vaultCrypto.test.js src/lib/reactions.test.js src/lib/egress.test.js src/lib/nip65.test.js",
+    "test": "node --import ./scripts/resolve-extensionless.mjs --test src/lib/vaultLockout.test.js src/lib/outboxPolicy.test.js src/lib/moneroIndexes.test.js src/lib/moneroAddress.test.js src/lib/paymentState.test.js src/lib/paymentWatch.test.js src/lib/pushGateway.test.js src/lib/privacy.test.js src/lib/crypto/groupCipher.test.js src/lib/crypto/groupKeyGrant.test.js src/lib/crypto/groupKeyMember.test.js src/lib/crypto/memberBaseline.test.js src/lib/crypto/groupKeyRequest.test.js src/lib/crypto/groupMembership.test.js src/lib/vaultCrypto.test.js src/lib/reactions.test.js src/lib/egress.test.js src/lib/nip65.test.js src/store/snapshot.test.js",
     "self-host": "node scripts/self-host.mjs"
   },
   "dependencies": {
