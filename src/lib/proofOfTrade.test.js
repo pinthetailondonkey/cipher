@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { schnorr } from '@noble/curves/secp256k1.js';
-import { acceptPayment, canonicalReceipt, normalizeAmount, publicReceipt, rankVolume, rankVolumeByStanding, receiptAtPayment, signPublicView, signReceipt, verifyPublicView, verifyReceipt, verifyVendorView } from './proofOfTrade.js';
+import { acceptPayment, canonicalReceipt, coSignPayment, normalizeAmount, publicReceipt, rankVolume, rankVolumeByStanding, signPublicView, signReceipt, verifyPublicView, verifyReceipt, verifyVendorView } from './proofOfTrade.js';
 
 function hex(bytes) {
   return [...bytes].map((byte) => byte.toString(16).padStart(2, '0')).join('');
@@ -23,7 +23,7 @@ test('both parties sign the same bytes, and one bad signature fails', () => {
   };
   const vendorSigned = signReceipt(vendorKey, body);
   assert.equal(verifyReceipt(vendorSigned), false);
-  const signed = receiptAtPayment(vendorKey, buyerKey, body);
+  const signed = coSignPayment(signReceipt(vendorKey, body), buyerKey);
   assert.equal(verifyReceipt(signed), true);
   const arriving = acceptPayment({
     type: 'order_update', status: 'paid', orderId: body.orderId, receipt: vendorSigned,
