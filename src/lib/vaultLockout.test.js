@@ -9,6 +9,7 @@ import {
   readPinFailures,
   recordPinFailure,
   failPinAttempt,
+  removeAccountKeys,
   removeAccountVault,
   resetPinFailures,
 } from './vaultLockout.js';
@@ -19,6 +20,8 @@ function memoryStorage(seed = {}) {
     getItem(key) { return data.has(key) ? data.get(key) : null; },
     setItem(key, value) { data.set(key, String(value)); },
     removeItem(key) { data.delete(key); },
+    key(index) { return Array.from(data.keys())[index] ?? null; },
+    get length() { return data.size; },
   };
 }
 
@@ -97,4 +100,44 @@ test('locking out the active account clears the active pointer and leaves a lega
   assert.deepEqual(JSON.parse(storage.getItem('cipher_vaults')), {});
   assert.equal(storage.getItem('cipher_active_pubkey'), null);
   assert.equal(storage.getItem('cipher_vault'), JSON.stringify(other));
+});
+
+test('a lockout also clears the scoped data, passkey, and pointers of that account, and nothing of the others', () => {
+  const a = 'aaaaaaaa' + '1'.repeat(56);
+  const b = 'bbbbbbbb' + '2'.repeat(56);
+  const storage = memoryStorage({
+    cipher_vaults: JSON.stringify({ [a]: { vault: { iv: [1] } }, [b]: { vault: { iv: [2] } } }),
+    cipher_active_pubkey: b,
+    cipher_db_owner: a,
+    cipher_biometric_pubkey: a,
+    cipher_biometric_enabled: 'true',
+    [`cipher_passkey_${a}`]: '{"wrapped":1}',
+    [`cipher_passkey_${b}`]: '{"wrapped":2}',
+    [`cipher_my_groups_${a.slice(0, 16)}`]: '[]',
+    cipher_aaaaaaaa_receipt_x: '{}',
+    cipher_aaaaaaaa_blocked: '[]',
+    cipher_bbbbbbbb_blocked: '["z"]',
+    cipher_network: '{}',
+  });
+  for (let i = 0; i < 5; i += 1) failPinAttempt(storage, a);
+  for (const gone of [`cipher_passkey_${a}`, `cipher_my_groups_${a.slice(0, 16)}`, 'cipher_aaaaaaaa_receipt_x', 'cipher_aaaaaaaa_blocked', 'cipher_db_owner', 'cipher_biometric_pubkey', 'cipher_biometric_enabled']) {
+    assert.equal(storage.getItem(gone), null, gone);
+  }
+  for (const kept of [`cipher_passkey_${b}`, 'cipher_bbbbbbbb_blocked', 'cipher_network', 'cipher_active_pubkey']) {
+    assert.notEqual(storage.getItem(kept), null, kept);
+  }
+  assert.ok(JSON.parse(storage.getItem('cipher_vaults'))[b]);
+});
+
+test('a scoped prefix shared with another saved account is left in place', () => {
+  const a = 'cccccccc' + '1'.repeat(56);
+  const twin = 'cccccccc' + '9'.repeat(56);
+  const storage = memoryStorage({
+    cipher_vaults: JSON.stringify({ [a]: {}, [twin]: {} }),
+    cipher_cccccccc_blocked: '["kept"]',
+    [`cipher_passkey_${a}`]: '{}',
+  });
+  const removed = removeAccountKeys(storage, a);
+  assert.deepEqual(removed, [`cipher_passkey_${a}`]);
+  assert.equal(storage.getItem('cipher_cccccccc_blocked'), '["kept"]');
 });
