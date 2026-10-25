@@ -106,16 +106,47 @@ export function verifyReceipt(signed) {
   }
 }
 
-export function publicReceipt(signed) {
-  const body = canonicalReceipt(signed?.body || {});
+function publicBody(input = {}) {
   return {
     v: 1,
-    hash: signed?.hash || receiptHash(body),
-    amount: body.amount,
-    currency: body.currency,
-    buyer: body.buyer,
-    vendor: body.vendor,
+    hash: String(input.hash || ''),
+    amount: normalizeAmount(input.amount),
+    currency: String(input.currency || '').toLowerCase(),
+    buyer: String(input.buyer || '').toLowerCase(),
+    vendor: String(input.vendor || '').toLowerCase(),
   };
+}
+
+export function publicReceipt(signed) {
+  const body = signed?.body ? canonicalReceipt(signed.body) : {};
+  return publicBody({
+    hash: signed?.hash || (signed?.body ? receiptHash(body) : ''),
+    amount: signed?.amount || body.amount,
+    currency: signed?.currency || body.currency,
+    buyer: signed?.buyer || body.buyer,
+    vendor: signed?.vendor || body.vendor,
+  });
+}
+
+export function signPublicView(secretKey, view) {
+  const body = publicBody(view);
+  const message = new TextEncoder().encode(JSON.stringify(body));
+  const sk = secretKey instanceof Uint8Array ? secretKey : hexToBytes(secretKey);
+  const pub = bytesToHex(schnorr.getPublicKey(sk));
+  if (pub !== body.vendor) throw new Error('Only the vendor signs the public view.');
+  return { ...body, sig: bytesToHex(schnorr.sign(message, sk)) };
+}
+
+export function verifyPublicView(view) {
+  if (!view?.sig || !view.vendor) return false;
+  if (view.address || view.txid || view.body) return false;
+  const body = publicBody(view);
+  const message = new TextEncoder().encode(JSON.stringify(body));
+  try {
+    return schnorr.verify(hexToBytes(view.sig), message, hexToBytes(body.vendor));
+  } catch {
+    return false;
+  }
 }
 
 function amountUnits(amount) {
