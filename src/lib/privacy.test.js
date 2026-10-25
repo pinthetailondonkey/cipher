@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import test from 'node:test';
-import { getPrivacy, setPrivacy } from './privacy.js';
+import { allowsLinkPreviews, getPrivacy, setPrivacy } from './privacy.js';
 import { scopedGet, scopedSet } from './storage.js';
 
 const memory = new Map();
@@ -41,4 +42,16 @@ test('scoped storage does not allocate a new value on every read', () => {
   const first = scopedGet('example', {});
   assert.equal(scopedGet('example', {}), first);
   assert.deepEqual(first, { ok: true });
+});
+
+test('link previews are off until the user turns them on', () => {
+  localStorage.setItem('cipher_active_pubkey', 'ef'.repeat(32));
+  assert.equal(getPrivacy().linkPreviews, false);
+  assert.equal(allowsLinkPreviews(), false);
+  setPrivacy({ linkPreviews: true });
+  assert.equal(allowsLinkPreviews(), true);
+  setPrivacy({ linkPreviews: false });
+  assert.equal(allowsLinkPreviews(), false);
+  const bubble = fs.readFileSync(new URL('../components/MessageBubble.jsx', import.meta.url), 'utf8');
+  assert.match(bubble, /previewUrl && allowsLinkPreviews\(\) && <LinkPreview/);
 });
