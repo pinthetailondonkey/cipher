@@ -14,8 +14,7 @@ import MessageRequests from './components/chat/MessageRequests';
 import { db } from './db';
 import Logo from './components/Logo';
 import { compressImage } from './lib/imageCompression';
-import { scopedGet, scopedSet } from './lib/storage';
-import { loadVendorPaymentConfig, saveVendorPaymentConfig } from './lib/vendorPayments';
+import { loadVendorPaymentConfig, readPaymentAddresses, saveVendorPaymentConfig, savePaymentAddresses } from './lib/vendorPayments';
 import PrivacySettings from './components/chat/PrivacySettings';
 import Connections from './components/chat/Connections';
 import Avatar from './components/ui/Avatar';
@@ -57,8 +56,8 @@ export default function Wallet({ identity, onOpenChat }) {
   const [currency, setCurrency] = useState('USD')
   const [image, setImage] = useState('')
 
-  const [btcAddress, setBtcAddress] = useState(() => scopedGet('btc_address', localStorage.getItem('cipher_btc_address') || localStorage.getItem('cipher_btc') || ''))
-  const [xmrAddress, setXmrAddress] = useState(() => scopedGet('xmr_address', localStorage.getItem('cipher_xmr_address') || localStorage.getItem('cipher_xmr') || ''))
+  const [btcAddress, setBtcAddress] = useState(() => readPaymentAddresses().btc)
+  const [xmrAddress, setXmrAddress] = useState(() => readPaymentAddresses().xmr)
   const [btcXpub, setBtcXpub] = useState('')
   const [btcNetwork, setBtcNetwork] = useState('bc')
   const [xmrPrivateViewKey, setXmrPrivateViewKey] = useState('')
@@ -98,12 +97,7 @@ export default function Wallet({ identity, onOpenChat }) {
     setStatus('');
     try {
       await saveVendorPaymentConfig(identity, { btcXpub, xmrPrivateViewKey, btcNetwork });
-      scopedSet('btc_address', btcAddress);
-      scopedSet('xmr_address', xmrAddress);
-      localStorage.setItem('cipher_btc_address', btcAddress);
-      localStorage.setItem('cipher_xmr_address', xmrAddress);
-      localStorage.setItem('cipher_btc', btcAddress);
-      localStorage.setItem('cipher_xmr', xmrAddress);
+      savePaymentAddresses({ btc: btcAddress, xmr: xmrAddress });
       setStatus('Advanced vendor settings saved on this device.');
     } catch (error) {
       console.error('[Wallet] Could not save advanced vendor settings:', error);
@@ -158,10 +152,7 @@ export default function Wallet({ identity, onOpenChat }) {
 
   const saveProfile = async (e, overridePicture = null) => {
     if (e) e.preventDefault()
-    scopedSet('btc_address', btcAddress);
-    scopedSet('xmr_address', xmrAddress);
-    localStorage.setItem('cipher_btc_address', btcAddress);
-    localStorage.setItem('cipher_xmr_address', xmrAddress);
+    savePaymentAddresses({ btc: btcAddress, xmr: xmrAddress });
     if (!displayName) return useChatStore.getState().setToast({ type: 'info', message: "Display Name is required" });
     
     setIsPublishing(true); setStatus('Saving Profile...')
@@ -220,10 +211,7 @@ export default function Wallet({ identity, onOpenChat }) {
   }
 
   const savePayments = () => {
-    scopedSet('btc_address', btcAddress);
-    scopedSet('xmr_address', xmrAddress);
-    localStorage.setItem('cipher_btc', btcAddress)
-    localStorage.setItem('cipher_xmr', xmrAddress)
+    savePaymentAddresses({ btc: btcAddress, xmr: xmrAddress });
     setStatus('Addresses saved!'); setTimeout(() => setStatus(''), 2000)
     setView('main')
   }
@@ -234,12 +222,7 @@ export default function Wallet({ identity, onOpenChat }) {
       setStatus('Add at least one BTC or XMR receiving address to enable Vendor mode.');
       return;
     }
-    scopedSet('btc_address', btcAddress.trim());
-    scopedSet('xmr_address', xmrAddress.trim());
-    localStorage.setItem('cipher_btc_address', btcAddress.trim());
-    localStorage.setItem('cipher_xmr_address', xmrAddress.trim());
-    localStorage.setItem('cipher_btc', btcAddress.trim());
-    localStorage.setItem('cipher_xmr', xmrAddress.trim());
+    savePaymentAddresses({ btc: btcAddress, xmr: xmrAddress });
     setIsVendor(true);
     setStatus('Vendor mode is active. Payment addresses are saved on this device.');
     setView('main');
