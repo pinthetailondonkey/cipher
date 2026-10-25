@@ -88,3 +88,13 @@ test('outcome is the vendor assertion at signing, not a dispute', () => {
   assert.throws(() => canonicalReceipt({ ...base, at: undefined }), /time/);
   assert.throws(() => canonicalReceipt({ ...base, at: 0 }), /time/);
 });
+
+test('a self-trade does not verify', () => {
+  const key = schnorr.utils.randomSecretKey();
+  const pub = hex(schnorr.getPublicKey(key));
+  const receipt = signReceipt(key, {
+    orderId: 'self', buyer: pub, vendor: pub, currency: 'xmr', address: '8', amount: '1', txid: 'ab', at: 10, outcome: 'confirmed',
+  });
+  const copied = { ...receipt, sigs: { buyer: receipt.sigs.buyer, vendor: receipt.sigs.buyer } };
+  assert.equal(verifyReceipt(copied), false);
+});

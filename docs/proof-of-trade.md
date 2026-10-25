@@ -53,7 +53,7 @@ Verification requires all of the following. Any miss fails the receipt:
 - `hash` equals SHA-256 of the canonical body.
 - `sigs.buyer` verifies under `body.buyer`.
 - `sigs.vendor` verifies under `body.vendor`.
-- The two public keys differ.
+- The two public keys differ. A self-trade is rejected. The buyer and the vendor are different keys, so a vendor cannot add their own volume.
 
 One valid signature and one invalid signature is not a receipt. One signature alone is not a receipt. The vendor signs when the watcher confirms. The buyer signs the same body when they have it. Until both are present, `verifyReceipt` is false.
 
