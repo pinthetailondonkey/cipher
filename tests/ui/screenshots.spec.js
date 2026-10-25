@@ -1,6 +1,11 @@
 import { test } from '@playwright/test';
+import { seedVault } from './fixtures.js';
 
 test.describe('Visual regression', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.addInitScript(seedVault);
+  });
+
   test('screenshot: home screen', async ({ page }) => {
     await page.goto('/');
     await page.waitForTimeout(2000);
