@@ -619,6 +619,12 @@ export function useIdentity() {
 
   const getMnemonic = async () => getMnemonicFromVault(keys.sk, keys.pk)
 
+  // The at-rest layer (src/lib/messageAtRest.js) seals message history with
+  // the vault key while the app is unlocked. The session copy in sessionStorage
+  // is set and cleared together with keys.sk by unlock/lock paths, so the
+  // provider sees the key exactly when the vault is open; no effect wiring and
+  // no new key material needed.
+
   const lockApp = async () => {
     sessionStorage.removeItem('cipher_session_sk')
     setKeys({ sk: null, pk: null, npub: null })

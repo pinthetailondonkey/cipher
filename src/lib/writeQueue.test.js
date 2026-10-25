@@ -44,9 +44,12 @@ test('a queued write that fails on open is counted and logged, and the rest stil
   assert.equal(logged.length, 1);
 });
 
-test('opening an account database applies the queue', () => {
+test('opening an account database applies the queue through the at-rest view', () => {
   const db = fs.readFileSync(new URL('../db.js', import.meta.url), 'utf8');
-  assert.equal((db.match(/writeQueue\.flush\(_current\)/g) || []).length, 2);
+  // A queued message must not reach the raw Dexie store in plaintext: the
+  // flush target routes `messages` through messagesView (the at-rest seal).
+  assert.equal((db.match(/writeQueue\.flush\(flushTargetFor\(_current\)\)/g) || []).length, 2);
+  assert.match(db, /if \(name === 'messages'\) return messagesView\(d\.messages\)/);
   assert.match(db, /put: \(\.\.\.args\) => writeQueue\.enqueue\(tableName, 'put', args\)/);
   assert.equal(db.includes('flushQueue'), false);
 });
