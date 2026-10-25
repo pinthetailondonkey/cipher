@@ -12,7 +12,11 @@ test('a native notice is only a message or a call, and it is not sent without a 
   const { privateKey } = crypto.generateKeyPairSync('rsa', { modulusLength: 2048 });
   const pem = privateKey.export({ type: 'pkcs8', format: 'pem' });
   const account = { client_email: 'push@cipher.iam.gserviceaccount.com', private_key: pem, project_id: 'cipher-push' };
-  const jwt = serviceAccountJwt(account, 1_700_000_000);
+  const jwt = serviceAccountJwt(account, {
+    scope: 'https://www.googleapis.com/auth/firebase.messaging',
+    aud: 'https://oauth2.googleapis.com/token',
+    now: 1_700_000_000,
+  });
   assert.equal(jwt.split('.').length, 3);
   const calls = [];
   const sent = await sendFcm({

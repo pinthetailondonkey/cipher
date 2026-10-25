@@ -1,8 +1,13 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import http2 from 'node:http2';
+import { EGRESS } from './egress.js';
 
-const FCM_SCOPE = 'https://www.googleapis.com/auth/firebase.messaging';
+function egressUrl(id) {
+  const entry = EGRESS.find((row) => row.id === id);
+  if (!entry?.url) throw new Error(`The push host ${id} is not listed.`);
+  return String(entry.url).replace(/\/$/, '');
+}
 
 function b64url(value) {
   const buffer = Buffer.isBuffer(value) ? value : Buffer.from(value);
@@ -24,12 +29,12 @@ export function keysReady(env = process.env) {
   };
 }
 
-export function serviceAccountJwt(account, now = Math.floor(Date.now() / 1000)) {
+export function serviceAccountJwt(account, { scope, aud, now = Math.floor(Date.now() / 1000) }) {
   const header = b64url(JSON.stringify({ alg: 'RS256', typ: 'JWT' }));
   const claim = b64url(JSON.stringify({
     iss: account.client_email,
-    scope: FCM_SCOPE,
-    aud: 'https://oauth2.googleapis.com/token',
+    scope,
+    aud,
     iat: now,
     exp: now + 3600,
   }));
@@ -49,8 +54,12 @@ export function apnsJwt({ key, keyId, teamId }, now = Math.floor(Date.now() / 10
 export async function sendFcm({ account, token, kind, fetchImpl = globalThis.fetch, now }) {
   const notice = noticeFor(kind);
   if (!notice) return { sent: false, reason: 'That event does not buzz.' };
-  const assertion = serviceAccountJwt(account, now);
-  const tokenResponse = await fetchImpl('https://oauth2.googleapis.com/token', {
+  const assertion = serviceAccountJwt(account, {
+    scope: `${egressUrl('fcm-scope')}/auth/firebase.messaging`,
+    aud: `${egressUrl('fcm-auth')}/token`,
+    now,
+  });
+  const tokenResponse = await fetchImpl(`${egressUrl('fcm-auth')}/token`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: `grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer&assertion=${assertion}`,
@@ -60,7 +69,7 @@ export async function sendFcm({ account, token, kind, fetchImpl = globalThis.fet
     throw new Error(tokenBody.error_description || 'Google did not grant a push token.');
   }
   const project = account.project_id;
-  const sent = await fetchImpl(`https://fcm.googleapis.com/v1/projects/${project}/messages:send`, {
+  const sent = await fetchImpl(`${egressUrl('fcm')}/v1/projects/${project}/messages:send`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${tokenBody.access_token}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -103,7 +112,7 @@ function apnsRequest({ host, token, jwt, topic, body }) {
   });
 }
 
-export async function sendApns({ key, keyId, teamId, topic, token, kind, host = 'https://api.push.apple.com', requestImpl = apnsRequest, now }) {
+export async function sendApns({ key, keyId, teamId, topic, token, kind, host, requestImpl = apnsRequest, now }) {
   const notice = noticeFor(kind);
   if (!notice) return { sent: false, reason: 'That event does not buzz.' };
   const jwt = apnsJwt({ key, keyId, teamId }, now);
@@ -132,7 +141,7 @@ export async function sendNative({ transport, token, kind, env = process.env, fe
       topic: env.APNS_TOPIC,
       token,
       kind: notice.kind,
-      host: env.APNS_HOST || 'https://api.push.apple.com',
+      host: env.APNS_HOST || egressUrl('apns'),
       requestImpl,
     });
   }
