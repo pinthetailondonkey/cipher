@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import test from 'node:test';
 import { checkPayment, isPublicExplorer, paymentWatchUrl, reportFromTransfers, rowsFromScan } from './paymentWatch.js';
 
@@ -65,8 +66,12 @@ test('wallet transfers become a watcher report, and a miss stays pending', () =>
   assert.deepEqual(reportFromTransfers([
     { address: 'other', txid: 'no', confirmations: 3 },
     { address: '8abc', txid: 'yes', confirmations: 2 },
-  ], '8abc'), { source: 'watcher', txid: 'yes', confirmations: 2, confirmed: false });
-  assert.deepEqual(reportFromTransfers([], '8abc'), { pending: true });
+  ], '8abc', 'xmr'), { source: 'watcher', txid: 'yes', confirmations: 2, confirmed: false });
+  assert.equal(reportFromTransfers([{ address: '8abc', txid: 'yes', confirmations: 9 }], '8abc', 'xmr').confirmed, false);
+  assert.equal(reportFromTransfers([{ address: '8abc', txid: 'yes', confirmations: 10 }], '8abc', 'xmr').confirmed, true);
+  assert.deepEqual(reportFromTransfers([], '8abc', 'xmr'), { pending: true });
+  const watcher = fs.readFileSync(new URL('../../scripts/payment-watcher.mjs', import.meta.url), 'utf8');
+  assert.match(watcher, /reportFromTransfers\(rows, address, 'xmr'\)/);
   assert.equal(reportFromTransfers([
     { address: 'bcrt1q', txid: 'small', confirmations: 3, amount: 0.00000001 },
     { address: 'bcrt1q', txid: 'aaaa', confirmations: 3, amount: 0.02 },
