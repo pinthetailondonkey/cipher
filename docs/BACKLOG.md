@@ -20,5 +20,5 @@ Constraints:
 ## 3. Extend the UI harness to every screen — DONE (147ec14)
 Done when: the tap-target and clipping assertions run per tab, not just home.
 
-## 4. README Vercel section
+## 4. README Vercel section — DONE (991cdd0)
 Done when: the three stale claims are corrected.
