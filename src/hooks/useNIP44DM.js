@@ -9,6 +9,8 @@ import { enqueueNostrEvent, startOutboxSync } from '../lib/outbox';
 import { allowsTyping } from '../lib/privacy';
 import { publishOwnRelayList, relaysForPeer } from '../lib/dmRelays';
 import { withBuzzTag } from '../lib/pushGateway';
+import { acceptPayment } from '../lib/proofOfTrade';
+import { scopedSet } from '../lib/storage';
 
 const shouldSuppress = (chatId) => {
   const state = useChatStore.getState();
@@ -166,6 +168,21 @@ export function useNIP44DM({ identity }) {
                 return;
               }
               if (data.type === 'pin') return;
+              if (data.type === 'order_update' && data.receipt && !isSender) {
+                const accepted = acceptPayment(data, identity.sk);
+                if (accepted) {
+                  scopedSet(`receipt_${data.orderId}`, accepted.receipt);
+                  data = { ...data, receipt: accepted.receipt };
+                  if (accepted.added) {
+                    sendDM(counterparty, {
+                      type: 'order_update',
+                      orderId: data.orderId,
+                      status: 'paid',
+                      receipt: accepted.receipt,
+                    }).catch((error) => console.error('[orders] The buyer signature was not sent:', error));
+                  }
+                }
+              }
               // Audit H9: drop messages that already expired (delivery lag)
               if (data.expires_at && Math.floor(Date.now() / 1000) >= data.expires_at) {
                 console.log('[DM] Dropping expired message', { from: counterparty.slice(0, 8), expires_at: data.expires_at });
@@ -219,7 +236,7 @@ export function useNIP44DM({ identity }) {
       mounted.current = false;
       subs.forEach(s => { try { s.close(); } catch (e) {} });
     };
-  }, [identity, setDms, setTypingUsers]);
+  }, [identity, setDms, setTypingUsers, sendDM]);
 
   // FULL FETCH OF DM HISTORY
   const fetchDMs = useCallback(async () => {
@@ -252,6 +269,21 @@ export function useNIP44DM({ identity }) {
         if (data.type === 'typing' || data.type === 'read' || data.type === 'pin' || data.type === 'call') {
           continue;
         }
+        if (!isSender && data.type === 'order_update' && data.receipt) {
+          const accepted = acceptPayment(data, identity.sk);
+          if (accepted) {
+            scopedSet(`receipt_${data.orderId}`, accepted.receipt);
+            data = { ...data, receipt: accepted.receipt };
+            if (accepted.added) {
+              sendDM(counterparty, {
+                type: 'order_update',
+                orderId: data.orderId,
+                status: 'paid',
+                receipt: accepted.receipt,
+              }).catch((error) => console.error('[orders] The buyer signature was not sent:', error));
+            }
+          }
+        }
         if (data.expires_at && Math.floor(Date.now() / 1000) >= data.expires_at) continue;
         const replyTag = ev.tags.find(t => t[0] === 'e' && t[3] === 'reply');
         const clientId = ev.tags.find(t => t[0] === 'client')?.[1];
@@ -279,8 +311,7 @@ export function useNIP44DM({ identity }) {
       const counterparty = isSender ? ev.tags.find(t => t[0] === 'p')?.[1] : ev.pubkey;
       if (counterparty) counterparties.add(counterparty);
     }
-    return [...counterparties];
-  }, [identity]);
+  }, [identity, sendDM]);
 
   return { sendDM, sendTypingIndicator, subscribeToDMs, fetchDMs };
 }
