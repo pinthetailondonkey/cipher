@@ -70,7 +70,7 @@ What is published by default:
 }
 ```
 
-Address and txid are withheld. Volume is the sum of `amount` grouped by vendor and currency, taken from these objects alone. An object that still carries `address` or `txid` is not a public view and is not counted.
+The vendor signs that object with the same BIP-340 key. The signature is a sibling field, `sig`, and is not part of the signed bytes. `verifyPublicView` checks `sig` against `vendor` and does not need the receipt body. A changed amount, currency, or key fails. An object that still carries `address`, `txid`, or `body` is not a public view.
 
 ## Reveal
 

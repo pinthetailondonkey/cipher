@@ -5,7 +5,7 @@ import { getOrderPaymentMethods } from '../../lib/vendorPayments';
 import { nextPaymentState } from '../../lib/paymentState';
 import { checkPayment } from '../../lib/paymentWatch';
 import { activeUrl, entryById } from '../../lib/egress';
-import { signReceipt } from '../../lib/proofOfTrade';
+import { publicReceipt, signPublicView, signReceipt } from '../../lib/proofOfTrade';
 
 export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, openChat }) {
   const setToast = useChatStore((s) => s.setToast);
@@ -161,6 +161,7 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
               paymentState: outcome.state,
               paymentSeenBy: 'watcher',
               receipt: signed,
+              published: signPublicView(identity.sk, publicReceipt(signed)),
             };
             await deliverOrderUpdate(
               msg.pubkey,
