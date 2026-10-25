@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { db, saveMessage, openDBFor } from '../../db';
+import { db, deletedMessageIds, saveMessage, openDBFor } from '../../db';
 import { getMyGroups } from '../../lib/myGroups';
 import { mergeReactions } from '../../lib/reactions';
 import { generalRelays, groupRelays, queryAllPages, queryWithTimeout } from '../../lib/relays';
@@ -269,7 +269,7 @@ export function useChatBootstrap({
       const [groupMetaEvents, reactionsEvents, delEvents] = await Promise.all([
         queryWithTimeout(pool, groupRelays, { kinds: [39000, 9002], limit: 100 }),
         queryWithTimeout(pool, generalRelays, { kinds: [7], limit: 500 }),
-        queryWithTimeout(pool, generalRelays, { kinds: [5], limit: 100 }),
+        queryWithTimeout(pool, generalRelays, { kinds: [5], authors: [identity.pk], limit: 500 }),
       ]);
       const localGroupsNow = getMyGroups(identity.pk);
       const uniqueGroupsNow = Array.from(new Map(groupMetaEvents.map(ev => {
@@ -313,6 +313,7 @@ export function useChatBootstrap({
           if (targetId) deleted.add(targetId);
         }
       });
+      (await deletedMessageIds()).forEach((id) => deleted.add(id));
       setDeletedMsgs(deleted);
       const allDbMsgs = await db.messages.toArray();
       const reads = await db.chatReads.toArray();

@@ -1,4 +1,4 @@
-import { db } from '../../db';
+import { db, deleteMessageForGood } from '../../db';
 import { getAuthenticatedPool } from '../../lib/pool';
 import { generalRelays } from '../../lib/relays';
 import { useChatStore } from '../../store/chatStore';
@@ -136,8 +136,9 @@ export function useMessageCommands({
         if (activeDm) setDms((prev) => ({ ...prev, [activeDm]: (prev[activeDm] || []).filter((item) => item.id !== id) }));
         else if (activeGroup?.id) setGroupMessages((prev) => ({ ...prev, [activeGroup.id]: (prev[activeGroup.id] || []).filter((item) => item.id !== id) }));
         setSelectedMessage(null);
-        try { await db.messages.delete(id); } catch (storageError) {
-          console.error('[Chat] Local delete failed:', storageError);
+        if (!(await deleteMessageForGood(id, activeDm || activeGroup?.id))) {
+          setToast({ type: 'error', message: 'Removed from the screen, but not from this device. It may come back after a refresh.' });
+          return;
         }
         if (msg.pubkey === identity?.pk && identity?.sk) {
           try {

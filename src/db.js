@@ -27,6 +27,19 @@ function makeDB(name) {
     groupMemberSigs: '&groupId, members, updatedAt',
     outbox: '&id, kind, created_at, queuedAt',
   });
+  // v10 adds tombstones: ids this device deleted, so a history fetch that
+  // re-saves the relay copy cannot bring them back. Every v9 store is unchanged.
+  d.version(10).stores({
+    messages: 'id, chatId, pubkey, timestamp, clientId, type',
+    profiles: 'pubkey, name, displayName',
+    groups: 'id, name',
+    chatReads: 'chatId',
+    groupKeys: '++id, &[groupId+epoch], groupId, epoch, isCurrent, obtainedAt',
+    groupKeyGrants: '++id, &[groupId+pubkey+epoch], groupId, pubkey, epoch, sentAt',
+    groupMemberSigs: '&groupId, members, updatedAt',
+    outbox: '&id, kind, created_at, queuedAt',
+    tombstones: 'id, chatId',
+  });
   return d;
 }
 
@@ -120,7 +133,7 @@ export const db = new Proxy({}, {
         _warnedOnce = true;
         console.warn('[db] accessed before openDBFor — returning empty stubs');
       }
-      if (['messages', 'chatReads', 'profiles', 'groups', 'groupKeys', 'groupKeyGrants', 'groupMemberSigs', 'outbox'].includes(prop)) {
+      if (['messages', 'chatReads', 'profiles', 'groups', 'groupKeys', 'groupKeyGrants', 'groupMemberSigs', 'outbox', 'tombstones'].includes(prop)) {
         return stubTable(prop);
       }
       return () => Promise.resolve();
@@ -136,12 +149,39 @@ export const saveMessage = async (chatId, msg) => {
       await db.messages.put({ ...msg, chatId });
       return;
     }
-    await db.transaction('rw', db.messages, async () => {
-      const existing = await db.messages.get(msg.id);
-      await db.messages.put(mergeStoredMessage(existing, msg, chatId));
+    await db.transaction('rw', db.messages, db.tombstones, async () => {
+      const [existing, tombstone] = await Promise.all([db.messages.get(msg.id), db.tombstones.get(msg.id)]);
+      const merged = mergeStoredMessage(existing, msg, chatId, { tombstoned: !!tombstone });
+      if (merged) await db.messages.put(merged);
     });
   } catch (error) {
     console.error('[db] Could not save message:', error);
+  }
+};
+
+// Deletes a message on this device and remembers that it did, in one
+// transaction. False when nothing was written.
+export const deleteMessageForGood = async (id, chatId) => {
+  if (!currentOwner() || !id) return false;
+  try {
+    await db.transaction('rw', db.messages, db.tombstones, async () => {
+      await db.messages.delete(id);
+      await db.tombstones.put({ id, chatId: chatId || '', at: Date.now() });
+    });
+    return true;
+  } catch (error) {
+    console.error('[db] Could not delete the message:', error);
+    return false;
+  }
+};
+
+export const deletedMessageIds = async () => {
+  if (!currentOwner()) return [];
+  try {
+    return (await db.tombstones.toArray()).map((row) => row.id);
+  } catch (error) {
+    console.error('[db] Could not read deleted messages:', error);
+    return [];
   }
 };
 
