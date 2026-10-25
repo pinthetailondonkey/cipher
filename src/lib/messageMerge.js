@@ -2,7 +2,10 @@
 // device changed afterwards, such as an order's status, coin amount, and
 // payment addresses. A history fetch brings the original event back, so the
 // patch is laid over it again. Otherwise a reload undoes what the vendor did.
-export function mergeStoredMessage(existing, incoming, chatId) {
+// A tombstoned id was deleted on this device: nothing is written for it,
+// whatever copy the relay serves again. The caller skips the write on null.
+export function mergeStoredMessage(existing, incoming, chatId, { tombstoned = false } = {}) {
+  if (tombstoned) return null;
   const merged = { ...existing, ...incoming, chatId };
   if (incoming?.deliveryStatus === undefined && existing?.deliveryStatus) {
     merged.deliveryStatus = existing.deliveryStatus;
