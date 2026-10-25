@@ -72,6 +72,8 @@ Group messages are not watched. Orders travel as direct messages, so an order bu
 
 ## Proof of trade
 
+The versioned spec is [docs/proof-of-trade.md](docs/proof-of-trade.md). Version 1 is the body, both signatures, and the public view. The notes below are the short version.
+
 A confirmed payment can carry a receipt. The body is the order id, the buyer and vendor public keys, the currency, the address, the amount, the txid, the unix time `at`, and the outcome (`confirmed`, `disputed`, `rugged`, or `refunded`). Both public keys sit in the body. Both parties sign that same canonical JSON with their Nostr keys (BIP-340). The hash is sha256 of those bytes. Verification requires both signatures. One valid signature and one invalid signature is not a receipt. `at` and `outcome` are part of version 1, so a later field cannot be slipped in under an old signature.
 
 The order update publishes a selective view: the hash, the amount, the currency, and the two public keys. That is enough to rank volume, and it does not include the address or the txid. Those stay on the vendor's phone, under `receipt_<order id>`, until a dispute. A dispute is the reveal: the report then includes the body and both signatures. Anyone with the body can check that the hash matches and that both signatures belong to the buyer and the vendor named in the body. A wrong txid, a swapped hash, or one bad signature does not verify.
