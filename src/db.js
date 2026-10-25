@@ -4,7 +4,7 @@ import { mergeStoredMessage, patchStoredMessage } from './lib/messageMerge';
 import { createWriteQueue } from './lib/writeQueue';
 import {
   trySealMessageRow, openMessageRow, isSealedRow,
-  queueAtRestWrite, takeAtRestWrites, dropAtRestWrites,
+  queueAtRestWrite, takeAtRestWrites, requeueAtRestWrites, dropAtRestWrites,
 } from './lib/messageAtRest';
 
 // Before openDBFor, writes queue here; opening the database applies them.
@@ -59,7 +59,7 @@ export function openDBFor(pubkey) {
   const name = 'CipherDB_v7_' + pubkey.slice(0, 16);
   _current = makeDB(name);
   _currentOwner = pubkey;
-  writeQueue.flush(_current);
+  writeQueue.flush(flushTargetFor(_current));
   // Writes that waited in memory for this account's vault key can be stored
   // now (src/lib/messageAtRest.js).
   setTimeout(() => flushAtRestWrites(pubkey), 0);
@@ -68,37 +68,46 @@ export function openDBFor(pubkey) {
 
 // Rows that arrived while the vault was locked are sealed and stored now that
 // the key is back. Each row is written behind its own get + merge so a
-// pending relay copy cannot drop a local patch.
+// pending relay copy cannot drop a local patch. Rows the flush cannot write —
+// the database changed hands mid-batch, or the vault key went away again —
+// are put back in the queue, never dropped (takeAtRestWrites already emptied
+// it, so anything left here exists nowhere else).
 async function flushAtRestWrites(owner) {
   if (!owner || _currentOwner !== owner || !_current) return;
   const rows = takeAtRestWrites(owner);
-  for (const row of rows) {
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
     try {
-      if (_currentOwner !== owner || !_current) return;
-      const [existing, tombstone] = await Promise.all([
+      if (_currentOwner !== owner || !_current) {
+        requeueAtRestWrites(owner, rows.slice(i));
+        return;
+      }
+      const [rawExisting, tombstone] = await Promise.all([
         _current.messages.get(row.id),
         _current.tombstones.get(row.id),
       ]);
       if (tombstone) continue;
+      // The raw store returns the sealed envelope: open it before merging. A
+      // merge over the envelope would carry `sealed` forward — the row's
+      // payload AS OF AN EARLIER write — so `trySealMessageRow` would no-op
+      // on the stale envelope while leaving the queued row's plaintext
+      // fields next to it (src/lib/messageMerge.js spreads the row as stored).
+      const existing = rawExisting ? await openMessageRow(rawExisting) : rawExisting;
       const merged = mergeStoredMessage(existing, row, row.chatId || existing?.chatId);
+      if (merged) delete merged.sealed;
       const sealed = await trySealMessageRow(merged || row);
-      if (sealed) await _current.messages.put(sealed);
+      if (sealed === null) {
+        // The vault key went away again mid-flush: hold this row, do not
+        // drop it and do not write it in plaintext.
+        requeueAtRestWrites(owner, [row]);
+        continue;
+      }
+      await _current.messages.put(sealed);
     } catch (error) {
       console.error('[db] A queued message could not be stored:', error);
     }
   }
 }
-
-// Restore DB connection if HMR reloads this module
-try {
-  const saved = localStorage.getItem('cipher_db_owner');
-  if (saved) {
-    const name = 'CipherDB_v7_' + saved.slice(0, 16);
-    _current = makeDB(name);
-    _currentOwner = saved;
-    writeQueue.flush(_current);
-  }
-} catch (e) {}
 
 export function closeDB() {
   if (_current) { try { _current.close(); } catch (_) {} }
@@ -222,6 +231,31 @@ async function writeSealedForRow(table, row) {
   return sealed;
 }
 
+// The flush target for writes queued before openDBFor (src/lib/writeQueue.js):
+// the raw Dexie stores, except `messages` — a queued message written straight
+// to the store would land in plaintext, bypassing the at-rest seal, so it
+// must take the same view as every other message write.
+function flushTargetFor(d) {
+  return new Proxy({}, {
+    get(_t, name) {
+      if (name === 'messages') return messagesView(d.messages);
+      return d[name];
+    },
+  });
+}
+
+// Restore DB connection if HMR reloads this module. Sits below the at-rest
+// views so flushTargetFor resolves `messagesView` when the queue is applied.
+try {
+  const saved = localStorage.getItem('cipher_db_owner');
+  if (saved) {
+    const name = 'CipherDB_v7_' + saved.slice(0, 16);
+    _current = makeDB(name);
+    _currentOwner = saved;
+    writeQueue.flush(flushTargetFor(_current));
+  }
+} catch (e) {}
+
 export const db = new Proxy({}, {
   get(_t, prop) {
     if (!_current) {
@@ -319,5 +353,9 @@ export async function readStoredRows() {
 if (typeof window !== "undefined") {
   window.__cipher = {
     saveMessage, patchMessage, readStoredRows,
+    // Test seam: closeDB + openDBFor re-open the account's database. Writes
+    // queued while it was closed — the write queue and the at-rest queue —
+    // are applied on the open.
+    closeDB, openDBFor,
   };
 }

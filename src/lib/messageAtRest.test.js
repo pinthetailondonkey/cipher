@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   setAtRestKeyProvider, isSealedRow, trySealMessageRow, openMessageRow,
-  queueAtRestWrite, takeAtRestWrites, dropAtRestWrites,
+  queueAtRestWrite, takeAtRestWrites, requeueAtRestWrites, dropAtRestWrites,
 } from './messageAtRest.js';
 
 const SK = Uint8Array.from({ length: 32 }, (_, i) => i);
@@ -85,6 +85,34 @@ test('the seal is bound to the row: a moved or tampered row stays closed', async
   });
   assert.equal(tampered.data, undefined, 'a tampered row cannot be opened');
   assert.equal(tampered.id, 'm1', 'a locked row still identifies itself');
+});
+
+test('an interrupted flush puts its un-written rows back at the front', async () => {
+  setAtRestKeyProvider(() => null);
+  dropAtRestWrites('pk-r');
+  queueAtRestWrite('pk-r', { id: 'w1' });
+  queueAtRestWrite('pk-r', { id: 'w2' });
+  const taken = takeAtRestWrites('pk-r');
+  assert.deepEqual(taken, [{ id: 'w1' }, { id: 'w2' }], 'the take is consuming');
+  // The flush requeues what it could not write (src/db.js flushAtRestWrites).
+  requeueAtRestWrites('pk-r', taken.slice(1));
+  queueAtRestWrite('pk-r', { id: 'w3' });
+  assert.deepEqual(takeAtRestWrites('pk-r'), [{ id: 'w2' }, { id: 'w3' }],
+    'requeued rows go ahead of rows written after the interruption');
+  dropAtRestWrites('pk-r');
+});
+
+test('a requeue keeps the queue capped, never writes plaintext to disk', async () => {
+  setAtRestKeyProvider(() => null);
+  dropAtRestWrites('pk-cap');
+  const rows = Array.from({ length: 500 }, (_, i) => ({ id: `c${i}` }));
+  requeueAtRestWrites('pk-cap', rows);
+  queueAtRestWrite('pk-cap', { id: 'after' });
+  const taken = takeAtRestWrites('pk-cap');
+  assert.equal(taken.length, 500, 'the queue stays at its cap');
+  assert.equal(taken[0].id, 'c1', 'the cap drops the oldest waiting row, as a fresh write does');
+  assert.equal(taken.at(-1).id, 'after', 'a write after the requeue still lands last');
+  dropAtRestWrites('pk-cap');
 });
 
 test('writes that arrive with the vault locked wait in memory, per account', async () => {
