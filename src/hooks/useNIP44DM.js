@@ -9,7 +9,7 @@ import { enqueueNostrEvent, startOutboxSync } from '../lib/outbox';
 import { allowsTyping } from '../lib/privacy';
 import { publishOwnRelayList, relaysForPeer } from '../lib/dmRelays';
 import { withBuzzTag } from '../lib/pushGateway';
-import { acceptPayment } from '../lib/proofOfTrade';
+import { acceptPayment, rememberPublicView } from '../lib/proofOfTrade';
 import { scopedSet } from '../lib/storage';
 
 const shouldSuppress = (chatId) => {
@@ -172,6 +172,7 @@ export function useNIP44DM({ identity }) {
                 const accepted = acceptPayment(data, identity.sk);
                 if (accepted) {
                   scopedSet(`receipt_${data.orderId}`, accepted.receipt);
+                  if (accepted.published) rememberPublicView(accepted.published);
                   data = { ...data, receipt: accepted.receipt, ...(accepted.published ? { published: accepted.published } : {}) };
                   if (accepted.added) {
                     sendDM(counterparty, {
@@ -274,6 +275,7 @@ export function useNIP44DM({ identity }) {
           const accepted = acceptPayment(data, identity.sk);
           if (accepted) {
             scopedSet(`receipt_${data.orderId}`, accepted.receipt);
+            if (accepted.published) rememberPublicView(accepted.published);
             data = { ...data, receipt: accepted.receipt, ...(accepted.published ? { published: accepted.published } : {}) };
             if (accepted.added) {
               sendDM(counterparty, {
