@@ -8,6 +8,7 @@ import { haptic } from './lib/haptics';
 import { copyText } from './lib/copyText';
 import { generalRelays } from './lib/relays';
 import Picture from './components/ui/Picture';
+import { listingFromEvent, orderProduct, priceLabel } from './lib/listing';
 
 export default function Shop({ identity, setActiveTab }) {
   const [query, setQuery] = useState('');
@@ -36,21 +37,7 @@ export default function Shop({ identity, setActiveTab }) {
 
         const events = await Promise.race([fetchPromise, timeoutPromise]);
 
-        const parsed = events.map(ev => {
-          const getTag = (name) => ev.tags.find(t => t[0] === name)?.[1];
-          const payments = ev.tags.filter((tag) => tag[0] === 'payment').map((tag) => tag[1] || '');
-          return {
-            id: getTag('d') || ev.id,
-            name: getTag('title') || 'Unnamed Product',
-            priceUsd: parseFloat(getTag('price') || '0'),
-            price: `$${parseFloat(getTag('price') || '0')}`,
-            currency: getTag('price') ? (ev.tags.find((tag) => tag[0] === 'price')?.[2] || 'USD') : 'USD',
-            image: getTag('image') || '',
-            vendorPubkey: ev.pubkey,
-            btc: payments.find((value) => value.startsWith('btc:'))?.slice(4) || '',
-            xmr: payments.find((value) => value.startsWith('xmr:'))?.slice(4) || '',
-          };
-        }).filter(p => p.priceUsd > 0);
+        const parsed = events.map(listingFromEvent).filter((p) => Number(p.price) > 0);
 
         const unique = Array.from(new Map(parsed.map(p => [p.id, p])).values());
         setProducts(unique);
@@ -80,15 +67,7 @@ export default function Shop({ identity, setActiveTab }) {
       type: 'cipher_order',
       status: 'pending',
       vendorPubkey: order?.vendorPubkey || '',
-      product: {
-        id: order?.id,
-        title: order?.name || order?.title || 'Product',
-        name: order?.name || order?.title || 'Product',
-        price: order?.priceUsd ?? order?.price ?? '',
-        priceUsd: order?.priceUsd ?? order?.price ?? '',
-        currency: 'USD',
-        image: order?.image || '',
-      },
+      product: orderProduct(order),
     };
     const vendorPubkey = payload.vendorPubkey;
     if (!identity?.sk || !vendorPubkey) throw new Error('Unlock your account to contact the seller.');
@@ -182,7 +161,7 @@ export default function Shop({ identity, setActiveTab }) {
                 </div>
                 <div className="px-1.5 pb-1 pt-3">
                   <p className="truncate text-[15px] font-semibold text-white">{p.name}</p>
-                  <p className="text-[13px] font-bold text-blue-400">${p.priceUsd}</p>
+                  <p className="text-[13px] font-bold text-blue-400">{priceLabel(p.price, p.currency)}</p>
                   <button type="button" onClick={() => { haptic('heavy'); setCheckoutProduct(p); }} className="mt-3 w-full rounded-2xl bg-blue-600 py-2.5 text-[13px] font-bold text-white shadow-lg">Buy</button>
                   <button type="button" onClick={() => shareProduct(p)} className="mt-1 w-full py-1 text-[12px] font-semibold text-white/50">Copy link</button>
                 </div>

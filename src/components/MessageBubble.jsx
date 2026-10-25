@@ -12,6 +12,7 @@ import { MediaAudio, MediaImage } from './ui/PrivateMedia';
 import { attachmentsFor } from '../lib/mediaCrypto';
 import { allowsLinkPreviews } from '../lib/privacy';
 import { orderActionsFor } from '../lib/orderActions';
+import { orderPriceLabel } from '../lib/listing';
 
 const EMPTY_REACTIONS = [];
 const REACTION_CHOICES = ['❤️', '👍', '🔥', '😂', '😮', '😢', '🙏'];
@@ -47,9 +48,7 @@ function orderLabel(content) {
 function OrderReceipt({ content }) {
   const product = content.product || {};
   const title = product.title || product.name || content.productName || 'Order';
-  const priceValue = product.priceUsd ?? product.price ?? content.amount ?? '';
-  const currency = product.currency || content.currency || 'USD';
-  const price = priceValue === '' ? '' : (currency === 'USD' ? `$${priceValue}` : `${priceValue} ${currency}`);
+  const price = orderPriceLabel(content);
   const address = content.shippingAddress || content.address || content.shipTo || '';
   const pill = orderLabel(content);
   return (

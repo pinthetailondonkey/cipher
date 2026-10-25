@@ -1,0 +1,37 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import { listingFromEvent, orderPriceLabel, orderProduct, priceLabel } from './listing.js';
+import { orderCoinAmount } from './paymentState.js';
+
+const event = (amount, currency) => ({
+  id: `ev-${currency}`,
+  pubkey: 'ab'.repeat(32),
+  tags: [['d', `item-${currency}`], ['title', `Tee in ${currency}`], ['price', amount, currency], ['image', 'https://img.example/t.jpg'], ['payment', 'btc:bc1qmain']],
+});
+
+test('a listing priced in BTC or XMR is not read as dollars, from the shop card to the order card', () => {
+  const btc = listingFromEvent(event('0.001', 'BTC'));
+  const xmr = listingFromEvent(event('0.25', 'XMR'));
+  const usd = listingFromEvent(event('40', 'USD'));
+  assert.equal(priceLabel(btc.price, btc.currency), '0.001 BTC');
+  assert.equal(priceLabel(xmr.price, xmr.currency), '0.25 XMR');
+  assert.equal(priceLabel(usd.price, usd.currency), '$40');
+  assert.equal('priceUsd' in btc, false);
+  assert.equal(usd.priceUsd, '40');
+
+  const card = (listing) => orderPriceLabel({ type: 'cipher_order', product: orderProduct(listing) });
+  assert.equal(card(btc), '0.001 BTC');
+  assert.equal(card(xmr), '0.25 XMR');
+  assert.equal(card(usd), '$40');
+
+  // The vendor accepting the order reads the coin amount straight from it.
+  assert.equal(orderCoinAmount(orderProduct(btc), 'btc'), '0.001');
+  assert.equal(orderCoinAmount(orderProduct(xmr), 'xmr'), '0.25');
+  assert.equal(orderCoinAmount(orderProduct(usd), 'btc'), null);
+});
+
+test('older orders that only carried priceUsd still show dollars', () => {
+  assert.equal(orderPriceLabel({ product: { priceUsd: '12', price: '12' } }), '$12');
+  assert.equal(orderPriceLabel({ product: { price: '0.5', currency: 'xmr' } }), '0.5 XMR');
+  assert.equal(orderPriceLabel({ product: {} }), '');
+});
