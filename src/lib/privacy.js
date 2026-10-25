@@ -7,7 +7,8 @@ export const DEFAULT_PRIVACY = {
   groups: 'everyone',
   readReceipts: true,
   typing: true,
-  forwarding: true,
+  // A preview sends the link to a third-party host, so it is opt-in.
+  linkPreviews: false,
 };
 
 let privacyKey = '';
@@ -48,4 +49,8 @@ export function setPrivacy(patch) {
 export function allowsTyping() {
   const privacy = getPrivacy();
   return privacy.typing !== false && privacy.lastSeen !== 'nobody';
+}
+
+export function allowsLinkPreviews() {
+  return getPrivacy().linkPreviews === true;
 }

@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Search, Users, Megaphone, Loader2 } from 'lucide-react';
 import { useChatStore } from './store/chatStore';
-import { loadGroupProfile } from './hooks/useNIP29Group';
-import { getMyGroups, setMyGroups } from './lib/myGroups';
+import { joinGroup } from './lib/groupJoin';
 import { groupOnlyRelays } from './lib/relays';
 
 export default function Discover({ identity, onJoined }) {
@@ -71,14 +70,9 @@ export default function Discover({ identity, onJoined }) {
     setJoiningId(group.id);
     setError('');
     try {
-      const profile = await loadGroupProfile(identity, group.id, group.name);
-      const local = getMyGroups(identity.pk);
-      const next = local.some((item) => item.id === profile.id)
-        ? local.map((item) => item.id === profile.id ? { ...item, ...profile, isChannel: group.isChannel } : item)
-        : [...local, { ...profile, isChannel: !!group.isChannel }];
-      setMyGroups(identity.pk, next);
-      useChatStore.getState().setGroups((groups) => [profile, ...(groups || []).filter((item) => item.id !== profile.id)]);
-      useChatStore.getState().openChat('group', profile.id, { ...profile, isChannel: !!group.isChannel });
+      const joined = await joinGroup(identity, group.id, { name: group.name, channel: group.isChannel });
+      useChatStore.getState().setGroups((groups) => [joined, ...(groups || []).filter((item) => item.id !== joined.id)]);
+      useChatStore.getState().openChat('group', joined.id, joined);
       onJoined?.();
     } catch (joinError) {
       console.error('[Discover] Could not join group:', joinError);

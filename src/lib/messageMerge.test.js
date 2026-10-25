@@ -40,3 +40,29 @@ test('a message this device never changed is stored exactly as before', () => {
   assert.deepEqual(again.data, { type: 'text', message: 'hi' });
   assert.equal(patchStoredMessage(undefined, { status: 'accepted' }), null);
 });
+
+test('signing in never clears the message table: each account has its own database', async () => {
+  const fs = await import('node:fs');
+  const bootstrap = fs.readFileSync(new URL('../features/chat/useChatBootstrap.js', import.meta.url), 'utf8');
+  assert.equal(/db\.messages\.clear\(/.test(bootstrap), false);
+  assert.equal(/db\.chatReads\.clear\(/.test(bootstrap), false);
+  assert.equal(bootstrap.includes('cipher_last_user'), false);
+});
+
+test('a deleted message is not written again when the relay copy is re-saved', async () => {
+  const relay = { id: 'gone', isSender: false, timestamp: 5, data: { type: 'text', message: 'delete me' } };
+  assert.equal(mergeStoredMessage(undefined, relay, 'peer', { tombstoned: true }), null);
+  assert.equal(mergeStoredMessage({ ...relay, chatId: 'peer' }, relay, 'peer', { tombstoned: true }), null);
+  assert.ok(mergeStoredMessage(undefined, relay, 'peer'));
+  const fs = await import('node:fs');
+  const db = fs.readFileSync(new URL('../db.js', import.meta.url), 'utf8');
+  const commands = fs.readFileSync(new URL('../features/chat/useMessageCommands.js', import.meta.url), 'utf8');
+  const bootstrap = fs.readFileSync(new URL('../features/chat/useChatBootstrap.js', import.meta.url), 'utf8');
+  assert.match(db, /tombstones: 'id, chatId'/);
+  assert.match(db, /mergeStoredMessage\(existing, msg, chatId, \{ tombstoned: !!tombstone \}\)/);
+  assert.match(db, /db\.tombstones\.put\(\{ id, chatId/);
+  assert.match(commands, /await deleteMessageForGood\(id,/);
+  assert.equal(/db\.messages\.delete\(id\)/.test(commands), false);
+  assert.match(bootstrap, /kinds: \[5\], authors: \[identity\.pk\]/);
+  assert.match(bootstrap, /\(await deletedMessageIds\(\)\)\.forEach\(\(id\) => deleted\.add\(id\)\)/);
+});

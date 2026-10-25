@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { db, saveMessage, openDBFor } from '../../db';
+import { db, deletedMessageIds, saveMessage, openDBFor } from '../../db';
 import { getMyGroups } from '../../lib/myGroups';
 import { mergeReactions } from '../../lib/reactions';
 import { generalRelays, groupRelays, queryAllPages, queryWithTimeout } from '../../lib/relays';
@@ -27,7 +27,6 @@ export function useChatBootstrap({
   fetchGroupMembers,
   setGroups,
   fetchGroups,
-  requestToJoinGroup,
   joinGroupById,
 }) {
   const groups = useChatStore((s) => s.groups);
@@ -270,7 +269,7 @@ export function useChatBootstrap({
       const [groupMetaEvents, reactionsEvents, delEvents] = await Promise.all([
         queryWithTimeout(pool, groupRelays, { kinds: [39000, 9002], limit: 100 }),
         queryWithTimeout(pool, generalRelays, { kinds: [7], limit: 500 }),
-        queryWithTimeout(pool, generalRelays, { kinds: [5], limit: 100 }),
+        queryWithTimeout(pool, generalRelays, { kinds: [5], authors: [identity.pk], limit: 500 }),
       ]);
       const localGroupsNow = getMyGroups(identity.pk);
       const uniqueGroupsNow = Array.from(new Map(groupMetaEvents.map(ev => {
@@ -314,6 +313,7 @@ export function useChatBootstrap({
           if (targetId) deleted.add(targetId);
         }
       });
+      (await deletedMessageIds()).forEach((id) => deleted.add(id));
       setDeletedMsgs(deleted);
       const allDbMsgs = await db.messages.toArray();
       const reads = await db.chatReads.toArray();
@@ -485,20 +485,6 @@ export function useChatBootstrap({
   }, [disappearingTimers, setDms, setGroupMessages]);
 
   useEffect(() => {
-    if (!identity?.pk) return;
-    const lastUser = localStorage.getItem('cipher_last_user');
-    if (lastUser && lastUser !== identity.pk) {
-      useChatStore.setState({ dms: {}, groups: [], groupMessages: {}, profiles: {}, reactions: {} });
-      useChatStore.getState().setUnreadCounts({});
-      useChatStore.getState().clearNotificationAck();
-      db.messages.clear().catch(console.error);
-      db.chatReads.clear().catch(console.error);
-      localStorage.removeItem('cipher_my_groups');
-    }
-    localStorage.setItem('cipher_last_user', identity.pk);
-  }, [identity?.pk]);
-
-  useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
     const directId = urlParams.get('g') || urlParams.get('group') || urlParams.get('join');
     const naddr = urlParams.get('naddr');
@@ -516,17 +502,8 @@ export function useChatBootstrap({
         }
       }
       if (!joinId || cancelled) return;
-      try {
-        const pool = await getAuthenticatedPool(identity);
-        const events = await queryWithTimeout(pool, groupRelays, { kinds: [9002], limit: 200 }, 3000);
-        const match = events.find(ev => ev.tags.find(t => t[0] === 'h')?.[1] === joinId);
-        const creator = match?.pubkey;
-        if (cancelled) return;
-        if (creator && creator !== identity.pk) await requestToJoinGroup(joinId, joinName, creator);
-        else joinGroupById(joinId, joinName);
-      } catch {
-        if (!cancelled) joinGroupById(joinId, joinName);
-      }
+      // Groups are open, so an invite joins directly.
+      joinGroupById(joinId, joinName);
     })();
     return () => { cancelled = true; };
   }, [identity?.pk]);

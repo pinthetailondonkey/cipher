@@ -1,22 +1,16 @@
 import { useState } from 'react';
+import { ORDER_STATUS } from '../lib/paymentState';
 import { Check, Copy, Loader2, X } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { copyText } from '../lib/copyText';
+import { orderProduct, priceLabel } from '../lib/listing';
 
 function cipherOrder(product) {
   return {
     type: 'cipher_order',
-    status: 'pending',
+    status: ORDER_STATUS.PENDING,
     vendorPubkey: product?.vendorPubkey || '',
-    product: {
-      id: product?.id || null,
-      title: product?.name || product?.title || 'Product',
-      name: product?.name || product?.title || 'Product',
-      price: product?.priceUsd ?? product?.price ?? '',
-      priceUsd: product?.priceUsd ?? product?.price ?? '',
-      currency: product?.currency || 'USD',
-      image: product?.image || '',
-    },
+    product: orderProduct(product),
   };
 }
 
@@ -26,8 +20,7 @@ export default function OneTapCheckout({ product, onConfirmOrder, onClose }) {
   const [orderError, setOrderError] = useState('');
   const [copied, setCopied] = useState('');
   const order = cipherOrder(product);
-  const amount = product?.price || (product?.priceUsd ? `$${product.priceUsd}` : '');
-  const currency = product?.currency || 'USD';
+  const amount = priceLabel(order.product.price, order.product.currency);
   const addresses = [
     ['BTC', product?.btc],
     ['XMR', product?.xmr],
@@ -71,7 +64,7 @@ export default function OneTapCheckout({ product, onConfirmOrder, onClose }) {
         </div>
         <div className="mb-4 rounded-2xl border border-white/10 bg-[#0A0A0A]/60 shadow-2xl backdrop-blur-2xl p-4">
           <p className="text-[12px] text-white/40">Amount due</p>
-          <p className="text-[22px] font-bold text-white">{amount} {currency}</p>
+          <p className="text-[22px] font-bold text-white">{amount}</p>
         </div>
         <p className="mb-3 text-[13px] text-white/40">{addresses.length ? 'These are the seller’s published addresses. They may send a fresh one in the chat after they accept.' : 'The seller sends a payment address in the chat after they accept.'}</p>
         {addresses.length === 0 ? (

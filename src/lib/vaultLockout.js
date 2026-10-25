@@ -22,6 +22,81 @@ export function recordPinFailure(storage, pubkey) {
   return { fails, remaining, lockedOut: fails >= PIN_FAILURE_LIMIT };
 }
 
+export const LOCKED_OUT_MESSAGE = 'Five wrong PINs. This account was removed from this device. Only its 12 words can bring it back.';
+
+// Removes one account's vault from this device. The legacy single-vault keys
+// go only when they hold this account's vault. Other accounts stay intact.
+export function removeAccountVault(storage, pubkey) {
+  let vaults = {};
+  try {
+    vaults = JSON.parse(storage.getItem('cipher_vaults') || '{}') || {};
+  } catch {
+    vaults = {};
+  }
+  const legacy = storage.getItem('cipher_vault');
+  const entry = pubkey ? vaults[pubkey] : null;
+  const legacyIsThis = !!legacy && (!pubkey || !entry || JSON.stringify(entry.vault) === legacy);
+  if (pubkey) delete vaults[pubkey];
+  storage.setItem('cipher_vaults', JSON.stringify(vaults));
+  if (legacyIsThis) {
+    storage.removeItem('cipher_vault');
+    storage.removeItem('cipher_handle');
+  }
+  if (!pubkey || storage.getItem('cipher_active_pubkey') === pubkey) storage.removeItem('cipher_active_pubkey');
+  resetPinFailures(storage, pubkey);
+}
+
+function storageKeys(storage) {
+  const keys = [];
+  const count = Number(storage.length) || 0;
+  for (let i = 0; i < count; i += 1) {
+    const key = storage.key(i);
+    if (key) keys.push(key);
+  }
+  return keys;
+}
+
+// Everything this device keeps for one account outside its vault: scoped
+// settings, receipts and drafts, the passkey wrapper, the group list, and the
+// pointers that name it. A scoped prefix shared with another saved account is
+// left alone so that account's settings survive. The database is separate.
+export function removeAccountKeys(storage, pubkey) {
+  if (!pubkey) return [];
+  let others = [];
+  try {
+    others = Object.keys(JSON.parse(storage.getItem('cipher_vaults') || '{}') || {}).filter((pk) => pk !== pubkey);
+  } catch {
+    others = [];
+  }
+  const prefix = pubkey.slice(0, 8);
+  const sharedScope = others.some((pk) => pk.slice(0, 8) === prefix);
+  const exact = new Set([
+    `cipher_passkey_${pubkey}`,
+    pinFailureKey(pubkey),
+    `cipher_my_groups_${pubkey.slice(0, 16)}`,
+    `cipher_migrated_v1_${prefix}`,
+  ]);
+  const removed = storageKeys(storage).filter((key) => exact.has(key) || (!sharedScope && key.startsWith(`cipher_${prefix}_`)));
+  if (storage.getItem('cipher_biometric_pubkey') === pubkey) removed.push('cipher_biometric_pubkey', 'cipher_biometric_enabled');
+  for (const pointer of ['cipher_db_owner', 'cipher_last_user', 'cipher_active_pubkey']) {
+    if (storage.getItem(pointer) === pubkey) removed.push(pointer);
+  }
+  removed.forEach((key) => storage.removeItem(key));
+  return removed;
+}
+
+// Every path that decrypts a vault with a PIN counts a wrong PIN here, so the
+// fifth one locks that account out whichever screen it was typed on. The
+// caller still deletes the account's database, which storage cannot reach.
+export function failPinAttempt(storage, pubkey) {
+  const result = recordPinFailure(storage, pubkey);
+  if (result.lockedOut) {
+    removeAccountVault(storage, pubkey);
+    removeAccountKeys(storage, pubkey);
+  }
+  return result;
+}
+
 export function pinFailureMessage(remaining) {
   const left = remaining === 1 ? '1 attempt left' : `${remaining} attempts left`;
   const warning = remaining <= 2

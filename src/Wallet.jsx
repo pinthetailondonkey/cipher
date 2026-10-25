@@ -14,8 +14,7 @@ import MessageRequests from './components/chat/MessageRequests';
 import { db } from './db';
 import Logo from './components/Logo';
 import { compressImage } from './lib/imageCompression';
-import { scopedGet, scopedSet } from './lib/storage';
-import { loadVendorPaymentConfig, saveVendorPaymentConfig } from './lib/vendorPayments';
+import { loadVendorPaymentConfig, readPaymentAddresses, saveVendorPaymentConfig, savePaymentAddresses } from './lib/vendorPayments';
 import PrivacySettings from './components/chat/PrivacySettings';
 import Connections from './components/chat/Connections';
 import Avatar from './components/ui/Avatar';
@@ -35,8 +34,6 @@ export default function Wallet({ identity, onOpenChat }) {
   const dms = useChatStore((state) => state.dms);
   const chatProfiles = useChatStore((state) => state.profiles);
   const [showPanicConfirm, setShowPanicConfirm] = useState(false);
-  const panicWipeEnabled = useChatStore((s) => s.panicWipeEnabled);
-  const setPanicWipeEnabled = useChatStore((s) => s.setPanicWipeEnabled);
   const profiles = useProfiles([identity.pk])
   const defaultName = identity.npub ? identity.npub.slice(0, 10) : 'User'
   
@@ -57,8 +54,8 @@ export default function Wallet({ identity, onOpenChat }) {
   const [currency, setCurrency] = useState('USD')
   const [image, setImage] = useState('')
 
-  const [btcAddress, setBtcAddress] = useState(() => scopedGet('btc_address', localStorage.getItem('cipher_btc_address') || localStorage.getItem('cipher_btc') || ''))
-  const [xmrAddress, setXmrAddress] = useState(() => scopedGet('xmr_address', localStorage.getItem('cipher_xmr_address') || localStorage.getItem('cipher_xmr') || ''))
+  const [btcAddress, setBtcAddress] = useState(() => readPaymentAddresses().btc)
+  const [xmrAddress, setXmrAddress] = useState(() => readPaymentAddresses().xmr)
   const [btcXpub, setBtcXpub] = useState('')
   const [btcNetwork, setBtcNetwork] = useState('bc')
   const [xmrPrivateViewKey, setXmrPrivateViewKey] = useState('')
@@ -98,12 +95,7 @@ export default function Wallet({ identity, onOpenChat }) {
     setStatus('');
     try {
       await saveVendorPaymentConfig(identity, { btcXpub, xmrPrivateViewKey, btcNetwork });
-      scopedSet('btc_address', btcAddress);
-      scopedSet('xmr_address', xmrAddress);
-      localStorage.setItem('cipher_btc_address', btcAddress);
-      localStorage.setItem('cipher_xmr_address', xmrAddress);
-      localStorage.setItem('cipher_btc', btcAddress);
-      localStorage.setItem('cipher_xmr', xmrAddress);
+      savePaymentAddresses({ btc: btcAddress, xmr: xmrAddress });
       setStatus('Advanced vendor settings saved on this device.');
     } catch (error) {
       console.error('[Wallet] Could not save advanced vendor settings:', error);
@@ -158,10 +150,7 @@ export default function Wallet({ identity, onOpenChat }) {
 
   const saveProfile = async (e, overridePicture = null) => {
     if (e) e.preventDefault()
-    scopedSet('btc_address', btcAddress);
-    scopedSet('xmr_address', xmrAddress);
-    localStorage.setItem('cipher_btc_address', btcAddress);
-    localStorage.setItem('cipher_xmr_address', xmrAddress);
+    savePaymentAddresses({ btc: btcAddress, xmr: xmrAddress });
     if (!displayName) return useChatStore.getState().setToast({ type: 'info', message: "Display Name is required" });
     
     setIsPublishing(true); setStatus('Saving Profile...')
@@ -219,27 +208,13 @@ export default function Wallet({ identity, onOpenChat }) {
     finally { pool?.close(relays); setIsPublishing(false); setTimeout(() => setStatus(''), 3000) }
   }
 
-  const savePayments = () => {
-    scopedSet('btc_address', btcAddress);
-    scopedSet('xmr_address', xmrAddress);
-    localStorage.setItem('cipher_btc', btcAddress)
-    localStorage.setItem('cipher_xmr', xmrAddress)
-    setStatus('Addresses saved!'); setTimeout(() => setStatus(''), 2000)
-    setView('main')
-  }
-
   const saveVendorSetup = (event) => {
     event.preventDefault();
     if (!btcAddress.trim() && !xmrAddress.trim()) {
       setStatus('Add at least one BTC or XMR receiving address to enable Vendor mode.');
       return;
     }
-    scopedSet('btc_address', btcAddress.trim());
-    scopedSet('xmr_address', xmrAddress.trim());
-    localStorage.setItem('cipher_btc_address', btcAddress.trim());
-    localStorage.setItem('cipher_xmr_address', xmrAddress.trim());
-    localStorage.setItem('cipher_btc', btcAddress.trim());
-    localStorage.setItem('cipher_xmr', xmrAddress.trim());
+    savePaymentAddresses({ btc: btcAddress, xmr: xmrAddress });
     setIsVendor(true);
     setStatus('Vendor mode is active. Payment addresses are saved on this device.');
     setView('main');
@@ -322,62 +297,6 @@ export default function Wallet({ identity, onOpenChat }) {
     );
   }
 
-  // --- SUB-SCREEN: EDIT PROFILE ---
-  if (view === 'edit_profile') {
-    return (
-      <div className="h-full overflow-y-auto bg-transparent pb-8">
-        <ScreenHeader title="Edit profile" onBack={() => setView('main')} />
-        <div className="space-y-4 p-4">
-          <div className="relative">
-            <Picture src={picture} alt="avatar" className="w-24 h-24 rounded-full object-cover border-2 border-white/10 shadow-lg" fallback={<div className="w-24 h-24 rounded-full bg-white/5 flex items-center justify-center border-2 border-white/10 shadow-lg"><User size={32} className="text-white/30" /></div>} />
-            <input type="file" accept="image/*" onChange={(e) => handleImageUpload(e, 'profile')} className="hidden" id="profile-upload" />
-            <label htmlFor="profile-upload" className="absolute bottom-0 right-0 p-2 bg-blue-600 text-white rounded-full border-4 border-black cursor-pointer hover:bg-blue-500 transition-transform active:scale-95">
-              {uploadingImage ? <RefreshCw size={14} className="animate-spin"/> : <Camera size={14} />}
-            </label>
-          </div>
-        </div>
-
-        <form onSubmit={saveProfile} className="space-y-4 px-4 pb-4">
-          <div className="border border-white/10 bg-white/5 shadow-2xl backdrop-blur-md rounded-2xl p-4">
-            <h3 className="text-xs font-bold text-white/50 uppercase tracking-wider mb-3">Payment Addresses</h3>
-            <div className="space-y-3">
-              <div>
-                <label className="block text-xs text-white/60 mb-1">Bitcoin (BTC)</label>
-                <input type="text" placeholder="bc1q..." value={btcAddress} onChange={(e) => setBtcAddress(e.target.value)} className="w-full rounded-xl border border-white/10 bg-white/5 p-3 text-sm text-white outline-none placeholder-white/30 backdrop-blur-md focus:border-blue-500" />
-              </div>
-              <div>
-                <label className="block text-xs text-white/60 mb-1">Monero (XMR)</label>
-                <input type="text" placeholder="4..." value={xmrAddress} onChange={(e) => setXmrAddress(e.target.value)} className="w-full rounded-xl border border-white/10 bg-white/5 p-3 text-sm text-white outline-none placeholder-white/30 backdrop-blur-md focus:border-blue-500" />
-              </div>
-            </div>
-          </div>
-
-          <div>
-            <div className="w-full border border-white/10 bg-white/5 shadow-2xl backdrop-blur-md rounded-2xl p-4 flex items-center gap-3">
-              <span className="text-white/30 text-lg">@</span>
-              <span className="text-sm text-white/50 font-mono tracking-wide">{username}</span>
-            </div>
-            <p className="text-[10px] text-white/30 mt-1.5 ml-1">Usernames are permanent and cannot be changed.</p>
-          </div>
-
-          <div>
-            <label className="text-xs text-white/50 ml-1 mb-1.5 block">Display Name</label>
-            <input placeholder="e.g. Alice's Shop" value={displayName} onChange={e => setDisplayName(e.target.value)} className="w-full border border-white/10 bg-white/5 shadow-2xl backdrop-blur-md rounded-2xl p-4 text-sm text-white placeholder-white/20 focus:border-blue-500 outline-none transition-colors" />
-          </div>
-          
-          <div>
-            <label className="text-xs text-white/50 ml-1 mb-1.5 block">Bio</label>
-            <textarea placeholder="Tell buyers about your shop..." value={about} onChange={e => setAbout(e.target.value)} className="w-full border border-white/10 bg-white/5 shadow-2xl backdrop-blur-md rounded-2xl p-4 text-sm text-white placeholder-white/20 focus:border-blue-500 outline-none resize-none h-24 transition-colors" />
-          </div>
-          
-          <button type="submit" disabled={isPublishing || uploadingImage} className="w-full py-4 bg-blue-600 text-white rounded-2xl font-bold text-sm mt-2 flex justify-center items-center gap-2 transition-transform active:scale-95 disabled:opacity-50 hover:bg-blue-500">
-            {isPublishing ? <RefreshCw size={16} className="animate-spin"/> : 'Save Profile'}
-          </button>
-        </form>
-      </div>
-    )
-  }
-
   // --- SUB-SCREEN: ADD PRODUCT ---
   if (view === 'product') {
     return (
@@ -407,20 +326,6 @@ export default function Wallet({ identity, onOpenChat }) {
           <button onClick={publishProduct} disabled={isPublishing || uploadingImage} className="w-full py-4 bg-blue-600 text-white rounded-2xl font-bold text-sm mt-4 flex justify-center items-center gap-2 hover:bg-blue-500 transition-colors">
             {isPublishing ? <RefreshCw size={16} className="animate-spin"/> : 'Publish to Store'}
           </button>
-        </div>
-      </div>
-    )
-  }
-
-  // --- SUB-SCREEN: PAYMENTS ---
-  if (view === 'payments') {
-    return (
-      <div className="h-full overflow-y-auto bg-transparent pb-8">
-        <ScreenHeader title="Payment addresses" onBack={() => setView('main')} />
-        <div className="space-y-4 p-4">
-          <input placeholder="Bitcoin (BTC)" value={btcAddress} onChange={e => setBtcAddress(e.target.value)} className="w-full border border-white/10 bg-white/5 shadow-2xl backdrop-blur-md rounded-2xl p-4 text-sm focus:border-blue-500 outline-none" />
-          <input placeholder="Monero (XMR)" value={xmrAddress} onChange={e => setXmrAddress(e.target.value)} className="w-full border border-white/10 bg-white/5 shadow-2xl backdrop-blur-md rounded-2xl p-4 text-sm focus:border-blue-500 outline-none" />
-          <button onClick={savePayments} className="w-full py-4 bg-blue-600 text-white rounded-2xl font-bold text-sm mt-4 hover:bg-blue-500 transition-colors">Save Addresses</button>
         </div>
       </div>
     )

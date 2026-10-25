@@ -1,40 +1,10 @@
 import { db } from '../../db';
 import { getAuthenticatedPool } from '../../lib/pool';
-import { queryWithTimeout, profileRelays, groupOnlyRelays } from '../../lib/relays';
+import { queryWithTimeout, profileRelays, groupOnlyRelays, searchRelays } from '../../lib/relays';
 import { useChatStore } from '../../store/chatStore';
 import { parseGroupReference, loadGroupProfile } from '../../hooks/useNIP29Group';
 
 export function usePeopleSearch({ identity }) {
-  const setToast = useChatStore((s) => s.setToast);
-  const setView = useChatStore((s) => s.setView);
-
-  const handleGlobalSearch = async (query) => {
-    if (!query.trim()) return;
-    const results = [];
-    const state = useChatStore.getState();
-    Object.entries(state.dms).forEach(([pubkey, msgs]) => {
-      msgs.forEach(msg => {
-        const text = msg.data?.message || '';
-        if (text.toLowerCase().includes(query.toLowerCase())) {
-          results.push({ type: 'dm', pubkey, msg, name: state.profiles[pubkey]?.displayName || pubkey.slice(0, 8), text });
-        }
-      });
-    });
-    Object.entries(state.groupMessages).forEach(([groupId, msgs]) => {
-      msgs.forEach(msg => {
-        try {
-          const parsed = JSON.parse(msg.rawContent || '{}');
-          if ((parsed.message || '').toLowerCase().includes(query.toLowerCase())) {
-            const group = state.groups.find(g => g.id === groupId);
-            results.push({ type: 'group', groupId, msg, name: group?.name || groupId.slice(0, 8), text: parsed.message });
-          }
-        } catch (e) {}
-      });
-    });
-    setToast({ type: 'info', message: `Found ${results.length} results for "${query}"` });
-    useChatStore.getState().setSearchResults(results);
-    setView('search');
-  };
 
   const handleSearch = async () => {
     const state = useChatStore.getState();
@@ -116,11 +86,11 @@ export function usePeopleSearch({ identity }) {
           return;
         }
 
-        // NIP-50 on Primal, then confirm that hit with an exact author query.
+        // NIP-50 on the search relays, then confirm that hit with an exact author query.
         console.log('🔍 [Search] Using NIP-50 to find profile...');
         const searchEvents = await queryWithTimeout(
           pool,
-          profileRelays.slice(0, 1),
+          searchRelays,
           { kinds: [0], search: usernameToFind, limit: 20 },
           5000
         );
@@ -238,47 +208,8 @@ export function usePeopleSearch({ identity }) {
         state.setIsSearching(false); return;
       }
 
-      // --- VERTEX DVM PROFILE SEARCH ---
-      let dvmPool;
-      try {
-        const { finalizeEvent } = await import('nostr-tools');
-        dvmPool = new SimplePool();
-        const requestEvent = finalizeEvent({
-          kind: 5315,
-          created_at: Math.floor(Date.now() / 1000),
-          tags: [['param', 'search', rawQuery], ['param', 'limit', '10']],
-          content: ''
-        }, identity.sk);
-
-        await Promise.allSettled(dvmPool.publish(groupOnlyRelays, requestEvent));
-
-        const responseEvents = await Promise.race([
-          dvmPool.querySync(groupOnlyRelays, { kinds: [6315], '#e': [requestEvent.id] }),
-          new Promise(resolve => setTimeout(() => resolve([]), 4000))
-        ]);
-
-        if (false && responseEvents.length > 0) {
-          const responseEvent = responseEvents[0];
-          const pubkeys = JSON.parse(responseEvent.content).map(p => p.pubkey);
-          
-          if (pubkeys.length > 0) {
-            const profileEvents = await pool.querySync(groupOnlyRelays, { kinds: [0], authors: pubkeys });
-            const profiles = profileEvents.map(ev => {
-              const data = JSON.parse(ev.content);
-              return { type: 'user', pubkey: ev.pubkey, name: data.display_name || data.name || ev.pubkey.slice(0, 8), picture: data.picture };
-            });
-            state.setSearchResults(profiles);
-            state.setIsSearching(false);
-            return;
-          }
-        }
-      } catch (dvmError) {
-        console.warn("Vertex DVM search failed, falling back to NIP-50...", dvmError);
-      } finally {
-        dvmPool?.destroy();
-      }
-
-      const publicSearchRelays = groupOnlyRelays;
+      // Search text goes only to the search rows in Connections.
+      const publicSearchRelays = searchRelays;
       const events = await Promise.race([
         Promise.all([
           pool.querySync(publicSearchRelays, { kinds: [0, 41], search: rawQuery, limit: 30 }),
@@ -327,5 +258,5 @@ export function usePeopleSearch({ identity }) {
       state.setIsSearching(false); 
     }
   };
-  return { handleGlobalSearch, handleSearch };
+  return { handleSearch };
 }
