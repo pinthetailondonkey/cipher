@@ -1,10 +1,11 @@
 import { useChatStore } from '../../store/chatStore';
 import { db, saveMessage } from '../../db';
-import { scopedGet } from '../../lib/storage';
+import { scopedGet, scopedSet } from '../../lib/storage';
 import { getOrderPaymentMethods } from '../../lib/vendorPayments';
 import { nextPaymentState } from '../../lib/paymentState';
 import { checkPayment } from '../../lib/paymentWatch';
 import { activeUrl, entryById } from '../../lib/egress';
+import { publicReceipt, signReceipt } from '../../lib/proofOfTrade';
 
 export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, openChat }) {
   const setToast = useChatStore((s) => s.setToast);
@@ -138,6 +139,21 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
             return true;
           }
           const confirmed = outcome.state === 'confirmed';
+          let receiptHash = '';
+          if (confirmed) {
+            if (!identity?.sk) throw new Error('Unlock the account before confirming. The receipt was not signed.');
+            const signed = signReceipt(identity.sk, {
+              orderId: msg.id,
+              buyer: msg.pubkey,
+              vendor: identity.pk,
+              currency,
+              address,
+              amount: msg.data?.product?.price ?? msg.data?.product?.priceUsd ?? '',
+              txid: outcome.report.txid,
+            });
+            scopedSet(`receipt_${msg.id}`, signed);
+            receiptHash = publicReceipt(signed).hash;
+          }
           const payload = {
             type: 'order_update',
             orderId: msg.id,
@@ -146,11 +162,12 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
             paymentState: outcome.state,
             paymentSeenBy: 'watcher',
             txid: outcome.report.txid,
+            ...(receiptHash ? { receiptHash } : {}),
           };
           await deliverOrderUpdate(
             msg.pubkey,
             payload,
-            { status: payload.status, paymentState: outcome.state, paymentSeenBy: 'watcher', txid: outcome.report.txid },
+            { status: payload.status, paymentState: outcome.state, paymentSeenBy: 'watcher', txid: outcome.report.txid, ...(receiptHash ? { receiptHash } : {}) },
             confirmed ? 'Your watcher confirmed the payment.' : 'Your watcher has seen the payment. It is not confirmed yet.',
           );
         } catch (error) {
@@ -184,7 +201,15 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
           type: 'danger', confirmText: 'Submit',
           onConfirm: async (reason) => {
             if (!reason || !reason.trim()) return;
-            const payload = { type: 'order_update', orderId: msg.id, productName: msg.data.product?.title, status: 'disputed', disputeReason: reason.trim() };
+            const saved = scopedGet(`receipt_${msg.id}`, null);
+            const payload = {
+              type: 'order_update',
+              orderId: msg.id,
+              productName: msg.data.product?.title,
+              status: 'disputed',
+              disputeReason: reason.trim(),
+              ...(saved ? { receipt: saved } : {}),
+            };
             await deliverOrderUpdate(msg.pubkey, payload, { status: 'disputed', disputeReason: reason.trim() }, 'Issue reported');
           },
         });
