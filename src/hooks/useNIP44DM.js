@@ -172,13 +172,14 @@ export function useNIP44DM({ identity }) {
                 const accepted = acceptPayment(data, identity.sk);
                 if (accepted) {
                   scopedSet(`receipt_${data.orderId}`, accepted.receipt);
-                  data = { ...data, receipt: accepted.receipt };
+                  data = { ...data, receipt: accepted.receipt, ...(accepted.published ? { published: accepted.published } : {}) };
                   if (accepted.added) {
                     sendDM(counterparty, {
                       type: 'order_update',
                       orderId: data.orderId,
                       status: 'paid',
                       receipt: accepted.receipt,
+                      ...(accepted.published ? { published: accepted.published } : {}),
                     }).catch((error) => console.error('[orders] The buyer signature was not sent:', error));
                   }
                 }
@@ -273,13 +274,14 @@ export function useNIP44DM({ identity }) {
           const accepted = acceptPayment(data, identity.sk);
           if (accepted) {
             scopedSet(`receipt_${data.orderId}`, accepted.receipt);
-            data = { ...data, receipt: accepted.receipt };
+            data = { ...data, receipt: accepted.receipt, ...(accepted.published ? { published: accepted.published } : {}) };
             if (accepted.added) {
               sendDM(counterparty, {
                 type: 'order_update',
                 orderId: data.orderId,
                 status: 'paid',
                 receipt: accepted.receipt,
+                ...(accepted.published ? { published: accepted.published } : {}),
               }).catch((error) => console.error('[orders] The buyer signature was not sent:', error));
             }
           }
