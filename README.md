@@ -80,9 +80,13 @@ The order update publishes a selective view: the hash, the amount, the currency,
 
 The vendor still does not call a block explorer. The txid is the one the watcher reported. The receipt is not a second confirmation. It is a record of the confirmation that already happened.
 
+## Trust
+
+Reputation reads `at` and `outcome` from version 1 receipts. A confirmed trade adds its amount. A rug subtracts it. A dispute or a refund adds nothing. The weight halves every 30 days. The rug registry is the set of vendors whose receipt outcome is `rugged`. Arbitration is a separate statement, `upheld` or `denied`, over the receipt hash. It names no address and moves no money. Credit between two keys is the decayed sum of confirmed trades between that buyer and that vendor, and nobody else.
+
 ## Left for later
 
-Image proxying and a copy-paste onion-plus-TURN deploy recipe are not required now that Tor-only is gone. The push box and the payment watcher are scripts, and neither is running. A locked phone still does not buzz, and a payment still cannot be confirmed, until those addresses are pasted in Connections. Reputation, recovery, and discovery wait until both are true.
+Image proxying and a copy-paste onion-plus-TURN deploy recipe are not required now that Tor-only is gone. The push box and the payment watcher are scripts, and neither is running. A locked phone still does not buzz, and a payment still cannot be confirmed, until those addresses are pasted in Connections. Recovery and discovery are not built. Reputation, the rug list, arbitration, and credit are functions over receipts. They are not a market and they do not move money.
 
 Media hosts are the three Blossom rows. Replace one, or type `off` to stop using it. Cipher does not fetch files on your behalf: a browser upload still comes from the device. Point the row at a Blossom server you run if that server should be the only one that sees the file.
 
