@@ -54,7 +54,7 @@ export function rowsFromScan(scan, address) {
       const counted = Number.isInteger(row.confirmations)
         ? row.confirmations
         : (tip != null && Number.isInteger(row.height) ? tip - row.height + 1 : 0);
-      return { txid: String(row.txid), address, confirmations: counted };
+      return { txid: String(row.txid), address, confirmations: counted, amount: row.amount };
     });
 }
 
@@ -63,15 +63,17 @@ export function reportFromTransfers(transfers, address, currency) {
   const hit = (Array.isArray(transfers) ? transfers : []).find((row) => row && (row.address === wanted || row.addr === wanted) && row.txid);
   if (!hit) return { pending: true };
   const confirmations = Number(hit.confirmations) || 0;
-  return {
+  const report = {
     source: 'watcher',
     txid: String(hit.txid),
     confirmations,
     confirmed: confirmations >= confirmationsRequired(currency),
   };
+  if (hit.amount != null) report.amount = hit.amount;
+  return report;
 }
 
-export async function checkPayment({ watcherUrl, address, currency, state, fetchImpl = globalThis.fetch } = {}) {
+export async function checkPayment({ watcherUrl, address, currency, state, amount, fetchImpl = globalThis.fetch } = {}) {
   const endpoint = paymentWatchUrl(watcherUrl, { address, currency });
   if (!String(address || '').trim()) throw new Error('This order has no payment address to check.');
   const token = new URL(endpoint).searchParams.get('token');
@@ -97,12 +99,14 @@ export async function checkPayment({ watcherUrl, address, currency, state, fetch
     txid: String(body.txid),
     confirmations: Number(body.confirmations) || 0,
   };
+  if (body.amount != null) report.amount = body.amount;
   try {
     const next = applyWatcherReport({
       state,
       watcherUrl,
       report,
       currency,
+      amount,
       threshold: confirmationsRequired(currency, scopedGet('confirmations', {}) || {}),
     });
     return { moved: true, state: next, report };

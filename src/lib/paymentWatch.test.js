@@ -72,7 +72,7 @@ test('wallet transfers become a watcher report, and a miss stays pending', () =>
 test('a stock-node scan of one address becomes a bitcoin report', () => {
   const scan = { height: 104, unspents: [{ txid: 'aa', height: 102, amount: 0.01 }] };
   assert.deepEqual(reportFromTransfers(rowsFromScan(scan, 'bcrt1q'), 'bcrt1q', 'btc'), {
-    source: 'watcher', txid: 'aa', confirmations: 3, confirmed: true,
+    source: 'watcher', txid: 'aa', confirmations: 3, confirmed: true, amount: 0.01,
   });
   const counted = { unspents: [{ txid: 'bb', confirmations: 1 }] };
   assert.equal(reportFromTransfers(rowsFromScan(counted, 'bc1q'), 'bc1q', 'btc').confirmed, false);
