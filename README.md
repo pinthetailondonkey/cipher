@@ -62,7 +62,7 @@ The installed app loads the files bundled in it. There is no update check. A che
 
 It buzzes only while the app is open, or the page is in the background with notification permission, until a push gateway is pasted in Connections. The row is empty. Nothing is contacted.
 
-`node scripts/notify-gateway.mjs` is that box. Paste its address on the Push gateway row. The phone fetches `/cipher-push.json`, subscribes with the browser's push API, and posts the subscription to `/subscribe`. The box watches the message relay for a kind-4 event that is tagged `t=msg` and addressed to that key, and sends `{ "kind": "message" }`. Typing indicators, read receipts, calls, and key bundles are not tagged, so they do not buzz. The notice is "New message" or "New order". The text is not in it. The box learns that a message arrived, not what it said.
+`node scripts/notify-gateway.mjs` is that box. Paste its address on the Push gateway row. The phone fetches `/cipher-push.json`, subscribes with the browser's push API, and posts the subscription to `/subscribe`. The box watches the message relay for a kind-4 event that is tagged `t=msg` or `t=call` and addressed to that key. A message sends `{ "kind": "message" }`. A call sends `{ "kind": "call" }`. Typing indicators, read receipts, and key bundles are not tagged, so they do not buzz. The notice is "New message", "New order", or "Incoming call". The text is not in it. The box learns that something arrived, not what it said.
 
 Web Push covers a browser tab and an installed PWA only. Delivery while that page is locked still goes through the browser's own push service: Google's on Chrome, Apple's on Safari. That is the pipe. There is no FCM key and no APNs key in this repo.
 
