@@ -34,8 +34,6 @@ export default function Wallet({ identity, onOpenChat }) {
   const dms = useChatStore((state) => state.dms);
   const chatProfiles = useChatStore((state) => state.profiles);
   const [showPanicConfirm, setShowPanicConfirm] = useState(false);
-  const panicWipeEnabled = useChatStore((s) => s.panicWipeEnabled);
-  const setPanicWipeEnabled = useChatStore((s) => s.setPanicWipeEnabled);
   const profiles = useProfiles([identity.pk])
   const defaultName = identity.npub ? identity.npub.slice(0, 10) : 'User'
   
