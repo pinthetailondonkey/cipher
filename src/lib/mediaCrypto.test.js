@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { resolveObjectURL } from 'node:buffer';
 import fs from 'node:fs';
 import test from 'node:test';
-import { decryptMedia, encryptMedia, isPrivateMedia, openPrivateMedia, uploadPrivateMedia } from './mediaCrypto.js';
+import { attachmentsFor, decryptMedia, encryptMedia, isPrivateMedia, openPrivateMedia, releasePrivateMedia, sendPrivateImage, uploadPrivateMedia } from './mediaCrypto.js';
 
 const jpeg = () => new Blob([new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3, 4, 5, 6, 7, 8])], { type: 'image/jpeg' });
 
@@ -44,7 +44,7 @@ test('a host that refuses the encrypted file fails the send, with no plaintext r
   await assert.rejects(() => uploadPrivateMedia(jpeg(), ['https://media.example'], refused), /415/);
   const composer = fs.readFileSync(new URL('../features/chat/useComposer.js', import.meta.url), 'utf8');
   assert.equal(composer.includes('uploadToBlossom'), false);
-  assert.match(composer, /uploadPrivateMedia\(compressedFile/);
+  assert.match(composer, /sendPrivateImage\(file, blossomServers\(\)\)/);
 });
 
 test('an encrypted photo goes to an http host and comes back, with a throwaway key bound to that host', async () => {
@@ -122,4 +122,63 @@ test('the media host rows name what the host learns', async () => {
     assert.match(row.sees, /each reader.s IP and when they opened it/);
     assert.match(row.sees, /Not the content/);
   }
+});
+
+const bytesOf = async (blob) => [...new Uint8Array(await blob.arrayBuffer())];
+
+test('the reference alone opens nothing; the reference with its key opens the file', async () => {
+  const { ciphertext, meta } = await encryptMedia(jpeg());
+  await assert.rejects(() => decryptMedia(ciphertext, { url: 'https://media.example/x' }));
+  await assert.rejects(() => decryptMedia(ciphertext, { mime: meta.mime }));
+  assert.deepEqual(await bytesOf(await decryptMedia(ciphertext, meta)), await bytesOf(jpeg()));
+});
+
+test('sending one file twice uses two keys and two different ciphertexts', async () => {
+  const uploads = [];
+  const upload = async (bytes) => { uploads.push(bytes); return { url: `https://media.example/${uploads.length}` }; };
+  const first = await uploadPrivateMedia(jpeg(), ['https://media.example'], upload);
+  const second = await uploadPrivateMedia(jpeg(), ['https://media.example'], upload);
+  assert.notEqual(first.key, second.key);
+  assert.notEqual(first.iv, second.iv);
+  assert.notDeepEqual([...uploads[0]], [...uploads[1]]);
+});
+
+test('a photo is compressed before it is encrypted, never after', async () => {
+  const original = new Blob([new Uint8Array([0xff, 0xd8, 0xff, 0xe1, 0x45, 0x78, 0x69, 0x66, 0, 0, 1, 2])], { type: 'image/jpeg' });
+  const stripped = new Blob([new Uint8Array([0xff, 0xd8, 0xff, 0xdb, 3, 4])], { type: 'image/jpeg' });
+  const seen = [];
+  const compress = async (file) => { seen.push(await bytesOf(file)); return stripped; };
+  let uploaded = null;
+  const upload = async (bytes) => { uploaded = bytes; return { url: 'https://media.example/p' }; };
+  const entry = await sendPrivateImage(original, ['https://media.example'], { compress, upload });
+  // The compressor got the plaintext original. If encryption ran first it would get ciphertext.
+  assert.deepEqual(seen, [await bytesOf(original)]);
+  // What was encrypted and uploaded is the compressed file, so the EXIF bytes are gone.
+  assert.deepEqual(await bytesOf(await decryptMedia(uploaded, entry)), await bytesOf(stripped));
+});
+
+test('a pre-encryption message still renders, and the new shape is decrypted', () => {
+  assert.deepEqual(attachmentsFor({ type: 'image', url: 'https://old.example/a.jpg' }), {
+    layout: 'single', items: [{ shape: 'plain', entry: { type: 'image', url: 'https://old.example/a.jpg' } }],
+  });
+  assert.deepEqual(attachmentsFor({ type: 'album', urls: ['https://old.example/a.jpg', ''] }).items, [{ shape: 'plain', entry: { url: 'https://old.example/a.jpg' } }]);
+  assert.equal(attachmentsFor({ type: 'audio', url: 'https://old.example/v.webm' }).items[0].shape, 'plain');
+  const entry = { url: 'https://new.example/x', key: 'k', iv: 'i', mime: 'image/jpeg' };
+  assert.deepEqual(attachmentsFor({ type: 'album', media: [entry] }), { layout: 'grid', items: [{ shape: 'private', entry }] });
+  assert.equal(attachmentsFor({ type: 'audio', ...entry }).items[0].shape, 'private');
+  assert.deepEqual(attachmentsFor({ type: 'text', message: 'hi' }), { layout: null, items: [] });
+});
+
+test('the blob URL is revoked when the last viewer lets go', async () => {
+  const { ciphertext, meta } = await encryptMedia(jpeg());
+  const entry = { url: 'https://media.example/revoke', ...meta };
+  const fetchImpl = async () => ({ ok: true, arrayBuffer: async () => ciphertext.buffer });
+  const a = await openPrivateMedia(entry, fetchImpl);
+  const b = await openPrivateMedia(entry, fetchImpl);
+  assert.equal(a, b);
+  releasePrivateMedia(entry);
+  assert.ok(resolveObjectURL(a));
+  releasePrivateMedia(entry);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(resolveObjectURL(a), undefined);
 });

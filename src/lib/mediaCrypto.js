@@ -1,13 +1,17 @@
 import { sha256 } from '@noble/hashes/sha2.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
 import { finalizeEvent, generateSecretKey } from 'nostr-tools';
+import { compressImage } from './imageCompression.js';
 
 // Chat photos and voice notes are encrypted on this device before they leave
 // it. The media host stores ciphertext under a throwaway upload key, so it
-// cannot read the file or tie it to the sender. The AES key travels inside
-// the already-encrypted message, so only the people who can read the message
-// can open the file. The host still sees the sender's IP at upload, and each
-// reader's IP and the time they opened it.
+// cannot read the file or tie it to the sender. The host still sees the
+// sender's IP at upload, and each reader's IP and the time they opened it.
+//
+// Where the key lives: every attachment gets its own random AES-256-GCM key
+// and IV. They sit in the message body, next to the URL, as
+// { url, key, iv, mime }, and that body is itself NIP-44 or group-epoch
+// encrypted. Nothing else holds the key. The URL alone opens nothing.
 
 function toBase64(bytes) {
   let binary = '';
@@ -103,24 +107,65 @@ export async function uploadPrivateMedia(file, servers, upload = uploadCiphertex
   return { url: blob.url, ...meta };
 }
 
+// A photo is re-encoded first, which drops EXIF and location, and encrypted
+// after. In the other order the canvas would get ciphertext and the
+// metadata would ride inside the encrypted file to every reader.
+export async function sendPrivateImage(file, servers, { compress = compressImage, upload = uploadCiphertext } = {}) {
+  const clean = await compress(file);
+  return uploadPrivateMedia(clean, servers, upload);
+}
+
 export function isPrivateMedia(entry) {
   return Boolean(entry && typeof entry === 'object' && entry.url && entry.key && entry.iv);
 }
 
+// What a bubble should draw. Messages from before encryption carry a plain
+// URL and still render as they did. A private entry is fetched and decrypted.
+export function attachmentsFor(content) {
+  const item = (entry) => ({ shape: isPrivateMedia(entry) ? 'private' : 'plain', entry });
+  if (content?.type === 'image' && content.url) return { layout: 'single', items: [item(content)] };
+  if (content?.type === 'audio' && content.url) return { layout: 'audio', items: [item(content)] };
+  if (content?.type === 'album') {
+    const entries = Array.isArray(content.media)
+      ? content.media.filter(isPrivateMedia)
+      : (Array.isArray(content.urls) ? content.urls.filter(Boolean).map((url) => ({ url })) : []);
+    if (entries.length) return { layout: 'grid', items: entries.map(item) };
+  }
+  return { layout: null, items: [] };
+}
+
 const opened = new Map();
 
+function cacheKeyOf(entry) {
+  return `${entry.url}#${entry.key}`;
+}
+
 // Fetches the ciphertext once per attachment and hands back a blob: URL.
+// Each open is matched by a release; the last release revokes the URL.
 export function openPrivateMedia(entry, fetchImpl = globalThis.fetch) {
-  const cacheKey = `${entry.url}#${entry.key}`;
-  if (!opened.has(cacheKey)) {
+  const cacheKey = cacheKeyOf(entry);
+  let record = opened.get(cacheKey);
+  if (!record) {
     const pending = (async () => {
       const response = await fetchImpl(entry.url);
       if (!response.ok) throw new Error(`The media host answered ${response.status}.`);
       const blob = await decryptMedia(new Uint8Array(await response.arrayBuffer()), entry);
       return URL.createObjectURL(blob);
     })();
-    opened.set(cacheKey, pending);
+    record = { pending, refs: 0 };
+    opened.set(cacheKey, record);
     pending.catch(() => opened.delete(cacheKey));
   }
-  return opened.get(cacheKey);
+  record.refs += 1;
+  return record.pending;
+}
+
+export function releasePrivateMedia(entry) {
+  const cacheKey = cacheKeyOf(entry);
+  const record = opened.get(cacheKey);
+  if (!record) return;
+  record.refs -= 1;
+  if (record.refs > 0) return;
+  opened.delete(cacheKey);
+  record.pending.then((src) => URL.revokeObjectURL(src), () => {});
 }
