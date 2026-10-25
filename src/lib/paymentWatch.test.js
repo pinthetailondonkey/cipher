@@ -14,11 +14,15 @@ test('an empty watcher and a public explorer are refused before any request', as
     /block explorer/,
   );
   assert.equal(isPublicExplorer('https://xmr.xmrchain.net/tx/ab'), true);
+  await assert.rejects(
+    () => checkPayment({ watcherUrl: 'https://watch.example/payment', address: '8abc', currency: 'xmr', state: 'address_issued', fetchImpl }),
+    /needs a token/,
+  );
   assert.equal(called, false);
 });
 
 test('a watcher you run can mark seen, then confirmed, and silence is not a success', async () => {
-  const watcherUrl = 'https://watch.example/payment';
+  const watcherUrl = 'https://watch.example/payment?token=secret';
   assert.equal(new URL(paymentWatchUrl(watcherUrl, { address: '8abc', currency: 'xmr' })).searchParams.get('address'), '8abc');
   const pending = await checkPayment({
     watcherUrl,
