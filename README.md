@@ -24,7 +24,34 @@ If you are developing a production application, we recommend using TypeScript wi
 - The Nostr outbox persists rejected events, displays delivery state, retries with capped exponential backoff, and flushes on network/relay reconnection. A service worker caches the app shell and same-origin build assets for offline reopening; relay delivery still requires a connection.
 - Content-Security-Policy allows HTTPS images (`img-src` includes `https:`), so remote profile pictures and Blossom images can render. Remote audio and video stay blocked: `media-src` is `'self' blob:` only. `connect-src` still allows `https:` plus the listed Nostr relays.
 - `Strict-Transport-Security` is `max-age=63072000; includeSubDomains; preload`. The production host already sends that policy; `vercel.json` now declares it as well.
-- The installed shell loads the bundled files in `dist`. `capacitor.config.json` has no `server.url`. Putting that field back on `https://sonic-cobalt-4m6q5vj.vercel.app` makes every native open hit Vercel. An onion address is not set here, because none has been issued. The website is still that Vercel host until you serve the mirror yourself. `vercel.json` no longer matches the live response: `upgrade-insecure-requests` is gone, and `connect-src` now allows `http:`, `ws:`, `stun:`, `stuns:`, `turn:`, and `turns:` so a pasted relay or `.onion` is not blocked. `img-src` allows `https:` and `http://*.onion` only, so a clearnet `http` image does not load. The live host keeps the old policy until the next deploy. `cipher-beta-eight.vercel.app` is a different Vercel project, so nothing in this repo's `vercel.json` — including the 308 to sonic — runs on that host. Rechecked 2026-10-24 it still returns HTTP 200 with a different body (`/assets/index-DuivEAWZ.js`), no `Content-Security-Policy`, and no `X-Content-Type-Options`. Treat `https://cipher-beta-eight.vercel.app` as live and reachable until that project is deleted, or until the hostname is attached to this project so the redirect can take effect. This repo cannot delete that project. There is no custom domain.
+- The installed shell loads the bundled files in `dist`. `capacitor.config.json` has no `server.url`. Putting that field back on `https://sonic-cobalt-4m6q5vj.vercel.app` makes every native open hit Vercel. The website is still that Vercel host until you serve the mirror yourself. `vercel.json` no longer matches the live response: `upgrade-insecure-requests` is gone, and `connect-src` now allows `http:`, `ws:`, `stun:`, `stuns:`, `turn:`, and `turns:` so a pasted relay or `.onion` is not blocked. `img-src` allows `https:` and `http://*.onion` only, so a clearnet `http` image does not load. The live host keeps the old policy until the next deploy. What the Vercel projects are, which one is canonical, and how a deploy is verified: see [Vercel](#vercel).
+
+## Vercel
+
+The team sits under the Vercel org id `team_Bv4z3VGkmdizi5WrM1btO2ih` and holds three projects. That comes from the dashboard, not from this repo: `.vercel/` is gitignored (the checkout carries `.vercel/repo.json`, not git), so the repo can name only one of the three.
+
+- `cipher` is the project this repo links to. `.vercel/repo.json` in the checkout names it with `prj_mlaczix1ryrdsu5cuO0Bqy5n4JA1` under that org id. Its host is `https://sonic-cobalt-4m6q5vj.vercel.app`, listed in `src/lib/egress.js` as the App host.
+- `https://cipher-beta-eight.vercel.app` is one of the other two. Older text called it a different project serving a different build (rechecked 2026-10-24: HTTP 200, `/assets/index-DuivEAWZ.js`, no `Content-Security-Policy`, no `X-Content-Type-Options`) and said to treat it as live until the hostname was attached to this project. That claim is stale. Rechecked 2026-10-25, the hostname is attached and this repo's `vercel.json` redirect now runs on it: it answers 308 with `location: https://sonic-cobalt-4m6q5vj.vercel.app/`. It is not reachable as an app anymore.
+- The third project is not named anywhere in the repo. Its name and role is an open question below.
+
+Canonical: `vercel.json` declares a permanent 308 from `cipher-beta-eight.vercel.app` to `https://sonic-cobalt-4m6q5vj.vercel.app/$1`, so sonic is the destination this repo points every other host at, and the redirect now takes effect on the one other host it governs. Whether any further host must redirect, and which of the three projects the other hostnames belong to, the repo does not establish. Nothing here makes sonic canonical beyond being that redirect destination.
+
+Checks made on 2026-10-25, live:
+
+- A deploy is verified by the page itself, never by a status code. Reading HTTP 200 as success is what left the stale beta-eight text standing: a redirect page, a gate, or another project's page can all answer 200. The page that proves the deploy is the one this repo ships: `<title>Cipher</title>` from `index.html`, and the asset bundle it loads matches a build of the checked-out commit.
+- The live page at sonic answers with `<title>Cipher</title>`, and its bundle is `assets/index-Cu7vDotz.js`, last-modified 2026-10-24 19:25:57 UTC. No build of this repo's current `main` produces that bundle name, so the live deploy predates main as it stands now.
+- The live host still sends the old policy: `upgrade-insecure-requests` present, `img-src` without `http://*.onion`, `connect-src` `https:` plus the relay list. `vercel.json` and the live response still disagree until a redeploy picks the current file up.
+- What the live host does send, matching `vercel.json`: `Strict-Transport-Security` `max-age=63072000; includeSubDomains; preload`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, and the `Permissions-Policy` line.
+
+There is no custom domain. No domain other than the two hosts above appears anywhere in the repo or in `vercel.json`.
+
+SSO protection (`ssoProtection`) is disabled on the projects. That is a dashboard fact; the repo cannot confirm it, and a project with it on would answer the page fetch with a Vercel sign-in screen instead of `<title>Cipher</title>` — which is exactly the check the bullets above run.
+
+Open questions, nothing here settles them:
+
+- What are the other two Vercel projects' names, and which, if any, still serves traffic of its own?
+- What is the team's human name behind `team_Bv4z3VGkmdizi5WrM1btO2ih`?
+- Which commit is the live sonic deploy cut from, and when does a redeploy carry the current `vercel.json` — the new CSP — onto the host?
 
 ## Tor
 
