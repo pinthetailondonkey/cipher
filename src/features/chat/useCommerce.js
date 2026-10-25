@@ -203,7 +203,15 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
           type: 'danger', confirmText: 'Submit',
           onConfirm: async (reason) => {
             if (!reason || !reason.trim()) return;
-            const saved = scopedGet(`receipt_${msg.id}`, null);
+            let saved = scopedGet(`receipt_${msg.id}`, null);
+            if (saved?.body && identity?.sk) {
+              try {
+                saved = signReceipt(identity.sk, saved.body, saved);
+                scopedSet(`receipt_${msg.id}`, saved);
+              } catch (error) {
+                console.error('[orders] Receipt was not co-signed:', error);
+              }
+            }
             const payload = {
               type: 'order_update',
               orderId: msg.id,
