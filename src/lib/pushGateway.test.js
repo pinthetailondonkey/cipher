@@ -1,16 +1,20 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
-import { eventShouldBuzz, notificationFromPush, payloadShouldBuzz, registerWithGateway, withBuzzTag } from './pushGateway.js';
+import { eventShouldBuzz, eventShouldRing, notificationFromPush, payloadShouldBuzz, registerWithGateway, withBuzzTag } from './pushGateway.js';
 
 test('typing, read receipts, and key bundles are not tagged, so they do not buzz', () => {
   assert.equal(payloadShouldBuzz({ type: 'typing' }), false);
   assert.equal(payloadShouldBuzz({ type: 'read', at: 1 }), false);
   assert.equal(payloadShouldBuzz({ t: 'gkey', gid: 'g', keys: [] }), false);
-  assert.equal(payloadShouldBuzz({ type: 'call', state: 'ringing' }), false);
   const typing = withBuzzTag([['p', 'aa']], { type: 'typing' });
   assert.equal(typing.some((tag) => tag[0] === 't'), false);
   assert.equal(eventShouldBuzz({ tags: typing }), false);
+  const call = withBuzzTag([['p', 'aa']], { type: 'call', state: 'ringing' });
+  assert.equal(call.some((tag) => tag[0] === 't' && tag[1] === 'call'), true);
+  assert.equal(call.some((tag) => tag[1] === 'msg'), false);
+  assert.equal(eventShouldRing({ tags: call }), true);
+  assert.equal(eventShouldBuzz({ tags: call }), false);
   const message = withBuzzTag([['p', 'aa']], { message: 'hello' });
   assert.equal(eventShouldBuzz({ tags: message }), true);
   const order = withBuzzTag([['p', 'aa']], { type: 'order_request' });
@@ -24,6 +28,7 @@ test('a push notice never carries the message', () => {
     data: { kind: 'message' },
   });
   assert.equal(notificationFromPush({ kind: 'order', text: '2g of whatever' }).title, 'New order');
+  assert.equal(notificationFromPush({ kind: 'call', state: 'ringing' }).title, 'Incoming call');
   assert.equal(notificationFromPush('meet at the corner').body, 'Open Cipher to view it.');
   const sw = fs.readFileSync(new URL('../../public/sw.js', import.meta.url), 'utf8');
   assert.equal(sw.includes('event.data.text'), false);
