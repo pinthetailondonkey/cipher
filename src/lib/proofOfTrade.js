@@ -17,6 +17,11 @@ function hexToBytes(hex) {
   return out;
 }
 
+function requireAt(value) {
+  if (!Number.isInteger(value) || value <= 0) throw new Error('The receipt needs a time.');
+  return value;
+}
+
 export function canonicalReceipt(input = {}) {
   return {
     v: 1,
@@ -27,7 +32,7 @@ export function canonicalReceipt(input = {}) {
     address: String(input.address || ''),
     amount: normalizeAmount(input.amount ?? '0'),
     txid: String(input.txid || ''),
-    at: Number.isInteger(input.at) && input.at >= 0 ? input.at : 0,
+    at: requireAt(input.at),
     outcome: ['confirmed', 'rugged', 'refunded'].includes(input.outcome) ? input.outcome : '',
   };
 }
