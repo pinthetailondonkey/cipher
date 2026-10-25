@@ -90,7 +90,15 @@ export function acceptPayment(payload, secretKey) {
     const already = verifyReceipt(payload.receipt);
     const receipt = already ? payload.receipt : coSignPayment(payload.receipt, secretKey);
     if (!verifyReceipt(receipt)) return null;
-    return { receipt, added: !already };
+    let published = payload.published || null;
+    if (published) {
+      try {
+        published = signPublicView(secretKey, published);
+      } catch {
+        published = payload.published;
+      }
+    }
+    return { receipt, added: !already, published };
   } catch {
     return null;
   }
@@ -133,22 +141,52 @@ export function publicReceipt(signed) {
   });
 }
 
+function publicMessage(body) {
+  return new TextEncoder().encode(JSON.stringify(body));
+}
+
 export function signPublicView(secretKey, view) {
   const body = publicBody(view);
-  const message = new TextEncoder().encode(JSON.stringify(body));
+  const message = publicMessage(body);
   const sk = secretKey instanceof Uint8Array ? secretKey : hexToBytes(secretKey);
   const pub = bytesToHex(schnorr.getPublicKey(sk));
-  if (pub !== body.vendor) throw new Error('Only the vendor signs the public view.');
-  return { ...body, sig: bytesToHex(schnorr.sign(message, sk)) };
+  const role = pub === body.buyer ? 'buyer' : pub === body.vendor ? 'vendor' : '';
+  if (!role) throw new Error('That key is neither the buyer nor the vendor.');
+  const sigs = { ...(view?.sigs || {}) };
+  if (view?.sig && !sigs.vendor) sigs.vendor = view.sig;
+  sigs[role] = bytesToHex(schnorr.sign(message, sk));
+  const out = { ...body, sigs };
+  if (!sigs.buyer && sigs.vendor) out.sig = sigs.vendor;
+  return out;
+}
+
+function signatureHolds(sig, message, pubkey) {
+  if (!sig || !pubkey) return false;
+  return schnorr.verify(hexToBytes(sig), message, hexToBytes(pubkey));
 }
 
 export function verifyPublicView(view) {
-  if (!view?.sig || !view.vendor) return false;
+  if (!view?.sigs?.buyer || !view?.sigs?.vendor) return false;
   if (view.address || view.txid || view.body) return false;
-  const body = publicBody(view);
-  const message = new TextEncoder().encode(JSON.stringify(body));
+  if (String(view.buyer || '').toLowerCase() === String(view.vendor || '').toLowerCase()) return false;
   try {
-    return schnorr.verify(hexToBytes(view.sig), message, hexToBytes(body.vendor));
+    const body = publicBody(view);
+    const message = publicMessage(body);
+    const buyerOk = signatureHolds(view.sigs.buyer, message, body.buyer);
+    const vendorOk = signatureHolds(view.sigs.vendor, message, body.vendor);
+    return buyerOk && vendorOk;
+  } catch {
+    return false;
+  }
+}
+
+export function verifyVendorView(view) {
+  if (!view || view.sigs?.buyer) return false;
+  if (view.address || view.txid || view.body) return false;
+  const sig = view.sigs?.vendor || view.sig;
+  try {
+    const body = publicBody(view);
+    return signatureHolds(sig, publicMessage(body), body.vendor);
   } catch {
     return false;
   }
@@ -193,4 +231,14 @@ export function rankVolume(events) {
   return [...totals.values()]
     .sort((a, b) => (a.units > b.units ? -1 : a.units < b.units ? 1 : a.vendor.localeCompare(b.vendor)))
     .map(({ vendor, currency, units }) => ({ vendor, currency, volume: unitsToAmount(units, currency) }));
+}
+
+export function rankVolumeByStanding(events) {
+  const countersigned = [];
+  const vendor = [];
+  for (const event of events || []) {
+    if (verifyPublicView(event)) countersigned.push(event);
+    else if (verifyVendorView(event)) vendor.push(event);
+  }
+  return { countersigned: rankVolume(countersigned), vendor: rankVolume(vendor) };
 }

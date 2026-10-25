@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { schnorr } from '@noble/curves/secp256k1.js';
-import { acceptPayment, canonicalReceipt, normalizeAmount, publicReceipt, rankVolume, receiptAtPayment, signPublicView, signReceipt, verifyPublicView, verifyReceipt } from './proofOfTrade.js';
+import { acceptPayment, canonicalReceipt, normalizeAmount, publicReceipt, rankVolume, rankVolumeByStanding, receiptAtPayment, signPublicView, signReceipt, verifyPublicView, verifyReceipt, verifyVendorView } from './proofOfTrade.js';
 
 function hex(bytes) {
   return [...bytes].map((byte) => byte.toString(16).padStart(2, '0')).join('');
@@ -51,10 +51,21 @@ test('both parties sign the same bytes, and one bad signature fails', () => {
   });
   assert.equal(JSON.stringify(view).includes('8secret'), false);
   assert.equal(JSON.stringify(view).includes('deadbeef'), false);
-  const published = signPublicView(vendorKey, view);
+  const vendorView = signPublicView(vendorKey, view);
+  assert.equal(verifyPublicView(vendorView), false);
+  assert.equal(verifyVendorView(vendorView), true);
+  const published = signPublicView(buyerKey, vendorView);
   assert.equal(verifyPublicView(published), true);
   assert.equal(verifyPublicView({ ...published, amount: '9' }), false);
   assert.equal('body' in published, false);
+  assert.equal('address' in published, false);
+  const split = rankVolumeByStanding([published, vendorView, view]);
+  assert.equal(split.countersigned[0].volume, '2');
+  assert.equal(split.vendor[0].vendor, body.vendor);
+  const coSigned = acceptPayment({
+    type: 'order_update', status: 'paid', orderId: body.orderId, receipt: vendorSigned, published: vendorView,
+  }, buyerKey);
+  assert.equal(verifyPublicView(coSigned.published), true);
   const ranked = rankVolume([
     view,
     { v: 1, hash: 'aa', amount: '5', currency: 'xmr', buyer: body.buyer, vendor: 'ff' },
