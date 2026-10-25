@@ -7,6 +7,7 @@ Nostr messenger and direct-deal shop. Vite + React. See AGENTS.md if present.
 - One change per commit. Message says what and why.
 - npm run build, npm run lint and npm test must be green before a commit.
 - No new dependencies without a reason.
+- Read docs/VOICE.md before changing user-facing text. Words only, do not restyle.
 - Push each commit. Pin every read to the SHA, never to /main.
 
 ## Facts
