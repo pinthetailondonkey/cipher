@@ -8,6 +8,8 @@ import { securingPhase } from '../lib/crypto/groupKeyRequest';
 import { useChatStore } from '../store/chatStore';
 import LinkPreview, { firstUrl } from './chat/LinkPreview';
 import Picture from './ui/Picture';
+import { PrivateAudio, PrivateImage } from './ui/PrivateMedia';
+import { isPrivateMedia } from '../lib/mediaCrypto';
 
 const EMPTY_REACTIONS = [];
 const REACTION_CHOICES = ['❤️', '👍', '🔥', '😂', '😮', '😢', '🙏'];
@@ -204,18 +206,27 @@ export default function MessageBubble({ message, data, onAction, senderName, isP
         {(content.type === 'cipher_order' || content.type === 'order_request') && !isSender && (content.status === 'accepted' || content.paymentState === 'seen' || content.paymentState === 'address_issued') && content.paymentState !== 'confirmed' && (
           <button type="button" onClick={(event) => { event.stopPropagation(); onAction?.('check_chain', { ...message, data: content }); }} className="mb-1 min-h-11 text-left text-[15px] font-semibold text-white">Check the chain</button>
         )}
-        {content.type === 'image' && (
-          <Picture src={content.url} link alt="Shared image" loading="lazy" className="max-h-64 max-w-full rounded-xl object-contain" />
+        {content.type === 'image' && (isPrivateMedia(content)
+          ? <PrivateImage entry={content} className="max-h-64 max-w-full rounded-xl object-contain" />
+          : <Picture src={content.url} link alt="Shared image" loading="lazy" className="max-h-64 max-w-full rounded-xl object-contain" />
         )}
-        {content.type === 'album' && Array.isArray(content.urls) && (
+        {content.type === 'album' && Array.isArray(content.media) && (
+          <div className="grid grid-cols-2 gap-1">
+            {content.media.filter(isPrivateMedia).map((entry) => (
+              <PrivateImage key={entry.url} entry={entry} className="h-28 w-full rounded-lg object-cover" />
+            ))}
+          </div>
+        )}
+        {content.type === 'album' && !Array.isArray(content.media) && Array.isArray(content.urls) && (
           <div className="grid grid-cols-2 gap-1">
             {content.urls.map((url) => (
               <Picture key={url} src={url} link alt="Shared image" loading="lazy" className="h-28 w-full rounded-lg object-cover" />
             ))}
           </div>
         )}
-        {content.type === 'audio' && content.url && (
-          <audio controls preload="metadata" src={content.url} className="h-8 max-w-full" onClick={(event) => event.stopPropagation()} />
+        {content.type === 'audio' && content.url && (isPrivateMedia(content)
+          ? <PrivateAudio entry={content} className="h-8 max-w-full" />
+          : <audio controls preload="metadata" src={content.url} className="h-8 max-w-full" onClick={(event) => event.stopPropagation()} />
         )}
         {content.type === 'product' && <Picture src={content.image} alt="" loading="lazy" className="mb-1 max-h-40 rounded-xl object-cover" />}
         {content.type === 'product' && isPinnedListing && (
@@ -268,7 +279,7 @@ export default function MessageBubble({ message, data, onAction, senderName, isP
             ))}
           </div>
         )}
-        {!text && !content.url && !content.urls && !paymentRows.length && !['image', 'audio', 'product', 'cipher_order', 'order_request', 'order_update', 'text'].includes(content.type) && (
+        {!text && !content.url && !content.urls && !content.media && !paymentRows.length && !['image', 'audio', 'product', 'cipher_order', 'order_request', 'order_update', 'text'].includes(content.type) && (
           <p className="text-[13px] text-white/45">Couldn't open</p>
         )}
       </div>
