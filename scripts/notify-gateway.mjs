@@ -11,7 +11,7 @@ import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
 import { SimplePool } from 'nostr-tools';
-import { eventShouldBuzz, eventShouldRing } from '../src/lib/pushGateway.js';
+import { eventShouldBuzz, eventShouldOrder, eventShouldRing } from '../src/lib/pushGateway.js';
 import { keysReady, sendNative } from '../src/lib/nativePushSend.js';
 
 if (fs.existsSync('.env')) process.loadEnvFile('.env');
@@ -161,9 +161,9 @@ function watch() {
     ...(state.native || []).map((row) => row.pubkey),
   ].filter(Boolean))];
   if (!authors.length || !relays.length) return;
-  const sub = pool.subscribeMany(relays, { kinds: [4], '#p': authors, '#t': ['msg', 'call'] }, {
+  const sub = pool.subscribeMany(relays, { kinds: [4], '#p': authors, '#t': ['msg', 'order', 'call'] }, {
     onevent(event) {
-      const kind = eventShouldRing(event) ? 'call' : eventShouldBuzz(event) ? 'message' : null;
+      const kind = eventShouldRing(event) ? 'call' : eventShouldOrder(event) ? 'order' : eventShouldBuzz(event) ? 'message' : null;
       if (!kind) return;
       const who = event.tags?.find((tag) => tag[0] === 'p')?.[1];
       if (who) notify(who, kind).catch((error) => console.error('[push]', error.message));
