@@ -58,9 +58,22 @@ export function rowsFromScan(scan, address) {
     });
 }
 
+function largestUnspent(rows) {
+  // A receipt names one transaction. Summing every unspent would cover the
+  // order and then have no txid to sign, so the report names the largest.
+  // Two of the same size take the greater txid, which does not change between scans.
+  return [...rows].sort((a, b) => {
+    const left = Number(a.amount) || 0;
+    const right = Number(b.amount) || 0;
+    if (left !== right) return right - left;
+    return String(b.txid).localeCompare(String(a.txid));
+  })[0];
+}
+
 export function reportFromTransfers(transfers, address, currency) {
   const wanted = String(address || '').trim();
-  const hit = (Array.isArray(transfers) ? transfers : []).find((row) => row && (row.address === wanted || row.addr === wanted) && row.txid);
+  const rows = (Array.isArray(transfers) ? transfers : []).filter((row) => row && (row.address === wanted || row.addr === wanted) && row.txid);
+  const hit = rows.length ? largestUnspent(rows) : null;
   if (!hit) return { pending: true };
   const confirmations = Number(hit.confirmations) || 0;
   const report = {
