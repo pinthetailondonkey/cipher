@@ -11,7 +11,7 @@ import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
 import { SimplePool } from 'nostr-tools';
-import { eventShouldBuzz } from '../src/lib/pushGateway.js';
+import { eventShouldBuzz, eventShouldRing } from '../src/lib/pushGateway.js';
 
 const port = Number(process.env.PUSH_PORT || 8787);
 const dir = process.env.CIPHER_PUSH_DIR || path.join(process.cwd(), 'data', 'push-gateway');
@@ -52,13 +52,15 @@ if (!state.publicKey || !state.privateKey) {
 webpush.setVapidDetails('mailto:cipher@localhost', state.publicKey, state.privateKey);
 
 async function notify(pubkey, kind) {
-  const last = recent.get(pubkey) || 0;
+  const recentKey = `${pubkey}:${kind}`;
+  const last = recent.get(recentKey) || 0;
   if (Date.now() - last < 15000) return;
-  recent.set(pubkey, Date.now());
+  recent.set(recentKey, Date.now());
+  const notice = kind === 'order' || kind === 'call' ? kind : 'message';
   const targets = state.subs.filter((row) => row.pubkey === pubkey);
   await Promise.all(targets.map(async (row) => {
     try {
-      await webpush.sendNotification(row.subscription, JSON.stringify({ kind: kind === 'order' ? 'order' : 'message' }));
+      await webpush.sendNotification(row.subscription, JSON.stringify({ kind: notice }));
     } catch (error) {
       console.error('[push] Delivery failed:', error?.statusCode || error?.message);
       if (error?.statusCode === 404 || error?.statusCode === 410) {
@@ -119,11 +121,12 @@ function watch() {
   try { closer(); } catch { /* the previous socket is already gone */ }
   const authors = [...new Set(state.subs.map((row) => row.pubkey).filter(Boolean))];
   if (!authors.length || !relays.length) return;
-  const sub = pool.subscribeMany(relays, { kinds: [4], '#p': authors, '#t': ['msg'] }, {
+  const sub = pool.subscribeMany(relays, { kinds: [4], '#p': authors, '#t': ['msg', 'call'] }, {
     onevent(event) {
-      if (!eventShouldBuzz(event)) return;
+      const kind = eventShouldRing(event) ? 'call' : eventShouldBuzz(event) ? 'message' : null;
+      if (!kind) return;
       const who = event.tags?.find((tag) => tag[0] === 'p')?.[1];
-      if (who) notify(who, 'message').catch((error) => console.error('[push]', error.message));
+      if (who) notify(who, kind).catch((error) => console.error('[push]', error.message));
     },
   });
   closer = () => sub.close();

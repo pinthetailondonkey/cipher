@@ -1,22 +1,29 @@
 // A locked phone buzzes only after a gateway you run is pasted in Connections.
-// The notice is "New message" or "New order". The gateway is not given the text.
-// Only an event tagged t=msg is a real message. Typing, receipts, calls, and key bundles are not.
+// The notice is "New message", "New order", or "Incoming call". The gateway is not given the text.
+// Messages are tagged t=msg. Calls are tagged t=call. Typing, receipts, and key bundles are not.
 
 export const BUZZ_TAG = 'msg';
-const SILENT_TYPES = new Set(['typing', 'read', 'pin', 'call', 'gkey']);
+export const CALL_TAG = 'call';
+const SILENT_TYPES = new Set(['typing', 'read', 'pin', 'gkey']);
+
+export function buzzTagFor(payload) {
+  if (!payload || typeof payload !== 'object') return null;
+  if (payload.t === 'gkey' || payload.type === 'gkey') return null;
+  if (payload.type === 'call' || payload.t === 'call') return CALL_TAG;
+  if (SILENT_TYPES.has(payload.type) || SILENT_TYPES.has(payload.t)) return null;
+  return BUZZ_TAG;
+}
 
 export function payloadShouldBuzz(payload) {
-  if (!payload || typeof payload !== 'object') return false;
-  if (payload.t === 'gkey' || payload.type === 'gkey') return false;
-  if (SILENT_TYPES.has(payload.type) || SILENT_TYPES.has(payload.t)) return false;
-  return true;
+  return buzzTagFor(payload) != null;
 }
 
 export function withBuzzTag(tags, payload) {
   const next = Array.isArray(tags) ? tags.map((tag) => tag.slice()) : [];
-  if (!payloadShouldBuzz(payload)) return next;
-  if (next.some((tag) => tag[0] === 't' && tag[1] === BUZZ_TAG)) return next;
-  next.push(['t', BUZZ_TAG]);
+  const tag = buzzTagFor(payload);
+  if (!tag) return next;
+  if (next.some((row) => row[0] === 't' && row[1] === tag)) return next;
+  next.push(['t', tag]);
   return next;
 }
 
@@ -24,10 +31,21 @@ export function eventShouldBuzz(event) {
   return Array.isArray(event?.tags) && event.tags.some((tag) => tag[0] === 't' && tag[1] === BUZZ_TAG);
 }
 
+export function eventShouldRing(event) {
+  return Array.isArray(event?.tags) && event.tags.some((tag) => tag[0] === 't' && tag[1] === CALL_TAG);
+}
+
+export function pushKind(event) {
+  if (eventShouldRing(event)) return 'call';
+  if (eventShouldBuzz(event)) return 'message';
+  return null;
+}
+
 export function notificationFromPush(raw) {
-  const kind = raw && typeof raw === 'object' && raw.kind === 'order' ? 'order' : 'message';
+  const kind = raw && typeof raw === 'object' && (raw.kind === 'order' || raw.kind === 'call') ? raw.kind : 'message';
+  const title = kind === 'order' ? 'New order' : kind === 'call' ? 'Incoming call' : 'New message';
   return {
-    title: kind === 'order' ? 'New order' : 'New message',
+    title,
     body: 'Open Cipher to view it.',
     data: { kind },
   };

@@ -60,8 +60,9 @@ self.addEventListener('push', (event) => {
   try {
     const data = event.data?.json();
     if (data && data.kind === 'order') kind = 'order';
+    if (data && data.kind === 'call') kind = 'call';
   } catch { /* a push with no JSON is still just "new message" */ }
-  const title = kind === 'order' ? 'New order' : 'New message';
+  const title = kind === 'order' ? 'New order' : kind === 'call' ? 'Incoming call' : 'New message';
   event.waitUntil(self.registration.showNotification(title, {
     body: 'Open Cipher to view it.',
     icon: '/icon-192.png',
