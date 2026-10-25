@@ -1,5 +1,5 @@
 import { useChatStore } from '../../store/chatStore';
-import { db, saveMessage } from '../../db';
+import { db, patchMessage, saveMessage } from '../../db';
 import { scopedGet, scopedSet } from '../../lib/storage';
 import { getOrderPaymentMethods } from '../../lib/vendorPayments';
 import { nextPaymentState, orderCoinAmount } from '../../lib/paymentState';
@@ -18,13 +18,19 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
   const activeDm = useChatStore((s) => s.activeDm);
   const setBroadcastProduct = useChatStore((s) => s.setBroadcastProduct);
 
-  const updateLocalOrder = (peerPubkey, orderId, updateData) => {
+  // The screen and the database both take the change. A history fetch rebuilds
+  // the chat from the database, so a change kept only on screen is lost on reload.
+  const updateLocalOrder = async (peerPubkey, orderId, updateData) => {
     useChatStore.getState().setDms(prev => {
       const msgs = prev[peerPubkey] || [];
-      const updated = msgs.map(m => m.id === orderId ? { ...m, data: { ...m.data, ...updateData } } : m);
+      const updated = msgs.map(m => m.id === orderId
+        ? { ...m, localPatch: { ...(m.localPatch || {}), ...updateData }, data: { ...m.data, ...updateData } }
+        : m);
       return { ...prev, [peerPubkey]: updated };
     });
+    return patchMessage(orderId, updateData);
   };
+  const NOT_SAVED = 'It was not saved on this device and will be lost on reload.';
 
   const deliverOrderUpdate = async (peer, payload, localPatch, okText) => {
     let result;
@@ -40,8 +46,9 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
       setToast({ type: 'error', message: result?.error || 'The order update did not send.' });
       return false;
     }
-    updateLocalOrder(peer, payload.orderId, localPatch);
-    setToast({ type: 'success', message: result.queued ? `${okText} It will send when connected.` : okText });
+    const saved = await updateLocalOrder(peer, payload.orderId, localPatch);
+    const sentText = result.queued ? `${okText} It will send when connected.` : okText;
+    setToast(saved ? { type: 'success', message: sentText } : { type: 'error', message: `${sentText} ${NOT_SAVED}` });
     setSelectedMessage(null);
     return true;
   };
@@ -95,14 +102,15 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
             setSelectedMessage(null);
             return;
           }
-          updateLocalOrder(msg.pubkey, msg.id, {
+          const saved = await updateLocalOrder(msg.pubkey, msg.id, {
             status: 'accepted',
             paymentState: payload.paymentState,
             paymentMethods: payload.paymentMethods,
             coinAmount,
             coinCurrency,
           });
-          setToast({ type: 'success', message: result.queued ? 'Acceptance queued; it will send when connected.' : 'Order accepted' });
+          const acceptedText = result.queued ? 'Acceptance queued; it will send when connected.' : 'Order accepted';
+          setToast(saved ? { type: 'success', message: acceptedText } : { type: 'error', message: `${acceptedText} ${NOT_SAVED}` });
           setSelectedMessage(null);
         };
         const preference = msg.data.paymentMethod || 'btc';
