@@ -4,7 +4,7 @@ const STORAGE_KEY = 'cipher_network';
 // `called: false` is a host the old page policy allowed and the app does not use.
 export const EGRESS = [
   { id: 'group-relay', role: 'Group relay', url: 'wss://groups.aegispayhq.com', sees: 'Your IP, and every group you open', required: true },
-  { id: 'dm-relay', role: 'Message relay', url: 'wss://relay.primal.net', sees: 'Your IP, and who you message', required: true },
+  { id: 'dm-relay', role: 'Message relay', url: 'wss://relay.primal.net', sees: 'Your IP, who you message, and whether each one is a message, an order, or a call. That label is on every message in plain text, so anyone who reads this relay sees it too. The push gateway needs it, because it cannot read the message. The text itself stays encrypted.', required: true },
   { id: 'profile-nos', role: 'Profile relay', url: 'wss://nos.lol', sees: 'Your IP when a name or profile is published' },
   { id: 'profile-damus', role: 'Profile relay', url: 'wss://relay.damus.io', sees: 'Your IP when a profile is saved' },
   { id: 'profile-purple', role: 'Profile relay', url: 'wss://purplepag.es', sees: 'Your IP when profiles are loaded' },
@@ -25,7 +25,7 @@ export const EGRESS = [
   { id: 'app-host', role: 'App host', url: 'https://sonic-cobalt-4m6q5vj.vercel.app', hint: '', sees: 'Your IP if you open the website here. The installed app loads its own files and does not contact this host when it opens.', app: true },
   { id: 'nip05', role: 'Name lookup', url: '', hint: 'The host after the @', sees: 'Your IP and the name you look up. The host is whatever sits after the @.', dynamic: true },
   { id: 'explorer', role: 'Payment watcher', url: '', hint: 'Not set', sees: 'Nothing until you paste a watcher you run. This device does not ask a block explorer. Until then a payment cannot be marked seen or confirmed from the chain.' },
-  { id: 'push', role: 'Push gateway', url: '', hint: 'Not set', sees: 'Nothing until you paste a gateway you run. A locked phone does not buzz before that. The notice says New message and does not include the text.' },
+  { id: 'push', role: 'Push gateway', url: '', hint: 'Not set', sees: 'Nothing until you paste a gateway you run. A locked phone does not buzz before that. The notice says New message, New order, or Incoming call, and does not include the text. The gateway tells those apart by a plain-text label on each message, which the message relay and anyone reading it can also see.' },
   { id: 'fcm', role: 'Android push', url: 'https://fcm.googleapis.com', sees: 'Nothing from the phone. The push box you run delivers a message or a call here when a Firebase key is set. The text is not included.', called: false },
   { id: 'fcm-auth', role: 'Android push', url: 'https://oauth2.googleapis.com', sees: 'Nothing from the phone. The push box trades its service-account key for a short-lived token here.', called: false },
   { id: 'fcm-scope', role: 'Android push', url: 'https://www.googleapis.com', sees: 'Nothing. The token request names this host as its permission scope. The box does not open a connection to it.', called: false },
