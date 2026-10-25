@@ -100,6 +100,18 @@ test('outcome is the vendor assertion at signing, not a dispute', () => {
   assert.throws(() => canonicalReceipt({ ...base, at: 0 }), /time/);
 });
 
+test('a bad time or a missing amount does not throw', () => {
+  assert.equal(verifyReceipt({
+    hash: '00',
+    body: { orderId: 'x', buyer: 'aa', vendor: 'bb', currency: 'xmr', address: '8', amount: '1', txid: 'ab', at: 0, outcome: 'confirmed' },
+    sigs: { buyer: 'aa', vendor: 'bb' },
+  }), false);
+  assert.equal(verifyPublicView({
+    v: 1, hash: 'aa', amount: '', currency: 'xmr', buyer: 'aa', vendor: 'bb', sigs: { buyer: '11', vendor: '22' },
+  }), false);
+  assert.equal(publicReceipt({ body: { at: 0, amount: '1', buyer: 'aa', vendor: 'bb' } }), null);
+});
+
 test('a self-trade does not verify', () => {
   const key = schnorr.utils.randomSecretKey();
   const pub = hex(schnorr.getPublicKey(key));
