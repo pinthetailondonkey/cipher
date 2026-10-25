@@ -40,9 +40,11 @@ Direct messages and group traffic do not share a relay. Groups stay on the group
 
 There is no chain explorer and no remote Monero node. Subaddresses are derived on the device. That math does not phone home and does not use WASM. Indexes are 32-bit little-endian integers, including past 127. The subaddress prefix is 42, and the checksum covers that prefix. High indexes were checked against knaccc/subaddress-js 1.0.3, which is not shipped in the app.
 
-A payment moves created → address issued → seen → confirmed. Accepting an order issues the address. "I saw the payment" means the vendor saw it in their own wallet. That is not a chain confirmation, and the screen says so. "Check the chain" asks only the Payment watcher pasted in Connections. The address is sent to that host. A public block explorer is refused and is not contacted. Seen and confirmed come only from a watcher report. The watcher row is empty. With no watcher, a payment cannot become confirmed.
+A payment moves created → address issued → seen → confirmed. Accepting an order issues the address. "I saw the payment" means the vendor saw it in their own wallet. That is not a chain confirmation, and the screen says so. "Check the chain" asks only the Payment watcher pasted in Connections. The address is sent to that host. A public block explorer is refused and is not contacted. The pasted URL must include `?token=`, and the phone sends that token. Seen and confirmed come only from a watcher report. The watcher row is empty. With no watcher, a payment cannot become confirmed. There is no other path to confirmed.
 
-The watcher you run speaks `GET /payment?address=&currency=xmr|btc` and answers `{ "txid", "confirmations" }` or `{ "pending": true }`. Ten confirmations, or `"confirmed": true`, is confirmed. `node scripts/payment-watcher.mjs` is that box. It asks a Monero wallet RPC or a Bitcoin RPC only if you set `XMR_WALLET_RPC` or `BTC_RPC_URL`. It does not call a public explorer. With neither RPC set, it answers that it is not connected to a wallet.
+Bitcoin confirms at 3. Monero confirms at 10. A `confirmed: true` flag with fewer confirmations does not count. Change the phone with the `cipher_confirmations` setting, shaped `{ "btc": 3, "xmr": 10 }`. The watcher you run must be started with `WATCH_TOKEN`. It asks a Monero wallet RPC or a Bitcoin RPC only if you set `XMR_WALLET_RPC` or `BTC_RPC_URL`. It does not call a public explorer. With neither RPC set, it answers that it is not connected to a wallet. With no token, it refuses the check.
+
+The watcher speaks `GET /payment?address=&currency=xmr|btc&token=` and answers `{ "txid", "confirmations" }` or `{ "pending": true }`. `node scripts/payment-watcher.mjs` is that box.
 
 ## Group keys
 
