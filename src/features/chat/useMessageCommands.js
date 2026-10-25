@@ -4,6 +4,7 @@ import { generalRelays } from '../../lib/relays';
 import { useChatStore } from '../../store/chatStore';
 import { copyText } from '../../lib/copyText';
 import { haptic } from '../../lib/haptics';
+import { retrySecuringGroup } from '../../hooks/useNIP29Group';
 
 function readableText(msg) {
   const data = msg?.data;
@@ -69,6 +70,27 @@ export function useMessageCommands({
       } catch (error) {
         console.error('[Chat] Reaction failed:', error);
         setToast({ type: 'error', message: 'Could not add that reaction.' });
+      }
+      setSelectedMessage(null);
+      return;
+    }
+    if (action === 'retry_secure') {
+      const groupId = activeGroup?.id || msg.chatId;
+      if (!groupId) return;
+      haptic('light');
+      const since = Date.now();
+      setGroupMessages((prev) => ({
+        ...prev,
+        [groupId]: (prev[groupId] || []).map((item) => (
+          item.deliveryStatus === 'securing' ? { ...item, securingSince: since } : item
+        )),
+      }));
+      try {
+        await retrySecuringGroup(identity, groupId);
+        setToast({ type: 'success', message: 'Retrying…' });
+      } catch (error) {
+        console.error('[group] retry failed:', error);
+        setToast({ type: 'error', message: 'Could not retry.' });
       }
       setSelectedMessage(null);
       return;

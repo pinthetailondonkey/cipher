@@ -1,5 +1,33 @@
-import { toHex } from './groupCipher';
-import { recordGrant, getGrantedEpochsFor } from './groupKeyStore';
+import { toHex, fromHex } from './groupCipher';
+import { recordGrant, getGrantedEpochsFor, putGroupKey } from './groupKeyStore';
+import { currentOwner } from '../../db';
+
+const KEY_HEX = /^[0-9a-f]{64}$/i;
+
+export function parseGroupKeyBundle(payload) {
+  if (!payload || (payload.t !== 'gkey' && payload.type !== 'gkey')) return [];
+  const groupId = payload.gid || payload.groupId;
+  if (typeof groupId !== 'string' || !groupId) return [];
+  const out = [];
+  for (const item of payload.keys || []) {
+    const epoch = Number(item?.ep ?? item?.epoch);
+    const hex = String(item?.k || item?.key || '');
+    if (!Number.isInteger(epoch) || epoch < 0 || !KEY_HEX.test(hex)) continue;
+    out.push({ groupId, epoch, hex: hex.toLowerCase() });
+  }
+  return out;
+}
+
+export async function installReceivedGroupKey(payload) {
+  const rows = parseGroupKeyBundle(payload);
+  if (!rows.length || !currentOwner()) return false;
+  for (const row of rows) await putGroupKey(row.groupId, row.epoch, fromHex(row.hex));
+  return true;
+}
+
+export function epochsToBackfill(allEpochs, currentEpoch) {
+  return (allEpochs || []).filter((item) => item && item.epoch !== currentEpoch && item.bytes);
+}
 
 export function missingEpochs(granted, epoch, extraEpochs = []) {
   const missing = [];

@@ -1,10 +1,5 @@
 import { getPrivacy } from './privacy';
-
-const iceServers = [
-  { urls: 'stun:stun.l.google.com:19302' },
-  { urls: 'stun:stun1.l.google.com:19302' },
-  { urls: 'stun:global.stun.twilio.com:3478' },
-];
+import { iceServers } from './egress';
 
 const LIVE = new Set(['calling', 'ringing', 'connecting', 'active']);
 
@@ -55,6 +50,12 @@ async function openMicrophone() {
   });
 }
 
+function openPeer() {
+  const servers = iceServers();
+  if (!servers.length) throw new Error('Calls need a route. The built-in ones are off, and no call relay is set.');
+  return new RTCPeerConnection({ iceServers: servers });
+}
+
 function beep() {
   try {
     audioCtx = audioCtx || new AudioContext();
@@ -87,28 +88,30 @@ function stopRing() {
 }
 
 function attachRemoteAudio(pc) {
-  const remoteAudio = new Audio();
-  remoteAudio.autoplay = true;
-  remoteAudio.setAttribute('playsinline', 'true');
+  const audio = new Audio();
+  audio.autoplay = true;
+  audio.setAttribute('playsinline', 'true');
   pc.ontrack = (event) => {
-    remoteAudio.srcObject = event.streams[0];
-    remoteAudio.play().catch(() => {});
+    audio.srcObject = event.streams[0];
+    audio.play().catch(() => {});
   };
-  return remoteAudio;
+  return audio;
 }
 
 async function flushIce(current) {
   if (!current?.pc?.remoteDescription) return;
-  const pending = current.pendingIce || [];
+  const queued = current.pendingIce || [];
   current.pendingIce = [];
-  for (const candidate of pending) {
-    try { await current.pc.addIceCandidate(candidate); } catch (error) {
+  for (const candidate of queued) {
+    try {
+      await current.pc.addIceCandidate(candidate);
+    } catch (error) {
       console.warn('[call] ICE candidate dropped:', error);
     }
   }
 }
 
-function queueIce(callId, candidate) {
+function holdIce(callId, candidate) {
   if (!candidate) return;
   if (session?.callId === callId) {
     session.pendingIce = [...(session.pendingIce || []), candidate];
@@ -148,7 +151,7 @@ export async function startCall({ peer, name }) {
   const callId = crypto.randomUUID();
   try {
     const local = await openMicrophone();
-    const pc = new RTCPeerConnection({ iceServers });
+    const pc = openPeer();
     local.getTracks().forEach((track) => pc.addTrack(track, local));
     const remoteAudio = attachRemoteAudio(pc);
     session = {
@@ -181,7 +184,7 @@ export async function acceptCall() {
   patch({ status: 'connecting' });
   try {
     const local = await openMicrophone();
-    const pc = new RTCPeerConnection({ iceServers });
+    const pc = openPeer();
     local.getTracks().forEach((track) => pc.addTrack(track, local));
     const remoteAudio = attachRemoteAudio(pc);
     pc.onicecandidate = (event) => {
@@ -224,18 +227,15 @@ export async function handleCallSignal({ data, from, eventId }) {
     seenEvents.add(eventId);
     if (seenEvents.size > 400) seenEvents.clear();
   }
-
   if (data.action === 'ice') {
     if (session?.callId === data.callId && session.pc?.remoteDescription) {
-      try { await session.pc.addIceCandidate(data.candidate); } catch (error) {
-        console.warn('[call] ICE candidate dropped:', error);
-      }
+      try { await session.pc.addIceCandidate(data.candidate); }
+      catch (error) { console.warn('[call] ICE candidate dropped:', error); }
       return;
     }
-    queueIce(data.callId, data.candidate);
+    holdIce(data.callId, data.candidate);
     return;
   }
-
   if (data.action === 'offer') {
     if (session?.callId === data.callId) return;
     if (getPrivacy().calls === 'nobody') {
@@ -247,16 +247,8 @@ export async function handleCallSignal({ data, from, eventId }) {
       return;
     }
     session = {
-      callId: data.callId,
-      peer: from,
-      name: '',
-      direction: 'in',
-      status: 'ringing',
-      offer: data.sdp,
-      pc: null,
-      local: null,
-      remoteAudio: null,
-      muted: false,
+      callId: data.callId, peer: from, name: '', direction: 'in', status: 'ringing',
+      offer: data.sdp, pc: null, local: null, remoteAudio: null, muted: false,
       pendingIce: earlyIce.get(data.callId) || [],
     };
     earlyIce.delete(data.callId);
@@ -264,9 +256,7 @@ export async function handleCallSignal({ data, from, eventId }) {
     startRing();
     return;
   }
-
   if (!session || session.callId !== data.callId) return;
-
   if (data.action === 'answer') {
     if (!session.pc || session.status === 'active') return;
     try {
@@ -279,7 +269,6 @@ export async function handleCallSignal({ data, from, eventId }) {
     }
     return;
   }
-
   if (data.action === 'busy' || data.action === 'reject' || data.action === 'hangup') {
     if (session.status === 'active' && data.action === 'busy') return;
     const status = data.reason === 'privacy' ? 'restricted' : data.action === 'busy' ? 'busy' : data.action === 'reject' ? 'declined' : 'ended';

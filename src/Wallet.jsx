@@ -2,7 +2,7 @@ import { lazy, Suspense, useState, useEffect } from 'react'
 import {  
   User, Plus, AlertCircle, RefreshCw, 
   Lock, ChevronRight, ArrowLeft, Copy, CreditCard, Camera,
-  BarChart3, Package, KeyRound, ShieldAlert, Users, SlidersHorizontal, Shield
+  BarChart3, Package, KeyRound, ShieldAlert, Users, SlidersHorizontal, Shield, Globe
 } from 'lucide-react'
 import { uploadToBlossom } from '@nostr-wot/blossom'
 import { useProfiles, updateProfileCache } from './useProfiles'
@@ -17,10 +17,14 @@ import { compressImage } from './lib/imageCompression';
 import { scopedGet, scopedSet } from './lib/storage';
 import { loadVendorPaymentConfig, saveVendorPaymentConfig } from './lib/vendorPayments';
 import PrivacySettings from './components/chat/PrivacySettings';
+import Connections from './components/chat/Connections';
 import Avatar from './components/ui/Avatar';
+import Picture from './components/ui/Picture';
 import ScreenHeader from './components/ui/ScreenHeader';
 import { pressable } from './components/ui/Button';
 import { copyText } from './lib/copyText';
+import { productRelays } from './lib/relays';
+import { blossomServers } from './lib/egress';
 
 const VendorDashboard = lazy(() => import('./components/chat/VendorDashboard'));
 const ProfileEditor = lazy(() => import('./components/chat/ProfileEditor'));
@@ -117,6 +121,7 @@ export default function Wallet({ identity, onOpenChat }) {
     try {
       const compressedFile = await compressImage(file, 800, 0.78);
       const blob = await uploadToBlossom(compressedFile, {
+        servers: blossomServers(),
         signer: {
           getPublicKey: async () => identity.pk,
           signEvent: async (event) => {
@@ -180,7 +185,7 @@ export default function Wallet({ identity, onOpenChat }) {
     if (!title || !price) return useChatStore.getState().setToast({ type: 'info', message: "Title and Price required" });
     setIsPublishing(true); setStatus('Publishing...')
     let pool;
-    const relays = ['wss://relay.primal.net'];
+    const relays = productRelays;
     try {
       const { SimplePool, finalizeEvent } = await import('nostr-tools')
       pool = new SimplePool()
@@ -255,6 +260,7 @@ export default function Wallet({ identity, onOpenChat }) {
   }
 
   if (view === 'privacy') return <PrivacySettings onBack={() => setView('main')} />;
+  if (view === 'connections') return <Connections onBack={() => setView('main')} />;
 
   if (view === 'profile_editor') {
     return <Suspense fallback={<div className="flex h-full items-center justify-center bg-black"><div className="h-7 w-7 animate-spin rounded-full border-2 border-white/20 border-t-blue-500" /></div>}><ProfileEditor identity={identity} onClose={() => setView('main')} /></Suspense>;
@@ -317,13 +323,7 @@ export default function Wallet({ identity, onOpenChat }) {
         <ScreenHeader title="Edit profile" onBack={() => setView('main')} />
         <div className="space-y-4 p-4">
           <div className="relative">
-            {picture ? (
-              <img src={picture} alt="avatar" className="w-24 h-24 rounded-full object-cover border-2 border-white/10 shadow-lg" />
-            ) : (
-              <div className="w-24 h-24 rounded-full bg-white/5 flex items-center justify-center border-2 border-white/10 shadow-lg">
-                <User size={32} className="text-white/30" />
-              </div>
-            )}
+            <Picture src={picture} alt="avatar" className="w-24 h-24 rounded-full object-cover border-2 border-white/10 shadow-lg" fallback={<div className="w-24 h-24 rounded-full bg-white/5 flex items-center justify-center border-2 border-white/10 shadow-lg"><User size={32} className="text-white/30" /></div>} />
             <input type="file" accept="image/*" onChange={(e) => handleImageUpload(e, 'profile')} className="hidden" id="profile-upload" />
             <label htmlFor="profile-upload" className="absolute bottom-0 right-0 p-2 bg-blue-600 text-white rounded-full border-4 border-black cursor-pointer hover:bg-blue-500 transition-transform active:scale-95">
               {uploadingImage ? <RefreshCw size={14} className="animate-spin"/> : <Camera size={14} />}
@@ -382,13 +382,7 @@ export default function Wallet({ identity, onOpenChat }) {
           <textarea placeholder="Description" value={description} onChange={e => setDescription(e.target.value)} className="w-full border border-white/10 bg-white/5 shadow-2xl backdrop-blur-md rounded-2xl p-4 text-sm focus:border-blue-500 outline-none resize-none h-24" />
           
           <div className="flex items-center gap-4 p-4 border border-white/10 bg-white/5 shadow-2xl backdrop-blur-md rounded-2xl">
-            {image ? (
-              <img src={image} alt="product" className="w-16 h-16 rounded-xl object-cover" />
-            ) : (
-              <div className="flex h-16 w-16 items-center justify-center rounded-xl border border-white/10 bg-white/5">
-                <Camera size={24} className="text-white/20" />
-              </div>
-            )}
+            <Picture src={image} alt="product" className="w-16 h-16 rounded-xl object-cover" fallback={<div className="flex h-16 w-16 items-center justify-center rounded-xl border border-white/10 bg-white/5"><Camera size={24} className="text-white/20" /></div>} />
             <div className="flex-1">
               <input type="file" accept="image/*" onChange={(e) => handleImageUpload(e, 'product')} className="hidden" id="product-upload" />
               <label htmlFor="product-upload" className="py-2 px-4 bg-white/10 rounded-xl text-sm font-semibold cursor-pointer hover:bg-white/20 transition-colors inline-block">
@@ -436,11 +430,7 @@ export default function Wallet({ identity, onOpenChat }) {
         <div className="relative mb-4">
           <input type="file" accept="image/*" onChange={(e) => handleImageUpload(e, 'profile')} className="hidden" id="main-avatar-upload" />
           <label htmlFor="main-avatar-upload" className="relative block cursor-pointer">
-            {myProfile.picture ? (
-              <img src={myProfile.picture} alt="" className="h-20 w-20 rounded-full border border-white/10 object-cover" />
-            ) : (
-              <Avatar name={myProfile.displayName || myProfile.name} className="!h-20 !w-20 text-2xl" />
-            )}
+            <Picture src={myProfile.picture} alt="" className="h-20 w-20 rounded-full border border-white/10 object-cover" fallback={<Avatar name={myProfile.displayName || myProfile.name} className="!h-20 !w-20 text-2xl" />} />
           </label>
         </div>
         <h2 className="text-2xl font-bold tracking-tight text-white">{myProfile.displayName}</h2>
@@ -464,9 +454,14 @@ export default function Wallet({ identity, onOpenChat }) {
             <span className="min-w-0 flex-1"><span className="block text-[15px] font-semibold text-white">Edit Profile</span><span className="block text-[13px] text-white/40">Name, bio, and photo</span></span>
             <ChevronRight size={18} className="text-white/30" />
           </button>
-          <button onClick={() => setView('privacy')} className={`flex w-full items-center gap-3 p-4 text-left ${pressable}`}>
+          <button onClick={() => setView('privacy')} className={`flex w-full items-center gap-3 border-b border-white/5 p-4 text-left ${pressable}`}>
             <Shield size={18} className="text-white/40" />
             <span className="min-w-0 flex-1"><span className="block text-[15px] font-semibold text-white">Privacy</span><span className="block text-[13px] text-white/40">Calls, last seen, blocked</span></span>
+            <ChevronRight size={18} className="text-white/30" />
+          </button>
+          <button onClick={() => setView('connections')} className={`flex w-full items-center gap-3 p-4 text-left ${pressable}`}>
+            <Globe size={18} className="text-white/40" />
+            <span className="min-w-0 flex-1"><span className="block text-[15px] font-semibold text-white">Connections</span><span className="block text-[13px] text-white/40">Every host, and which are Tor</span></span>
             <ChevronRight size={18} className="text-white/30" />
           </button>
         </div>

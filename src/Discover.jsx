@@ -3,6 +3,7 @@ import { Search, Users, Megaphone, Loader2 } from 'lucide-react';
 import { useChatStore } from './store/chatStore';
 import { loadGroupProfile } from './hooks/useNIP29Group';
 import { getMyGroups, setMyGroups } from './lib/myGroups';
+import { groupOnlyRelays } from './lib/relays';
 
 export default function Discover({ identity, onJoined }) {
   const [query, setQuery] = useState('');
@@ -26,7 +27,7 @@ export default function Discover({ identity, onJoined }) {
         );
 
         const fetchPromise = pool.querySync(
-          ['wss://groups.aegispayhq.com'],
+          groupOnlyRelays,
           { kinds: [39000, 9002], limit: 50 }
         );
 

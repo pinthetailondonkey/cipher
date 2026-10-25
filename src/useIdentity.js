@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { MIN_PIN_LENGTH, pinFailureMessage, recordPinFailure, resetPinFailures } from './lib/vaultLockout'
+import { profileRelays as PROFILE_RELAYS } from './lib/relays'
 
 // Derive 32-byte secret key from BIP39 mnemonic
 export async function deriveSkFromMnemonic(mnemonic) {
@@ -89,8 +90,6 @@ const saveVaults = (vaults) => {
 const getActivePubkey = () => localStorage.getItem('cipher_active_pubkey');
 
 const setActivePubkey = (pk) => localStorage.setItem('cipher_active_pubkey', pk);
-
-const PROFILE_RELAYS = ['wss://relay.primal.net', 'wss://nos.lol']
 
 // Publish one signed event and only close the socket after that relay
 // acknowledges it (OK) or the attempt has actually failed. A timeout that

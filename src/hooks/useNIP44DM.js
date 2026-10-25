@@ -1,12 +1,13 @@
 import { useCallback, useEffect } from 'react';
-import { db } from '../db';
-import { saveMessage } from '../db';
+import { db, openDBFor, saveMessage } from '../db';
+import { dmControlAction, installMemberGroupKey } from './useGroupKeyMember';
 import { showNotification } from '../lib/notifications';
 import { useChatStore } from '../store/chatStore';
 import { getAuthenticatedPool } from '../lib/pool';
 import { generalRelays, queryAllPages } from '../lib/relays';
 import { enqueueNostrEvent, startOutboxSync } from '../lib/outbox';
 import { allowsTyping } from '../lib/privacy';
+import { publishOwnRelayList, relaysForPeer } from '../lib/dmRelays';
 
 const shouldSuppress = (chatId) => {
   const state = useChatStore.getState();
@@ -54,19 +55,22 @@ export function useNIP44DM({ identity }) {
         content: encrypted
       }, identity.sk);
 
+      let targets = generalRelays.slice();
       let results;
       try {
         const pool = await getAuthenticatedPool(identity);
-        results = await Promise.allSettled(pool.publish(generalRelays, event));
+        publishOwnRelayList(identity).catch(() => {});
+        targets = await relaysForPeer(identity, targetDm);
+        results = await Promise.allSettled(pool.publish(targets, event));
       } catch (publishError) {
         console.warn('[DM] Offline publish deferred to outbox:', publishError);
-        await enqueueNostrEvent(event);
+        await enqueueNostrEvent(event, targets);
         return { success: true, queued: true, event, relayCount: 0 };
       }
       const okCount = results.filter(r => r.status === 'fulfilled').length;
       if (okCount > 0) return { success: true, event, results, relayCount: okCount };
       console.warn('[DM] All relays rejected:', results);
-      await enqueueNostrEvent(event);
+      await enqueueNostrEvent(event, targets);
       return { success: true, queued: true, event, results, relayCount: 0 };
     } catch (err) {
       console.error('[useNIP44DM] Send failed:', err);
@@ -80,6 +84,7 @@ export function useNIP44DM({ identity }) {
     try {
       const { finalizeEvent, nip44 } = await import('nostr-tools');
       const pool = await getAuthenticatedPool(identity);
+      const targets = await relaysForPeer(identity, recipientPubkey);
       const shared = nip44.v2.utils.getConversationKey(identity.sk, recipientPubkey);
       const encrypted = nip44.v2.encrypt(JSON.stringify({ type: 'typing' }), shared);
       const ev = finalizeEvent({
@@ -88,7 +93,7 @@ export function useNIP44DM({ identity }) {
         tags: [['p', recipientPubkey]],
         content: encrypted
       }, identity.sk);
-      const results = await Promise.allSettled(pool.publish(generalRelays, ev));
+      const results = await Promise.allSettled(pool.publish(targets.length ? targets : generalRelays, ev));
       if (results.every((result) => result.status === 'rejected')) {
         console.warn('[DM] Typing indicator was rejected by all relays:', results);
       }
@@ -105,6 +110,7 @@ export function useNIP44DM({ identity }) {
     const setup = async () => {
       const pool = await getAuthenticatedPool(identity);
       if (!mounted.current) return;
+      publishOwnRelayList(identity).catch(() => {});
       const dmFilters = [
         { kinds: [4], '#p': [identity.pk], since },
         { kinds: [4], authors: [identity.pk], since }
@@ -150,7 +156,13 @@ export function useNIP44DM({ identity }) {
                 });
                 return;
               }
-              if (data.type === 'gkey' || data.type === 'pin') return;
+              if (dmControlAction(data) === 'gkey') {
+                openDBFor(identity.pk);
+                const installed = await installMemberGroupKey(data);
+                if (!installed) console.error('[group-key] A key message arrived and was not installed.');
+                return;
+              }
+              if (data.type === 'pin') return;
               // Audit H9: drop messages that already expired (delivery lag)
               if (data.expires_at && Math.floor(Date.now() / 1000) >= data.expires_at) {
                 console.log('[DM] Dropping expired message', { from: counterparty.slice(0, 8), expires_at: data.expires_at });
@@ -228,7 +240,15 @@ export function useNIP44DM({ identity }) {
         catch (e) { continue; }
         let data = {};
         try { data = JSON.parse(text); } catch (e) { data = { type: 'text', message: text }; }
-        if (data.type === 'gkey' || data.type === 'typing' || data.type === 'read' || data.type === 'pin' || data.type === 'call') continue;
+        if (dmControlAction(data) === 'gkey') {
+          openDBFor(identity.pk);
+          const installed = await installMemberGroupKey(data);
+          if (!installed) console.error('[group-key] A key message arrived and was not installed.');
+          continue;
+        }
+        if (data.type === 'typing' || data.type === 'read' || data.type === 'pin' || data.type === 'call') {
+          continue;
+        }
         if (data.expires_at && Math.floor(Date.now() / 1000) >= data.expires_at) continue;
         const replyTag = ev.tags.find(t => t[0] === 'e' && t[3] === 'reply');
         const clientId = ev.tags.find(t => t[0] === 'client')?.[1];
@@ -246,7 +266,9 @@ export function useNIP44DM({ identity }) {
           deliveryStatus: isSender ? 'sent' : undefined,
           isGroup: false
         });
-      } catch (e) {}
+      } catch (error) {
+        console.error('[DM] Could not save a message:', error);
+      }
     }
     const counterparties = new Set();
     for (const ev of allDms) {

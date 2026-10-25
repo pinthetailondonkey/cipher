@@ -1,18 +1,33 @@
-export const generalRelays = [
-  'wss://relay.primal.net',
-  'wss://groups.aegispayhq.com'
-];
+import { bindRelayRefresh, urlsFor } from './egress';
 
-export const groupRelays = [
-  'wss://groups.aegispayhq.com',
-  'wss://relay.primal.net'
-];
+function fill(target, next) {
+  target.splice(0, target.length, ...next);
+}
 
-export const searchRelays = [
-  'wss://relay.primal.net',
-  'wss://relay.vertexlab.io',
-  'wss://relay.noswhere.com'
-];
+export const generalRelays = [];
+export const groupRelays = [];
+export const groupOnlyRelays = [];
+export const searchRelays = [];
+export const profileRelays = [];
+export const profileEditorRelays = [];
+export const profileReadRelays = [];
+export const usernameRelays = [];
+export const productRelays = [];
+
+export function refreshRelays() {
+  fill(generalRelays, urlsFor('general'));
+  fill(groupRelays, urlsFor('group'));
+  fill(groupOnlyRelays, urlsFor('group-only'));
+  fill(searchRelays, urlsFor('search'));
+  fill(profileRelays, urlsFor('profile'));
+  fill(profileEditorRelays, urlsFor('profileEditor'));
+  fill(profileReadRelays, urlsFor('profileRead'));
+  fill(usernameRelays, urlsFor('username'));
+  fill(productRelays, urlsFor('product'));
+}
+
+bindRelayRefresh(refreshRelays);
+refreshRelays();
 
 export const queryWithTimeout = (pool, relays, filter, timeoutMs = 4000) => {
   return Promise.race([

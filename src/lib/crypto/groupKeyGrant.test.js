@@ -2,7 +2,14 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { generateSecretKey, getPublicKey, nip44 } from 'nostr-tools';
 import { decryptGroupMessage, encryptGroupMessage, fromHex, generateGroupKey } from './groupCipher.js';
-import { distributeGroupKey, missingEpochs } from './groupKeyDistribution.js';
+import { distributeGroupKey, epochsToBackfill, missingEpochs, parseGroupKeyBundle } from './groupKeyDistribution.js';
+
+test('a key request backfills every epoch the requester missed, not only the current one', () => {
+  const current = { epoch: 3, bytes: new Uint8Array(32) };
+  const skipped = [{ epoch: 1, bytes: new Uint8Array(32) }, { epoch: 2, bytes: new Uint8Array(32) }, current];
+  assert.deepEqual(epochsToBackfill(skipped, 3).map((item) => item.epoch), [1, 2]);
+  assert.deepEqual(epochsToBackfill([current], 3), []);
+});
 
 test('grant tracking asks only for epochs the recipient does not already have', () => {
   const granted = new Set([1]);
@@ -12,6 +19,14 @@ test('grant tracking asks only for epochs the recipient does not already have', 
   granted.add(3);
   assert.deepEqual(missingEpochs(granted, 3, extras), []);
   assert.deepEqual(missingEpochs(new Set(), 2, [{ epoch: 2, bytes: new Uint8Array(32) }]), [2]);
+});
+
+test('a received key bundle is the epoch list, and a bad hex is dropped', () => {
+  const hex = 'ab'.repeat(32);
+  assert.deepEqual(parseGroupKeyBundle({
+    t: 'gkey', gid: 'g1', keys: [{ ep: 2, k: hex }, { ep: 1, k: 'zz' }],
+  }), [{ groupId: 'g1', epoch: 2, hex }]);
+  assert.deepEqual(parseGroupKeyBundle({ type: 'text', message: 'hi' }), []);
 });
 
 test('a member offline across two rotations still receives every epoch and can decrypt both', async () => {

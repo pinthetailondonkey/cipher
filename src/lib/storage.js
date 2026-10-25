@@ -52,19 +52,35 @@ export function scopeKey(key) {
   return `cipher_${safePk.slice(0, 8)}_${key}`;
 }
 
+const scopedCache = new Map();
+
 export function scopedGet(key, defaultValue = null) {
-  try {
-    const v = safeStorage.getItem(scopeKey(key));
-    return v !== null ? JSON.parse(v) : defaultValue;
-  } catch { return defaultValue; }
+  const storageKey = scopeKey(key);
+  let raw = null;
+  try { raw = safeStorage.getItem(storageKey); } catch { raw = null; }
+  const cached = scopedCache.get(storageKey);
+  if (cached && cached.raw === raw) return cached.value;
+  let value = defaultValue;
+  if (raw !== null) {
+    try { value = JSON.parse(raw); } catch { value = defaultValue; }
+  }
+  scopedCache.set(storageKey, { raw, value });
+  return value;
 }
 
 export function scopedSet(key, value) {
-  try { safeStorage.setItem(scopeKey(key), JSON.stringify(value)); } catch {}
+  const storageKey = scopeKey(key);
+  try {
+    const raw = JSON.stringify(value);
+    safeStorage.setItem(storageKey, raw);
+    scopedCache.set(storageKey, { raw, value });
+  } catch {}
 }
 
 export function scopedRemove(key) {
-  try { safeStorage.removeItem(scopeKey(key)); } catch {}
+  const storageKey = scopeKey(key);
+  try { safeStorage.removeItem(storageKey); } catch {}
+  scopedCache.delete(storageKey);
 }
 
 // One-time migration from global keys -> scoped keys.

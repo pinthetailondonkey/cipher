@@ -1,19 +1,24 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { db, saveMessage, openDBFor } from '../../db';
 import { getMyGroups } from '../../lib/myGroups';
+import { mergeReactions } from '../../lib/reactions';
 import { generalRelays, groupRelays, queryAllPages, queryWithTimeout } from '../../lib/relays';
 import { getAuthenticatedPool } from '../../lib/pool';
 import { useChatStore } from '../../store/chatStore';
 import { scopedGet, scopedSet } from '../../lib/storage';
 import { getPrivacy, allowsTyping } from '../../lib/privacy';
 import { decodeGroupEvent } from '../../lib/crypto/groupMessageCodec';
+import { resumeKeyRequestIds } from '../../lib/crypto/groupKeyRequest';
 import { useGroupKeyReconciler } from '../../hooks/useGroupKeyReconciler';
+import { flushSecuringGroupSends } from '../../hooks/useNIP29Group';
+import { bindMemberBaselinePublisher, sealMemberBaseline } from '../../lib/crypto/memberBaseline';
 
 export function useChatBootstrap({
   identity,
   fetchDMs,
   subscribeToDMs,
   subscribeToGroups,
+  subscribeToGroupReactions,
   sendTypingIndicator,
   sendDM,
   sendGroupTypingIndicator,
@@ -98,8 +103,40 @@ export function useChatBootstrap({
   });
 
   useEffect(() => {
+    if (!identity?.sk) return undefined;
+    const onKey = (event) => {
+      const groupId = event.detail?.groupId;
+      if (!groupId) return;
+      flushSecuringGroupSends(identity, groupId).catch((error) => {
+        console.warn('[group-key] Could not send messages waiting on the key:', error);
+      });
+    };
+    window.addEventListener('cipher:group-key-updated', onKey);
+    return () => window.removeEventListener('cipher:group-key-updated', onKey);
+  }, [identity?.pk, identity?.sk]);
+
+  useEffect(() => {
     if (identity?.pk) openDBFor(identity.pk);
   }, [identity?.pk]);
+
+  useEffect(() => {
+    if (!identity?.sk || !identity?.pk) return undefined;
+    return bindMemberBaselinePublisher(async (groupId, members) => {
+      const pool = await getAuthenticatedPool(identity);
+      const event = await sealMemberBaseline({
+        senderPrivkey: identity.sk,
+        senderPubkey: identity.pk,
+        groupId,
+        members,
+      });
+      const relays = generalRelays.slice();
+      if (!relays.length) throw new Error('No relay is available for the membership baseline.');
+      const results = await Promise.allSettled(pool.publish(relays, event));
+      if (!results.some((result) => result.status === 'fulfilled')) {
+        throw new Error('Relays rejected the membership baseline.');
+      }
+    });
+  }, [identity?.pk, identity?.sk]);
 
   useEffect(() => {
     const handleOutboxStatus = async (event) => {
@@ -232,12 +269,10 @@ export function useChatBootstrap({
         const targetId = ev.tags.find(t => t[0] === 'e')?.[1];
         if (targetId) {
           if (!reactionMap[targetId]) reactionMap[targetId] = [];
-          if (!reactionMap[targetId].find(r => r.pubkey === ev.pubkey && r.emoji === ev.content)) {
-            reactionMap[targetId].push({ emoji: ev.content, pubkey: ev.pubkey });
-          }
+          reactionMap[targetId].push({ emoji: ev.content, pubkey: ev.pubkey });
         }
       });
-      setReactions(reactionMap);
+      setReactions((prev) => mergeReactions(prev, reactionMap));
       const deleted = new Set();
       delEvents.forEach(ev => {
         if (ev.pubkey === identity.pk) {
@@ -286,17 +321,26 @@ export function useChatBootstrap({
     if (!identity.sk) return;
     let cleanupDMs = null;
     let cleanupGroups = null;
+    let cleanupGroupReactions = null;
     const setup = async () => {
       const since = Math.floor(Date.now() / 1000) - 604800;
       await fetchChats(true);
       cleanupDMs = subscribeToDMs(since);
-      const groupIds = getMyGroups(identity.pk).map(g => g.id);
+      const joinedIds = getMyGroups(identity.pk).map((group) => group.id).filter(Boolean);
+      const groupIds = resumeKeyRequestIds({
+        pubkey: identity.pk,
+        joinedIds,
+      });
       if (groupIds.length > 0) cleanupGroups = subscribeToGroups(groupIds, since);
+      if (typeof subscribeToGroupReactions === 'function' && joinedIds.length > 0) {
+        cleanupGroupReactions = subscribeToGroupReactions(joinedIds);
+      }
     };
     setup();
     return () => {
       if (cleanupDMs) cleanupDMs();
       if (cleanupGroups) cleanupGroups();
+      if (cleanupGroupReactions) cleanupGroupReactions();
     };
   }, [identity.sk, identity.pk, groupSubscriptionKey]);
 

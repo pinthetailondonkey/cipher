@@ -6,6 +6,9 @@ import { compressImage } from './lib/imageCompression';
 import Button from './components/ui/Button';
 import { pressable } from './components/ui/Button';
 import { MIN_PIN_LENGTH } from './lib/vaultLockout';
+import { usernameRelays } from './lib/relays';
+import { blossomServers } from './lib/egress';
+import Picture from './components/ui/Picture';
 
 export default function LockScreen({ identity }) {
   const [mode, setMode] = useState(() => {
@@ -55,7 +58,7 @@ export default function LockScreen({ identity }) {
 
   const checkUsernameAvailable = async (username) => {
     let pool;
-    const relays = ['wss://relay.primal.net', 'wss://groups.aegispayhq.com', 'wss://nos.lol'];
+    const relays = usernameRelays;
     try {
       const { SimplePool } = await import('nostr-tools');
       pool = new SimplePool();
@@ -139,6 +142,7 @@ export default function LockScreen({ identity }) {
       const cleanFile = await compressImage(file, 800, 0.78);
       const { uploadToBlossom } = await import('@nostr-wot/blossom');
       const blob = await uploadToBlossom(cleanFile, {
+        servers: blossomServers(),
         signer: {
           getPublicKey: async () => tempIdentity.pk,
           signEvent: async (event) => {
@@ -238,11 +242,7 @@ export default function LockScreen({ identity }) {
             <>
               <div className="relative mb-4 group cursor-pointer mx-auto">
                 <div className="w-24 h-24 rounded-full bg-white/5 border-2 border-dashed border-white/20 flex items-center justify-center overflow-hidden transition-all group-hover:border-blue-500">
-                  {avatar ? (
-                    <img src={avatar} alt="avatar" className="w-full h-full object-cover" />
-                  ) : (
-                    <Camera size={28} className="text-gray-500 group-hover:text-blue-500 transition-colors" />
-                  )}
+                  <Picture src={avatar} alt="avatar" className="w-full h-full object-cover" fallback={<Camera size={28} className="text-gray-500 group-hover:text-blue-500 transition-colors" />} />
                 </div>
                 <input type="file" accept="image/*" onChange={handleAvatarUpload} className="absolute inset-0 opacity-0 cursor-pointer" />
                 {uploadingAvatar && <div className="absolute inset-0 bg-black/60 flex items-center justify-center rounded-full"><RefreshCw size={20} className="animate-spin text-white" /></div>}

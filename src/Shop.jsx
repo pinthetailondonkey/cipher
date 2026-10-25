@@ -6,6 +6,8 @@ import { useChatStore } from './store/chatStore';
 import { saveMessage } from './db';
 import { haptic } from './lib/haptics';
 import { copyText } from './lib/copyText';
+import { generalRelays } from './lib/relays';
+import Picture from './components/ui/Picture';
 
 export default function Shop({ identity, setActiveTab }) {
   const [query, setQuery] = useState('');
@@ -28,7 +30,7 @@ export default function Shop({ identity, setActiveTab }) {
         );
 
         const fetchPromise = pool.querySync(
-          ['wss://relay.primal.net', 'wss://groups.aegispayhq.com'],
+          generalRelays,
           { kinds: [30402], '#t': ['cipher_marketplace'], limit: 50 }
         );
 
@@ -52,7 +54,7 @@ export default function Shop({ identity, setActiveTab }) {
 
         const unique = Array.from(new Map(parsed.map(p => [p.id, p])).values());
         setProducts(unique);
-        pool.close(['wss://relay.primal.net', 'wss://groups.aegispayhq.com']);
+        pool.close(generalRelays);
       } catch (err) {
         console.error('Failed to fetch marketplace:', err);
         setError('Could not load the shop. Check your connection and try again.');
@@ -170,13 +172,13 @@ export default function Shop({ identity, setActiveTab }) {
             {displayProducts.map(p => (
               <div key={p.id} className="rounded-3xl border border-white/15 bg-white/10 p-2 shadow-2xl backdrop-blur-2xl">
                 <div className="relative h-28 w-full overflow-hidden rounded-2xl bg-white/5">
-                  {p.image ? (
-                    <img src={p.image} alt="" className="h-full w-full object-cover" onError={(event) => { event.currentTarget.style.display = 'none'; }} />
-                  ) : (
-                    <div className="flex h-full w-full items-center justify-center text-white/30">
-                      <ShoppingBag size={28} />
-                    </div>
-                  )}
+                  <Picture
+                    src={p.image}
+                    alt=""
+                    className="h-full w-full object-cover"
+                    onError={(event) => { event.currentTarget.style.display = 'none'; }}
+                    fallback={<div className="flex h-full w-full items-center justify-center text-white/30"><ShoppingBag size={28} /></div>}
+                  />
                 </div>
                 <div className="px-1.5 pb-1 pt-3">
                   <p className="truncate text-[15px] font-semibold text-white">{p.name}</p>

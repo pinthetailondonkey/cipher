@@ -6,6 +6,7 @@ import { scopedRemove } from '../../lib/storage';
 import { haptic } from '../../lib/haptics';
 import { compressImage } from '../../lib/imageCompression';
 import { blossomSigner, sortMessages } from './media';
+import { blossomServers } from '../../lib/egress';
 import { getPrivacy } from '../../lib/privacy';
 
 export function useComposer({ identity, sendDM, sendGroupMessage }) {
@@ -87,17 +88,27 @@ export function useComposer({ identity, sendDM, sendGroupMessage }) {
       await saveMessage(activeGroup.id, newMsg);
       const result = await sendGroupMessage(activeGroup.id, msgPayload, tempId, replyId);
       if (!result.success) {
-        useChatStore.getState().setGroupMessages(prev => ({
-          ...prev,
-          [activeGroup.id]: (prev[activeGroup.id] || []).filter((message) => message.id !== tempId && message.clientId !== tempId),
-        }));
-        try {
-          await db.messages.delete(tempId);
-        } catch (error) {
-          console.error('[Chat] Failed to remove unsent group message:', error);
+        if (result.error === 'NO_KEY') {
+          const securing = { ...newMsg, deliveryStatus: 'securing', securingSince: Date.now(), pending: false };
+          useChatStore.getState().setGroupMessages(prev => ({
+            ...prev,
+            [activeGroup.id]: (prev[activeGroup.id] || []).map((message) => (
+              message.id === tempId || message.clientId === tempId ? securing : message
+            )),
+          }));
+          await saveMessage(activeGroup.id, securing);
+        } else {
+          useChatStore.getState().setGroupMessages(prev => ({
+            ...prev,
+            [activeGroup.id]: (prev[activeGroup.id] || []).filter((message) => message.id !== tempId && message.clientId !== tempId),
+          }));
+          try {
+            await db.messages.delete(tempId);
+          } catch (error) {
+            console.error('[Chat] Failed to remove unsent group message:', error);
+          }
+          setToast({ type: 'error', message: 'Failed to send to group' });
         }
-        if (result.error === 'NO_KEY') setToast({ type: 'error', message: 'Securing group... please try again in a moment.' });
-        else setToast({ type: 'error', message: 'Failed to send to group' });
       } else if (result.event?.id) {
         const outboxEntry = result.queued ? await db.outbox.get(result.event.id) : null;
         const deliveryStatus = result.queued && outboxEntry ? 'queued' : 'sent';
@@ -176,7 +187,7 @@ export function useComposer({ identity, sendDM, sendGroupMessage }) {
       const urls = [];
       for (const file of files) {
         const compressedFile = await compressImage(file);
-        const blob = await uploadToBlossom(compressedFile, { signer: blossomSigner(identity) });
+        const blob = await uploadToBlossom(compressedFile, { signer: blossomSigner(identity), servers: blossomServers() });
         urls.push(blob.url);
       }
       await sendMessage(caption, false, null, urls);
@@ -207,7 +218,7 @@ export function useComposer({ identity, sendDM, sendGroupMessage }) {
         setUploadingImage(true);
         setToast({ type: 'success', message: 'Uploading voice note...' });
         try {
-          const blob = await uploadToBlossom(file, { signer: blossomSigner(identity) });
+          const blob = await uploadToBlossom(file, { signer: blossomSigner(identity), servers: blossomServers() });
           await sendMessage('', false, blob.url);
           setToast({ type: 'success', message: 'Voice note sent!' });
         } catch (err) {

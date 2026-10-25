@@ -7,9 +7,12 @@ import GroupInfoSidebar from './GroupInfoSidebar';
 import { useChatStore } from '../../store/chatStore';
 import { db, saveMessage } from '../../db';
 import { scopedRemove } from '../../lib/storage';
-import { useNIP29Group, loadGroupProfile } from '../../hooks/useNIP29Group';
+import { useNIP29Group, loadGroupProfile, retrySecuringGroup } from '../../hooks/useNIP29Group';
+import { securingPhase, securingSendsFor } from '../../lib/crypto/groupKeyRequest';
+import { haptic } from '../../lib/haptics';
+import Picture from '../ui/Picture';
 
-function GroupStorefront({ items, pinnedId, canList, onBuy, onList }) {
+function GroupStorefront({ items, pinnedId, canList, onBuy, onList, pendingLists = [], now = 0, onRetrySecure }) {
   const [open, setOpen] = useState(false);
   const [title, setTitle] = useState('');
   const [price, setPrice] = useState('');
@@ -31,7 +34,7 @@ function GroupStorefront({ items, pinnedId, canList, onBuy, onList }) {
       onClick={() => onBuy(item)}
       className={`flex w-full items-center gap-3 border-b border-white/5 p-4 text-left last:border-0 active:bg-white/5 ${featuredCard ? 'bg-amber-300/[0.07]' : ''}`}
     >
-      {item.product.image ? <img src={item.product.image} alt="" className="h-12 w-12 object-cover" /> : <span className="flex h-12 w-12 items-center justify-center bg-white/5 text-[11px] text-white/30">Item</span>}
+      <Picture src={item.product.image} alt="" className="h-12 w-12 object-cover" fallback={<span className="flex h-12 w-12 items-center justify-center bg-white/5 text-[11px] text-white/30">Item</span>} />
       <span className="min-w-0 flex-1">
         {featuredCard && <span className="block text-[11px] font-semibold uppercase tracking-wide text-amber-200">Pinned</span>}
         <span className="block truncate text-[15px] font-semibold text-white">{item.product.title || item.product.name || 'Item'}</span>
@@ -44,8 +47,24 @@ function GroupStorefront({ items, pinnedId, canList, onBuy, onList }) {
       <div className="overflow-hidden rounded-2xl border border-white/10 bg-[#0A0A0A]/60 shadow-2xl backdrop-blur-2xl">
       {featured && card(featured, true)}
       {rest.map((item) => card(item, false))}
-      {items.length === 0 && <p className="px-4 py-8 text-center text-[13px] text-white/40">No listings yet.</p>}
+      {items.length === 0 && pendingLists.length === 0 && <p className="px-4 py-8 text-center text-[13px] text-white/40">No listings yet.</p>}
       </div>
+      {pendingLists.map((item) => {
+        const stuck = securingPhase(item.since, now) === 'stuck';
+        const name = item.payload?.title || item.payload?.name || 'Listing';
+        return (
+          <div key={item.id} className="rounded-2xl border border-white/10 bg-[#0A0A0A]/60 px-4 py-3 shadow-2xl backdrop-blur-2xl">
+            <p className="text-[15px] font-semibold text-white">{name}</p>
+            {stuck ? (
+              <button type="button" onClick={() => onRetrySecure?.()} className="mt-1 block min-h-11 text-left text-[15px] font-semibold text-blue-300 underline active:scale-95">
+                Still securing — retry
+              </button>
+            ) : (
+              <p className="mt-1 text-[13px] text-white/40">Securing…</p>
+            )}
+          </div>
+        );
+      })}
       {canList && !open && <button type="button" onClick={() => setOpen(true)} className="w-full rounded-2xl bg-blue-600 py-3.5 font-bold text-white">List an item</button>}
       {canList && open && (
         <form onSubmit={(event) => {
@@ -122,10 +141,46 @@ export default function GroupView({
   const [pane, setPane] = useState('chat');
   const isVendor = useChatStore((state) => state.isVendor);
   const setToast = useChatStore((state) => state.setToast);
+  const [pendingLists, setPendingLists] = useState([]);
+  const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
   }, [messages.length, activeGroup?.id]);
+
+  useEffect(() => {
+    if (!identity?.pk || !activeGroup?.id) return undefined;
+    const refresh = () => {
+      const pending = securingSendsFor(identity.pk, activeGroup.id).filter((item) => item.payload?.type === 'product');
+      setPendingLists((prev) => {
+        const same = prev.length === pending.length && prev.every((item, index) => item.id === pending[index].id && item.since === pending[index].since);
+        return same ? prev : pending;
+      });
+      if (pending.length) setNow(Date.now());
+    };
+    refresh();
+    const id = setInterval(refresh, 1000);
+    return () => clearInterval(id);
+  }, [identity?.pk, activeGroup?.id, messages]);
+
+  const retrySecure = async () => {
+    if (!activeGroup?.id) return;
+    haptic('light');
+    const since = Date.now();
+    useChatStore.getState().setGroupMessages((prev) => ({
+      ...prev,
+      [activeGroup.id]: (prev[activeGroup.id] || []).map((message) => (
+        message.deliveryStatus === 'securing' ? { ...message, securingSince: since } : message
+      )),
+    }));
+    try {
+      await retrySecuringGroup(identity, activeGroup.id);
+      setToast({ type: 'success', message: 'Retrying…' });
+    } catch (error) {
+      console.error('[group] retry failed:', error);
+      setToast({ type: 'error', message: 'Could not retry.' });
+    }
+  };
 
   useEffect(() => {
     if (!activeGroup?.id || !identity?.pk) return undefined;
@@ -183,15 +238,23 @@ export default function GroupView({
     await saveMessage(groupId, optimistic);
     const result = await sendGroupMessage(groupId, payload, tempId, replyId);
     if (!result?.success) {
+      if (result?.error === 'NO_KEY') {
+        const securing = { ...optimistic, deliveryStatus: 'securing', securingSince: Date.now(), pending: false };
+        useChatStore.getState().setGroupMessages((prev) => ({
+          ...prev,
+          [groupId]: (prev[groupId] || []).map((message) => (
+            message.id === tempId || message.clientId === tempId ? securing : message
+          )),
+        }));
+        await saveMessage(groupId, securing);
+        return result;
+      }
       useChatStore.getState().setGroupMessages((prev) => ({
         ...prev,
         [groupId]: (prev[groupId] || []).filter((message) => message.id !== tempId && message.clientId !== tempId),
       }));
       try { await db.messages.delete(tempId); } catch (error) { console.error('[GroupView] Failed to remove unsent message:', error); }
-      useChatStore.getState().setToast({
-        type: 'error',
-        message: result?.error === 'NO_KEY' ? 'Securing group... please try again in a moment.' : 'Failed to send to group',
-      });
+      useChatStore.getState().setToast({ type: 'error', message: 'Failed to send to group' });
       throw new Error(result?.error || 'Failed to send to group');
     }
     if (result.event?.id) {
@@ -225,7 +288,8 @@ export default function GroupView({
     if (!activeGroup?.id) return;
     try {
       const result = await sendGroupMessage(activeGroup.id, { type: 'product', ...product });
-      if (result?.success === false) setToast({ type: 'error', message: 'Could not post that listing.' });
+      if (result?.error === 'NO_KEY') setToast({ type: 'success', message: 'Securing… the listing will send when the group key arrives.' });
+      else if (result?.success === false) setToast({ type: 'error', message: 'Could not post that listing.' });
     } catch (error) {
       console.error('[shop] listing failed:', error);
       setToast({ type: 'error', message: 'Could not post that listing.' });
@@ -245,6 +309,9 @@ export default function GroupView({
           items={shopItems}
           pinnedId={pinnedMessageId}
           canList={canList}
+          pendingLists={pendingLists}
+          now={now}
+          onRetrySecure={retrySecure}
           onBuy={({ message, product }) => handleMessageAction?.('buy_product', { ...message, data: product })}
           onList={postListing}
         />

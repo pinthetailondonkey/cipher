@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { Package, Plus } from 'lucide-react';
 import ScreenHeader from '../ui/ScreenHeader';
+import Picture from '../ui/Picture';
 import { useVendorStats } from '../../hooks/useVendorStats';
 
 export default function VendorDashboard({ identity, products = [], onBack, onCreate }) {
@@ -36,7 +37,7 @@ export default function VendorDashboard({ identity, products = [], onBack, onCre
           <p className="p-4 text-[13px] text-white/40">You haven’t published any products yet.</p>
         ) : products.map((product) => (
           <div key={product.id || product.dTag || product.name} className="flex items-center gap-3 border-b border-white/5 p-4 last:border-0">
-            {product.image ? <img src={product.image} alt="" className="h-12 w-12 rounded-xl object-cover" /> : <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-black"><Package size={18} className="text-white/40" /></div>}
+            <Picture src={product.image} alt="" className="h-12 w-12 rounded-xl object-cover" fallback={<div className="flex h-12 w-12 items-center justify-center rounded-xl bg-black"><Package size={18} className="text-white/40" /></div>} />
             <div className="min-w-0 flex-1"><p className="truncate text-[15px] font-semibold text-white">{product.name || product.title || 'Product'}</p><p className="text-[13px] text-blue-500">{product.price || product.priceUsd || ''} {product.currency || (product.priceUsd ? 'USD' : '')}</p></div>
           </div>
         ))}
