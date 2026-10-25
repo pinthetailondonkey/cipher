@@ -16,7 +16,7 @@ Version 1 is one JSON object, UTF-8, with these keys in this order and no extra 
 | `vendor` | string | Vendor Nostr pubkey, same form. Must differ from `buyer`. |
 | `currency` | string | Lowercase. `btc` or `xmr` in this app. |
 | `address` | string | The payment address. Not in the public view. |
-| `amount` | string | The amount, as a string. A number is converted with ordinary string conversion. |
+| `amount` | string | Canonical decimal. `$` and commas are stripped. Leading zeros and trailing fractional zeros are stripped. `2.00` is `2`. `2.50` and `$2.50` are `2.5`. |
 | `txid` | string | The transaction the watcher reported. Not in the public view. |
 | `at` | number | Unix seconds, integer, zero or greater. Missing becomes `0`. |
 | `outcome` | string | One of `confirmed`, `disputed`, `rugged`, `refunded`. Anything else becomes `""`. |

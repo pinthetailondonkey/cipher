@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { schnorr } from '@noble/curves/secp256k1.js';
-import { publicReceipt, rankVolume, signReceipt, verifyReceipt } from './proofOfTrade.js';
+import { normalizeAmount, publicReceipt, rankVolume, signReceipt, verifyReceipt } from './proofOfTrade.js';
 
 function hex(bytes) {
   return [...bytes].map((byte) => byte.toString(16).padStart(2, '0')).join('');
@@ -46,6 +46,10 @@ test('both parties sign the same bytes, and one bad signature fails', () => {
     { v: 1, hash: 'aa', amount: '5', currency: 'xmr', buyer: body.buyer, vendor: 'ff' },
     { v: 1, hash: 'bb', amount: '1.5', currency: 'xmr', buyer: body.buyer, vendor: body.vendor, address: '8secret', txid: 'deadbeef' },
   ]);
+  assert.equal(normalizeAmount('$2.50'), '2.5');
+  assert.equal(normalizeAmount(2), '2');
+  assert.equal(normalizeAmount(2.5), '2.5');
+  assert.equal(rankVolume([{ v: 1, hash: 'cc', amount: '2.50', currency: 'xmr', buyer: body.buyer, vendor: body.vendor }])[0].volume, '2.5');
   assert.deepEqual(ranked, [
     { vendor: 'ff', currency: 'xmr', volume: '5' },
     { vendor: body.vendor, currency: 'xmr', volume: '2' },

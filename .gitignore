@@ -3,3 +3,6 @@ dist/
 *.deb
 cipher-backup-*/
 android/
+.env.local
+.idea/
+.vercel/
