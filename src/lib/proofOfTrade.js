@@ -77,12 +77,6 @@ export function coSignPayment(receipt, secretKey) {
   return signReceipt(secretKey, receipt?.body, receipt);
 }
 
-export function receiptAtPayment(vendorKey, buyerKey, body) {
-  const signed = coSignPayment(signReceipt(vendorKey, body), buyerKey);
-  if (!verifyReceipt(signed)) throw new Error('The payment receipt did not verify.');
-  return signed;
-}
-
 export function acceptPayment(payload, secretKey) {
   if (!payload || payload.type !== 'order_update' || !payload.receipt?.body) return null;
   if (payload.status !== 'paid' && payload.status !== 'disputed') return null;
