@@ -1,6 +1,40 @@
 import { bech32 } from '@scure/base';
 import { deriveMoneroAddress } from './moneroAddress';
-import { scopeKey } from './storage';
+import { scopeKey, scopedGet, scopedSet } from './storage';
+
+const LEGACY_ADDRESS_KEYS = {
+  btc: ['cipher_btc_address', 'cipher_btc'],
+  xmr: ['cipher_xmr_address', 'cipher_xmr'],
+};
+
+// Older builds also wrote main addresses to device-wide keys, which handed
+// one account's address to the buyers of another. A device with one account
+// adopts them once. With more than one, nobody can say whose they were.
+function adoptLegacyAddresses(storage) {
+  if (!storage) return;
+  let accounts = 0;
+  try {
+    accounts = Object.keys(JSON.parse(storage.getItem('cipher_vaults') || '{}') || {}).length;
+  } catch {
+    accounts = 0;
+  }
+  for (const [coin, keys] of Object.entries(LEGACY_ADDRESS_KEYS)) {
+    const legacy = keys.map((key) => storage.getItem(key)).find(Boolean) || '';
+    if (legacy && accounts <= 1 && !scopedGet(`${coin}_address`, '')) scopedSet(`${coin}_address`, legacy.trim());
+    keys.forEach((key) => storage.removeItem(key));
+  }
+}
+
+// A main receiving address belongs to one account and is read only from its scope.
+export function readPaymentAddresses(storage = globalThis.localStorage) {
+  adoptLegacyAddresses(storage);
+  return { btc: scopedGet('btc_address', '') || '', xmr: scopedGet('xmr_address', '') || '' };
+}
+
+export function savePaymentAddresses({ btc = '', xmr = '' } = {}) {
+  scopedSet('btc_address', String(btc).trim());
+  scopedSet('xmr_address', String(xmr).trim());
+}
 
 const BITCOIN_HRP = { bc: 'bc', bcrt: 'bcrt' };
 

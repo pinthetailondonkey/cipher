@@ -1,7 +1,7 @@
 import { useChatStore } from '../../store/chatStore';
 import { db, patchMessage, saveMessage } from '../../db';
 import { scopedGet, scopedSet } from '../../lib/storage';
-import { getOrderPaymentMethods } from '../../lib/vendorPayments';
+import { getOrderPaymentMethods, readPaymentAddresses } from '../../lib/vendorPayments';
 import { nextPaymentState, orderCoinAmount } from '../../lib/paymentState';
 import { checkPayment } from '../../lib/paymentWatch';
 import { activeUrl, entryById } from '../../lib/egress';
@@ -59,8 +59,7 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
   
       if (action === 'accept_order') {
         const sendAcceptance = async (coinAmount, coinCurrency) => {
-          const baseBtc = scopedGet('btc_address', localStorage.getItem('cipher_btc_address') || localStorage.getItem('cipher_btc') || '');
-          const baseXmr = scopedGet('xmr_address', localStorage.getItem('cipher_xmr_address') || localStorage.getItem('cipher_xmr') || '');
+          const { btc: baseBtc, xmr: baseXmr } = readPaymentAddresses();
           let paymentMethods;
           try {
             paymentMethods = await getOrderPaymentMethods(
