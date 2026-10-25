@@ -150,6 +150,8 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
               address,
               amount: msg.data?.product?.price ?? msg.data?.product?.priceUsd ?? '',
               txid: outcome.report.txid,
+              at: Math.floor(Date.now() / 1000),
+              outcome: 'confirmed',
             });
             scopedSet(`receipt_${msg.id}`, signed);
             receiptHash = publicReceipt(signed).hash;
