@@ -1,11 +1,11 @@
 import { useEffect, useRef } from 'react';
-import { uploadToBlossom } from '@nostr-wot/blossom';
 import { db, saveMessage } from '../../db';
 import { useChatStore } from '../../store/chatStore';
 import { scopedRemove } from '../../lib/storage';
 import { haptic } from '../../lib/haptics';
 import { compressImage } from '../../lib/imageCompression';
-import { blossomSigner, sortMessages } from './media';
+import { sortMessages } from './media';
+import { uploadPrivateMedia } from '../../lib/mediaCrypto';
 import { blossomServers } from '../../lib/egress';
 import { getPrivacy } from '../../lib/privacy';
 
@@ -40,15 +40,11 @@ export function useComposer({ identity, sendDM, sendGroupMessage }) {
     };
   }, []);
 
-  const sendMessage = async (text, isImage = false, audioUrl = null, imageUrls = null, customPayload = null) => {
-    if (!text.trim() && !audioUrl && !customPayload && !imageUrls) return;
+  const sendMessage = async (text, customPayload = null) => {
+    if (!text.trim() && !customPayload) return;
     haptic('light');
     const tempId = `temp-${Date.now()}`;
-    let msgPayload = { type: 'text', message: text };
-    if (isImage) msgPayload = { type: 'image', url: text, metadata_stripped: true };
-    if (audioUrl) msgPayload = { type: 'audio', url: audioUrl };
-    if (imageUrls) msgPayload = { type: 'album', urls: imageUrls, message: text };
-    if (customPayload) msgPayload = customPayload;
+    let msgPayload = customPayload || { type: 'text', message: text };
     const _chatIdForTimer = (view === 'dm' ? activeDm : activeGroup?.id);
     const _timerStr = useChatStore.getState().disappearingTimers?.[_chatIdForTimer];
     const _secs = (() => {
@@ -184,17 +180,16 @@ export function useComposer({ identity, sendDM, sendGroupMessage }) {
     const caption = newMessage;
     setNewMessage('');
     try {
-      const urls = [];
+      const media = [];
       for (const file of files) {
         const compressedFile = await compressImage(file);
-        const blob = await uploadToBlossom(compressedFile, { signer: blossomSigner(identity), servers: blossomServers() });
-        urls.push(blob.url);
+        media.push(await uploadPrivateMedia(compressedFile, blossomServers()));
       }
-      await sendMessage(caption, false, null, urls);
-      setToast({ type: 'success', message: urls.length > 1 ? 'Album sent!' : 'Image sent!' });
+      await sendMessage(caption, { type: 'album', media, message: caption });
+      setToast({ type: 'success', message: media.length > 1 ? 'Album sent!' : 'Image sent!' });
     } catch (err) {
-      console.error(err);
-      setToast({ type: 'error', message: 'Upload failed' });
+      console.error('[media] Encrypted photo upload failed:', err);
+      setToast({ type: 'error', message: 'The photo was not sent. No media host took the encrypted file.' });
     } finally {
       setUploadingImage(false);
     }
@@ -218,12 +213,12 @@ export function useComposer({ identity, sendDM, sendGroupMessage }) {
         setUploadingImage(true);
         setToast({ type: 'success', message: 'Uploading voice note...' });
         try {
-          const blob = await uploadToBlossom(file, { signer: blossomSigner(identity), servers: blossomServers() });
-          await sendMessage('', false, blob.url);
+          const entry = await uploadPrivateMedia(file, blossomServers());
+          await sendMessage('', { type: 'audio', ...entry });
           setToast({ type: 'success', message: 'Voice note sent!' });
         } catch (err) {
-          console.error(err);
-          setToast({ type: 'error', message: 'Voice upload failed' });
+          console.error('[media] Encrypted voice upload failed:', err);
+          setToast({ type: 'error', message: 'The voice note was not sent. No media host took the encrypted file.' });
         } finally {
           if (chatMountedRef.current) setUploadingImage(false);
         }
