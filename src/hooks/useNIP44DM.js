@@ -8,6 +8,7 @@ import { generalRelays, queryAllPages } from '../lib/relays';
 import { enqueueNostrEvent, startOutboxSync } from '../lib/outbox';
 import { allowsTyping } from '../lib/privacy';
 import { publishOwnRelayList, relaysForPeer } from '../lib/dmRelays';
+import { withBuzzTag } from '../lib/pushGateway';
 
 const shouldSuppress = (chatId) => {
   const state = useChatStore.getState();
@@ -45,9 +46,11 @@ export function useNIP44DM({ identity }) {
       const { finalizeEvent, nip44 } = await import('nostr-tools');
       const shared = nip44.v2.utils.getConversationKey(identity.sk, targetDm);
       const encrypted = nip44.v2.encrypt(JSON.stringify(payload), shared);
-      const tags = [['p', targetDm]];
-      if (clientId) tags.push(['client', clientId]);
-      if (replyId) tags.push(['e', replyId, '', 'reply']);
+      const tags = withBuzzTag([
+        ['p', targetDm],
+        ...(clientId ? [['client', clientId]] : []),
+        ...(replyId ? [['e', replyId, '', 'reply']] : []),
+      ], payload);
       const event = finalizeEvent({
         kind: 4,
         created_at: Math.floor(Date.now() / 1000),

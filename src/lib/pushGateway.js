@@ -1,5 +1,28 @@
 // A locked phone buzzes only after a gateway you run is pasted in Connections.
 // The notice is "New message" or "New order". The gateway is not given the text.
+// Only an event tagged t=msg is a real message. Typing, receipts, calls, and key bundles are not.
+
+export const BUZZ_TAG = 'msg';
+const SILENT_TYPES = new Set(['typing', 'read', 'pin', 'call', 'gkey']);
+
+export function payloadShouldBuzz(payload) {
+  if (!payload || typeof payload !== 'object') return false;
+  if (payload.t === 'gkey' || payload.type === 'gkey') return false;
+  if (SILENT_TYPES.has(payload.type) || SILENT_TYPES.has(payload.t)) return false;
+  return true;
+}
+
+export function withBuzzTag(tags, payload) {
+  const next = Array.isArray(tags) ? tags.map((tag) => tag.slice()) : [];
+  if (!payloadShouldBuzz(payload)) return next;
+  if (next.some((tag) => tag[0] === 't' && tag[1] === BUZZ_TAG)) return next;
+  next.push(['t', BUZZ_TAG]);
+  return next;
+}
+
+export function eventShouldBuzz(event) {
+  return Array.isArray(event?.tags) && event.tags.some((tag) => tag[0] === 't' && tag[1] === BUZZ_TAG);
+}
 
 export function notificationFromPush(raw) {
   const kind = raw && typeof raw === 'object' && raw.kind === 'order' ? 'order' : 'message';
