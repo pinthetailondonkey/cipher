@@ -734,15 +734,16 @@ export function useNIP29Group({ identity }) {
         queryWithTimeout(pool, groupRelays, { kinds: [39002], '#d': [groupId] }),
         queryWithTimeout(pool, groupRelays, { kinds: [39002], '#h': [groupId] }),
       ]);
-      const latest = Array.from(new Map([...byDTag, ...byHTag].map((event) => [event.id, event])).values())
-        .sort((a, b) => b.created_at - a.created_at)[0];
-      if (!latest) {
-        console.warn(`[NIP29] No membership snapshot found for group ${groupId}`);
+      // F2 fix (audit finding 2): the snapshot must be signed by the group
+      // relay. Hand-parsing the newest event let any key impersonate the
+      // member list — and that list is what key grants and admin checks
+      // trust. Same gate the live subscription applies (authorizeMemberSnapshot).
+      const relayPubkey = await groupRelayPubkey();
+      const members = pickMemberSnapshot([...byDTag, ...byHTag], relayPubkey, groupId);
+      if (!members) {
+        console.warn(`[NIP29] No relay-signed membership snapshot found for group ${groupId}`);
         return null;
       }
-      const members = latest.tags
-        .filter((tag) => tag[0] === 'p' && tag[1])
-        .map((tag) => ({ pubkey: tag[1], role: tag[2] || 'member' }));
       if (!members.some((member) => member.pubkey === identity.pk)) {
         members.push({ pubkey: identity.pk, role: activeGroup?.creator === identity.pk ? 'admin' : 'member' });
       }
