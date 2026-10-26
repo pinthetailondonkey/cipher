@@ -2,6 +2,7 @@ import React from 'react';
 import { Search, Users, User } from 'lucide-react';
 import ScreenHeader from '../ui/ScreenHeader';
 import Picture from '../ui/Picture';
+import { noHexName } from '../../lib/npub';
 import { useChatStore } from '../../store/chatStore';
 
 export default function SearchView({ handleSearch, joinGroupById, openChat }) {
@@ -72,7 +73,7 @@ export default function SearchView({ handleSearch, joinGroupById, openChat }) {
                       />
                     </span>
                     <span className="min-w-0">
-                      <span className="block truncate text-[15px] font-semibold text-white">{result.name || `User ${result.pubkey?.slice(0, 6)}`}</span>
+                      <span className="block truncate text-[15px] font-semibold text-white">{result.name || noHexName(null, result.pubkey)}</span>
                       <span className="block text-[13px] text-white/40">{result.type === 'group' ? 'Group' : 'Person'}</span>
                     </span>
                   </span>

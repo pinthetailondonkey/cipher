@@ -6,6 +6,7 @@ import { useReputation } from '../hooks/useReputation';
 import Avatar from './ui/Avatar';
 import Button, { pressable } from './ui/Button';
 import { copyText } from '../lib/copyText';
+import { noHexName, shortNpub } from '../lib/npub';
 import { useChatStore } from '../store/chatStore';
 
 export default function ProfileModal({ pubkey, identity, onClose, onMessage }) {
@@ -70,8 +71,8 @@ export default function ProfileModal({ pubkey, identity, onClose, onMessage }) {
         <div className="flex items-center gap-4 pr-8">
           <Avatar src={profile.picture} name={profile.displayName || profile.name || pubkey} className="!h-16 !w-16 text-xl" />
           <div className="min-w-0">
-            <h2 className="truncate text-2xl font-bold tracking-tight text-white">{profile.displayName || profile.name || `User ${pubkey.slice(0, 8)}`}</h2>
-            <p className="truncate text-[13px] text-white/40">{pubkey.slice(0, 16)}…</p>
+            <h2 className="truncate text-2xl font-bold tracking-tight text-white">{noHexName(profile, pubkey)}</h2>
+            <p className="truncate text-[13px] text-white/40">{shortNpub(pubkey)}</p>
           </div>
         </div>
         {profile.about && <p className="mt-4 whitespace-pre-wrap text-[13px] text-white/40">{profile.about}</p>}

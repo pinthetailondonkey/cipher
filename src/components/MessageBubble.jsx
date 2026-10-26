@@ -12,6 +12,7 @@ import { MediaAudio, MediaImage } from './ui/PrivateMedia';
 import { attachmentsFor } from '../lib/mediaCrypto';
 import { allowsLinkPreviews } from '../lib/privacy';
 import { orderActionsFor, orderState } from '../lib/orderActions';
+import { noHexName } from '../lib/npub';
 import { orderPriceLabel } from '../lib/listing';
 
 const EMPTY_REACTIONS = [];
@@ -336,7 +337,7 @@ export default function MessageBubble({ message, data, onAction, senderName, isP
             <p className="mb-3 text-[15px] font-semibold text-white">{showReactors}</p>
             {(grouped.get(showReactors) || []).map((person) => (
               <p key={person.pubkey} className="border-b border-white/5 py-2 text-[13px] text-white/80">
-                {profiles[person.pubkey]?.displayName || profiles[person.pubkey]?.name || `${person.pubkey.slice(0, 8)}…`}
+                {noHexName(profiles[person.pubkey], person.pubkey)}
               </p>
             ))}
             <button type="button" onClick={() => setShowReactors(false)} className="mt-3 text-[13px] font-semibold text-blue-500">Close</button>

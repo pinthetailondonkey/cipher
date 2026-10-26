@@ -10,6 +10,7 @@ import { scopedRemove } from '../../lib/storage';
 import { useNIP29Group, loadGroupProfile, retrySecuringGroup } from '../../hooks/useNIP29Group';
 import { securingPhase, securingSendsFor } from '../../lib/crypto/groupKeyRequest';
 import { haptic } from '../../lib/haptics';
+import { noHexName } from '../../lib/npub';
 import Picture from '../ui/Picture';
 
 function GroupStorefront({ items, pinnedId, canList, onBuy, onList, pendingLists = [], now = 0, onRetrySecure }) {
@@ -331,7 +332,7 @@ export default function GroupView({
               key={message.clientId || message.id}
               message={message}
               data={data || { type: 'text', message: message.pending ? 'Waiting for group encryption key…' : (typeof message.rawContent === 'string' && message.rawContent && !message.rawContent.startsWith('{') ? message.rawContent : 'Message unavailable') }}
-              senderName={message.isSender ? null : (senderProfile?.displayName || senderProfile?.name || message.pubkey?.slice(0, 8))}
+              senderName={message.isSender ? null : noHexName(senderProfile, message.pubkey)}
               showAvatar={!message.isSender}
               avatarUrl={senderProfile?.picture}
               avatarInitial={senderProfile?.displayName?.charAt(0) || '?'}

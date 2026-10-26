@@ -3,6 +3,7 @@ import { BadgeCheck, MessageCircle, Package, Store, X } from 'lucide-react';
 import { useVouchCount } from '../../hooks/useVouchCount';
 import { generalRelays } from '../../lib/relays';
 import Picture from '../ui/Picture';
+import { noHexName } from '../../lib/npub';
 
 function parseListing(event) {
   let content = {};
@@ -70,7 +71,7 @@ export default function VendorStorefront({ isOpen, onClose, vendorPubkey, profil
         <header className="sticky top-0 z-10 flex items-center gap-3 border-b border-white/5 bg-[#0A0A0A]/60 backdrop-blur-2xl px-4 py-4 backdrop-blur-xl pt-[env(safe-area-inset-top)]">
           <Picture src={profile.picture} alt="" className="h-12 w-12 rounded-full border border-white/10 object-cover" fallback={<div className="flex h-12 w-12 items-center justify-center rounded-full border border-white/10 bg-[#0A0A0A]/60 shadow-2xl backdrop-blur-2xl text-white/50"><Store size={20} /></div>} />
           <div className="min-w-0 flex-1">
-            <h2 className="truncate text-[15px] font-semibold text-white">{profile.displayName || profile.name || `Vendor ${vendorPubkey.slice(0, 8)}`}</h2>
+            <h2 className="truncate text-[15px] font-semibold text-white">{noHexName(profile, vendorPubkey)}</h2>
             <p className="flex items-center gap-1 text-[13px] text-white/45"><BadgeCheck size={14} className={vouchCount >= 3 ? 'text-blue-400' : ''} />{vouchesLoading ? 'Checking trust' : `${vouchCount} vouches${vouchCount >= 3 ? ' · Trusted Vendor' : ''}`}</p>
           </div>
           <button type="button" onClick={onClose} aria-label="Close storefront" className="p-2 text-white/45 hover:text-white"><X size={20} /></button>

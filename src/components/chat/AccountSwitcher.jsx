@@ -3,6 +3,7 @@ import { Check, KeyRound, Plus, Trash2 } from 'lucide-react';
 import ScreenHeader from '../ui/ScreenHeader';
 import Avatar from '../ui/Avatar';
 import { pressable } from '../ui/Button';
+import { shortNpub } from '../../lib/npub';
 
 export default function AccountSwitcher({ identity, onClose }) {
   const [pins, setPins] = useState({});
@@ -51,7 +52,7 @@ export default function AccountSwitcher({ identity, onClose }) {
               <Avatar name={name} />
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-[15px] font-semibold text-white">{name}</span>
-                <span className="block truncate text-[13px] text-white/40">@{account.handle || account.pubkey.slice(0, 10)}</span>
+                <span className="block truncate text-[13px] text-white/40">{account.handle ? `@${account.handle}` : shortNpub(account.pubkey)}</span>
               </span>
               {account.isActive ? <Check size={18} className="text-blue-500" /> : null}
             </div>

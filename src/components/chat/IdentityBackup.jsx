@@ -3,6 +3,7 @@ import { copyText } from '../../lib/copyText';
 import { Copy, Download, Fingerprint, KeyRound, Shield } from 'lucide-react';
 import ScreenHeader from '../ui/ScreenHeader';
 import { pressable } from '../ui/Button';
+import { shortNpub } from '../../lib/npub';
 
 export default function IdentityBackup({ identity, onClose }) {
   const [showSecret, setShowSecret] = useState(false);
@@ -86,7 +87,7 @@ export default function IdentityBackup({ identity, onClose }) {
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = `cipher-recovery-${identity.pk.slice(0, 8)}.txt`;
+      link.download = `cipher-recovery-${shortNpub(identity.pk, 12)}.txt`;
       document.body.append(link);
       link.click();
       link.remove();

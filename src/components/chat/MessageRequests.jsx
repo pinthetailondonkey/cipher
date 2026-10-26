@@ -1,6 +1,7 @@
 import { MessageCircle } from 'lucide-react';
 import ScreenHeader from '../ui/ScreenHeader';
 import Avatar from '../ui/Avatar';
+import { noHexName } from '../../lib/npub';
 
 export default function MessageRequests({ dms = {}, profiles = {}, onBack, onOpenChat }) {
   const requests = Object.entries(dms)
@@ -25,7 +26,7 @@ export default function MessageRequests({ dms = {}, profiles = {}, onBack, onOpe
           <div className="overflow-hidden rounded-2xl border border-white/10 bg-[#0A0A0A]/60 shadow-2xl backdrop-blur-2xl">
           {requests.map(({ pubkey, message }) => {
             const profile = profiles[pubkey] || {};
-            const name = profile.displayName || profile.name || pubkey.slice(0, 12);
+            const name = noHexName(profile, pubkey);
             return (
               <button type="button" key={pubkey} onClick={() => onOpenChat?.(pubkey)} className="flex w-full items-center gap-3 border-b border-white/5 p-4 text-left last:border-0 active:bg-white/5">
                 <Avatar src={profile.picture} name={name} />
