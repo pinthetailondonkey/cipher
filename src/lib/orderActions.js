@@ -277,6 +277,27 @@ export function frozenIssuedMethods(request, sharedAddresses) {
   return btc || xmr ? { btc: btc || null, xmr: xmr || null } : null;
 }
 
+// The freeze when this device never wrote the card's patch: a second device
+// holds no local patch and no derivation slot, and 'nothing issued' would
+// derive a second address while the buyer has already paid the first. The
+// vendor's own sent acceptance update in this chat is the same trusted
+// source the chain check reads — this device signed it — so the newest one
+// for this order carries the pair. The shared-address rule rides along:
+// an arm equal to the account's shared address does not freeze. (security S5)
+export function newestOwnIssuedMethods(updates, sharedAddresses, orderId) {
+  const list = (Array.isArray(updates) ? updates : [])
+    .filter((item) => item?.isSender && item?.data?.type === 'order_update')
+    .filter((item) => !orderId || String(item.data.orderId || '') === String(orderId))
+    .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+  for (const item of list) {
+    const methods = issuedPaymentMethods(item.data);
+    if (!methods) continue;
+    const frozen = frozenIssuedMethods({ localPatch: item.data }, sharedAddresses);
+    if (frozen) return frozen;
+  }
+  return null;
+}
+
 // What a disputed order returns to when this side reopens it. Not history:
 // the payment state the order already reached decides it. Money seen or
 // confirmed puts the order back to paid; anything else back to accepted, so
