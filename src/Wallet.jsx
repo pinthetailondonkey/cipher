@@ -2,7 +2,7 @@ import { lazy, Suspense, useState, useEffect } from 'react'
 import {  
   User, Plus, AlertCircle, RefreshCw, 
   Lock, ChevronRight, ArrowLeft, Copy, CreditCard, Camera,
-  BarChart3, Package, KeyRound, ShieldAlert, Users, SlidersHorizontal, Shield, Globe
+  BarChart3, Package, KeyRound, ShieldAlert, Users, SlidersHorizontal, Shield
 } from 'lucide-react'
 import { uploadToBlossom } from '@nostr-wot/blossom'
 import { useProfiles, updateProfileCache } from './useProfiles'
