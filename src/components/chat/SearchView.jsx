@@ -35,7 +35,7 @@ export default function SearchView({ handleSearch, joinGroupById, openChat }) {
             />
           </div>
         </div>
-        <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-8">
+        <div className="mx-auto min-h-0 w-full max-w-3xl flex-1 overflow-y-auto px-4 pb-8">
           {isSearching ? (
             <div className="mt-10 flex justify-center">
               <div className="h-6 w-6 animate-spin rounded-full border-2 border-accent border-t-transparent" />

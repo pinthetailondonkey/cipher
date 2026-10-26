@@ -50,6 +50,8 @@ export default function Wallet({ identity, onOpenChat }) {
     setThemeId(next.id);
     setTheme(next.id);
   };
+  // The Appearance row shows the current theme's blurb (lib/theme.js).
+  const themeBlurb = THEMES.find((theme) => theme.id === themeId)?.blurb ?? THEMES[0].blurb;
 
   // Profile state
   const [username, setUsername] = useState('') 
@@ -357,7 +359,7 @@ export default function Wallet({ identity, onOpenChat }) {
   // --- MAIN PROFILE TAB ---
   return (
     <div className="animate-fade-in overflow-y-auto h-full pb-4 pb-[env(safe-area-inset-bottom)]">
-      {status && <div className="fixed left-1/2 -translate-x-1/2 bg-accent text-accentInk px-4 py-2 rounded-xl text-xs font-bold shadow-lg z-50 animate-fade-in" style={{ top: `calc(5rem + env(safe-area-inset-top))` }}>{status}</div>}
+      {status && <div className="fixed left-1/2 top-[calc(5rem+env(safe-area-inset-top))] -translate-x-1/2 md:left-auto md:right-6 md:top-6 md:translate-x-0 bg-accent text-accentInk px-4 py-2 rounded-xl text-xs font-bold shadow-lg z-50 animate-fade-in">{status}</div>}
 
       {/* HEADER PROFILE CARD */}
       <div className="flex flex-col items-center px-4 pb-2 pt-8">

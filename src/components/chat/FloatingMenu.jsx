@@ -27,8 +27,7 @@ export default function FloatingMenu() {
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 20, scale: 0.9 }}
               transition={{ type: "spring", stiffness: 400, damping: 25 }}
-              className="fixed right-6 flex flex-col gap-3 items-end z-50"
-              style={{ bottom: `calc(10rem + env(safe-area-inset-bottom))` }}
+              className="fixed right-6 bottom-[calc(10rem+env(safe-area-inset-bottom))] z-50 flex flex-col gap-3 items-end md:absolute md:right-4 md:bottom-24"
             >
               <button 
                 onClick={() => { setShowMenu(false); setView('search'); }} 
@@ -69,8 +68,7 @@ export default function FloatingMenu() {
       <motion.button
         animate={{ rotate: showMenu ? 45 : 0 }}
         onClick={() => setShowMenu(!showMenu)}
-        className={`fixed right-6 z-50 rounded-full bg-accent p-4 text-accentInk shadow-[0_0_20px_rgba(37,99,235,0.4)] active:bg-accent ${pressable}`}
-        style={{ bottom: `calc(6rem + env(safe-area-inset-bottom))` }}
+        className={`fixed right-6 bottom-[calc(6rem+env(safe-area-inset-bottom))] z-50 rounded-full bg-accent p-4 text-accentInk shadow-[0_0_20px_rgba(37,99,235,0.4)] active:bg-accent md:absolute md:right-4 md:bottom-6 ${pressable}`}
       >
         <Plus size={24} strokeWidth={2.5} />
       </motion.button>
