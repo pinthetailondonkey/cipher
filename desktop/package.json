@@ -1,0 +1,18 @@
+{
+  "name": "cipher",
+  "productName": "Cipher",
+  "version": "1.0.0",
+  "description": "Cipher messenger and shop, wrapped so every connection rides Tor. Design: docs/DESKTOP.md.",
+  "main": "src/main.js",
+  "private": true,
+  "license": "UNLICENSED",
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test test/",
+    "dist": "electron-builder --linux"
+  },
+  "devDependencies": {
+    "electron": "33.4.11",
+    "electron-builder": "^25.1.8"
+  }
+}
