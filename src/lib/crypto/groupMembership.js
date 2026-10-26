@@ -125,7 +125,20 @@ export function authorizeGroupControl({ kind, sender, subject, members, creator 
   if (!sender) return false;
   if (kind === 39002) return false;
   if (kind === 9021 || kind === 9022) return sender === subject;
-  if (kind === 9000 || kind === 9001 || kind === 9002) return isGroupAdmin(members, sender, creator);
+  if (kind === 9000 || kind === 9001 || kind === 9002) {
+    if (!isGroupAdmin(members, sender, creator)) return false;
+    // H2 fix (round-three re-hack): a relay-asserted admin role is one
+    // roster row the relay can write about anyone, and it used to be worth
+    // full control — including kick and demote OF the owner. The creator
+    // is the one name this device vets for standing, so control actions
+    // AGAINST the creator require the creator's own key. A relay row
+    // cannot dethrone the identity that created the group.
+    if (subject && String(subject).toLowerCase() === String(creator || '').toLowerCase()
+      && String(sender).toLowerCase() !== String(creator || '').toLowerCase()) {
+      return false;
+    }
+    return true;
+  }
   return false;
 }
 

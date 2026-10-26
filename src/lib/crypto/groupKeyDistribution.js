@@ -31,6 +31,25 @@ export function parseGroupKeyBundle(payload) {
 // Pure decision, unit-tested directly: the sender must be IN the snapshot,
 // and a non-admin of record may not roll the epoch back. (Snapshot shape and
 // its relay-signature gate are covered in groupMembership.test.js.)
+// F1 fix (audit finding 1): a kind-4 t:'gkey' bundle re-keys a group on
+// install, so any key could re-key any group. The sender must now prove
+// standing in the group: the creator, an admin in the stored member snapshot,
+// or an ordinary member of record — and only for epochs at or above what this
+// device already holds (a stale bundle cannot roll the group back).
+//
+// The stored snapshot is the relay-signed 39002 list (rememberMembers only
+// stores authorized frames). No snapshot, no install: an unknown gid or a
+// group this device never synced is refused, which is the takeover path.
+// Pure decision, unit-tested directly: the sender must be IN the snapshot.
+// (Snapshot shape and its relay-signature gate are covered in
+// groupMembership.test.js.)
+//
+// H2 fix (round-three re-hack): a role string from the relay is a CLAIM the
+// relay can write about anyone — so no role skips the epoch check. The old
+// gate gave any non-member role a free pass to install ANY epoch (an
+// epoch-0 rollback verified end-to-end in the repro), which made one
+// roster row worth a full key takeover. The epoch rule is uniform now:
+// installReceivedGroupKey refuses any rollback for everyone.
 export function senderAuthorizedForGroupKey({ snapshot, sender, maxEpoch, currentEpoch }) {
   if (!sender || !Array.isArray(snapshot)) return false;
   const row = snapshot.find((member) => {
@@ -38,7 +57,6 @@ export function senderAuthorizedForGroupKey({ snapshot, sender, maxEpoch, curren
     return String(pubkey || '').toLowerCase() === String(sender).toLowerCase();
   });
   if (!row) return false;
-  if (typeof row === 'object' && row.role && row.role !== 'member') return true;
   return !(Number.isInteger(currentEpoch) && Number.isInteger(maxEpoch) && maxEpoch < currentEpoch);
 }
 
