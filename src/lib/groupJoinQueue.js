@@ -9,6 +9,7 @@
 import { scopedGet, scopedSet } from './storage.js';
 
 const KEY = 'join_pending';
+const DENIED_KEY = 'join_denied';
 export const JOIN_REQUESTS_EVENT = 'cipher:join-requests';
 
 const HEX_PUBKEY = /^[0-9a-f]{64}$/;
@@ -29,6 +30,7 @@ export function queuePendingJoin(groupId, { pubkey, eventId, at } = {}) {
   const id = String(groupId || '').trim();
   const who = String(pubkey || '').toLowerCase();
   if (!id || !HEX_PUBKEY.test(who)) return false;
+  if (isJoinDenied(id, who)) return false;
   const all = loadPendingJoins();
   const rows = Array.isArray(all[id]) ? all[id] : [];
   if (rows.some((row) => row.pubkey === who)) return false;
@@ -63,4 +65,39 @@ export function subscribeJoinRequests(listener) {
   if (typeof window === 'undefined' || typeof listener !== 'function') return () => {};
   window.addEventListener(JOIN_REQUESTS_EVENT, listener);
   return () => window.removeEventListener(JOIN_REQUESTS_EVENT, listener);
+}
+
+// Denial is durable: the relay replays the original 9021 for days, so a row
+// dropped on deny would re-queue the same sender on every app open. A denied
+// pubkey is recorded per group and the 9021 handler checks it before queueing.
+// A denied sender comes back only through an owner-initiated add.
+function loadDenied() {
+  const stored = scopedGet(DENIED_KEY, {});
+  return stored && typeof stored === 'object' ? stored : {};
+}
+
+export function deniedJoinsFor(groupId) {
+  const rows = loadDenied()[groupId];
+  return rows && typeof rows === 'object' ? rows : {};
+}
+
+export function isJoinDenied(groupId, pubkey) {
+  const id = String(groupId || '').trim();
+  const who = String(pubkey || '').toLowerCase();
+  if (!id || !HEX_PUBKEY.test(who)) return false;
+  return Boolean(deniedJoinsFor(id)[who]);
+}
+
+export function denyPendingJoin(groupId, pubkey) {
+  const id = String(groupId || '').trim();
+  const who = String(pubkey || '').toLowerCase();
+  if (!id || !HEX_PUBKEY.test(who)) return false;
+  const all = loadDenied();
+  const rows = all[id] || {};
+  if (rows[who]) return false;
+  all[id] = { ...rows, [who]: Math.floor(Date.now() / 1000) };
+  scopedSet(DENIED_KEY, all);
+  dropPendingJoin(id, who);
+  notifyJoinRequests();
+  return true;
 }
