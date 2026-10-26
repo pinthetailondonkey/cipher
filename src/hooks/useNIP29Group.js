@@ -10,7 +10,7 @@ import { getMyGroups, setMyGroups } from '../lib/myGroups';
 import { encodeGroupPayload, decodeGroupEvent } from '../lib/crypto/groupMessageCodec';
 import { getAllGroupKeys, getCurrentGroupKey, putGroupKey } from '../lib/crypto/groupKeyStore';
 import { authorizeGroupControl, authorizeMemberSnapshot, groupRelayPubkey, groupTimelinePlans, isRestrictedRelayClose, pickMemberSnapshot } from '../lib/crypto/groupMembership';
-import { grantKeyRequest, loadMemberSnapshot, loadMemberSnapshotRecord, patchMemberSnapshot, rememberMembers, rotateGroupEpoch } from '../lib/crypto/groupKeyRotation';
+import { grantKeyRequest, loadMemberSnapshot, loadMemberSnapshotRecord, memberKey, patchMemberSnapshot, rememberMembers, rotateGroupEpoch } from '../lib/crypto/groupKeyRotation';
 import { generateGroupKey } from '../lib/crypto/groupCipher';
 import { distributeGroupKey, epochsToBackfill } from '../lib/crypto/groupKeyDistribution';
 import { enqueueNostrEvent, startOutboxSync } from '../lib/outbox';
@@ -815,7 +815,7 @@ export function useNIP29Group({ identity }) {
           // Own join echo: the creator's bootstrap join lands on the snapshot
           // unchanged. A rejoin case is kept here too — an already-member
           // sender still auto-adds (a no-op on the snapshot row).
-        } else if (!(Array.isArray(members) && members.includes(pk))) {
+        } else if (!(Array.isArray(members) && members.some((member) => memberKey(member) === pk))) {
           // First join request from this sender: it goes to the pending queue
           // for owner approval instead of onto the snapshot. Nothing auto-adds
           // a stranger, so their key request reads a snapshot that does not
