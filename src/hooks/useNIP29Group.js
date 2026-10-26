@@ -17,7 +17,7 @@ import { enqueueNostrEvent, startOutboxSync } from '../lib/outbox';
 import { groupSocketUrl } from '../lib/egress';
 import { relaysForPeer } from '../lib/dmRelays';
 import { dropSecuringSend, forgetPendingKeyRequest, queueSecuringSend, resetKeyRequest, securingSendsFor } from '../lib/crypto/groupKeyRequest';
-import { dropPendingJoin, isJoinDenied, loadPendingJoins, notifyJoinRequests, pendingJoinsFor, queuePendingJoin } from '../lib/groupJoinQueue.js';
+import { dropPendingJoin, isJoinDenied, loadPendingJoins, notifyJoinRequests, pendingJoinsFor, queuePendingJoin, withoutDenied } from '../lib/groupJoinQueue.js';
 
 function currentGroupRelay() {
   return groupSocketUrl() || '';
@@ -792,7 +792,9 @@ export function useNIP29Group({ identity }) {
           console.warn('[group] Ignored a membership snapshot not signed by the group relay', event.id);
           return;
         }
-        const members = pickMemberSnapshot([event], relayPubkey, groupId) || [];
+        // An open-join relay names a denied sender in its snapshot; the local
+        // deny outvotes the relay, so their row never lands or grants a key.
+        const members = withoutDenied(groupId, pickMemberSnapshot([event], relayPubkey, groupId) || []);
         await rememberMembers(groupId, members);
         if (useChatStore.getState().activeGroup?.id === groupId) setGroupMembers(members);
         return;
@@ -814,8 +816,12 @@ export function useNIP29Group({ identity }) {
         if (pk === identity.pk) {
           // Own join echo: the creator's bootstrap join lands on the snapshot
           // unchanged. A rejoin case is kept here too — an already-member
-          // sender still auto-adds (a no-op on the snapshot row).
-        } else if (loadPendingJoins()[groupId]?.some((row) => row.pubkey === pk) || isJoinDenied(groupId, pk)) {
+          // sender still auto-adds (a no-op on the snapshot row). A pubkey the
+          // owner denied cannot be one's own, so no deny check is needed here.
+        } else if (isJoinDenied(groupId, pk)) {
+          // Denied senders stay out even when this device's snapshot has been
+          // widened by a relay: the deny outvotes every replay path below.
+        } else if (loadPendingJoins()[groupId]?.some((row) => row.pubkey === pk)) {
           // Already queued, or already denied: a relay replay of the same 9021
           // must not re-queue the sender or repost the join-request message.
         } else if (!(Array.isArray(members) && members.some((member) => memberKey(member) === pk))) {
@@ -887,7 +893,9 @@ export function useNIP29Group({ identity }) {
       if (event.kind === 39002) {
         const members = event.tags.filter(x => x[0] === 'p').map(x => ({ pubkey: x[1], role: x[2] || 'member' }));
         if (!members.find(x => x.pubkey === identity.pk)) members.push({ pubkey: identity.pk, role: 'member' });
-        await rememberMembers(groupId, members.map((member) => member.pubkey));
+        // Same deny-vote as the relay-signed branch above: the local deny list
+        // strips a denied sender no matter who signed the roster.
+        await rememberMembers(groupId, withoutDenied(groupId, members.map((member) => member.pubkey)));
         if (useChatStore.getState().activeGroup?.id === groupId) setGroupMembers(members);
         return;
       }
