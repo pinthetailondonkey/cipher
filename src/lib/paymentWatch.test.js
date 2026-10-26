@@ -347,11 +347,12 @@ test('a transfer recorded before the order\'s address was issued cannot pay it',
     watcherUrl,
     address: '8sub',
     currency: 'xmr',
-    state: 'seen',
+    state: 'address_issued',
     issuedAt,
     fetchImpl: () => watcherAnswer({ txid: 'ab', confirmations: 1, amount: '0.5' }),
   });
   assert.equal(undated.moved, true);
+  assert.equal(undated.state, 'seen');
   // The pure gate: equal time is not before issuance, a missing one proves nothing.
   assert.equal(issuePrecedes({ time: issuedAt - 1 }, issuedAt), true);
   assert.equal(issuePrecedes({ time: issuedAt }, issuedAt), false);
