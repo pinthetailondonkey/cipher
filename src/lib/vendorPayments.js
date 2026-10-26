@@ -163,14 +163,20 @@ export async function getOrderPaymentMethods(identity, orderId, mainAddresses, p
   return withSettingsLock(identity.pk, async () => {
     const settings = await readSettings(identity);
     const existing = settings.orders[orderId];
-    if (existing) return existing;
+    // An older build could leave an order parked on the account's shared
+    // address. Re-accepting that order issues it a fresh address instead of
+    // serving the shared one again. (security S1)
+    const sharedLeak = existing && ((existing.btc && existing.btc === String(mainAddresses?.btc || ''))
+      || (existing.xmr && existing.xmr === String(mainAddresses?.xmr || '')));
+    if (existing && !sharedLeak) return existing;
 
     const wantsBtc = paymentPreference === 'btc' || paymentPreference === 'both';
     const wantsXmr = paymentPreference === 'xmr' || paymentPreference === 'both';
-    const paymentMethods = {
-      btc: wantsBtc ? (mainAddresses.btc || null) : null,
-      xmr: wantsXmr ? (mainAddresses.xmr || null) : null,
-    };
+    // Every order gets an address of its own, freshly derived. The account's
+    // main address is never handed out: with one shared address, a single
+    // transfer could be read as payment for many orders, and a buyer's
+    // lifetime payments would pool in whichever order was checked. (security S1)
+    const paymentMethods = { btc: null, xmr: null };
     let nextBtcIndex = settings.btcIndex;
     let nextXmrIndex = settings.xmrIndex;
 
@@ -188,6 +194,12 @@ export async function getOrderPaymentMethods(identity, orderId, mainAddresses, p
         nextXmrIndex,
       );
     }
+    if (wantsBtc && !paymentMethods.btc) {
+      throw new Error('Turn on Bitcoin address derivation (an account xpub in Profile) so this order gets its own address. The shared account address cannot tell this order\'s payment from any other.');
+    }
+    if (wantsXmr && !paymentMethods.xmr) {
+      throw new Error('Turn on Monero subaddress derivation (a private view key in Profile) so this order gets its own address. The shared account address cannot tell this order\'s payment from any other.');
+    }
 
     settings.btcIndex = nextBtcIndex;
     settings.xmrIndex = nextXmrIndex;
@@ -195,4 +207,45 @@ export async function getOrderPaymentMethods(identity, orderId, mainAddresses, p
     await writeSettings(identity, settings);
     return paymentMethods;
   });
+}
+
+// The ledger of what a transfer has already paid for. One transaction speaks
+// for one order: a receipt consumes its txid for one coin on one address, and
+// no second order may confirm against either. The map is kept per vendor
+// account with scopedSet, so it survives a reload and a history fetch.
+// (security S1)
+export function consumedKey(currency, txid) {
+  return `${String(currency || '').trim().toLowerCase()}:${String(txid || '').trim().toLowerCase()}`;
+}
+
+// The entry that already spoke for this txid on a different order, if any.
+// The same order asking about its own txid is not a clash.
+export function txidSpokenFor(ledger, { currency, txid, orderId } = {}) {
+  const entry = (ledger && typeof ledger === 'object') ? ledger[consumedKey(currency, txid)] : null;
+  if (!entry) return null;
+  return String(entry.orderId || '') === String(orderId || '') ? null : entry;
+}
+
+// The entry that already spoke for this address on a different order, if any.
+// A reused address is the seat a shared-address replay sits in, so a second
+// order cannot confirm against it either.
+export function addressSpokenFor(ledger, { address, orderId } = {}) {
+  const wanted = String(address || '').trim();
+  if (!ledger || typeof ledger !== 'object' || !wanted) return null;
+  for (const entry of Object.values(ledger)) {
+    if (entry && String(entry.address || '').trim() === wanted
+      && String(entry.orderId || '') !== String(orderId || '')) return entry;
+  }
+  return null;
+}
+
+// A copy of the ledger with the txid recorded as spoken for by this order.
+export function markConsumed(ledger, { currency, txid, orderId, address, at } = {}) {
+  const next = { ...(ledger && typeof ledger === 'object' ? ledger : {}) };
+  next[consumedKey(currency, txid)] = {
+    orderId: String(orderId || ''),
+    address: String(address || ''),
+    at: at == null ? null : at,
+  };
+  return next;
 }

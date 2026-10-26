@@ -126,6 +126,7 @@ export function rowsFromScan(scan, address) {
         ? row.confirmations
         : (tip != null && Number.isInteger(row.height) ? tip - row.height + 1 : 0);
       const out = { txid: String(row.txid), address, confirmations: counted };
+      if (Number.isInteger(row.height)) out.height = row.height;
       const coins = wholeCoins(row.amount, 'btc');
       if (coins != null) out.amount = coins;
       return out;
@@ -166,7 +167,25 @@ export function reportFromTransfers(transfers, address, currency) {
     const largest = coinUnits(hit.amount, currency);
     if (largest != null) report.outputAmount = unitsToCoins(largest, currency);
   }
+  // When the chain dates every part of the transfer, the report carries the
+  // oldest date. The order that consumes the txid can then refuse one that
+  // was recorded before its address even existed. (security S1)
+  const dates = counted.map((row) => Number(row.timestamp));
+  if (counted.length && dates.every((value) => Number.isFinite(value) && value > 0)) {
+    report.time = Math.min(...dates);
+  }
   return report;
+}
+
+// A transfer whose block or event time sits before the order's address was
+// issued belongs to whatever that address held earlier, never to this order.
+// An order can only consume a txid recorded at or after its issuance. (security S1)
+export function issuePrecedes(report, issuedAtSec) {
+  const issuedAt = Number(issuedAtSec);
+  if (!Number.isFinite(issuedAt) || issuedAt <= 0) return false;
+  const time = Number(report?.time);
+  if (!Number.isFinite(time) || time <= 0) return false;
+  return time < issuedAt;
 }
 
 // A watcher answer carries `x-cipher-sig: v1=<hex hmac-sha256>` over the exact
@@ -204,7 +223,7 @@ export async function verifyWatcherResponse({ rawBody, sig, ts, token, nowSec } 
   return hexEqual(computed, match[1]);
 }
 
-export async function checkPayment({ watcherUrl, address, currency, state, amount, fetchImpl = globalThis.fetch } = {}) {
+export async function checkPayment({ watcherUrl, address, currency, state, amount, issuedAt, fetchImpl = globalThis.fetch } = {}) {
   const endpoint = paymentWatchUrl(watcherUrl, { address, currency });
   if (!String(address || '').trim()) throw new Error('This order has no payment address to check.');
   const token = new URL(endpoint).searchParams.get('token');
@@ -257,6 +276,13 @@ export async function checkPayment({ watcherUrl, address, currency, state, amoun
   };
   if (body.amount != null) report.amount = body.amount;
   if (body.outputAmount != null) report.outputAmount = body.outputAmount;
+  if (body.time != null) report.time = body.time;
+  // A transfer the chain dates before this order's address was issued is
+  // refused before anything moves, seen or confirmed. (security S1)
+  if (issuePrecedes(report, issuedAt)) {
+    console.warn('[payments] The transfer the watcher reported was recorded before this order\'s address was issued. It cannot pay this order.');
+    return { moved: false, stale: true, state };
+  }
   try {
     const next = applyWatcherReport({
       state,
