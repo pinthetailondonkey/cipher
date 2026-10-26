@@ -143,6 +143,18 @@ export function orderRecordForReceipt(messages, orderId) {
   };
 }
 
+// The payment methods an order card already carries. Once an address is
+// issued for an order it is frozen there (security S5): acceptance reuses
+// these and never derives a fresh one, so a buyer who paid the first issued
+// address is never strafed by a newer card. Null while nothing is issued.
+export function issuedPaymentMethods(orderData) {
+  const methods = orderData?.paymentMethods;
+  if (!methods || typeof methods !== 'object') return null;
+  const btc = String(methods.btc || '').trim();
+  const xmr = String(methods.xmr || '').trim();
+  return btc || xmr ? { btc: btc || null, xmr: xmr || null } : null;
+}
+
 // The one table of what each side may do with an order in each state. Every
 // order button renders from this. A status it does not know is an error.
 export function allowedActionsFor(order, viewer) {
