@@ -1,8 +1,8 @@
 import { lazy, Suspense, useState, useEffect } from 'react'
-import {  
-  User, Plus, AlertCircle, RefreshCw, 
+import {
+  User, Plus, AlertCircle, RefreshCw,
   Lock, ChevronRight, ArrowLeft, Copy, CreditCard, Camera,
-  BarChart3, Package, KeyRound, ShieldAlert, Users, SlidersHorizontal, Shield
+  BarChart3, Package, KeyRound, ShieldAlert, Users, SlidersHorizontal, Shield, BookOpen
 } from 'lucide-react'
 import { uploadToBlossom } from '@nostr-wot/blossom'
 import { useProfiles, updateProfileCache } from './useProfiles'
@@ -372,6 +372,11 @@ export default function Wallet({ identity, onOpenChat }) {
           <button onClick={() => setView('profile_editor')} className={`flex w-full items-center gap-3 border-b border-white/5 p-4 text-left ${pressable}`}>
             <User size={18} className="text-white/40" />
             <span className="min-w-0 flex-1"><span className="block text-[15px] font-semibold text-white">Edit Profile</span><span className="block text-[13px] text-white/40">Name, bio, and photo</span></span>
+            <ChevronRight size={18} className="text-white/30" />
+          </button>
+          <button onClick={() => useChatStore.getState().setShowTutorial(true)} className={`flex w-full items-center gap-3 border-b border-white/5 p-4 text-left ${pressable}`}>
+            <BookOpen size={18} className="text-white/40" />
+            <span className="min-w-0 flex-1"><span className="block text-[15px] font-semibold text-white">How to use</span><span className="block text-[13px] text-white/40">A walkthrough of the app</span></span>
             <ChevronRight size={18} className="text-white/30" />
           </button>
           <button onClick={() => setView('privacy')} className="flex w-full items-center gap-3 p-4 text-left">
