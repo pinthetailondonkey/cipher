@@ -72,6 +72,15 @@ export default function Wallet({ identity, onOpenChat }) {
     if (myProfile.about) setAbout(myProfile.about)
   }, [myProfile.name, myProfile.displayName, myProfile.picture, myProfile.about])
 
+  // Status pills are toasts, not signs: every message dismisses itself, so no
+  // error state (including a mount-time unlock failure) can stick around and
+  // bounce over the screen indefinitely.
+  useEffect(() => {
+    if (!status) return undefined;
+    const timer = window.setTimeout(() => setStatus(''), 6000);
+    return () => window.clearTimeout(timer);
+  }, [status]);
+
   useEffect(() => {
     let active = true;
     loadVendorPaymentConfig(identity)
@@ -334,7 +343,7 @@ export default function Wallet({ identity, onOpenChat }) {
   // --- MAIN PROFILE TAB ---
   return (
     <div className="animate-fade-in overflow-y-auto h-full pb-4 pb-[env(safe-area-inset-bottom)]">
-      {status && <div className="fixed left-1/2 -translate-x-1/2 bg-blue-600 text-white px-4 py-2 rounded-xl text-xs font-bold shadow-lg z-50 animate-bounce" style={{ top: `calc(5rem + env(safe-area-inset-top))` }}>{status}</div>}
+      {status && <div className="fixed left-1/2 -translate-x-1/2 bg-blue-600 text-white px-4 py-2 rounded-xl text-xs font-bold shadow-lg z-50 animate-fade-in" style={{ top: `calc(5rem + env(safe-area-inset-top))` }}>{status}</div>}
 
       {/* HEADER PROFILE CARD */}
       <div className="flex flex-col items-center px-4 pb-2 pt-8">
