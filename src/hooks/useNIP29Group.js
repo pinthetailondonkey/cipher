@@ -10,13 +10,14 @@ import { getMyGroups, setMyGroups } from '../lib/myGroups';
 import { encodeGroupPayload, decodeGroupEvent } from '../lib/crypto/groupMessageCodec';
 import { getAllGroupKeys, getCurrentGroupKey, putGroupKey } from '../lib/crypto/groupKeyStore';
 import { authorizeGroupControl, authorizeMemberSnapshot, groupRelayPubkey, groupTimelinePlans, isRestrictedRelayClose, pickMemberSnapshot } from '../lib/crypto/groupMembership';
-import { grantKeyRequest, loadMemberSnapshot, loadMemberSnapshotRecord, patchMemberSnapshot, rememberMembers, rotateGroupEpoch } from '../lib/crypto/groupKeyRotation';
+import { grantKeyRequest, loadMemberSnapshot, loadMemberSnapshotRecord, memberKey, patchMemberSnapshot, rememberMembers, rotateGroupEpoch } from '../lib/crypto/groupKeyRotation';
 import { generateGroupKey } from '../lib/crypto/groupCipher';
 import { distributeGroupKey, epochsToBackfill } from '../lib/crypto/groupKeyDistribution';
 import { enqueueNostrEvent, startOutboxSync } from '../lib/outbox';
 import { groupSocketUrl } from '../lib/egress';
 import { relaysForPeer } from '../lib/dmRelays';
 import { dropSecuringSend, forgetPendingKeyRequest, queueSecuringSend, resetKeyRequest, securingSendsFor } from '../lib/crypto/groupKeyRequest';
+import { isJoinDenied, loadPendingJoins, queuePendingJoin, withoutDenied } from '../lib/groupJoinQueue.js';
 
 function currentGroupRelay() {
   return groupSocketUrl() || '';
@@ -683,7 +684,13 @@ export function useNIP29Group({ identity }) {
       kind: 9000, created_at: Math.floor(Date.now() / 1000),
       tags: [['h', groupId], ['p', memberPubkey]], content: ''
     }, identity.sk);
-    await Promise.allSettled(pool.publish(groupRelays, ev));
+    // The publish outcome decides the row. If every relay rejected the add,
+    // the owner must see the failure instead of a false success that drops
+    // the request silently until a someday replay re-queues it.
+    const results = await Promise.allSettled(pool.publish(groupRelays, ev));
+    if (!results.some((result) => result.status === 'fulfilled')) {
+      throw new Error('No relay accepted the add. Try again.');
+    }
     const snapshot = await loadMemberSnapshot(groupId);
     await rememberMembers(groupId, [...new Set([...(snapshot || []), memberPubkey, identity.pk])]);
     appendSystemMessage(groupId, `User ${memberPubkey.slice(0, 6)}... was added to the group`, ev.id);
@@ -791,7 +798,9 @@ export function useNIP29Group({ identity }) {
           console.warn('[group] Ignored a membership snapshot not signed by the group relay', event.id);
           return;
         }
-        const members = pickMemberSnapshot([event], relayPubkey, groupId) || [];
+        // An open-join relay names a denied sender in its snapshot; the local
+        // deny outvotes the relay, so their row never lands or grants a key.
+        const members = withoutDenied(groupId, pickMemberSnapshot([event], relayPubkey, groupId) || []);
         await rememberMembers(groupId, members);
         if (useChatStore.getState().activeGroup?.id === groupId) setGroupMembers(members);
         return;
@@ -809,6 +818,32 @@ export function useNIP29Group({ identity }) {
 
       if (event.kind === 9021) {
         const pk = event.pubkey;
+        const members = await loadMemberSnapshot(groupId);
+        if (pk === identity.pk) {
+          // Own join echo: the creator's bootstrap join lands on the snapshot
+          // unchanged. A rejoin case is kept here too — an already-member
+          // sender still auto-adds (a no-op on the snapshot row). A pubkey the
+          // owner denied cannot be one's own, so no deny check is needed here.
+        } else if (isJoinDenied(groupId, pk)) {
+          // Denied senders stay out even when this device's snapshot has been
+          // widened by a relay: the deny outvotes every replay path below.
+        } else if (loadPendingJoins()[groupId]?.some((row) => row.pubkey === pk)) {
+          // Already queued, or already denied: a relay replay of the same 9021
+          // must not re-queue the sender or repost the join-request message.
+        } else if (!(Array.isArray(members) && members.some((member) => memberKey(member) === pk))) {
+          // First join request from this sender: it goes to the pending queue
+          // for owner approval instead of onto the snapshot. Nothing auto-adds
+          // a stranger, so their key request reads a snapshot that does not
+          // name them and is denied. The requester keeps seeing ciphertext, as
+          // any keyless member does, until the owner approves them.
+          const queued = queuePendingJoin(groupId, { pubkey: pk, eventId: event.id, at: event.created_at });
+          if (queued) {
+            const owned = useChatStore.getState().groups.some((g) => g.id === groupId && g.creator === identity.pk);
+            if (owned) appendSystemMessage(groupId, `User ${pk.slice(0, 6)}... wants to join. Approve it in Join requests.`, event.id);
+            else console.log('[group] Join request queued for', groupId.slice(0, 6), 'from', pk.slice(0, 6));
+          }
+          return;
+        }
         await patchMemberSnapshot(groupId, (members) => (members.includes(pk) ? members : [...members, pk]));
         if (useChatStore.getState().activeGroup?.id === groupId) {
           setGroupMembers(prev => {
@@ -864,7 +899,9 @@ export function useNIP29Group({ identity }) {
       if (event.kind === 39002) {
         const members = event.tags.filter(x => x[0] === 'p').map(x => ({ pubkey: x[1], role: x[2] || 'member' }));
         if (!members.find(x => x.pubkey === identity.pk)) members.push({ pubkey: identity.pk, role: 'member' });
-        await rememberMembers(groupId, members.map((member) => member.pubkey));
+        // Same deny-vote as the relay-signed branch above: the local deny list
+        // strips a denied sender no matter who signed the roster.
+        await rememberMembers(groupId, withoutDenied(groupId, members.map((member) => member.pubkey)));
         if (useChatStore.getState().activeGroup?.id === groupId) setGroupMembers(members);
         return;
       }
