@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { LOCKED_OUT_MESSAGE, MIN_PIN_LENGTH, failPinAttempt, pinFailureMessage, resetPinFailures } from './lib/vaultLockout'
+import { LOCKED_OUT_MESSAGE, MIN_PIN_LENGTH, failPinAttempt, pinFailureMessage, removeAccountKeys, resetPinFailures } from './lib/vaultLockout'
 import { profileRelays as PROFILE_RELAYS } from './lib/relays'
 
 // Derive 32-byte secret key from BIP39 mnemonic
@@ -788,15 +788,10 @@ export function useIdentity() {
       saveVaults(vaults);
       resetPinFailures(localStorage, targetPk);
       await deleteLockedOutDatabase(targetPk);
-      // Scoped per-account keys: cipher_<pk prefix>_*
-      const prefix = `cipher_${targetPk.slice(0, 8)}_`;
-      for (const name of Object.keys(localStorage)) {
-        if (name.startsWith(prefix)) localStorage.removeItem(name);
-      }
-      if (localStorage.getItem('cipher_biometric_pubkey') === targetPk) {
-        localStorage.removeItem('cipher_biometric_pubkey');
-        localStorage.removeItem('cipher_biometric_enabled');
-      }
+      // Scoped per-account keys, in both the legacy first-8-hex drawer and
+      // the full-pubkey drawer this build reads. removeAccountKeys leaves a
+      // drawer a saved account shares untouched. (security A2)
+      removeAccountKeys(localStorage, targetPk);
       return { success: true };
     } catch (e) {
       return { success: false, error: e.message };

@@ -12,6 +12,7 @@ import {
   saveVendorPaymentConfig,
   txidSpokenFor,
 } from './vendorPayments.js';
+import { resetScopeMigration } from './storage.js';
 
 test('a Bitcoin address uses bc on mainnet and bcrt on regtest', async () => {
   const xpub = HDKey.fromMasterSeed(new Uint8Array(32).fill(1)).derive("m/84'/0'/0'").publicExtendedKey;
@@ -58,6 +59,7 @@ test('a main address belongs to one account, and a device-wide copy is never han
 
 test('a single-account device adopts its old device-wide address once', () => {
   const only = 'cccccccc' + '3'.repeat(56);
+  resetScopeMigration();
   globalThis.localStorage = memoryStorage({
     cipher_vaults: JSON.stringify({ [only]: {} }),
     cipher_active_pubkey: only,
@@ -65,7 +67,7 @@ test('a single-account device adopts its old device-wide address once', () => {
   });
   assert.deepEqual(readPaymentAddresses(), { btc: '', xmr: '8legacy' });
   assert.equal(localStorage.getItem('cipher_xmr'), null);
-  assert.equal(localStorage.getItem('cipher_cccccccc_xmr_address'), '"8legacy"');
+  assert.equal(localStorage.getItem(`cipher_${only}_xmr_address`), '"8legacy"');
 });
 
 const vendor = { pk: 'dddddddd' + '4'.repeat(56), sk: new Uint8Array(32).fill(7) };
@@ -114,20 +116,21 @@ test('one transfer speaks for one order', () => {
 // "nothing recorded" would confirm a payment twice.
 test('a ledger that cannot be read confirms nothing, and absent or legacy reads fine', () => {
   globalThis.localStorage = memoryStorage({ cipher_active_pubkey: vendor.pk });
+  resetScopeMigration();
+  const scope = `cipher_${vendor.pk}_consumed_txids`;
   // No ledger yet — nothing recorded, and that is fine.
   assert.deepEqual(readConsumedLedger(), { ok: true, ledger: {} });
   // The current build's envelope.
-  localStorage.setItem(`cipher_${vendor.pk.slice(0, 8)}_consumed_txids`, JSON.stringify({ v: 1, entries: markConsumed({}, { currency: 'btc', txid: 'ab', orderId: 'o1', address: 'bc1qa' }) }));
+  localStorage.setItem(scope, JSON.stringify({ v: 1, entries: markConsumed({}, { currency: 'btc', txid: 'ab', orderId: 'o1', address: 'bc1qa' }) }));
   const enveloped = readConsumedLedger();
   assert.equal(enveloped.ok, true);
   assert.equal(txidSpokenFor(enveloped.ledger, { currency: 'btc', txid: 'ab', orderId: 'o2' })?.orderId, 'o1');
   // A build before the envelope wrote a plain map.
-  localStorage.setItem(`cipher_${vendor.pk.slice(0, 8)}_consumed_txids`, JSON.stringify({ 'btc:ab': { orderId: 'o1', address: 'bc1qa', at: 100 } }));
+  localStorage.setItem(scope, JSON.stringify({ 'btc:ab': { orderId: 'o1', address: 'bc1qa', at: 100 } }));
   const legacy = readConsumedLedger();
   assert.equal(legacy.ok, true);
   assert.equal(legacy.ledger['btc:ab'].orderId, 'o1');
   // Envelope lies: v differs, or entries are missing or not a map.
-  const badScope = `cipher_${vendor.pk.slice(0, 8)}_consumed_txids`;
   for (const broken of [
     JSON.stringify({ v: 2, entries: {} }),
     JSON.stringify({ v: 1 }),
@@ -137,7 +140,7 @@ test('a ledger that cannot be read confirms nothing, and absent or legacy reads 
     'null',
     '42',
   ]) {
-    localStorage.setItem(badScope, broken);
+    localStorage.setItem(scope, broken);
     assert.equal(readConsumedLedger().ok, false, broken);
   }
 });

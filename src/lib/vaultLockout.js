@@ -76,7 +76,11 @@ export function removeAccountKeys(storage, pubkey) {
     `cipher_my_groups_${pubkey.slice(0, 16)}`,
     `cipher_migrated_v1_${prefix}`,
   ]);
-  const removed = storageKeys(storage).filter((key) => exact.has(key) || (!sharedScope && key.startsWith(`cipher_${prefix}_`)));
+  const removed = storageKeys(storage).filter((key) => exact.has(key)
+    // The full-pubkey drawer is this account's alone, whatever prefixes are
+    // saved on the device. (security A2)
+    || key.startsWith(`cipher_${pubkey}_`)
+    || (!sharedScope && key.startsWith(`cipher_${prefix}_`)));
   if (storage.getItem('cipher_biometric_pubkey') === pubkey) removed.push('cipher_biometric_pubkey', 'cipher_biometric_enabled');
   for (const pointer of ['cipher_db_owner', 'cipher_last_user', 'cipher_active_pubkey']) {
     if (storage.getItem(pointer) === pubkey) removed.push(pointer);
