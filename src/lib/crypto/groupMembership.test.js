@@ -612,3 +612,46 @@ test('a failed re-read inside the freshness window still refuses a list older th
     keyObtainedAt: now - 10,
   }), 'deny');
 });
+
+// H1 fix (round-three re-hack): the deny list outvotes the relay on the
+// GRANT path too. Before, a peer the owner denied could be granted the
+// group key — the cached-snapshot fast path allowed on a list that still
+// named them, and a relay-widened re-read allowed outright.
+test('a denied peer is refused the key even when the roster still names them', async () => {
+  const map = new Map();
+  const hadStorage = globalThis.localStorage;
+  globalThis.localStorage = {
+    getItem: (key) => (map.has(key) ? map.get(key) : null),
+    setItem: (key, value) => { map.set(key, String(value)); },
+    removeItem: (key) => { map.delete(key); },
+  };
+  try {
+    const { denyPendingJoin } = await import('../groupJoinQueue.js');
+    const deniedPk = '11'.repeat(32);
+    denyPendingJoin('group-holdout', deniedPk);
+    const now = 40_000;
+    const shallow = {
+      groupId: 'group-holdout',
+      requester: deniedPk,
+      creator,
+      snapshot: [deniedPk],            // the roster still names them
+      updatedAt: now / 1000 - 10,      // fresh enough for the fast path
+      keyObtainedAt: now / 1000 - 5,   // and the list covers this key
+    };
+    assert.equal(await grantKeyRequest({ ...shallow, now }), 'deny',
+      'the cached-snapshot fast path grants nobody denied');
+    assert.equal(await grantKeyRequest({
+      ...shallow, now, fetchMembers: async () => [deniedPk],
+    }), 'deny', 'a relay-widened re-read grants nobody denied');
+    // and the refusal is per-peer: a not-denied member rides the same paths
+    const stillWorks = await grantKeyRequest({
+      groupId: 'group-holdout', requester: member, creator,
+      snapshot: [member, deniedPk], updatedAt: now / 1000 - 10,
+      keyObtainedAt: now / 1000 - 5, now,
+      fetchMembers: async () => [member, deniedPk],
+    });
+    assert.notEqual(stillWorks, undefined);
+  } finally {
+    globalThis.localStorage = hadStorage;
+  }
+});

@@ -7,7 +7,8 @@ import Picture from '../ui/Picture';
 import { pressable } from '../ui/Button';
 import { copyText } from '../../lib/copyText';
 import { noHexName } from '../../lib/npub';
-import { denyPendingJoin, dropPendingJoin, pendingJoinsFor, subscribeJoinRequests } from '../../lib/groupJoinQueue.js';
+import { denyPendingJoin, dropPendingJoin, pendingJoinsFor, subscribeJoinRequests, withoutDenied } from '../../lib/groupJoinQueue.js';
+import { patchMemberSnapshot } from '../../lib/crypto/groupKeyRotation.js';
 
 const EMPTY_MESSAGES = [];
 
@@ -161,7 +162,13 @@ export default function GroupInfoSidebar({
       message: 'They stay out of the group and never receive its key.',
       type: 'danger',
       confirmText: 'Deny',
-      onConfirm: () => denyPendingJoin(group.id, row.pubkey),
+      onConfirm: async () => {
+        // H1 fix (round-three re-hack): denying also strips the peer from
+        // the stored member snapshot on this account — a row that landed
+        // before the deny must not survive to feed a grant or a rotation.
+        const denied = denyPendingJoin(group.id, row.pubkey);
+        if (denied) await patchMemberSnapshot(group.id, (rows) => withoutDenied(group.id, rows));
+      },
     });
   };
 
