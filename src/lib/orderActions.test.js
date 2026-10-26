@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
-import { ORDER_ACTIONS, allowedActionsFor, orderActionsFor, orderRecordForReceipt, orderState } from './orderActions.js';
+import { ORDER_ACTIONS, allowedActionsFor, issuedPaymentMethods, orderActionsFor, orderRecordForReceipt, orderState } from './orderActions.js';
 import { ORDER_STATUS, ORDER_STATUSES, RECEIPT_OUTCOMES } from './paymentState.js';
 
 const names = (actions) => actions.map((item) => item.action);
@@ -107,6 +107,18 @@ test('every message action has a way in from the UI, and every menu item has a h
   const overlays = read('../features/chat/ChatOverlays.jsx');
   assert.match(overlays, /<VendorStorefront\s+isOpen=\{!!vendorStorefrontPubkey\}/);
   assert.match(overlays, /<ProductEditModal editingProduct=\{editingProduct\}[^\n]*onSubmit=\{handleSaveEditedProduct\}/);
+});
+
+test('issued addresses freeze on the card, and an empty pair is nothing issued', () => {
+  // Once an address is issued for an order it is frozen there (security S5):
+  // acceptance reuses these and never derives a fresh pair.
+  assert.deepEqual(issuedPaymentMethods({ paymentMethods: { btc: ' bc1qorder ', xmr: '' } }), { btc: 'bc1qorder', xmr: null });
+  assert.deepEqual(issuedPaymentMethods({ paymentMethods: { btc: '', xmr: '8sub' } }), { btc: null, xmr: '8sub' });
+  assert.equal(issuedPaymentMethods({}), null);
+  assert.equal(issuedPaymentMethods({ paymentMethods: {} }), null);
+  assert.equal(issuedPaymentMethods({ paymentMethods: { btc: '', xmr: '' } }), null);
+  assert.equal(issuedPaymentMethods({ paymentMethods: null }), null);
+  assert.equal(issuedPaymentMethods(null), null);
 });
 
 test('a receipt binds only an order this device tracks as accepted or later', () => {
