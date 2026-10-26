@@ -21,7 +21,7 @@ function TimerPicker({ chatId, timer, onPick }) {
           key={choice.value}
           type="button"
           onClick={() => onPick(choice.value)}
-          className={`rounded-full border px-3 py-1.5 text-[12px] font-medium ${timer === choice.value ? 'border-accent bg-accent text-accentInk' : 'border-line text-white/60'}`}
+          className={`rounded-full border px-3 py-1.5 text-[12px] font-medium ${timer === choice.value ? 'border-accent bg-accent text-accentInk' : 'border-line text-ink/60'}`}
         >
           {choice.label}
         </button>
@@ -68,12 +68,12 @@ export default function ChatHeader({ mode }) {
   return (
     <div className="sticky top-0 z-40 flex items-center justify-between border-b border-line bg-base px-2 py-3 shadow-lg pt-[env(safe-area-inset-top)]">
       <div className="flex min-w-0 items-center gap-2">
-        <button onClick={() => setView('list')} className="p-2 text-white" aria-label="Back">
+        <button onClick={() => setView('list')} className="p-2 text-ink" aria-label="Back">
           <ArrowLeft size={22} />
         </button>
         <button type="button" className="min-w-0 text-left" onClick={() => mode === 'dm' && setProfilePubkey(activeDm)}>
-          <h2 className="truncate text-2xl font-bold tracking-tight text-white">{title}</h2>
-          <p className={`flex items-center gap-1 text-[13px] ${someoneTyping ? 'text-accent' : 'text-white/40'}`}>
+          <h2 className="truncate text-2xl font-bold tracking-tight text-ink">{title}</h2>
+          <p className={`flex items-center gap-1 text-[13px] ${someoneTyping ? 'text-accent' : 'text-ink/40'}`}>
             {someoneTyping ? (
               <>
                 typing
@@ -94,13 +94,13 @@ export default function ChatHeader({ mode }) {
             onClick={() => setShowTimer((open) => !open)}
             aria-label="Message timer"
             aria-expanded={showTimer}
-            className={`p-2 ${timer && timer !== 'off' ? 'text-accent' : 'text-white/70 hover:text-white'}`}
+            className={`p-2 ${timer && timer !== 'off' ? 'text-accent' : 'text-ink/70 hover:text-ink'}`}
           >
             <Hourglass size={17} />
           </button>
         )}
-        {mode === 'group' && <button type="button" onClick={() => setShowGroupInfo(true)} aria-label="Group information and pinned listing" className="p-2 text-white/50 hover:text-white"><Info size={19} /></button>}
-        {mode === 'dm' && <button type="button" onClick={placeCall} aria-label="Voice call" className="p-2 text-white/70 hover:text-white"><Phone size={18} /></button>}
+        {mode === 'group' && <button type="button" onClick={() => setShowGroupInfo(true)} aria-label="Group information and pinned listing" className="p-2 text-ink/50 hover:text-ink"><Info size={19} /></button>}
+        {mode === 'dm' && <button type="button" onClick={placeCall} aria-label="Voice call" className="p-2 text-ink/70 hover:text-ink"><Phone size={18} /></button>}
       </div>
       {showTimer && mode === 'dm' && (
         <TimerPicker

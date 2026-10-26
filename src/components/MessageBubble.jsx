@@ -58,14 +58,14 @@ function urlTokens(text) {
 function orderLabel(content) {
   if (content.paymentState === 'confirmed') return { text: 'Confirmed', className: 'bg-accent text-accentInk' };
   if (content.status === 'shipped') return { text: 'Shipped', className: 'bg-accent text-accentInk' };
-  if (content.status === 'completed') return { text: 'Delivered', className: 'bg-emerald-500 text-white' };
-  if (content.status === 'cancelled') return { text: 'Cancelled', className: 'bg-white/15 text-white' };
-  if (content.status === 'refunded') return { text: 'Refunded', className: 'bg-white/15 text-white' };
+  if (content.status === 'completed') return { text: 'Delivered', className: 'bg-emerald-500 text-ink' };
+  if (content.status === 'cancelled') return { text: 'Cancelled', className: 'bg-ink/15 text-ink' };
+  if (content.status === 'refunded') return { text: 'Refunded', className: 'bg-ink/15 text-ink' };
   if (content.status === 'disputed') return { text: 'Disputed', className: 'bg-rose-500/20 text-rose-200' };
   if (content.paymentState === 'seen' && content.paymentSeenBy !== 'vendor') return { text: 'Seen on-chain', className: 'bg-accent text-accentInk' };
   if (content.status === 'paid' || content.paymentSeenBy === 'vendor') return { text: 'Marked paid', className: 'bg-accent text-accentInk' };
-  if (content.status === 'accepted' || content.paymentState === 'address_issued') return { text: 'Address sent', className: 'bg-amber-400 text-black' };
-  return { text: 'Awaiting payment', className: 'bg-amber-400 text-black' };
+  if (content.status === 'accepted' || content.paymentState === 'address_issued') return { text: 'Address sent', className: 'bg-amber-400 text-scrim' };
+  return { text: 'Awaiting payment', className: 'bg-amber-400 text-scrim' };
 }
 
 function OrderReceipt({ content }) {
@@ -79,14 +79,14 @@ function OrderReceipt({ content }) {
       <Picture src={product.image} alt="" className="h-28 w-full object-cover" />
       <div className="p-3">
         <div className="flex items-start justify-between gap-2">
-          <p className="text-[15px] font-semibold text-white">{title}</p>
+          <p className="text-[15px] font-semibold text-ink">{title}</p>
           <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold ${pill.className}`}>{pill.text}</span>
         </div>
         {price && <p className="mt-1 text-[13px] font-bold text-accent">{price}</p>}
         {content.paymentSeenBy === 'vendor' && content.paymentState !== 'confirmed' && (
           <p className="mt-1 text-[13px] text-amber-300">Not checked on-chain.</p>
         )}
-        {address && <p className="mt-1 text-[13px] text-white/40">Ship to {address}</p>}
+        {address && <p className="mt-1 text-[13px] text-ink/40">Ship to {address}</p>}
       </div>
     </div>
   );
@@ -139,11 +139,11 @@ export default function MessageBubble({ message, data, onAction, senderName, isP
   }[message?.deliveryStatus];
   const read = message?.read || message?.deliveryStatus === 'read';
   const checks = isSender && !deliveryLabel
-    ? <span className={read ? 'text-accent' : 'text-white/45'}>{read ? '✓✓' : '✓'}</span>
+    ? <span className={read ? 'text-accent' : 'text-ink/45'}>{read ? '✓✓' : '✓'}</span>
     : null;
   const timeLabel = validTimestamp === null ? '' : new Date(validTimestamp * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   const time = (
-    <span className="float-right ml-2 mt-[5px] inline-flex items-center gap-1 text-[10px] leading-none text-white/45">
+    <span className="float-right ml-2 mt-[5px] inline-flex items-center gap-1 text-[10px] leading-none text-ink/45">
       {message?.edited && <span>edited</span>}
       {isSender && deliveryLabel && <span className={message?.deliveryStatus === 'failed' ? 'text-rose-200' : ''}>{deliveryLabel}</span>}
       {checks}
@@ -218,7 +218,7 @@ export default function MessageBubble({ message, data, onAction, senderName, isP
         onPointerCancel={clearPress}
         onPointerMove={movePress}
         onContextMenu={(event) => { event.preventDefault(); haptic('medium'); setOpen(true); }}
-        className={`max-w-[78%] min-w-[4.5rem] rounded-2xl border px-3 py-2 ${isSender ? 'border-accent bg-accent text-accentInk' : 'border-line bg-panel shadow-lg text-white'}`}
+        className={`max-w-[78%] min-w-[4.5rem] rounded-2xl border px-3 py-2 ${isSender ? 'border-accent bg-accent text-accentInk' : 'border-line bg-panel shadow-lg text-ink'}`}
       >
         {!isSender && senderName && <p className="mb-0.5 text-[11px] font-semibold leading-none text-accent">{senderName}</p>}
         {(content.type === 'cipher_order' || content.type === 'order_request' || content.type === 'order_update') && (
@@ -230,7 +230,7 @@ export default function MessageBubble({ message, data, onAction, senderName, isP
         {orderActionsFor({ ...message, data: content }, chatMessages).map(({ action, label, target }) => {
           // Vendor actions send to the buyer, msg.pubkey; buyer actions to the chat peer.
           const subject = target === 'peer' ? { ...message, pubkey: activeDm, data: content } : { ...message, data: content };
-          const tone = action === 'accept_order' ? 'text-blue-300' : ['report_issue', 'decline_order', 'cancel_order'].includes(action) ? 'text-rose-300' : 'text-white';
+          const tone = action === 'accept_order' ? 'text-blue-300' : ['report_issue', 'decline_order', 'cancel_order'].includes(action) ? 'text-rose-300' : 'text-ink';
           return (
             <button key={action} type="button" onClick={(event) => { event.stopPropagation(); onAction?.(action, subject); }} className={`mb-1 block min-h-11 text-left text-[15px] font-semibold ${tone}`}>{label}</button>
           );
@@ -253,10 +253,10 @@ export default function MessageBubble({ message, data, onAction, senderName, isP
         {paymentRows.length > 0 && (
           <div className="mb-1 space-y-2">
             {paymentRows.map(({ currency, address, amount, uri }) => (
-              <div key={currency} className="flex flex-col items-center rounded-xl bg-white p-2">
-                {amount && <p className="mb-1 select-all text-center font-mono text-[15px] font-bold text-black">Pay {amount} {currency}</p>}
+              <div key={currency} className="flex flex-col items-center rounded-xl bg-ink p-2">
+                {amount && <p className="mb-1 select-all text-center font-mono text-[15px] font-bold text-scrim">Pay {amount} {currency}</p>}
                 <QRCodeSVG value={uri} size={120} level="M" />
-                <span className="mt-1 select-all break-all text-center font-mono text-[10px] text-black">{address}</span>
+                <span className="mt-1 select-all break-all text-center font-mono text-[10px] text-scrim">{address}</span>
               </div>
             ))}
           </div>
@@ -274,7 +274,7 @@ export default function MessageBubble({ message, data, onAction, senderName, isP
                     rel="noreferrer noopener"
                     onPointerDown={(event) => event.stopPropagation()}
                     onClick={(event) => event.stopPropagation()}
-                    className={`break-all underline ${isSender ? 'text-white' : 'text-blue-300'}`}
+                    className={`break-all underline ${isSender ? 'text-ink' : 'text-blue-300'}`}
                   >
                     {token.url}
                   </a>
@@ -291,7 +291,7 @@ export default function MessageBubble({ message, data, onAction, senderName, isP
             type="button"
             onPointerDown={(event) => event.stopPropagation()}
             onClick={(event) => { event.stopPropagation(); haptic('light'); onAction?.('retry_secure', message); }}
-            className={`mt-2 block min-h-11 w-full text-left text-[15px] font-semibold underline active:scale-95 ${isSender ? 'text-white' : 'text-blue-300'}`}
+            className={`mt-2 block min-h-11 w-full text-left text-[15px] font-semibold underline active:scale-95 ${isSender ? 'text-ink' : 'text-blue-300'}`}
           >
             Still securing — retry
           </button>
@@ -306,7 +306,7 @@ export default function MessageBubble({ message, data, onAction, senderName, isP
                 animate={{ scale: 1 }}
                 transition={{ type: 'spring', stiffness: 500, damping: 18 }}
                 onClick={(event) => { event.stopPropagation(); setShowReactors(emoji); }}
-                className="rounded-full border border-white/10 bg-black/40 px-1.5 py-0.5 text-[12px] text-white"
+                className="rounded-full border border-ink/10 bg-scrim/40 px-1.5 py-0.5 text-[12px] text-ink"
               >
                 {emoji} {people.length}
               </motion.button>
@@ -314,21 +314,21 @@ export default function MessageBubble({ message, data, onAction, senderName, isP
           </div>
         )}
         {!text && !content.url && !content.urls && !content.media && !paymentRows.length && !['image', 'audio', 'product', 'cipher_order', 'order_request', 'order_update', 'text'].includes(content.type) && (
-          <p className="text-[13px] text-white/45">Couldn't open</p>
+          <p className="text-[13px] text-ink/45">Couldn't open</p>
         )}
       </div>
     </motion.article>
     {open && (
-      <div className="fixed inset-0 z-[75] flex items-end justify-center bg-black/70 p-3" onPointerDown={(event) => { if (event.target === event.currentTarget) setOpen(false); }}>
+      <div className="fixed inset-0 z-[75] flex items-end justify-center bg-scrim/70 p-3" onPointerDown={(event) => { if (event.target === event.currentTarget) setOpen(false); }}>
         <div className="mb-safe w-full max-w-sm rounded-3xl border border-line bg-panel p-3" onPointerDown={(event) => event.stopPropagation()}>
-          <div className="mb-2 flex justify-between rounded-2xl bg-white/5 px-2 py-2">
+          <div className="mb-2 flex justify-between rounded-2xl bg-ink/5 px-2 py-2">
             {REACTION_CHOICES.map((emoji) => (
               <button key={emoji} type="button" aria-label={`React ${emoji}`} onClick={() => { haptic('light'); act('react', { emoji }); }} className="text-[22px] active:scale-95">{emoji}</button>
             ))}
           </div>
           <div className="grid grid-cols-4 gap-1">
             {menuActions.map(([action, Icon, label]) => (
-              <button key={action} type="button" onClick={() => { haptic('light'); act(action); }} className={`flex flex-col items-center gap-1 rounded-2xl px-2 py-3 text-[12px] font-semibold active:bg-white/10 ${action === 'delete' ? 'text-red-400' : 'text-white'}`}>
+              <button key={action} type="button" onClick={() => { haptic('light'); act(action); }} className={`flex flex-col items-center gap-1 rounded-2xl px-2 py-3 text-[12px] font-semibold active:bg-ink/10 ${action === 'delete' ? 'text-red-400' : 'text-ink'}`}>
                 <Icon size={18} />
                 {label}
               </button>
@@ -338,11 +338,11 @@ export default function MessageBubble({ message, data, onAction, senderName, isP
       </div>
     )}
       {showReactors && (
-        <div className="fixed inset-0 z-[70] flex items-end justify-center bg-black/60 p-4" onClick={() => setShowReactors(false)}>
+        <div className="fixed inset-0 z-[70] flex items-end justify-center bg-scrim/60 p-4" onClick={() => setShowReactors(false)}>
           <div className="w-full max-w-sm rounded-2xl border border-line bg-panel p-4" onClick={(event) => event.stopPropagation()}>
-            <p className="mb-3 text-[15px] font-semibold text-white">{showReactors}</p>
+            <p className="mb-3 text-[15px] font-semibold text-ink">{showReactors}</p>
             {(grouped.get(showReactors) || []).map((person) => (
-              <p key={person.pubkey} className="border-b border-white/5 py-2 text-[13px] text-white/80">
+              <p key={person.pubkey} className="border-b border-ink/5 py-2 text-[13px] text-ink/80">
                 {noHexName(profiles[person.pubkey], person.pubkey)}
               </p>
             ))}

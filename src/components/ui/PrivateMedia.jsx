@@ -24,8 +24,8 @@ function usePrivateMediaUrl({ url, key, iv, mime } = {}) {
 
 function PrivateImage({ entry, className }) {
   const { src, failed } = usePrivateMediaUrl(entry);
-  if (failed) return <p className="text-[13px] text-white/45">Couldn't open this photo</p>;
-  if (!src) return <div className={`animate-pulse bg-white/10 ${className}`} />;
+  if (failed) return <p className="text-[13px] text-ink/45">Couldn't open this photo</p>;
+  if (!src) return <div className={`animate-pulse bg-ink/10 ${className}`} />;
   return (
     <a href={src} target="_blank" rel="noreferrer" className="block" onClick={(event) => event.stopPropagation()}>
       <img src={src} alt="Shared image" className={className} />
@@ -35,8 +35,8 @@ function PrivateImage({ entry, className }) {
 
 function PrivateAudio({ entry, className }) {
   const { src, failed } = usePrivateMediaUrl(entry);
-  if (failed) return <p className="text-[13px] text-white/45">Couldn't open this voice note</p>;
-  if (!src) return <div className={`animate-pulse rounded-full bg-white/10 ${className}`} />;
+  if (failed) return <p className="text-[13px] text-ink/45">Couldn't open this voice note</p>;
+  if (!src) return <div className={`animate-pulse rounded-full bg-ink/10 ${className}`} />;
   return <audio controls preload="metadata" src={src} className={className} onClick={(event) => event.stopPropagation()} />;
 }
 

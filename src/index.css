@@ -14,6 +14,7 @@
    data-theme attribute is absent or unknown. */
 :root,
 [data-theme='vault'] {
+  color-scheme: dark;
   --bg: #000000;
   --bg-soft: #0a0a0a;
   --panel: #111111;
@@ -22,6 +23,8 @@
   --border: rgba(255, 255, 255, 0.08);
   --border-strong: rgba(255, 255, 255, 0.12);
   --text: #f5f5f5;
+  --text-rgb: 245 245 245;
+  --scrim-rgb: 0 0 0;
   --text-muted: #9ca3af;
   --text-subtle: #6b7280;
   --accent: #3b82f6;
@@ -31,11 +34,16 @@
   --danger: #ef4444;
   --glow-a: rgba(59, 130, 246, 0.13);
   --glow-b: rgba(59, 130, 246, 0.06);
+  --glass-panel: rgba(28, 28, 30, 0.7);
+  --glass-header: rgba(10, 10, 10, 0.75);
+  --glass-shadow: rgba(0, 0, 0, 0.37);
+  --hover-wash: rgba(255, 255, 255, 0.06);
 }
 
 /* Bank lobby — charcoal panels with a brass accent: the app shop dressed
    like the counter of an old bank. Activated by data-theme="lobby". */
 [data-theme='lobby'] {
+  color-scheme: dark;
   --bg: #0b0e13;
   --bg-soft: #0e1218;
   --panel: #141a24;
@@ -44,6 +52,8 @@
   --border: rgba(255, 255, 255, 0.10);
   --border-strong: rgba(201, 162, 39, 0.28);
   --text: #f2f4f8;
+  --text-rgb: 242 244 248;
+  --scrim-rgb: 0 0 0;
   --text-muted: #9aa3ad;
   --text-subtle: #6d7681;
   --accent: #c9a227;
@@ -53,12 +63,17 @@
   --danger: #ef4444;
   --glow-a: rgba(201, 162, 39, 0.09);
   --glow-b: rgba(59, 130, 246, 0.05);
+  --glass-panel: rgba(28, 28, 30, 0.7);
+  --glass-header: rgba(10, 10, 10, 0.75);
+  --glass-shadow: rgba(0, 0, 0, 0.37);
+  --hover-wash: rgba(255, 255, 255, 0.06);
 }
 
 /* Chrome rooms — cold steel. Near-black wells, silver accents, ice-white
    glows; money surfaces read like brushed metal. Activated by
    data-theme="chromerooms". */
 [data-theme='chromerooms'] {
+  color-scheme: dark;
   --bg: #070809;
   --bg-soft: #0b0d0f;
   --panel: #101214;
@@ -67,6 +82,8 @@
   --border: rgba(255, 255, 255, 0.09);
   --border-strong: rgba(201, 216, 228, 0.30);
   --text: #f4f6f8;
+  --text-rgb: 244 246 248;
+  --scrim-rgb: 0 0 0;
   --text-muted: #a8b0b8;
   --text-subtle: #6e767e;
   --accent: #b9c6cf;
@@ -76,6 +93,40 @@
   --danger: #ef4444;
   --glow-a: rgba(234, 246, 255, 0.10);
   --glow-b: rgba(234, 246, 255, 0.04);
+  --glass-panel: rgba(28, 28, 30, 0.7);
+  --glass-header: rgba(10, 10, 10, 0.75);
+  --glass-shadow: rgba(0, 0, 0, 0.37);
+  --hover-wash: rgba(255, 255, 255, 0.06);
+}
+
+/* Paper — the light half of the same app. Warm off-white ground, near-black
+   ink, the same blue accent; panels read like cards on a counter. The one
+   founder-picked light skin; dark stays the shipped look. */
+[data-theme='paper'] {
+  color-scheme: light;
+  --bg: #f7f5f0;
+  --bg-soft: #efece5;
+  --panel: #ffffff;
+  --panel-strong: #fbf9f5;
+  --panel-alt: #f2efe8;
+  --border: rgba(28, 27, 24, 0.10);
+  --border-strong: rgba(28, 27, 24, 0.28);
+  --text: #1c1b18;
+  --text-rgb: 28 27 24;
+  --scrim-rgb: 28 27 24;
+  --text-muted: #56544e;
+  --text-subtle: #8a877e;
+  --accent: #3b82f6;
+  --accent-soft: rgba(59, 130, 246, 0.12);
+  --accent-ink: #ffffff;
+  --success: #0f9d6f;
+  --danger: #dc2626;
+  --glow-a: rgba(59, 130, 246, 0.10);
+  --glow-b: rgba(59, 130, 246, 0.04);
+  --glass-panel: rgba(255, 255, 255, 0.78);
+  --glass-header: rgba(247, 245, 240, 0.82);
+  --glass-shadow: rgba(28, 27, 24, 0.14);
+  --hover-wash: rgba(28, 27, 24, 0.05);
 }
 
 html, body, #root {
@@ -219,7 +270,7 @@ textarea::placeholder {
   }
 
   .hybrid-button:hover {
-    background: rgba(255, 255, 255, 0.06);
+    background: var(--hover-wash);
   }
 
   .hybrid-button:active {
@@ -241,15 +292,15 @@ textarea::placeholder {
   }
 
   .glass-panel {
-    background: rgba(28, 28, 30, 0.7);
+    background: var(--glass-panel);
     backdrop-filter: blur(20px);
     -webkit-backdrop-filter: blur(20px);
     border: 1px solid var(--border);
-    box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+    box-shadow: 0 8px 32px 0 var(--glass-shadow);
   }
 
   .glass-header {
-    background: rgba(10, 10, 10, 0.75);
+    background: var(--glass-header);
     backdrop-filter: blur(24px);
     -webkit-backdrop-filter: blur(24px);
     border-bottom: 1px solid var(--border);

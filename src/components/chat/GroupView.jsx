@@ -34,12 +34,12 @@ function GroupStorefront({ items, pinnedId, canList, onBuy, onList, pendingLists
       key={item.message.id}
       type="button"
       onClick={() => onBuy(item)}
-      className={`flex w-full items-center gap-3 border-b border-white/5 p-4 text-left last:border-0 active:bg-white/5 ${featuredCard ? 'bg-amber-300/[0.07]' : ''}`}
+      className={`flex w-full items-center gap-3 border-b border-ink/5 p-4 text-left last:border-0 active:bg-ink/5 ${featuredCard ? 'bg-amber-300/[0.07]' : ''}`}
     >
-      <Picture src={item.product.image} alt="" className="h-12 w-12 object-cover" fallback={<span className="flex h-12 w-12 items-center justify-center bg-white/5 text-[11px] text-white/30">Item</span>} />
+      <Picture src={item.product.image} alt="" className="h-12 w-12 object-cover" fallback={<span className="flex h-12 w-12 items-center justify-center bg-ink/5 text-[11px] text-ink/30">Item</span>} />
       <span className="min-w-0 flex-1">
         {featuredCard && <span className="block text-[11px] font-semibold uppercase tracking-wide text-amber-200">Pinned</span>}
-        <span className="block truncate text-[15px] font-semibold text-white">{item.product.title || item.product.name || 'Item'}</span>
+        <span className="block truncate text-[15px] font-semibold text-ink">{item.product.title || item.product.name || 'Item'}</span>
         <span className="block text-[13px] font-bold text-accent">{money(item.product)}</span>
       </span>
     </button>
@@ -49,20 +49,20 @@ function GroupStorefront({ items, pinnedId, canList, onBuy, onList, pendingLists
       <div className="overflow-hidden rounded-2xl border border-line bg-panel shadow-lg">
       {featured && card(featured, true)}
       {rest.map((item) => card(item, false))}
-      {items.length === 0 && pendingLists.length === 0 && <p className="px-4 py-8 text-center text-[13px] text-white/40">No listings yet.</p>}
+      {items.length === 0 && pendingLists.length === 0 && <p className="px-4 py-8 text-center text-[13px] text-ink/40">No listings yet.</p>}
       </div>
       {pendingLists.map((item) => {
         const stuck = securingPhase(item.since, now) === 'stuck';
         const name = item.payload?.title || item.payload?.name || 'Listing';
         return (
           <div key={item.id} className="rounded-2xl border border-line bg-panel px-4 py-3 shadow-lg">
-            <p className="text-[15px] font-semibold text-white">{name}</p>
+            <p className="text-[15px] font-semibold text-ink">{name}</p>
             {stuck ? (
               <button type="button" onClick={() => onRetrySecure?.()} className="mt-1 block min-h-11 text-left text-[15px] font-semibold text-blue-300 underline active:scale-95">
                 Still securing — retry
               </button>
             ) : (
-              <p className="mt-1 text-[13px] text-white/40">Securing…</p>
+              <p className="mt-1 text-[13px] text-ink/40">Securing…</p>
             )}
           </div>
         );
@@ -78,9 +78,9 @@ function GroupStorefront({ items, pinnedId, canList, onBuy, onList, pendingLists
           onList({ title: title.trim(), priceUsd: amount, description: note.trim(), currency: 'USD' });
           setTitle(''); setPrice(''); setNote(''); setOpen(false);
         }} className="overflow-hidden rounded-2xl border border-line bg-panel shadow-lg">
-          <input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Item" className="w-full border-b border-white/5 bg-transparent px-4 py-3 text-[15px] text-white outline-none placeholder:text-white/30" />
-          <input value={price} onChange={(event) => setPrice(event.target.value)} placeholder="Price in USD" inputMode="decimal" className="w-full border-b border-white/5 bg-transparent px-4 py-3 text-[15px] text-white outline-none placeholder:text-white/30" />
-          <input value={note} onChange={(event) => setNote(event.target.value)} placeholder="Note" className="w-full border-b border-white/5 bg-transparent px-4 py-3 text-[15px] text-white outline-none placeholder:text-white/30" />
+          <input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Item" className="w-full border-b border-ink/5 bg-transparent px-4 py-3 text-[15px] text-ink outline-none placeholder:text-ink/30" />
+          <input value={price} onChange={(event) => setPrice(event.target.value)} placeholder="Price in USD" inputMode="decimal" className="w-full border-b border-ink/5 bg-transparent px-4 py-3 text-[15px] text-ink outline-none placeholder:text-ink/30" />
+          <input value={note} onChange={(event) => setNote(event.target.value)} placeholder="Note" className="w-full border-b border-ink/5 bg-transparent px-4 py-3 text-[15px] text-ink outline-none placeholder:text-ink/30" />
           <button type="submit" className="w-full bg-accent py-3.5 font-bold text-accentInk">Post to shop</button>
           {formError && <p role="alert" className="px-4 py-3 text-[13px] text-red-400">{formError}</p>}
         </form>
@@ -310,9 +310,9 @@ export default function GroupView({
     <section className="relative flex h-full min-h-0 flex-col bg-transparent">
       <div className="mx-auto flex min-h-0 w-full max-w-3xl flex-1 flex-col">
       <ChatHeader mode="group" />
-      <div className="grid grid-cols-2 border-b border-white/5 px-4">
+      <div className="grid grid-cols-2 border-b border-ink/5 px-4">
         {[['chat', 'Chat'], ['shop', 'Shop']].map(([id, label]) => (
-          <button key={id} type="button" onClick={() => setPane(id)} className={`py-2.5 text-[13px] font-semibold ${pane === id ? 'border-b-2 border-accent text-white' : 'text-white/40'}`}>{label}</button>
+          <button key={id} type="button" onClick={() => setPane(id)} className={`py-2.5 text-[13px] font-semibold ${pane === id ? 'border-b-2 border-accent text-ink' : 'text-ink/40'}`}>{label}</button>
         ))}
       </div>
       {pane === 'shop' ? (
@@ -331,8 +331,8 @@ export default function GroupView({
       <div ref={scrollRef} className="flex min-h-0 flex-1 flex-col overflow-y-auto py-3">
         {visibleMessages.length === 0 ? (
           <div className="m-auto mx-4 max-w-sm rounded-2xl border border-line bg-panel shadow-lg px-4 py-8 text-center">
-            <p className="text-[15px] font-semibold text-white">You're in {activeGroup?.name || 'this group'}</p>
-            <p className="mt-2 text-[13px] leading-relaxed text-white/40">Say hello. Messages stay in this chat, with a name and a time on every one.</p>
+            <p className="text-[15px] font-semibold text-ink">You're in {activeGroup?.name || 'this group'}</p>
+            <p className="mt-2 text-[13px] leading-relaxed text-ink/40">Say hello. Messages stay in this chat, with a name and a time on every one.</p>
           </div>
         ) : visibleMessages.map((message) => {
           const data = message.pending ? null : readPayload(message);
@@ -357,9 +357,9 @@ export default function GroupView({
         <div className="mx-3 mb-2 flex items-center gap-3 rounded-2xl border border-line bg-panel shadow-lg px-4 py-3">
           <div className="min-w-0 flex-1 border-l-2 border-accent pl-3">
             <p className="text-[11px] font-semibold text-accent">{replyingTo.isSender ? 'You' : 'Replying'}</p>
-            <p className="truncate text-[13px] text-white/60">{replyingTo.data?.message || replyingTo.rawContent || 'Message'}</p>
+            <p className="truncate text-[13px] text-ink/60">{replyingTo.data?.message || replyingTo.rawContent || 'Message'}</p>
           </div>
-          <button type="button" onClick={() => setReplyingTo(null)} aria-label="Cancel reply" className="p-2 text-white/45 hover:text-white"><X size={18} /></button>
+          <button type="button" onClick={() => setReplyingTo(null)} aria-label="Cancel reply" className="p-2 text-ink/45 hover:text-ink"><X size={18} /></button>
         </div>
       )}
       <div className="pb-safe">

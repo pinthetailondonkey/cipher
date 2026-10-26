@@ -28,29 +28,29 @@ export default function BroadcastModal({ isOpen, onClose, product, groups = [], 
   };
 
   return (
-    <div className="fixed inset-0 z-[950] flex items-center justify-center bg-black/80 p-4" role="presentation">
+    <div className="fixed inset-0 z-[950] flex items-center justify-center bg-scrim/80 p-4" role="presentation">
       <section role="dialog" aria-modal="true" aria-label="Broadcast product" className="w-full max-w-sm rounded-3xl border border-line bg-panel p-5">
         <header className="mb-4 flex items-center gap-3">
           <Radio size={19} className="text-accent" />
           <div className="min-w-0 flex-1">
-            <h2 className="text-2xl font-bold tracking-tight text-white">Broadcast</h2>
-            <p className="truncate text-xs text-white/45">{product.title || product.name || 'Product'}</p>
+            <h2 className="text-2xl font-bold tracking-tight text-ink">Broadcast</h2>
+            <p className="truncate text-xs text-ink/45">{product.title || product.name || 'Product'}</p>
           </div>
-          <button type="button" onClick={onClose} aria-label="Close broadcast" className="p-2 text-white/45 hover:text-white"><X size={19} /></button>
+          <button type="button" onClick={onClose} aria-label="Close broadcast" className="p-2 text-ink/45 hover:text-ink"><X size={19} /></button>
         </header>
-        <p className="mb-3 text-sm text-white/55">Choose the groups where you want to post this listing.</p>
+        <p className="mb-3 text-sm text-ink/55">Choose the groups where you want to post this listing.</p>
         <div className="max-h-64 space-y-2 overflow-y-auto">
-          {groups.length === 0 && <p className="rounded-xl bg-white/5 p-4 text-sm text-white/45">You have not joined any groups yet.</p>}
+          {groups.length === 0 && <p className="rounded-xl bg-ink/5 p-4 text-sm text-ink/45">You have not joined any groups yet.</p>}
           {groups.map((group) => (
-            <label key={group.id} className="flex cursor-pointer items-center gap-3 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-3 hover:bg-white/[0.07]">
+            <label key={group.id} className="flex cursor-pointer items-center gap-3 rounded-xl border border-ink/10 bg-ink/[0.03] px-3 py-3 hover:bg-ink/[0.07]">
               <input
                 type="checkbox"
                 checked={selectedGroups.includes(group.id)}
                 onChange={() => toggleGroup(group.id)}
                 className="h-4 w-4 accent-blue-500"
               />
-              <span className="min-w-0 flex-1 truncate text-sm text-white">{group.name || group.id}</span>
-              <span className="truncate text-[10px] text-white/35">{group.id.slice(0, 8)}</span>
+              <span className="min-w-0 flex-1 truncate text-sm text-ink">{group.name || group.id}</span>
+              <span className="truncate text-[10px] text-ink/35">{group.id.slice(0, 8)}</span>
             </label>
           ))}
         </div>

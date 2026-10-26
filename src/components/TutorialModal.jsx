@@ -50,7 +50,7 @@ export default function TutorialModal({ isOpen, onClose }) {
     <AnimatePresence>
       <motion.div 
         initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-        className="fixed inset-0 z-[999] flex items-center justify-center bg-black/80 p-6"
+        className="fixed inset-0 z-[999] flex items-center justify-center bg-scrim/80 p-6"
       >
         <motion.div 
           key={currentStep}
@@ -58,7 +58,7 @@ export default function TutorialModal({ isOpen, onClose }) {
           transition={{ type: "spring", damping: 25, stiffness: 300 }}
           className="relative bg-panel border border-line rounded-3xl w-full max-w-sm p-8 overflow-hidden shadow-lg flex flex-col items-center text-center"
         >
-          <button onClick={() => { localStorage.removeItem('cipher_new_account'); onClose(); }} className="absolute top-4 right-4 text-white/30 hover:text-white transition-colors">
+          <button onClick={() => { localStorage.removeItem('cipher_new_account'); onClose(); }} className="absolute top-4 right-4 text-ink/30 hover:text-ink transition-colors">
             <X size={20} />
           </button>
 
@@ -66,15 +66,15 @@ export default function TutorialModal({ isOpen, onClose }) {
             <Logo size={72} />
           </div>
 
-          <h2 className="text-2xl font-bold text-white mb-3">{step.title}</h2>
-          <p className="text-[14px] text-white/60 leading-relaxed mb-4 px-2">{step.desc}</p>
+          <h2 className="text-2xl font-bold text-ink mb-3">{step.title}</h2>
+          <p className="text-[14px] text-ink/60 leading-relaxed mb-4 px-2">{step.desc}</p>
           {currentStep === steps.length - 1 && (
             <p className="text-[13px] text-accent leading-relaxed mb-4 px-2">You can reopen this guide any time under Profile → How to use.</p>
           )}
 
           <div className="flex gap-2 mb-8">
             {steps.map((_, i) => (
-              <div key={i} className={`h-1.5 rounded-full transition-all duration-300 ${i === currentStep ? 'w-6 bg-accent' : 'w-1.5 bg-white/10'}`} />
+              <div key={i} className={`h-1.5 rounded-full transition-all duration-300 ${i === currentStep ? 'w-6 bg-accent' : 'w-1.5 bg-ink/10'}`} />
             ))}
           </div>
 

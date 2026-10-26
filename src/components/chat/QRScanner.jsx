@@ -111,7 +111,7 @@ export default function QRScanner({ onClose }) {
   };
 
   return (
-    <div className="fixed inset-0 z-[999] flex flex-col bg-black pt-safe pb-safe md:items-center md:justify-center md:bg-black/70" role="dialog" aria-modal="true" aria-label="Scan QR code">
+    <div className="fixed inset-0 z-[999] flex flex-col bg-scrim pt-safe pb-safe md:items-center md:justify-center md:bg-scrim/70" role="dialog" aria-modal="true" aria-label="Scan QR code">
       <div className="pointer-events-none absolute inset-0" style={{
         background: 'radial-gradient(ellipse 55% 38% at 12% 0%, var(--glow-a), transparent 65%), radial-gradient(ellipse 50% 30% at 92% 100%, var(--glow-b), transparent 70%)',
       }} />
@@ -120,29 +120,29 @@ export default function QRScanner({ onClose }) {
         <div className="flex flex-1 flex-col items-center justify-center gap-5 overflow-y-auto p-4">
           {error ? (
             <div className="w-full max-w-xs rounded-2xl border border-line bg-panel px-4 py-10 text-center shadow-lg">
-              <CameraOff size={48} className="mb-4 text-white/40" />
-              <h3 className="text-[15px] font-semibold text-white">Scanner unavailable</h3>
-              <p role="alert" className="mt-2 text-[13px] text-white/50">{error}</p>
+              <CameraOff size={48} className="mb-4 text-ink/40" />
+              <h3 className="text-[15px] font-semibold text-ink">Scanner unavailable</h3>
+              <p role="alert" className="mt-2 text-[13px] text-ink/50">{error}</p>
             </div>
           ) : (
             <>
-              <div className="relative aspect-square w-full max-w-xs overflow-hidden rounded-3xl border border-white/10 bg-[#0A0A0A]/60 shadow-2xl">
+              <div className="relative aspect-square w-full max-w-xs overflow-hidden rounded-3xl border border-ink/10 bg-[#0A0A0A]/60 shadow-2xl">
                 <video ref={videoRef} className="h-full w-full object-cover" muted playsInline />
                 <canvas ref={canvasRef} className="hidden" />
                 <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-                  <Scan size={64} className="text-white/70" />
+                  <Scan size={64} className="text-ink/70" />
                 </div>
               </div>
               {decodedValue ? (
                 <section className="w-full max-w-sm rounded-2xl border border-line bg-panel p-4 shadow-lg">
-                  <p className="mb-2 flex items-center gap-2 text-[15px] font-semibold text-white"><Check size={17} className="text-accent" /> Scanned</p>
-                  <p className="break-all rounded-2xl border border-white/10 bg-white/5 p-3 font-mono text-[13px] text-white/80">{decodedValue}</p>
+                  <p className="mb-2 flex items-center gap-2 text-[15px] font-semibold text-ink"><Check size={17} className="text-accent" /> Scanned</p>
+                  <p className="break-all rounded-2xl border border-ink/10 bg-ink/5 p-3 font-mono text-[13px] text-ink/80">{decodedValue}</p>
                   <button type="button" onClick={copyDecodedValue} className="mt-3 flex w-full items-center justify-center gap-2 rounded-2xl bg-accent py-3.5 text-[15px] font-bold text-accentInk">
                     <Copy size={16} /> {copied ? 'Copied' : 'Copy'}
                   </button>
                 </section>
               ) : (
-                <p className="text-center text-[13px] text-white/50">Hold a QR code inside the frame to scan it.</p>
+                <p className="text-center text-[13px] text-ink/50">Hold a QR code inside the frame to scan it.</p>
               )}
             </>
           )}

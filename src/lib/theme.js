@@ -7,6 +7,7 @@ const KEY = 'cipher_theme';
 
 export const THEMES = [
   { id: 'vault', name: 'Vault', blurb: 'Pure black, blue accent' },
+  { id: 'paper', name: 'Paper', blurb: 'Warm paper, light' },
   { id: 'lobby', name: 'Bank lobby', blurb: 'Charcoal panels, brass accent' },
   { id: 'chromerooms', name: 'Chrome Rooms', blurb: 'Cold steel, silver accent' },
 ];

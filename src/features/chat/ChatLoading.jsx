@@ -10,7 +10,7 @@ export default function ChatLoading() {
       </div>
       <div className="space-y-3">
         {[1, 2, 3, 4, 5, 6].map((i) => (
-          <div key={i} className="bg-surface p-4 rounded-2xl border border-white/5 flex items-center gap-4">
+          <div key={i} className="bg-surface p-4 rounded-2xl border border-ink/5 flex items-center gap-4">
             <div className="w-12 h-12 rounded-full bg-surfaceLight animate-pulse shrink-0" />
             <div className="flex-1 space-y-2">
               <div className="h-4 bg-surfaceLight rounded animate-pulse w-1/3" />

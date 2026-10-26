@@ -19,7 +19,7 @@ export default function FloatingMenu() {
           <>
             <motion.div 
               initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-              className="fixed inset-0 z-40 bg-black/60"
+              className="fixed inset-0 z-40 bg-scrim/60"
               onClick={() => setShowMenu(false)}
             />
             <motion.div
@@ -31,7 +31,7 @@ export default function FloatingMenu() {
             >
               <button 
                 onClick={() => { setShowMenu(false); setView('search'); }} 
-                className={`flex items-center gap-3 rounded-2xl border border-line bg-panel shadow-lg px-5 py-3.5 font-bold text-white shadow-lg active:bg-white/10 ${pressable}`}
+                className={`flex items-center gap-3 rounded-2xl border border-line bg-panel shadow-lg px-5 py-3.5 font-bold text-ink shadow-lg active:bg-ink/10 ${pressable}`}
               >
                 <span className="text-sm font-bold tracking-wide">New Chat</span>
                 <div className="p-2 bg-accent rounded-full text-accentInk shadow-lg"><MessageSquare size={16} /></div>
@@ -39,7 +39,7 @@ export default function FloatingMenu() {
               
               <button 
                 onClick={() => { setShowMenu(false); setShowCreateGroup(true); }} 
-                className={`flex items-center gap-3 rounded-2xl border border-line bg-panel shadow-lg px-5 py-3.5 font-bold text-white shadow-lg active:bg-white/10 ${pressable}`}
+                className={`flex items-center gap-3 rounded-2xl border border-line bg-panel shadow-lg px-5 py-3.5 font-bold text-ink shadow-lg active:bg-ink/10 ${pressable}`}
               >
                 <span className="text-sm font-bold tracking-wide">New Group</span>
                 <div className="p-2 bg-accent rounded-full text-accentInk shadow-lg"><Users size={16} /></div>
@@ -47,7 +47,7 @@ export default function FloatingMenu() {
 
               <button
                 onClick={() => { setShowMenu(false); setIsChannel(true); setShowCreateGroup(true); }}
-                className={`flex items-center gap-3 rounded-2xl border border-line bg-panel shadow-lg px-5 py-3.5 font-bold text-white shadow-lg active:bg-white/10 ${pressable}`}
+                className={`flex items-center gap-3 rounded-2xl border border-line bg-panel shadow-lg px-5 py-3.5 font-bold text-ink shadow-lg active:bg-ink/10 ${pressable}`}
               >
                 <span className="text-sm font-bold tracking-wide">New Channel</span>
                 <div className="p-2 bg-accent rounded-full text-accentInk shadow-lg"><Radio size={16} /></div>
@@ -55,7 +55,7 @@ export default function FloatingMenu() {
 
               <button
                 onClick={() => { setShowMenu(false); setShowDeadDrop(true); }}
-                className={`flex items-center gap-3 rounded-2xl border border-line bg-panel shadow-lg px-5 py-3.5 font-bold text-white shadow-lg active:bg-white/10 ${pressable}`}
+                className={`flex items-center gap-3 rounded-2xl border border-line bg-panel shadow-lg px-5 py-3.5 font-bold text-ink shadow-lg active:bg-ink/10 ${pressable}`}
               >
                 <span className="text-sm font-bold tracking-wide">Burn Note</span>
                 <div className="p-2 bg-accent rounded-full text-accentInk shadow-lg"><Flame size={16} /></div>

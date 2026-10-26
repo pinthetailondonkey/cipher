@@ -183,7 +183,7 @@ export default function GroupInfoSidebar({
     <AnimatePresence>
       {isOpen && group && (
         <motion.div
-          className="fixed inset-0 z-[980] flex justify-end bg-black/50"
+          className="fixed inset-0 z-[980] flex justify-end bg-scrim/50"
           style={{ paddingRight: 'max(env(safe-area-inset-right), 0px)' }}
           role="presentation"
           initial={{ opacity: 0 }}
@@ -203,35 +203,35 @@ export default function GroupInfoSidebar({
             transition={{ type: 'tween', duration: 0.22 }}
             className="flex h-full w-full max-w-sm flex-col border-l border-line bg-panel"
           >
-            <header className="flex items-center gap-3 border-b border-white/5 bg-panel px-4 py-4">
+            <header className="flex items-center gap-3 border-b border-ink/5 bg-panel px-4 py-4">
               <Avatar src={group.picture} name={group.name || 'Group'} />
               <div className="min-w-0 flex-1">
-                <h2 className="truncate text-2xl font-bold tracking-tight text-white">{group.name || 'Group'}</h2>
-                <p className="truncate text-[13px] text-white/40">{memberList.length || 1} members</p>
+                <h2 className="truncate text-2xl font-bold tracking-tight text-ink">{group.name || 'Group'}</h2>
+                <p className="truncate text-[13px] text-ink/40">{memberList.length || 1} members</p>
               </div>
-              <button type="button" onClick={onClose} aria-label="Close group information" className={`p-2 text-white/45 hover:text-white ${pressable}`}><X size={20} /></button>
+              <button type="button" onClick={onClose} aria-label="Close group information" className={`p-2 text-ink/45 hover:text-ink ${pressable}`}><X size={20} /></button>
             </header>
             <div className="min-h-0 flex-1 space-y-4 overflow-y-auto bg-panel p-4">
-              {group.about && <p className="rounded-2xl border border-line bg-panelStrong shadow-lg p-4 text-[13px] text-white/50">{group.about}</p>}
+              {group.about && <p className="rounded-2xl border border-line bg-panelStrong shadow-lg p-4 text-[13px] text-ink/50">{group.about}</p>}
               <div className="overflow-hidden rounded-2xl border border-line bg-panelStrong shadow-lg">
-                <button type="button" onClick={shareGroup} className="flex w-full items-center gap-3 border-b border-white/5 p-4 text-left text-[15px] font-semibold text-white active:bg-white/5"><Link2 size={18} className="text-white/40" /> {copied ? 'Copied' : 'Invite'}</button>
-                {canManage && <button type="button" onClick={editGroup} disabled={pending} className="flex w-full items-center gap-3 border-b border-white/5 p-4 text-left text-[15px] font-semibold text-white disabled:opacity-40 active:bg-white/5"><Pencil size={18} className="text-white/40" /> Edit group</button>}
-                <button type="button" onClick={leave} disabled={pending} className="flex w-full items-center gap-3 p-4 text-left text-[15px] font-semibold text-red-400 disabled:opacity-40 active:bg-white/5"><LogOut size={18} /> Leave group</button>
+                <button type="button" onClick={shareGroup} className="flex w-full items-center gap-3 border-b border-ink/5 p-4 text-left text-[15px] font-semibold text-ink active:bg-ink/5"><Link2 size={18} className="text-ink/40" /> {copied ? 'Copied' : 'Invite'}</button>
+                {canManage && <button type="button" onClick={editGroup} disabled={pending} className="flex w-full items-center gap-3 border-b border-ink/5 p-4 text-left text-[15px] font-semibold text-ink disabled:opacity-40 active:bg-ink/5"><Pencil size={18} className="text-ink/40" /> Edit group</button>}
+                <button type="button" onClick={leave} disabled={pending} className="flex w-full items-center gap-3 p-4 text-left text-[15px] font-semibold text-red-400 disabled:opacity-40 active:bg-ink/5"><LogOut size={18} /> Leave group</button>
               </div>
               {isOwner && pendingJoins.length > 0 && (
                 <div className="overflow-hidden rounded-2xl border border-line bg-panelStrong shadow-lg">
-                  <p className="flex items-center gap-2 border-b border-white/5 px-4 py-3 text-[13px] text-white/40"><UserPlus size={16} /> Join requests</p>
+                  <p className="flex items-center gap-2 border-b border-ink/5 px-4 py-3 text-[13px] text-ink/40"><UserPlus size={16} /> Join requests</p>
                   {pendingJoins.map((row) => {
                     const profile = profiles[row.pubkey] || {};
                     const name = noHexName(profile, row.pubkey);
                     return (
-                      <div key={row.pubkey} className="flex items-center gap-3 border-b border-white/5 px-4 py-3 last:border-0">
+                      <div key={row.pubkey} className="flex items-center gap-3 border-b border-ink/5 px-4 py-3 last:border-0">
                         <Avatar src={profile.picture} name={name} />
                         <span className="min-w-0 flex-1">
-                          <span className="block truncate text-[15px] font-semibold text-white">{name}</span>
-                          <span className="block truncate text-[13px] text-white/40">wants to join</span>
+                          <span className="block truncate text-[15px] font-semibold text-ink">{name}</span>
+                          <span className="block truncate text-[13px] text-ink/40">wants to join</span>
                         </span>
-                        <button type="button" onClick={() => denyPending(row)} disabled={pending} className={`text-[13px] font-semibold text-white/60 disabled:opacity-50 ${pressable}`}>Deny</button>
+                        <button type="button" onClick={() => denyPending(row)} disabled={pending} className={`text-[13px] font-semibold text-ink/60 disabled:opacity-50 ${pressable}`}>Deny</button>
                         <button type="button" onClick={() => approvePending(row)} disabled={pending} aria-label={`Approve ${name}`} className={`text-[13px] font-semibold text-accent disabled:opacity-50 ${pressable}`}>Approve</button>
                       </div>
                     );
@@ -239,17 +239,17 @@ export default function GroupInfoSidebar({
                 </div>
               )}
               <div className="overflow-hidden rounded-2xl border border-line bg-panelStrong shadow-lg">
-                <p className="flex items-center gap-2 border-b border-white/5 px-4 py-3 text-[13px] text-white/40"><Users size={16} /> Members</p>
-                {memberList.length === 0 && <p className="px-4 py-3 text-[13px] text-white/40">Looking up members…</p>}
+                <p className="flex items-center gap-2 border-b border-ink/5 px-4 py-3 text-[13px] text-ink/40"><Users size={16} /> Members</p>
+                {memberList.length === 0 && <p className="px-4 py-3 text-[13px] text-ink/40">Looking up members…</p>}
                 {memberList.map((member) => {
                   const profile = profiles[member.pubkey] || {};
                   const name = noHexName(profile, member.pubkey);
                   const role = member.role || (member.pubkey === group.creator ? 'admin' : 'member');
                   return (
-                    <div key={member.pubkey} className="flex items-center gap-3 border-b border-white/5 px-4 py-3 last:border-0">
+                    <div key={member.pubkey} className="flex items-center gap-3 border-b border-ink/5 px-4 py-3 last:border-0">
                       <Avatar src={profile.picture} name={name} />
                       <div className="min-w-0 flex-1">
-                        <p className="truncate text-[15px] font-semibold text-white">{name}</p>
+                        <p className="truncate text-[15px] font-semibold text-ink">{name}</p>
                         <p className="mt-0.5 text-[13px] text-accent">{role === 'admin' || role === 'owner' ? 'Admin' : 'Member'}</p>
                       </div>
                       {canManage && member.pubkey !== identity?.pk && (
@@ -260,22 +260,22 @@ export default function GroupInfoSidebar({
                 })}
               </div>
               <div className="overflow-hidden rounded-2xl border border-line bg-panelStrong shadow-lg">
-                <p className="flex items-center gap-2 border-b border-white/5 px-4 py-3 text-[13px] text-white/40"><Store size={16} /> Shop</p>
+                <p className="flex items-center gap-2 border-b border-ink/5 px-4 py-3 text-[13px] text-ink/40"><Store size={16} /> Shop</p>
                 {pinnedId && (
-                  <div className="flex items-center gap-2 border-b border-white/5 px-4 py-3 text-[13px] text-amber-200">
+                  <div className="flex items-center gap-2 border-b border-ink/5 px-4 py-3 text-[13px] text-amber-200">
                     <BadgeCheck size={16} /> Pinned
                     {canManage && <button type="button" onClick={removePin} disabled={pending} className="ml-auto text-accent disabled:opacity-50">Unpin</button>}
                   </div>
                 )}
                 {error && <p role="alert" className="px-4 py-3 text-[13px] text-red-400">{error}</p>}
-                {products.length === 0 && <p className="px-4 py-3 text-[13px] text-white/40">No listings yet.</p>}
+                {products.length === 0 && <p className="px-4 py-3 text-[13px] text-ink/40">No listings yet.</p>}
                 {products.map(({ message, product }) => {
                   const isPinned = pinnedId === message.id;
                   return (
-                    <div key={message.id} className="flex items-center gap-3 border-b border-white/5 px-4 py-3 last:border-0">
-                      <Picture src={product.image} alt="" loading="lazy" className="h-10 w-10 rounded-xl object-cover" fallback={<span className="flex h-10 w-10 items-center justify-center rounded-xl bg-black text-white/30"><Package size={16} /></span>} />
+                    <div key={message.id} className="flex items-center gap-3 border-b border-ink/5 px-4 py-3 last:border-0">
+                      <Picture src={product.image} alt="" loading="lazy" className="h-10 w-10 rounded-xl object-cover" fallback={<span className="flex h-10 w-10 items-center justify-center rounded-xl bg-scrim text-ink/30"><Package size={16} /></span>} />
                       <div className="min-w-0 flex-1">
-                        <p className="truncate text-[15px] font-semibold text-white">{product.title || product.name || 'Product'}</p>
+                        <p className="truncate text-[15px] font-semibold text-ink">{product.title || product.name || 'Product'}</p>
                         <p className="truncate text-[13px] text-accent">{product.price || product.priceUsd || 'Ask'}</p>
                       </div>
                       {canManage && (

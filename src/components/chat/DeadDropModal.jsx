@@ -55,16 +55,16 @@ export default function DeadDropModal({ identity }) {
   };
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-end justify-center bg-black/70 p-4 pb-[calc(1.5rem+env(safe-area-inset-bottom))]" onClick={close}>
+    <div className="fixed inset-0 z-[70] flex items-end justify-center bg-scrim/70 p-4 pb-[calc(1.5rem+env(safe-area-inset-bottom))]" onClick={close}>
       <div
         className="w-full max-w-md rounded-3xl border border-line bg-panelStrong p-5 shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-lg font-bold text-white">Burn note</h2>
-          <button type="button" onClick={close} aria-label="Close" className="p-1.5 text-white/50 hover:text-white"><X size={18} /></button>
+          <h2 className="text-lg font-bold text-ink">Burn note</h2>
+          <button type="button" onClick={close} aria-label="Close" className="p-1.5 text-ink/50 hover:text-ink"><X size={18} /></button>
         </div>
-        <p className="mb-3 text-[13px] leading-relaxed text-white/50">
+        <p className="mb-3 text-[13px] leading-relaxed text-ink/50">
           Write it, get one link, send it however you want. The note opens once — after that it is gone. Whoever has the link can read it, so send it to the right chat.
         </p>
 
@@ -78,7 +78,7 @@ export default function DeadDropModal({ identity }) {
             >
               {copied ? <><Check size={16} /> Copied</> : <><Copy size={16} /> Copy link</>}
             </button>
-            <p className="mt-2 text-center text-[11px] text-white/40">This link shows once. It is not saved anywhere.</p>
+            <p className="mt-2 text-center text-[11px] text-ink/40">This link shows once. It is not saved anywhere.</p>
           </div>
         ) : (
           <div>
@@ -88,11 +88,11 @@ export default function DeadDropModal({ identity }) {
               maxLength={8000}
               rows={5}
               placeholder="Say it once."
-              className="w-full resize-none rounded-2xl border border-line bg-panel p-3 text-[14px] text-white placeholder-white/30 outline-none focus:border-accentSoft"
+              className="w-full resize-none rounded-2xl border border-line bg-panel p-3 text-[14px] text-ink placeholder-ink/30 outline-none focus:border-accentSoft"
               autoFocus
             />
             <div className="mt-1 flex items-center justify-between">
-              <span className="text-[11px] text-white/30">{text.length}/8000</span>
+              <span className="text-[11px] text-ink/30">{text.length}/8000</span>
               <button
                 type="button"
                 onClick={make}

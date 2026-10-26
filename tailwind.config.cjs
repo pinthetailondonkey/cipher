@@ -10,7 +10,8 @@ module.exports = {
       colors: {
         // Theme-aware tokens: every value reads the CSS variables set by the
         // active theme in src/index.css, so swapping data-theme re-skins any
-        // component built on these without a code change.
+        // component built on these without a code change. ink and scrim are
+        // rgb triplets so Tailwind opacity modifiers (text-ink/40) compose.
         base: 'var(--bg)',
         surface: 'var(--bg-soft)',
         surfaceLight: 'var(--panel-strong)',
@@ -19,7 +20,7 @@ module.exports = {
         panelAlt: 'var(--panel-alt)',
         line: 'var(--border)',
         lineStrong: 'var(--border-strong)',
-        ink: 'var(--text)',
+        ink: 'rgb(var(--text-rgb) / <alpha-value>)',
         inkMuted: 'var(--text-muted)',
         inkSubtle: 'var(--text-subtle)',
         accent: 'var(--accent)',
@@ -27,6 +28,7 @@ module.exports = {
         accentInk: 'var(--accent-ink)',
         success: 'var(--success)',
         danger: 'var(--danger)',
+        scrim: 'rgb(var(--scrim-rgb) / <alpha-value>)',
         borderDark: 'var(--border-strong)',
       },
       fontFamily: {
