@@ -101,3 +101,18 @@ export function denyPendingJoin(groupId, pubkey) {
   notifyJoinRequests();
   return true;
 }
+
+// A deny must survive the relay's own word. An open-join relay writes the
+// 9021 sender back into its next 39002 snapshot, so the owner's account
+// strips denied pubkeys from a relay roster before it is stored or used to
+// grant keys. Rows arrive as { pubkey, role } objects or plain pubkey
+// strings — the two shapes member snapshots already take.
+function memberPubkey(row) {
+  return String((typeof row === 'string' ? row : row?.pubkey) || '');
+}
+
+export function withoutDenied(groupId, rows) {
+  const id = String(groupId || '').trim();
+  if (!id || !Array.isArray(rows)) return rows || [];
+  return rows.filter((row) => !isJoinDenied(id, memberPubkey(row)));
+}

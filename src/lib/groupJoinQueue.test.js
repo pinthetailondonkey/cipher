@@ -3,6 +3,7 @@ import test from 'node:test';
 import {
   JOIN_REQUESTS_EVENT, denyPendingJoin, dropPendingJoin, isJoinDenied,
   loadPendingJoins, pendingJoinsFor, queuePendingJoin, subscribeJoinRequests,
+  withoutDenied,
 } from './groupJoinQueue.js';
 import { getActivePubkey } from './storage.js';
 
@@ -87,5 +88,19 @@ test('the queue tells the screen it changed', () => {
     } finally {
       stop();
     }
+  });
+});
+
+test('a deny strips the sender from a relay roster: an open-join relay cannot bring them back', () => {
+  withStorage(() => {
+    assert.equal(denyPendingJoin(GROUP, PK), true);
+    const roster = [{ pubkey: PK, role: 'member' }, { pubkey: OTHER, role: 'admin' }, OTHER];
+    assert.deepEqual(withoutDenied(GROUP, roster), [{ pubkey: OTHER, role: 'admin' }, OTHER]);
+    // A group with nothing denied hands the rows back untouched.
+    const OTHER_GROUP = 'open-group';
+    assert.deepEqual(withoutDenied(OTHER_GROUP, roster), roster);
+    // No groupId or no rows at all: nothing to strip.
+    assert.deepEqual(withoutDenied('', roster), roster);
+    assert.deepEqual(withoutDenied(GROUP, null), []);
   });
 });
