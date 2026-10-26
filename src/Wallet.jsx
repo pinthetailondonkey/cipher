@@ -365,14 +365,9 @@ export default function Wallet({ identity, onOpenChat }) {
             <span className="min-w-0 flex-1"><span className="block text-[15px] font-semibold text-white">Edit Profile</span><span className="block text-[13px] text-white/40">Name, bio, and photo</span></span>
             <ChevronRight size={18} className="text-white/30" />
           </button>
-          <button onClick={() => setView('privacy')} className={`flex w-full items-center gap-3 border-b border-white/5 p-4 text-left ${pressable}`}>
+          <button onClick={() => setView('privacy')} className="flex w-full items-center gap-3 p-4 text-left">
             <Shield size={18} className="text-white/40" />
             <span className="min-w-0 flex-1"><span className="block text-[15px] font-semibold text-white">Privacy</span><span className="block text-[13px] text-white/40">Calls, last seen, blocked</span></span>
-            <ChevronRight size={18} className="text-white/30" />
-          </button>
-          <button onClick={() => setView('connections')} className={`flex w-full items-center gap-3 p-4 text-left ${pressable}`}>
-            <Globe size={18} className="text-white/40" />
-            <span className="min-w-0 flex-1"><span className="block text-[15px] font-semibold text-white">Connections</span><span className="block text-[13px] text-white/40">Every host, and which are Tor</span></span>
             <ChevronRight size={18} className="text-white/30" />
           </button>
         </div>
