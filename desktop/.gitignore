@@ -1,0 +1,9 @@
+node_modules/
+# The bundled tor: downloaded by scripts/fetch-tor.sh, shipped inside the
+# tar.gz bundle, never committed to the repo.
+vendor/
+# Dev data (docs/DESKTOP.md: keys, chats, settings live in data/ beside the app)
+data/
+# The web app build staged for packaging (copied from the repo's dist/)
+dist/
+desktop/node_modules/

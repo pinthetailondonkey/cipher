@@ -1,0 +1,24 @@
+# Cipher Desktop packaging. docs/DESKTOP.md (feat/desktop-shell): the v1
+# Linux target is the portable tar.gz bundle - it runs on Tails without any
+# FUSE/AppImage machinery. deb is deliberately deferred.
+appId: com.aegispayhq.cipher
+productName: Cipher
+executableName: cipher
+# TODO: no icon yet (docs/DESKTOP.md build order step 2). electron-builder
+# ships a default placeholder until linux/icon.png (>=512px) exists.
+asar: true
+files:
+  - src/**
+  - dist/**
+  - package.json
+# vendor/tor is downloaded by scripts/fetch-tor.sh (git-ignored, never
+# committed) and copied OUTSIDE the asar: a packed archive cannot be
+# spawned, so the bundled tor ships as a real file at
+# resources/vendor/tor/tor/tor (src/main.js knows that path).
+extraResources:
+  - from: vendor
+    to: vendor
+linux:
+  target:
+    - tar.gz
+  category: Network
