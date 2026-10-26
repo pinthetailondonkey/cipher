@@ -75,15 +75,45 @@ export function acceptPayment(payload, secretKey) {
   if (payload.status !== 'paid' && payload.status !== 'disputed') return null;
   try {
     const already = verifyReceipt(payload.receipt);
+    if (!already) {
+      // A receipt arriving without both signatures is the sender's half. It
+      // is completed only in the buyer role, whose signature says "I
+      // acknowledge this payment". The vendor's signature exists when its
+      // own watcher saw the chain — a receipt without one is a fabricated
+      // txid on a real order, and every binding check lets it pass, so the
+      // vendor's device never grants its signature here. (security F4)
+      const body = canonicalReceipt(payload.receipt.body);
+      const pub = bytesToHex(schnorr.getPublicKey(secretKey instanceof Uint8Array ? secretKey : hexToBytes(secretKey)));
+      if (pub !== body.buyer) return null;
+    }
     const receipt = already ? payload.receipt : coSignPayment(payload.receipt, secretKey);
     if (!verifyReceipt(receipt)) return null;
     let published = payload.published || null;
     if (published) {
-      try {
-        published = signPublicView(secretKey, published);
-      } catch (error) {
-        console.error('[orders] The public view was not co-signed:', error);
-        published = payload.published;
+      // The public view is countersigned only when it is the view of this
+      // receipt. An update can carry a doctored view — volume nobody traded
+      // — beside a real receipt, and placing this device's signature on it
+      // would bless the lie. A mismatched view rides nowhere.
+      const expected = publicReceipt(receipt);
+      const view = publicBody(published);
+      if (!expected
+        || view.hash !== expected.hash
+        || view.amount !== expected.amount
+        || view.currency !== expected.currency
+        || view.buyer !== expected.buyer
+        || view.vendor !== expected.vendor) {
+        console.error('[orders] The public view did not match the receipt. It was dropped.', {
+          expected: { hash: expected?.hash, amount: expected?.amount, currency: expected?.currency },
+          sent: { hash: view.hash, amount: view.amount, currency: view.currency },
+        });
+        published = null;
+      } else {
+        try {
+          published = signPublicView(secretKey, published);
+        } catch (error) {
+          console.error('[orders] The public view was not co-signed:', error);
+          published = null;
+        }
       }
     }
     return { receipt, added: !already, published };
