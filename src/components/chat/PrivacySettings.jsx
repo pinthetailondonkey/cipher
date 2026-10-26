@@ -6,6 +6,7 @@ import { requestMotionAccess } from '../../lib/shakeDetector';
 import { useChatStore } from '../../store/chatStore';
 import { pressable } from '../ui/Button';
 import Avatar from '../ui/Avatar';
+import { shortNpub } from '../../lib/npub';
 
 function Choice({ icon: Icon, label, hint, value, options, onChange }) {
   return (
@@ -94,7 +95,7 @@ export default function PrivacySettings({ onBack }) {
           {(blocked || []).length === 0 ? (
             <p className="flex items-center gap-3 p-4 text-[15px] text-white/40"><Ban size={18} /> No blocked people</p>
           ) : blocked.map((pubkey) => {
-            const name = profiles[pubkey]?.displayName || `${pubkey.slice(0, 8)}…`;
+            const name = profiles[pubkey]?.displayName || shortNpub(pubkey);
             return (
               <div key={pubkey} className="flex items-center gap-3 border-b border-white/5 p-4 last:border-0">
                 <Avatar src={profiles[pubkey]?.picture} name={name} />

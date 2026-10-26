@@ -6,6 +6,7 @@ import Avatar from '../ui/Avatar';
 import Picture from '../ui/Picture';
 import { pressable } from '../ui/Button';
 import { copyText } from '../../lib/copyText';
+import { noHexName } from '../../lib/npub';
 import { denyPendingJoin, dropPendingJoin, pendingJoinsFor, subscribeJoinRequests } from '../../lib/groupJoinQueue.js';
 
 const EMPTY_MESSAGES = [];
@@ -221,7 +222,7 @@ export default function GroupInfoSidebar({
                   <p className="flex items-center gap-2 border-b border-white/5 px-4 py-3 text-[13px] text-white/40"><UserPlus size={16} /> Join requests</p>
                   {pendingJoins.map((row) => {
                     const profile = profiles[row.pubkey] || {};
-                    const name = profile.displayName || profile.name || `${row.pubkey.slice(0, 8)}…`;
+                    const name = noHexName(profile, row.pubkey);
                     return (
                       <div key={row.pubkey} className="flex items-center gap-3 border-b border-white/5 px-4 py-3 last:border-0">
                         <Avatar src={profile.picture} name={name} />
@@ -241,7 +242,7 @@ export default function GroupInfoSidebar({
                 {memberList.length === 0 && <p className="px-4 py-3 text-[13px] text-white/40">Looking up members…</p>}
                 {memberList.map((member) => {
                   const profile = profiles[member.pubkey] || {};
-                  const name = profile.displayName || profile.name || `${member.pubkey.slice(0, 8)}…`;
+                  const name = noHexName(profile, member.pubkey);
                   const role = member.role || (member.pubkey === group.creator ? 'admin' : 'member');
                   return (
                     <div key={member.pubkey} className="flex items-center gap-3 border-b border-white/5 px-4 py-3 last:border-0">

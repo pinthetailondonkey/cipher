@@ -3,6 +3,7 @@ import { Users, Megaphone } from 'lucide-react';
 import { useChatStore } from '../../store/chatStore';
 import Avatar from '../ui/Avatar';
 import { pressable } from '../ui/Button';
+import { noHexName } from '../../lib/npub';
 
 export default function ChatList({ onOpenChat }) {
   const dms = useChatStore((s) => s.dms);
@@ -15,7 +16,7 @@ export default function ChatList({ onOpenChat }) {
     const profile = profiles[pubkey];
     const safeProfile = (profile && profile.name && !/^[0-9a-f]{8,64}$/i.test(profile.name))
       ? profile
-      : { displayName: `User ${pubkey.slice(0, 4)}`, picture: null, name: pubkey.slice(0, 4) };
+      : { displayName: noHexName(profile, pubkey), picture: null, name: noHexName(profile, pubkey) };
     return { type: 'dm', id: pubkey, lastMsg: msgs[msgs.length - 1], profile: safeProfile };
   });
 
@@ -44,7 +45,7 @@ export default function ChatList({ onOpenChat }) {
         const row = `flex w-full items-center justify-between border-b border-white/5 p-4 text-left last:border-0 active:bg-white/5 ${pressable}`;
 
         if (chat.type === 'dm') {
-          const profile = profiles[chat.id] || { displayName: `User ${chat.id.slice(0, 4)}`, picture: null };
+          const profile = profiles[chat.id] || { displayName: noHexName(null, chat.id), picture: null };
           return (
             <button
               key={chat.id}

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { ArrowLeft, Info, Phone } from 'lucide-react';
 import { useChatStore } from '../../store/chatStore';
 import { startCall } from '../../lib/voiceCall';
+import { shortNpub } from '../../lib/npub';
 
 export default function ChatHeader({ mode }) {
   const setView = useChatStore((state) => state.setView);
@@ -21,7 +22,7 @@ export default function ChatHeader({ mode }) {
   }, []);
 
   const title = mode === 'dm'
-    ? (profile?.displayName || profile?.name || activeDm?.slice(0, 8) || 'Chat')
+    ? (profile?.displayName || profile?.name || shortNpub(activeDm) || 'Chat')
     : activeGroup?.name || 'Group';
   const someoneTyping = mode === 'dm'
     ? Boolean(typingAt && now - typingAt < 6000)

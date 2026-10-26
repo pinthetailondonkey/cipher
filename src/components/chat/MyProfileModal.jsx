@@ -4,6 +4,7 @@ import { useChatStore } from '../../store/chatStore';
 import Avatar from '../ui/Avatar';
 import Button, { pressable } from '../ui/Button';
 import { copyText } from '../../lib/copyText';
+import { noHexName, shortNpub } from '../../lib/npub';
 
 const EMPTY_PROFILE = {};
 
@@ -29,7 +30,7 @@ export default function MyProfileModal({ identity }) {
     }
   };
 
-  const name = profile.displayName || profile.name || 'Your profile';
+  const name = noHexName(profile, identity?.pk);
 
   return (
     <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/70 p-4 backdrop-blur-md" role="presentation" onMouseDown={(event) => {
@@ -41,7 +42,7 @@ export default function MyProfileModal({ identity }) {
           <Avatar src={profile.picture} name={name} className="!h-16 !w-16 text-xl" />
           <div className="min-w-0">
             <h2 className="truncate text-2xl font-bold tracking-tight text-white">{name}</h2>
-            <p className="truncate text-[13px] text-white/40">{identity?.pk ? `${identity.pk.slice(0, 16)}…` : 'No key loaded'}</p>
+            <p className="truncate text-[13px] text-white/40">{identity?.pk ? shortNpub(identity.pk) : 'No key loaded'}</p>
           </div>
         </div>
         {profile.about && <p className="mt-4 text-[13px] text-white/40">{profile.about}</p>}
