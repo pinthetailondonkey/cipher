@@ -126,7 +126,6 @@ export const useChatStore = create((set) => ({
   disappearingTimers: scopedGet('disappearing_timers', {}),
   unreadCounts: scopedGet('unread', {}),
   notifAck: scopedGet('notif_ack', {}),
-  pinnedChats: scopedGet('pinned', []),
   archivedChats: scopedGet('archived', []),
   toggleArchiveChat: (id) => set(s => {
     const next = s.archivedChats.includes(id) ? s.archivedChats.filter(x => x !== id) : [...s.archivedChats, id];
@@ -134,11 +133,6 @@ export const useChatStore = create((set) => ({
     return { archivedChats: next };
   }),
   mutedChats: scopedGet('muted', []),
-  togglePinChat: (id) => set(s => {
-    const next = s.pinnedChats.includes(id) ? s.pinnedChats.filter(x => x !== id) : [...s.pinnedChats, id];
-    scopedSet('pinned', next);
-    return { pinnedChats: next };
-  }),
   mutedUntil: scopedGet('muted_until', {}),
   setMuteDuration: (id, durationMs) => set(s => {
     const next = { ...s.mutedUntil };
@@ -332,7 +326,6 @@ export const useChatStore = create((set) => ({
   closeDialog: () => set({ dialog: null }),
 
   reload: () => set({
-    pinnedChats: scopedGet('pinned', []),
     archivedChats: scopedGet('archived', []),
     mutedChats: scopedGet('muted', []),
     mutedUntil: scopedGet('muted_until', {}),

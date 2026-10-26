@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
-import { eventShouldBuzz, eventShouldOrder, eventShouldRing, nativeTransport, notificationFromPush, payloadShouldBuzz, registerWithGateway, withBuzzTag } from './pushGateway.js';
+import { eventShouldBuzz, eventShouldOrder, eventShouldRing, nativeTransport, payloadShouldBuzz, registerWithGateway, withBuzzTag } from './pushGateway.js';
 
 test('typing, read receipts, and key bundles are not tagged, so they do not buzz', () => {
   assert.equal(payloadShouldBuzz({ type: 'typing' }), false);
@@ -25,16 +25,9 @@ test('typing, read receipts, and key bundles are not tagged, so they do not buzz
 });
 
 test('a push notice never carries the message', () => {
-  assert.deepEqual(notificationFromPush({ kind: 'message', body: 'the secret drop is at 4th' }), {
-    title: 'New message',
-    body: 'Open Cipher to view it.',
-    data: { kind: 'message' },
-  });
-  assert.equal(notificationFromPush({ kind: 'order', text: '2g of whatever' }).title, 'New message');
-  assert.equal(notificationFromPush({ kind: 'order' }).data.kind, 'order');
-  assert.equal(notificationFromPush({ kind: 'call', state: 'ringing' }).title, 'New message');
-  assert.equal(notificationFromPush({ kind: 'call' }).data.kind, 'call');
-  assert.equal(notificationFromPush('meet at the corner').body, 'Open Cipher to view it.');
+  // The lock-screen copy lives in the service worker alone; the banner
+  // builder for the client was unreachable and is gone. The worker must
+  // keep saying the only true thing: something arrived.
   const sw = fs.readFileSync(new URL('../../public/sw.js', import.meta.url), 'utf8');
   assert.equal(sw.includes('event.data.text'), false);
   assert.match(sw, /Open Cipher to view it/);

@@ -41,23 +41,6 @@ export function eventShouldOrder(event) {
   return Array.isArray(event?.tags) && event.tags.some((tag) => tag[0] === 't' && tag[1] === ORDER_TAG);
 }
 
-export function notificationFromPush(raw) {
-  // The banner used to trust the payload's category: "New order",
-  // "Incoming call". But the gateway is never given the text, and anyone on
-  // a relay can spend the address tag that drives the category, so the
-  // claim on the lock screen was one forged tag away from a call or an
-  // order nobody made. The banner now only says the true thing — something
-  // arrived — and what it was shows inside the app, which saw the real
-  // event. The kind still rides in data for the box's own counters.
-  // (security S11 re-attack)
-  const kind = raw && typeof raw === 'object' && typeof raw.kind === 'string' ? raw.kind : 'message';
-  return {
-    title: 'New message',
-    body: 'Open Cipher to view it.',
-    data: { kind },
-  };
-}
-
 export function urlBase64ToUint8Array(value) {
   const padding = '='.repeat((4 - (value.length % 4)) % 4);
   const base64 = (value + padding).replace(/-/g, '+').replace(/_/g, '/');
