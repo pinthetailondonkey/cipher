@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
 import { schnorr } from '@noble/curves/secp256k1.js';
-import { ORDER_ACTIONS, allowedActionsFor, issuedPaymentMethods, orderActionsFor, orderPaymentDetails, orderRecordForReceipt, orderState, reopenedStatus } from './orderActions.js';
+import { ORDER_ACTIONS, allowedActionsFor, frozenIssuedMethods, issuedPaymentMethods, orderActionsFor, orderPaymentDetails, orderRecordForReceipt, orderState, reopenedStatus } from './orderActions.js';
 import { ORDER_STATUS, ORDER_STATUSES, RECEIPT_OUTCOMES } from './paymentState.js';
 import { signReceipt } from './proofOfTrade.js';
 
@@ -136,6 +136,32 @@ test('issued addresses freeze on the card, and an empty pair is nothing issued',
   assert.equal(issuedPaymentMethods({ paymentMethods: { btc: '', xmr: '' } }), null);
   assert.equal(issuedPaymentMethods({ paymentMethods: null }), null);
   assert.equal(issuedPaymentMethods(null), null);
+});
+
+test('acceptance freezes only the pair this device issued, never the buyer\'s word', () => {
+  // security S5 re-attack: a paymentMethods on the fresh received card was
+  // authored by whoever sent the order request. Only the card's local patch —
+  // this device's own write when it accepted before — can freeze an address,
+  // or the vendor's acceptance would adopt and receipt-bind a pair a buyer
+  // typed.
+  assert.equal(frozenIssuedMethods({ data: { paymentMethods: { btc: 'bc1qattacker' } } }, {}), null);
+  assert.deepEqual(frozenIssuedMethods({ localPatch: { paymentMethods: { btc: 'bc1qorder' } } }, {}), { btc: 'bc1qorder', xmr: null });
+  // An order parked on the account's shared address does not freeze; a
+  // re-accept derives it a fresh address instead of serving shared again.
+  // The compare reads an uppercase bech32 twin as the shared address too.
+  assert.equal(
+    frozenIssuedMethods({ localPatch: { paymentMethods: { btc: 'BC1QSHARED', xmr: '' } } }, { btc: 'bc1qshared', xmr: '' }),
+    null,
+  );
+  // Only the side that matches shared lets go; the other stays frozen.
+  assert.deepEqual(
+    frozenIssuedMethods(
+      { localPatch: { paymentMethods: { btc: 'bc1qshared', xmr: '8sub' } } },
+      { btc: 'bc1qshared', xmr: '8xmr' },
+    ),
+    { btc: null, xmr: '8sub' },
+  );
+  assert.equal(frozenIssuedMethods(null, {}), null);
 });
 
 test('a receipt binds only an order this device tracks as accepted or later', () => {

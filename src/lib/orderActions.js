@@ -183,6 +183,25 @@ export function issuedPaymentMethods(orderData) {
   return btc || xmr ? { btc: btc || null, xmr: xmr || null } : null;
 }
 
+// The issued pair acceptance is allowed to freeze. The card's local patch is
+// where this device wrote the pair when it accepted the order before; a pair
+// sitting on a fresh received card is the buyer's word — paymentMethods
+// authored on an order request was typed by whoever sent it — and never
+// freezes. A pair the account's shared address was parked on does not freeze
+// either: a re-accept derives fresh instead of serving the shared address
+// again, which is what per-order derivation exists to prevent. The compare
+// is case-blind, so a mixed-case bech32 twin of the shared address cannot
+// slip past it. (security S1, S5)
+export function frozenIssuedMethods(request, sharedAddresses) {
+  const methods = issuedPaymentMethods(request?.localPatch);
+  if (!methods) return null;
+  const shared = (coin) => String(sharedAddresses?.[coin] || '').trim().toLowerCase();
+  const own = (coin) => String(methods[coin] || '').trim().toLowerCase();
+  const btc = own('btc') && shared('btc') && own('btc') === shared('btc') ? null : methods.btc;
+  const xmr = own('xmr') && shared('xmr') && own('xmr') === shared('xmr') ? null : methods.xmr;
+  return btc || xmr ? { btc: btc || null, xmr: xmr || null } : null;
+}
+
 // What a disputed order returns to when this side reopens it. Not history:
 // the payment state the order already reached decides it. Money seen or
 // confirmed puts the order back to paid; anything else back to accepted, so
