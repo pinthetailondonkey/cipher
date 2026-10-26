@@ -1050,9 +1050,10 @@ export function useNIP29Group({ identity }) {
             const myUsername = myProfile?.name || myProfile?.username;
             if (myUsername && parsed.message && parsed.message.includes('@' + myUsername)) isMentioned = true;
           } catch (e) {}
-          if (isReplyToMe) showNotification(`💬 Reply in ${groupId.slice(0, 6)}`, parsed.message || 'Replied to you');
-          else if (isMentioned) showNotification('📣 You were mentioned', parsed.message || 'Mentioned you');
-          else showNotification('New Group Message', parsed.message || 'New attachment');
+          // S11: the sender is the throttle key; only the OS notification is held back.
+          if (isReplyToMe) showNotification(`💬 Reply in ${groupId.slice(0, 6)}`, event.pubkey);
+          else if (isMentioned) showNotification('📣 You were mentioned', event.pubkey);
+          else showNotification('New Group Message', event.pubkey);
         }
         return { ...prev, [groupId]: [...groupMsgs, baseMsg].sort(sortMessages) };
       });
