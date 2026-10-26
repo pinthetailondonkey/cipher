@@ -198,6 +198,9 @@ export default function Wallet({ identity, onOpenChat }) {
       await Promise.race([Promise.allSettled(pool.publish(relays, ev)), timeout])
       
       const newProduct = { id: ev.id, name: title, description, price, currency, image: image || '/app-icon-512.png', stock: '1', vendorPubkey: identity.pk, created_at: ev.created_at }
+      // Read and write share one key. The publish writes cipher_cached_products,
+      // and the vendor's own orders-and-listings screen reads it too — a second
+      // key here meant "Publish to Store" succeeded and then the list was empty.
       const cached = JSON.parse(localStorage.getItem('cipher_cached_products') || '[]')
       localStorage.setItem('cipher_cached_products', JSON.stringify([newProduct, ...cached.filter(p => p.id !== ev.id)]))
 
@@ -244,7 +247,7 @@ export default function Wallet({ identity, onOpenChat }) {
   }
 
   if (view === 'vendor') {
-    return <Suspense fallback={<div className="flex h-full items-center justify-center bg-black"><div className="h-7 w-7 animate-spin rounded-full border-2 border-white/20 border-t-blue-500" /></div>}><VendorDashboard identity={identity} products={JSON.parse(localStorage.getItem('cipher_my_products') || '[]')} onBack={() => setView('main')} onCreate={() => setView('product')} /></Suspense>;
+    return <Suspense fallback={<div className="flex h-full items-center justify-center bg-black"><div className="h-7 w-7 animate-spin rounded-full border-2 border-white/20 border-t-blue-500" /></div>}><VendorDashboard identity={identity} products={JSON.parse(localStorage.getItem('cipher_cached_products') || '[]')} onBack={() => setView('main')} onCreate={() => setView('product')} /></Suspense>;
   }
 
   if (view === 'vendor_setup') {
