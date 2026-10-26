@@ -17,7 +17,7 @@ import { enqueueNostrEvent, startOutboxSync } from '../lib/outbox';
 import { groupSocketUrl } from '../lib/egress';
 import { relaysForPeer } from '../lib/dmRelays';
 import { dropSecuringSend, forgetPendingKeyRequest, queueSecuringSend, resetKeyRequest, securingSendsFor } from '../lib/crypto/groupKeyRequest';
-import { dropPendingJoin, isJoinDenied, loadPendingJoins, notifyJoinRequests, pendingJoinsFor, queuePendingJoin, withoutDenied } from '../lib/groupJoinQueue.js';
+import { isJoinDenied, loadPendingJoins, queuePendingJoin, withoutDenied } from '../lib/groupJoinQueue.js';
 
 function currentGroupRelay() {
   return groupSocketUrl() || '';
@@ -684,7 +684,13 @@ export function useNIP29Group({ identity }) {
       kind: 9000, created_at: Math.floor(Date.now() / 1000),
       tags: [['h', groupId], ['p', memberPubkey]], content: ''
     }, identity.sk);
-    await Promise.allSettled(pool.publish(groupRelays, ev));
+    // The publish outcome decides the row. If every relay rejected the add,
+    // the owner must see the failure instead of a false success that drops
+    // the request silently until a someday replay re-queues it.
+    const results = await Promise.allSettled(pool.publish(groupRelays, ev));
+    if (!results.some((result) => result.status === 'fulfilled')) {
+      throw new Error('No relay accepted the add. Try again.');
+    }
     const snapshot = await loadMemberSnapshot(groupId);
     await rememberMembers(groupId, [...new Set([...(snapshot || []), memberPubkey, identity.pk])]);
     appendSystemMessage(groupId, `User ${memberPubkey.slice(0, 6)}... was added to the group`, ev.id);
