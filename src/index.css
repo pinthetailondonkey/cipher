@@ -4,6 +4,16 @@
 
 :root {
   color-scheme: dark;
+  --sat: env(safe-area-inset-top, 0px);
+  --sab: env(safe-area-inset-bottom, 0px);
+  --nav-h: 4rem;
+  --app-edge: max(1.25rem, calc(50% - 14rem + 1.25rem));
+}
+
+/* Vault — the shipped look. Pure black, blue accent. Default when the
+   data-theme attribute is absent or unknown. */
+:root,
+[data-theme='vault'] {
   --bg: #000000;
   --bg-soft: #0a0a0a;
   --panel: #111111;
@@ -18,10 +28,29 @@
   --accent-soft: rgba(59, 130, 246, 0.12);
   --success: #10b981;
   --danger: #ef4444;
-  --sat: env(safe-area-inset-top, 0px);
-  --sab: env(safe-area-inset-bottom, 0px);
-  --nav-h: 4rem;
-  --app-edge: max(1.25rem, calc(50% - 14rem + 1.25rem));
+  --glow-a: rgba(59, 130, 246, 0.13);
+  --glow-b: rgba(59, 130, 246, 0.06);
+}
+
+/* Bank lobby — charcoal panels with a brass accent: the app shop dressed
+   like the counter of an old bank. Activated by data-theme="lobby". */
+[data-theme='lobby'] {
+  --bg: #0b0e13;
+  --bg-soft: #0e1218;
+  --panel: #141a24;
+  --panel-strong: #1a212e;
+  --panel-alt: #202936;
+  --border: rgba(255, 255, 255, 0.10);
+  --border-strong: rgba(201, 162, 39, 0.28);
+  --text: #f2f4f8;
+  --text-muted: #9aa3ad;
+  --text-subtle: #6d7681;
+  --accent: #c9a227;
+  --accent-soft: rgba(201, 162, 39, 0.14);
+  --success: #10b981;
+  --danger: #ef4444;
+  --glow-a: rgba(201, 162, 39, 0.09);
+  --glow-b: rgba(59, 130, 246, 0.05);
 }
 
 html, body, #root {
@@ -121,9 +150,9 @@ textarea::placeholder {
 
 .cipher-shell {
   background:
-    radial-gradient(circle at top, rgba(59, 130, 246, 0.13), transparent 28%),
-    radial-gradient(circle at bottom left, rgba(59, 130, 246, 0.06), transparent 28%),
-    #000;
+    radial-gradient(circle at top, var(--glow-a), transparent 28%),
+    radial-gradient(circle at bottom left, var(--glow-b), transparent 28%),
+    var(--bg);
 }
 
 .cipher-tab {
@@ -148,13 +177,13 @@ textarea::placeholder {
     width: 100%;
     max-width: 600px;
     height: 200px;
-    background: radial-gradient(circle, rgba(59, 130, 246, 0.15) 0%, rgba(0,0,0,0) 70%);
+    background: radial-gradient(circle, var(--glow-a) 0%, rgba(0,0,0,0) 70%);
     pointer-events: none;
     z-index: 0;
   }
 
   .hybrid-panel {
-    background: rgba(17, 17, 17, 0.9);
+    background: var(--panel);
     border: 1px solid var(--border);
     border-radius: 1rem;
   }
@@ -173,8 +202,8 @@ textarea::placeholder {
   }
 
   .neon-blue {
-    color: #3b82f6;
-    text-shadow: 0 0 10px rgba(59, 130, 246, 0.5);
+    color: var(--accent);
+    text-shadow: 0 0 10px var(--accent-soft);
   }
 
   .neon-green {
@@ -190,7 +219,7 @@ textarea::placeholder {
     background: rgba(28, 28, 30, 0.7);
     backdrop-filter: blur(20px);
     -webkit-backdrop-filter: blur(20px);
-    border: 1px solid rgba(255, 255, 255, 0.08);
+    border: 1px solid var(--border);
     box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
   }
 
@@ -198,7 +227,7 @@ textarea::placeholder {
     background: rgba(10, 10, 10, 0.75);
     backdrop-filter: blur(24px);
     -webkit-backdrop-filter: blur(24px);
-    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    border-bottom: 1px solid var(--border);
   }
 }
 
