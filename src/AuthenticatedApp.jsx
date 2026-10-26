@@ -4,6 +4,7 @@ import { motion } from 'framer-motion';
 import TutorialModal from './components/TutorialModal';
 import GlobalDialog from './components/GlobalDialog';
 import CallOverlay from './components/chat/CallOverlay';
+import DeadDropModal from './components/chat/DeadDropModal';
 import { requestNotificationPermission } from './lib/notifications';
 import { unreadTotalOf, useChatStore } from './store/chatStore';
 
@@ -38,6 +39,7 @@ export default function AuthenticatedApp({ identity }) {
       {/* The shell glow is drawn once by App.jsx; screens add no own copies
           — a 120px live blur re-rasterizes per frame and stung Safari. */}
       <TutorialModal isOpen={showTutorial} onClose={() => { useChatStore.getState().setShowTutorial(false); localStorage.removeItem('cipher_new_account'); }} />
+      <DeadDropModal identity={identity} />
       <GlobalDialog />
       <CallOverlay />
 

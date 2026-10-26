@@ -267,6 +267,7 @@ export const useChatStore = create((set) => ({
 
   showMenu: false,
   showCreateGroup: false,
+  showDeadDrop: false,
   showGroupInfo: false,
   showMyProfile: false,
   showTutorial: false,
@@ -275,6 +276,7 @@ export const useChatStore = create((set) => ({
   checkoutProduct: null,
   setShowMenu: (v) => set({ showMenu: v }),
   setShowCreateGroup: (v) => set({ showCreateGroup: v }),
+  setShowDeadDrop: (v) => set({ showDeadDrop: v }),
   setShowGroupInfo: (v) => set({ showGroupInfo: v }),
   setShowMyProfile: (v) => set({ showMyProfile: v }),
   setShowTutorial: (v) => set({ showTutorial: v }),

@@ -482,12 +482,36 @@ export function useChatBootstrap({
 
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
-    const directId = urlParams.get('g') || urlParams.get('group') || urlParams.get('join');
+    // Link shapes (user-specified): /note#<fragment> opens a burn note — the
+    // fragment is the key, never sent to any server. /<groupid> joins a group,
+    // same as the older ?g= / ?group= / ?join= shapes which keep working.
+    const path = window.location.pathname;
+    const pathGroup = path.match(/^\/([0-9a-f]{64})\/?$/)?.[1] || null;
+    const pathNote = path === '/note' || path === '/note/' ? window.location.hash.slice(1) : null;
+    const directId = urlParams.get('g') || urlParams.get('group') || urlParams.get('join') || pathGroup;
     const naddr = urlParams.get('naddr');
     const joinName = urlParams.get('name');
-    if ((!directId && !naddr) || !identity?.pk) return undefined;
+    const noteFragment = pathNote;
+    if ((!directId && !naddr && !noteFragment) || !identity?.pk) return undefined;
     let cancelled = false;
     (async () => {
+      if (noteFragment) {
+        try {
+          const { openDeadDropNote } = await import('../../lib/deadDrop');
+          const pool = await getAuthenticatedPool(identity);
+          const opened = await openDeadDropNote({ identity, fragment: noteFragment, pool, relays: generalRelays });
+          if (!cancelled) {
+            useChatStore.getState().setToast({ type: 'info', message: 'Note opened. Copy it now — it will not open again.' });
+            await navigator.clipboard.writeText(opened.text).catch(() => {});
+          }
+        } catch (error) {
+          if (!cancelled) useChatStore.getState().setToast({ type: 'error', message: error.message || 'The note could not be opened.' });
+        } finally {
+          // The link has done its one job; clean the address bar either way.
+          window.history.replaceState(null, '', '/');
+        }
+        return;
+      }
       let joinId = directId;
       if (!joinId && naddr) {
         try {
