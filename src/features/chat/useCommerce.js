@@ -2,7 +2,7 @@ import { useChatStore } from '../../store/chatStore';
 import { db, patchMessage, saveMessage } from '../../db';
 import { scopedGet, scopedSet } from '../../lib/storage';
 import { getOrderPaymentMethods, readPaymentAddresses } from '../../lib/vendorPayments';
-import { ORDER_STATUS, RECEIPT_OUTCOME, nextPaymentState, orderCoinAmount } from '../../lib/paymentState';
+import { ORDER_STATUS, RECEIPT_OUTCOME, acceptanceDemand, amountCovers, nextPaymentState, orderCoinAmount } from '../../lib/paymentState';
 import { checkPayment } from '../../lib/paymentWatch';
 import { activeUrl, entryById } from '../../lib/egress';
 import { publicReceipt, rememberPublicView, signPublicView, signReceipt } from '../../lib/proofOfTrade';
@@ -32,6 +32,20 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
     return patchMessage(orderId, updateData);
   };
   const NOT_SAVED = 'It was not saved on this device and will be lost on reload.';
+
+  // The vendor's own published menus, cached on this device at publish time.
+  // Wallet keeps them under a plain, account-wide key, so the order's listing
+  // id is only ever matched against rows this account itself published —
+  // another account's menu prices nothing on this device. (security F5)
+  const readOwnMenu = () => {
+    try {
+      const rows = JSON.parse(localStorage.getItem('cipher_cached_products') || '[]');
+      if (!Array.isArray(rows)) return [];
+      return rows.filter((row) => row && row.vendorPubkey === identity.pk);
+    } catch {
+      return [];
+    }
+  };
 
   const deliverOrderUpdate = async (peer, payload, localPatch, okText) => {
     let result;
@@ -115,6 +129,37 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
         };
         const preference = msg.data.paymentMethod || 'btc';
         const coinCurrency = preference === 'xmr' || preference === 'both' ? 'xmr' : 'btc';
+        // A demanded amount starts from the menu this device published, never
+        // from what the buyer wrote into the order. (security F5)
+        const demand = acceptanceDemand(msg.data.product, readOwnMenu(), coinCurrency);
+        if (demand.kind === 'dollars') {
+          setToast({ type: 'error', message: 'This order is priced in dollars. Price the menu in coins for chain-checked orders; a coin amount demanded here would not be tied to anything.' });
+          setSelectedMessage(null);
+          return true;
+        }
+        if (demand.kind === 'unit') {
+          setToast({ type: 'error', message: `Your menu prices this item in ${demand.currency.toUpperCase()}. Accept it in ${demand.currency.toUpperCase()}, or price the menu in ${coinCurrency.toUpperCase()}.` });
+          setSelectedMessage(null);
+          return true;
+        }
+        if (demand.kind === 'listing') {
+          const wrote = orderCoinAmount(msg.data.product, coinCurrency);
+          if (wrote && amountCovers(wrote, demand.amount, demand.currency)) {
+            await sendAcceptance(wrote, demand.currency);
+            return true;
+          }
+          useChatStore.getState().openDialog({
+            title: `Accept for ${demand.amount} ${demand.currency.toUpperCase()}`,
+            message: `This item is on your menu for ${demand.amount} ${demand.currency.toUpperCase()}. The amount stays at the menu price so the payment can be checked on chain.`,
+            hasInput: true,
+            inputDefault: demand.amount,
+            inputLocked: true,
+            confirmText: 'Accept',
+            onConfirm: () => sendAcceptance(demand.amount, demand.currency),
+          });
+          setSelectedMessage(null);
+          return true;
+        }
         const known = orderCoinAmount(msg.data.product, coinCurrency);
         if (known) {
           await sendAcceptance(known, coinCurrency);

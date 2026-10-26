@@ -56,12 +56,13 @@ export default function GlobalDialog() {
         </div>
         {dialog.hasInput && (
           <textarea
-            autoFocus
+            autoFocus={!dialog.inputLocked}
             value={value}
             onChange={(event) => setValue(event.target.value)}
+            readOnly={Boolean(dialog.inputLocked)}
             placeholder={dialog.placeholder || ''}
             rows={dialog.inputRows || 4}
-            className="mt-4 w-full resize-y rounded-xl border border-line bg-panelStrong shadow-lg p-3 text-sm text-white outline-none placeholder:text-white/35 focus:border-accent"
+            className={`mt-4 w-full resize-y rounded-xl border border-line bg-panelStrong shadow-lg p-3 text-sm outline-none placeholder:text-white/35 focus:border-accent ${dialog.inputLocked ? 'text-white/55' : 'text-white'}`}
           />
         )}
         {error && <p role="alert" className="mt-3 text-sm text-red-400">{error}</p>}
