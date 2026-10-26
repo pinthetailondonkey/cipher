@@ -4,7 +4,7 @@ import test from 'node:test';
 import { schnorr } from '@noble/curves/secp256k1.js';
 import { ORDER_ACTIONS, allowedActionsFor, frozenIssuedMethods, issuedPaymentMethods, orderActionsFor, orderPaymentDetails, orderRecordForReceipt, orderState, reopenedStatus } from './orderActions.js';
 import { ORDER_STATUS, ORDER_STATUSES, RECEIPT_OUTCOMES } from './paymentState.js';
-import { signReceipt } from './proofOfTrade.js';
+import { signReceipt, verifyReceipt as verifyReceipt2 } from './proofOfTrade.js';
 
 // F7: the payment facts on an order are earned on this device, never asserted
 // by the peer. These tests are the attack they shut down: a peer writes
@@ -301,11 +301,24 @@ test('a receipt both parties signed is the one artifact moving the payment', () 
     outcome: 'confirmed',
   };
   const signed = signReceipt(vendorKey, body, signReceipt(buyerKey, body));
-  const theirs = request(false, { status: ORDER_STATUS.PAID });
+  // The request card carries its author's pubkey from the event.
+  const theirs = { ...request(false, { status: ORDER_STATUS.PAID }), pubkey: hexOf(schnorr.getPublicKey(buyerKey)) };
   const riding = update('u4', false, ORDER_STATUS.PAID, 14, { paymentState: 'confirmed', paymentSeenBy: 'watcher', receipt: signed });
   const state = orderState([theirs, riding], 'order-1', theirs);
   assert.equal(state.paymentState, 'confirmed');
   assert.deepEqual(names(allowedActionsFor(state, 'vendor')), ['mark_shipped']);
+  // A receipt whose two parties are a set of keys the attacker holds both
+  // verifies — and adopts nothing, because neither is a party of this chat.
+  // (security F7)
+  const evilA = schnorr.utils.randomSecretKey();
+  const evilB = schnorr.utils.randomSecretKey();
+  const evilBody = { ...body, buyer: hexOf(schnorr.getPublicKey(evilA)), vendor: hexOf(schnorr.getPublicKey(evilB)) };
+  const evilReceipt = signReceipt(evilB, evilBody, signReceipt(evilA, evilBody));
+  assert.equal(verifyReceipt2(evilReceipt), true);
+  assert.equal(
+    orderState([theirs, update('u7', false, ORDER_STATUS.PAID, 17, { receipt: evilReceipt })], 'order-1', theirs).paymentState,
+    'created',
+  );
   // A receipt naming another order buys nothing here.
   const signedOther = signReceipt(vendorKey, { ...body, orderId: 'order-2' }, signReceipt(buyerKey, { ...body, orderId: 'order-2' }));
   assert.equal(

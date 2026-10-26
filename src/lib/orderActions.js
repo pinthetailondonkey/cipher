@@ -1,5 +1,5 @@
 import { ORDER_STATUS as S, isOrderStatus, orderCoinAmount } from './paymentState.js';
-import { verifyReceipt } from './proofOfTrade.js';
+import { canonicalReceipt, verifyReceipt } from './proofOfTrade.js';
 
 const REQUEST_TYPES = new Set(['order_request', 'cipher_order']);
 
@@ -32,7 +32,7 @@ function isRequest(data) {
 // claim alone is allowed to do.
 const PAYMENT_RANK = ['created', 'address_issued', 'seen', 'confirmed'];
 
-function paymentEvidence(messages, orderId, request) {
+function paymentEvidence(messages, orderId, request, ownPubkey) {
   const rank = (state) => Math.max(0, PAYMENT_RANK.indexOf(state));
   let paymentState = '';
   let paymentSeenBy = '';
@@ -50,6 +50,30 @@ function paymentEvidence(messages, orderId, request) {
   } else {
     adopt(request?.localPatch || null);
   }
+  // A receipt verifies whoever signed it; it counts as payment only when the
+  // parties it names are the two of this chat. Two keys the attacker holds
+  // both verify, so the body must name the counterparty — and this device,
+  // when the caller can name itself, or at least the role the direction of
+  // the chat implies. (security F7)
+  const receiptIsOfThisChat = (receipt) => {
+    try {
+      if (!receipt?.body || String(receipt.body.orderId) !== String(orderId)) return false;
+      const body = canonicalReceipt(receipt.body);
+      const buyer = String(body.buyer || '').toLowerCase();
+      const vendor = String(body.vendor || '').toLowerCase();
+      if (!buyer || !vendor) return false;
+      const counterparty = String(request?.pubkey || '').toLowerCase();
+      if (ownPubkey) {
+        const chat = [counterparty, String(ownPubkey).toLowerCase()].sort().join();
+        return [buyer, vendor].sort().join() === chat;
+      }
+      if (!counterparty) return false;
+      const role = request.isSender ? vendor : buyer;
+      return role === counterparty;
+    } catch {
+      return false;
+    }
+  };
   for (const message of Array.isArray(messages) ? messages : []) {
     if (message?.data?.type !== 'order_update' || message.data.orderId !== orderId) continue;
     if (message.isSender) {
@@ -58,7 +82,7 @@ function paymentEvidence(messages, orderId, request) {
     }
     adopt(message.localPatch || null);
     const receipt = message.data.receipt;
-    if (receipt?.body && String(receipt.body.orderId) === String(orderId) && verifyReceipt(receipt)) {
+    if (receipt && receiptIsOfThisChat(receipt) && verifyReceipt(receipt)) {
       // A receipt the device never verified rows no payment. A signed one
       // names what the watcher saw: confirmed, or back to the payer.
       adopt({ paymentState: receipt.body.outcome === 'confirmed' ? 'confirmed' : 'seen' });
@@ -70,12 +94,12 @@ function paymentEvidence(messages, orderId, request) {
 // The order's state is the newest update either side sent for it, over what
 // this device changed on the request card itself. Payment facts are evidence,
 // never the newest claim (F7 above).
-export function orderState(messages, orderId, request) {
+export function orderState(messages, orderId, request, ownPubkey) {
   const updates = (Array.isArray(messages) ? messages : [])
     .filter((message) => message?.data?.type === 'order_update' && message.data.orderId === orderId)
     .sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0) || String(a.id).localeCompare(String(b.id)));
   const latest = updates[updates.length - 1] || null;
-  const payment = paymentEvidence(messages, orderId, request);
+  const payment = paymentEvidence(messages, orderId, request, ownPubkey);
   return {
     status: latest?.data?.status || request?.data?.status || S.PENDING,
     paymentState: payment.paymentState,
@@ -92,11 +116,11 @@ const RECEIPT_STATUSES = new Set([S.ACCEPTED, S.PAID, S.SHIPPED, S.COMPLETED]);
 // buyer's own card never carried an address (the buyer wrote the request), so
 // the acceptance the vendor sent — an update in this chat — is where the
 // address and the coin amount come from. Both sides read the same updates.
-export function orderPaymentDetails(messages, orderId) {
+export function orderPaymentDetails(messages, orderId, ownPubkey) {
   const list = Array.isArray(messages) ? messages : [];
   const request = list.find((message) => message?.id === orderId && isRequest(message.data));
   if (!request) return null;
-  const state = orderState(list, orderId, request);
+  const state = orderState(list, orderId, request, ownPubkey);
   const updates = list.filter((m) => m?.data?.type === 'order_update' && m.data.orderId === orderId);
   const latest = (prop) => [...updates].reverse().find((update) => update.data?.[prop] != null && update.data?.[prop] !== '');
   return {
@@ -113,11 +137,11 @@ export function orderPaymentDetails(messages, orderId) {
 // the latest coin amount either side put on the order, and the address this
 // device issued for it. Null when the order is missing or not open to a
 // receipt yet.
-export function orderRecordForReceipt(messages, orderId) {
+export function orderRecordForReceipt(messages, orderId, ownPubkey) {
   const list = Array.isArray(messages) ? messages : [];
   const request = list.find((message) => message?.id === orderId && isRequest(message.data));
   if (!request) return null;
-  const status = orderState(list, orderId, request).status;
+  const status = orderState(list, orderId, request, ownPubkey).status;
   if (!RECEIPT_STATUSES.has(status)) return null;
   const updates = (list.filter((m) => m?.data?.type === 'order_update' && m.data.orderId === orderId))
     .sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0) || String(a.id).localeCompare(String(b.id)));
@@ -263,11 +287,11 @@ export function allowedActionsFor(order, viewer) {
 // Buttons for one card. Only the request card carries them, so each order
 // has one place to act. The vendor's actions go to the buyer, msg.pubkey on
 // that card; the buyer's go to the vendor, the chat peer.
-export function orderActionsFor(message, messages) {
+export function orderActionsFor(message, messages, ownPubkey) {
   if (!isRequest(message?.data)) return [];
   const viewer = message.isSender ? 'buyer' : 'vendor';
   try {
-    return allowedActionsFor(orderState(messages, message.id, message), viewer)
+    return allowedActionsFor(orderState(messages, message.id, message, ownPubkey), viewer)
       .map((item) => ({ ...item, target: viewer === 'vendor' ? 'request' : 'peer' }));
   } catch (error) {
     console.warn('[orders] No actions for this order:', error.message);
