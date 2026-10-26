@@ -85,27 +85,6 @@ export default function Chat({ identity }) {
 
   if (loading) return <ChatLoading />;
 
-  if (view === 'list') {
-    return (
-      <ChatHome
-        identity={identity}
-        openChat={directory.openChat}
-        createGroup={directory.createGroup}
-        fetchChats={fetchChats}
-      />
-    );
-  }
-
-  if (view === 'search') {
-    return (
-      <SearchView
-        handleSearch={handleSearch}
-        joinGroupById={directory.joinGroupById}
-        openChat={directory.openChat}
-      />
-    );
-  }
-
   const threadProps = {
     identity,
     sendMessage: composer.sendMessage,
@@ -115,41 +94,58 @@ export default function Chat({ identity }) {
     stopRecording: composer.stopRecording,
   };
 
-  if (view === 'dm' && activeDm) {
-    return (
-      <Suspense fallback={screenFallback}>
-        <DmView {...threadProps} />
-        <ChatOverlays
+  const thread = (view === 'dm' && activeDm) ? (
+    <Suspense fallback={screenFallback}>
+      <DmView {...threadProps} />
+    </Suspense>
+  ) : (view === 'group' && activeGroup) ? (
+    <Suspense fallback={screenFallback}>
+      <GroupView
+        {...threadProps}
+        fetchGroupMembers={fetchGroupMembers}
+        fetchPinnedMessage={fetchPinnedMessage}
+        pinMessage={pinMessage}
+        unpinMessage={unpinMessage}
+      />
+    </Suspense>
+  ) : null;
+
+  // Two panes from md up: the chat list stays on the left and the open
+  // thread sits beside it. Below md only one pane ever shows, so the
+  // phone keeps its full-screen swap driven by view alone.
+  const listShown = view === 'list';
+
+  return (
+    <div className="flex h-full min-h-0 w-full">
+      <div className={`relative min-h-0 flex-1 flex-col overflow-hidden md:w-[340px] md:flex-none md:border-r md:border-line ${listShown ? 'flex' : 'hidden'} md:flex`}>
+        <ChatHome
           identity={identity}
           openChat={directory.openChat}
-          startOrderWithVendor={commerce.startOrderWithVendor}
-          handleSaveEditedProduct={commerce.handleSaveEditedProduct}
-          handleBroadcastSubmit={commerce.handleBroadcastSubmit}
+          createGroup={directory.createGroup}
+          fetchChats={fetchChats}
         />
-      </Suspense>
-    );
-  }
-
-  if (view === 'group' && activeGroup) {
-    return (
-      <Suspense fallback={screenFallback}>
-        <GroupView
-          {...threadProps}
-          fetchGroupMembers={fetchGroupMembers}
-          fetchPinnedMessage={fetchPinnedMessage}
-          pinMessage={pinMessage}
-          unpinMessage={unpinMessage}
-        />
-        <ChatOverlays
-          identity={identity}
-          openChat={directory.openChat}
-          startOrderWithVendor={commerce.startOrderWithVendor}
-          handleSaveEditedProduct={commerce.handleSaveEditedProduct}
-          handleBroadcastSubmit={commerce.handleBroadcastSubmit}
-        />
-      </Suspense>
-    );
-  }
-
-  return null;
+      </div>
+      <div className={`relative min-h-0 min-w-0 flex-1 flex-col overflow-hidden ${listShown ? 'hidden' : 'flex'} md:flex`}>
+        {view === 'search' ? (
+          <SearchView
+            handleSearch={handleSearch}
+            joinGroupById={directory.joinGroupById}
+            openChat={directory.openChat}
+          />
+        ) : thread || (
+          <div className="m-auto mx-4 w-full max-w-sm rounded-2xl border border-line bg-panel px-4 py-8 text-center shadow-lg">
+            <p className="text-[15px] font-semibold text-white">No chat open</p>
+            <p className="mt-1 text-[13px] text-white/40">Pick a chat from the list.</p>
+          </div>
+        )}
+      </div>
+      <ChatOverlays
+        identity={identity}
+        openChat={directory.openChat}
+        startOrderWithVendor={commerce.startOrderWithVendor}
+        handleSaveEditedProduct={commerce.handleSaveEditedProduct}
+        handleBroadcastSubmit={commerce.handleBroadcastSubmit}
+      />
+    </div>
+  );
 }

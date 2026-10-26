@@ -24,6 +24,7 @@ export default function DmView({ sendMessage, handleMessageAction, handleImageUp
 
   return (
     <section className="relative flex h-full min-h-0 flex-col bg-transparent">
+      <div className="mx-auto flex min-h-0 w-full max-w-3xl flex-1 flex-col">
       <ChatHeader mode="dm" />
       <div ref={scrollRef} className="flex min-h-0 flex-1 flex-col overflow-y-auto py-3">
         {visibleMessages.length === 0 ? (
@@ -49,6 +50,7 @@ export default function DmView({ sendMessage, handleMessageAction, handleImageUp
       )}
       <div className="pb-safe">
         <MessageInput sendMessage={sendMessage} handleImageUpload={handleImageUpload} startRecording={startRecording} stopRecording={stopRecording} />
+      </div>
       </div>
     </section>
   );

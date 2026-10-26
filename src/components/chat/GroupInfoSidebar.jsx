@@ -184,6 +184,7 @@ export default function GroupInfoSidebar({
       {isOpen && group && (
         <motion.div
           className="fixed inset-0 z-[980] flex justify-end bg-black/50"
+          style={{ paddingRight: 'max(env(safe-area-inset-right), 0px)' }}
           role="presentation"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
