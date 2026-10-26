@@ -435,10 +435,17 @@ export default function Wallet({ identity, onOpenChat }) {
               // device and made the app bounce like a stuck error.
               setBtcAddress('');
               setXmrAddress('');
+              // The advanced-payment form state would otherwise still hold the
+              // old keys and save them right back on the next Save.
+              setBtcXpub('');
+              setXmrPrivateViewKey('');
+              setBtcNetwork('bc');
               savePaymentAddresses({ btc: '', xmr: '' });
               try {
                 await saveVendorPaymentConfig(identity, { btcXpub: '', xmrPrivateViewKey: '', btcNetwork: 'bc' });
-              } catch { /* locked device: the config is overwritten on the next save */ }
+              } catch (wipeError) {
+                useChatStore.getState().setToast({ type: 'error', message: `Could not clear vendor payment settings. ${wipeError?.message || ''}`.trim() });
+              }
               useChatStore.getState().setToast({ type: 'success', message: 'Switched to buyer mode. Payment details were cleared from this device.' });
             }} className="flex w-full items-center gap-3 border-b border-white/5 p-4 text-left">
               <span className="text-[15px] font-semibold text-blue-500">Switch to buyer mode</span>
