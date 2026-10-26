@@ -283,8 +283,8 @@ export default function LockScreen({ identity }) {
                 </div>
               )}
 
-              {!isMnemonicMode && mode !== 'verify_key' && (
-                <input type="password" placeholder={`PIN (${MIN_PIN_LENGTH}+ digits)`} value={pin} onChange={(e) => { setPin(e.target.value.replace(/\D/g, '').slice(0, 8)); setError(''); }} className="w-full border border-white/10 bg-white/5 shadow-2xl backdrop-blur-md rounded-2xl px-5 py-4 text-[16px] text-white placeholder-gray-600 focus:outline-none focus:border-blue-500 transition-colors" maxLength={8} />
+              {mode !== 'verify_key' && (
+                <input type="password" placeholder={mode === 'restore_mnemonic' ? `New PIN (${MIN_PIN_LENGTH}+ digits)` : `PIN (${MIN_PIN_LENGTH}+ digits)`} value={pin} onChange={(e) => { setPin(e.target.value.replace(/\D/g, '').slice(0, 8)); setError(''); }} className="w-full border border-white/10 bg-white/5 shadow-2xl backdrop-blur-md rounded-2xl px-5 py-4 text-[16px] text-white placeholder-gray-600 focus:outline-none focus:border-blue-500 transition-colors" maxLength={8} />
               )}
 
               {mode === 'create' && (
