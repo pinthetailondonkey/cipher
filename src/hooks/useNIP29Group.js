@@ -933,15 +933,9 @@ export function useNIP29Group({ identity }) {
         else if (about) appendSystemMessage(groupId, 'Group description was updated', event.id);
         return;
       }
-      if (event.kind === 39002) {
-        const members = event.tags.filter(x => x[0] === 'p').map(x => ({ pubkey: x[1], role: x[2] || 'member' }));
-        if (!members.find(x => x.pubkey === identity.pk)) members.push({ pubkey: identity.pk, role: 'member' });
-        // Same deny-vote as the relay-signed branch above: the local deny list
-        // strips a denied sender no matter who signed the roster.
-        await rememberMembers(groupId, withoutDenied(groupId, members.map((member) => member.pubkey)));
-        if (useChatStore.getState().activeGroup?.id === groupId) setGroupMembers(members);
-        return;
-      }
+      // (H4, round-three re-hack: the dead second 39002 arm was deleted —
+      // it remembered a roster with no relay-signature check. Unreachable
+      // today, but one guard reorder away from a one-event roster forgery.)
       if (event.kind === 7) {
         const targetId = event.tags.find(t => t[0] === 'e')?.[1];
         if (targetId) {
