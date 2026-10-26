@@ -6,6 +6,7 @@ import {
   deriveBitcoinAddress,
   getOrderPaymentMethods,
   markConsumed,
+  readConsumedLedger,
   readPaymentAddresses,
   savePaymentAddresses,
   saveVendorPaymentConfig,
@@ -108,3 +109,36 @@ test('one transfer speaks for one order', () => {
   // A copy comes back; the caller's ledger is never mutated in place.
   assert.deepEqual(Object.keys(markConsumed(ledger, { currency: 'btc', txid: 'cd', orderId: 'o3' })).length, 3);
 });
+
+// readConsumedLedger must tell absent, legacy and corrupt apart: a default of
+// "nothing recorded" would confirm a payment twice.
+test('a ledger that cannot be read confirms nothing, and absent or legacy reads fine', () => {
+  globalThis.localStorage = memoryStorage({ cipher_active_pubkey: vendor.pk });
+  // No ledger yet — nothing recorded, and that is fine.
+  assert.deepEqual(readConsumedLedger(), { ok: true, ledger: {} });
+  // The current build's envelope.
+  localStorage.setItem(`cipher_${vendor.pk.slice(0, 8)}_consumed_txids`, JSON.stringify({ v: 1, entries: markConsumed({}, { currency: 'btc', txid: 'ab', orderId: 'o1', address: 'bc1qa' }) }));
+  const enveloped = readConsumedLedger();
+  assert.equal(enveloped.ok, true);
+  assert.equal(txidSpokenFor(enveloped.ledger, { currency: 'btc', txid: 'ab', orderId: 'o2' })?.orderId, 'o1');
+  // A build before the envelope wrote a plain map.
+  localStorage.setItem(`cipher_${vendor.pk.slice(0, 8)}_consumed_txids`, JSON.stringify({ 'btc:ab': { orderId: 'o1', address: 'bc1qa', at: 100 } }));
+  const legacy = readConsumedLedger();
+  assert.equal(legacy.ok, true);
+  assert.equal(legacy.ledger['btc:ab'].orderId, 'o1');
+  // Envelope lies: v differs, or entries are missing or not a map.
+  const badScope = `cipher_${vendor.pk.slice(0, 8)}_consumed_txids`;
+  for (const broken of [
+    JSON.stringify({ v: 2, entries: {} }),
+    JSON.stringify({ v: 1 }),
+    JSON.stringify({ v: 1, entries: [1, 2] }),
+    'not json at all',
+    JSON.stringify([1, 2, 3]),
+    'null',
+    '42',
+  ]) {
+    localStorage.setItem(badScope, broken);
+    assert.equal(readConsumedLedger().ok, false, broken);
+  }
+});
+

@@ -54,6 +54,13 @@ export function scopeKey(key) {
 
 const scopedCache = new Map();
 
+// The stored bytes behind a scoped key, for readers that must tell absent
+// from corrupt: parsed JSON is not enough for a value where "default" and
+// "unreadable" mean different things. (security S1)
+export function scopedRaw(key) {
+  try { return safeStorage.getItem(scopeKey(key)); } catch { return null; }
+}
+
 export function scopedGet(key, defaultValue = null) {
   const storageKey = scopeKey(key);
   let raw = null;

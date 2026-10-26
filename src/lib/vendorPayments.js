@@ -1,6 +1,6 @@
 import { bech32 } from '@scure/base';
 import { deriveMoneroAddress } from './moneroAddress';
-import { scopeKey, scopedGet, scopedSet } from './storage';
+import { scopeKey, scopedGet, scopedRaw, scopedSet } from './storage';
 
 const LEGACY_ADDRESS_KEYS = {
   btc: ['cipher_btc_address', 'cipher_btc'],
@@ -252,3 +252,33 @@ export function markConsumed(ledger, { currency, txid, orderId, address, at } = 
   };
   return next;
 }
+
+// Reading the ledger has to tell three states apart: absent (nothing recorded
+// yet — fine), a plain entry map (an older build wrote it — fine), and
+// something unreadable (the bytes are not a ledger we can trust). scopedGet
+// collapses the last two into a default of {}, and a default of "nothing
+// recorded" would let a payment confirm twice. A ledger this device cannot
+// read confirms nothing. (security A7)
+export function readConsumedLedger() {
+  const raw = scopedRaw('consumed_txids');
+  if (raw === null) return { ok: true, ledger: {} };
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return { ok: false, ledger: null };
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    return { ok: false, ledger: null };
+  }
+  // The envelope the current build writes: { v: 1, entries }.
+  if (parsed.v !== undefined || parsed.entries !== undefined) {
+    if (parsed.v !== 1 || !parsed.entries || typeof parsed.entries !== 'object' || Array.isArray(parsed.entries)) {
+      return { ok: false, ledger: null };
+    }
+    return { ok: true, ledger: parsed.entries };
+  }
+  // Legacy: a plain map of consumedKey → entry, no envelope.
+  return { ok: true, ledger: parsed };
+}
+

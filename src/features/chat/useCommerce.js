@@ -1,7 +1,7 @@
 import { useChatStore } from '../../store/chatStore';
 import { db, patchMessage, saveMessage } from '../../db';
 import { scopedGet, scopedSet } from '../../lib/storage';
-import { addressSpokenFor, getOrderPaymentMethods, markConsumed, readPaymentAddresses, txidSpokenFor } from '../../lib/vendorPayments';
+import { addressSpokenFor, getOrderPaymentMethods, markConsumed, readConsumedLedger, readPaymentAddresses, txidSpokenFor } from '../../lib/vendorPayments';
 import { ORDER_STATUS, RECEIPT_OUTCOME, acceptAmount, acceptanceDemand, amountCovers, nextPaymentState, orderCoinAmount } from '../../lib/paymentState';
 import { checkPayment } from '../../lib/paymentWatch';
 import { activeUrl, entryById } from '../../lib/egress';
@@ -364,7 +364,11 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
             // or an address already paid for another order, confirms nothing
             // here. The ledger lives in this account's storage, so it
             // survives a reload and a history fetch. (security S1)
-            const ledger = scopedGet('consumed_txids', {});
+            const read = readConsumedLedger();
+            if (!read.ok) {
+              throw new Error('The payment ledger on this device could not be read, so this device cannot prove what a transfer paid. Nothing was confirmed. Reinstall or clear this app\'s storage, then check the chain again.');
+            }
+            const ledger = read.ledger;
             const taken = txidSpokenFor(ledger, { currency, txid: outcome.report.txid, orderId: msg.id })
               || addressSpokenFor(ledger, { address, orderId: msg.id });
             if (taken) {
@@ -402,13 +406,15 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
               outcome: RECEIPT_OUTCOME.CONFIRMED,
             });
             scopedSet(`receipt_${msg.id}`, signed);
-            scopedSet('consumed_txids', markConsumed(ledger, {
+            // The envelope { v: 1, entries } lets a future build tell a
+            // corrupt ledger from an empty one. (security S1)
+            scopedSet('consumed_txids', { v: 1, entries: markConsumed(ledger, {
               currency,
               txid: outcome.report.txid,
               orderId: msg.id,
               address,
               at: Math.floor(Date.now() / 1000),
-            }));
+            }) });
             const payload = {
               type: 'order_update',
               orderId: msg.id,
