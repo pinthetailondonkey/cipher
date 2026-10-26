@@ -12,7 +12,11 @@
 //   XMR_WALLET_RPC=http://127.0.0.1:18083 BTC_RPC_URL=http://user:pass@127.0.0.1:8332 node scripts/payment-watcher.mjs
 //
 // GET /payment?address=&currency=xmr|btc
-// 200 { txid, confirmations, amount, outputAmount } or { pending: true }
+// 200 { txid, confirmations, amount, outputAmount } or { pending: true },
+//     signed with `x-cipher-sig: v1=<hex hmac-sha256>` over the raw body bytes
+//     (the watch token is the key) and `x-cipher-ts` in unix seconds. The phone
+//     rejects an unsigned or stale answer, so only the watcher's own word
+//     moves an order.
 // 503 { error } when that currency's node is not configured.
 //
 // Every amount leaves here in whole coins, as a decimal string. Monero wallet
@@ -22,7 +26,7 @@
 
 import http from 'node:http';
 import fs from 'node:fs';
-import { timingSafeEqual } from 'node:crypto';
+import { createHmac, timingSafeEqual } from 'node:crypto';
 import { moneroRows, parseExactAmounts, reportFromTransfers, rowsFromScan } from '../src/lib/paymentWatch.js';
 
 if (fs.existsSync('.env')) process.loadEnvFile('.env');
@@ -37,6 +41,17 @@ function tokenMatches(presented) {
   const b = Buffer.from(watchToken);
   if (!watchToken || a.length !== b.length) return false;
   return timingSafeEqual(a, b);
+}
+
+// Every 200 answer is signed so the phone can tell a forged report from a real
+// one. The signature covers the exact body bytes; the watch token is the key.
+// The phone also checks `x-cipher-ts` is within two minutes of its own clock.
+function signedAnswer(res, report) {
+  const body = JSON.stringify(report);
+  const ts = Math.floor(Date.now() / 1000);
+  const sig = `v1=${createHmac('sha256', watchToken).update(body).digest('hex')}`;
+  res.writeHead(200, { 'Content-Type': 'application/json', 'x-cipher-sig': sig, 'x-cipher-ts': String(ts) });
+  res.end(body);
 }
 
 async function rpc(url, body, { exactAmounts = false } = {}) {
@@ -121,8 +136,7 @@ const server = http.createServer(async (req, res) => {
     } else {
       throw Object.assign(new Error('Say currency=xmr or currency=btc.'), { status: 400 });
     }
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify(report));
+    signedAnswer(res, report);
   } catch (error) {
     const status = error.status || 502;
     console.error('[watcher]', error.message);
