@@ -51,6 +51,7 @@ export function useComposer({ identity, sendDM, sendGroupMessage }) {
       if (_timerStr === '1h') return 3600;
       if (_timerStr === '24h') return 86400;
       if (_timerStr === '7d') return 604800;
+      if (_timerStr === '30d') return 2592000;
       return 0;
     })();
     if (_secs > 0 && !msgPayload.expires_at) msgPayload.expires_at = Math.floor(Date.now() / 1000) + _secs;

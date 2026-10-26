@@ -114,6 +114,7 @@ function disappearingSeconds(timer) {
   if (timer === '1h') return 3600;
   if (timer === '24h') return 86400;
   if (timer === '7d') return 604800;
+  if (timer === '30d') return 2592000;
   return 0;
 }
 

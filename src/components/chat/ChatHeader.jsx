@@ -1,8 +1,34 @@
 import { useEffect, useState } from 'react';
-import { ArrowLeft, Info, Phone } from 'lucide-react';
+import { ArrowLeft, Hourglass, Info, Phone } from 'lucide-react';
 import { useChatStore } from '../../store/chatStore';
 import { startCall } from '../../lib/voiceCall';
 import { shortNpub } from '../../lib/npub';
+
+// Timed messages: what the sender stamps at send; receivers honor
+// expires_at on arrival and the local sweep drops them after.
+const TIMER_CHOICES = [
+  { value: 'off', label: 'Off' },
+  { value: '24h', label: '1 day' },
+  { value: '7d', label: '1 week' },
+  { value: '30d', label: '1 month' },
+];
+
+function TimerPicker({ chatId, timer, onPick }) {
+  return (
+    <div className="flex justify-end gap-1 px-4 pb-2" role="group" aria-label="Message timer">
+      {TIMER_CHOICES.map((choice) => (
+        <button
+          key={choice.value}
+          type="button"
+          onClick={() => onPick(choice.value)}
+          className={`rounded-full border px-3 py-1.5 text-[12px] font-medium ${timer === choice.value ? 'border-accent bg-accent text-accentInk' : 'border-line text-white/60'}`}
+        >
+          {choice.label}
+        </button>
+      ))}
+    </div>
+  );
+}
 
 export default function ChatHeader({ mode }) {
   const setView = useChatStore((state) => state.setView);
@@ -14,6 +40,11 @@ export default function ChatHeader({ mode }) {
   const profile = useChatStore((state) => (activeDm ? state.profiles[activeDm] : undefined));
   const typingAt = useChatStore((state) => (activeDm ? state.typingUsers[activeDm] : 0));
   const groupTyping = useChatStore((state) => state.groupTypingUsers);
+  const timer = useChatStore((state) => {
+    const chatId = mode === 'dm' ? activeDm : activeGroup?.id;
+    return chatId ? state.disappearingTimers[chatId] : undefined;
+  });
+  const [showTimer, setShowTimer] = useState(false);
   const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
@@ -57,9 +88,30 @@ export default function ChatHeader({ mode }) {
         </button>
       </div>
       <div className="flex items-center">
+        {mode === 'dm' && (
+          <button
+            type="button"
+            onClick={() => setShowTimer((open) => !open)}
+            aria-label="Message timer"
+            aria-expanded={showTimer}
+            className={`p-2 ${timer && timer !== 'off' ? 'text-accent' : 'text-white/70 hover:text-white'}`}
+          >
+            <Hourglass size={17} />
+          </button>
+        )}
         {mode === 'group' && <button type="button" onClick={() => setShowGroupInfo(true)} aria-label="Group information and pinned listing" className="p-2 text-white/50 hover:text-white"><Info size={19} /></button>}
         {mode === 'dm' && <button type="button" onClick={placeCall} aria-label="Voice call" className="p-2 text-white/70 hover:text-white"><Phone size={18} /></button>}
       </div>
+      {showTimer && mode === 'dm' && (
+        <TimerPicker
+          chatId={activeDm}
+          timer={timer}
+          onPick={(value) => {
+            useChatStore.getState().setDisappearingTimer(activeDm, value);
+            setShowTimer(false);
+          }}
+        />
+      )}
     </div>
   );
 }
