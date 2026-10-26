@@ -165,9 +165,10 @@ export async function getOrderPaymentMethods(identity, orderId, mainAddresses, p
     const existing = settings.orders[orderId];
     // An older build could leave an order parked on the account's shared
     // address. Re-accepting that order issues it a fresh address instead of
-    // serving the shared one again. (security S1)
-    const sharedLeak = existing && ((existing.btc && existing.btc === String(mainAddresses?.btc || ''))
-      || (existing.xmr && existing.xmr === String(mainAddresses?.xmr || '')));
+    // serving the shared one again. Bech32 is case-insensitive, so the
+    // compare is. (security S1)
+    const sharedLeak = existing && ((existing.btc && existing.btc.toLowerCase() === String(mainAddresses?.btc || '').trim().toLowerCase())
+      || (existing.xmr && existing.xmr.toLowerCase() === String(mainAddresses?.xmr || '').trim().toLowerCase()));
     if (existing && !sharedLeak) return existing;
 
     const wantsBtc = paymentPreference === 'btc' || paymentPreference === 'both';
@@ -230,10 +231,12 @@ export function txidSpokenFor(ledger, { currency, txid, orderId } = {}) {
 // A reused address is the seat a shared-address replay sits in, so a second
 // order cannot confirm against it either.
 export function addressSpokenFor(ledger, { address, orderId } = {}) {
-  const wanted = String(address || '').trim();
+  // Bech32 is case-insensitive, so a mixed-case twin of a paid address is the
+  // same address. The compare reads it that way.
+  const wanted = String(address || '').trim().toLowerCase();
   if (!ledger || typeof ledger !== 'object' || !wanted) return null;
   for (const entry of Object.values(ledger)) {
-    if (entry && String(entry.address || '').trim() === wanted
+    if (entry && String(entry.address || '').trim().toLowerCase() === wanted
       && String(entry.orderId || '') !== String(orderId || '')) return entry;
   }
   return null;
@@ -244,7 +247,7 @@ export function markConsumed(ledger, { currency, txid, orderId, address, at } = 
   const next = { ...(ledger && typeof ledger === 'object' ? ledger : {}) };
   next[consumedKey(currency, txid)] = {
     orderId: String(orderId || ''),
-    address: String(address || ''),
+    address: String(address || '').trim().toLowerCase(),
     at: at == null ? null : at,
   };
   return next;
