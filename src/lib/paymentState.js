@@ -36,6 +36,23 @@ export function confirmationsRequired(currency, overrides = {}) {
   return count;
 }
 
+// One amount parser for the whole trade. Dollars signs and commas are copy,
+// trailing zeros are representation. It throws on anything that is not a
+// plain decimal, including exponent notation, and it never rounds — half-up
+// rounding is a watcher report's job, never an order's. (security S7)
+export function normalizeAmount(value) {
+  const raw = typeof value === 'number'
+    ? (Number.isFinite(value) ? String(value) : '')
+    : String(value ?? '').trim().replace(/[$,]/g, '');
+  if (!raw || /e/i.test(raw) || !/^\d+(\.\d+)?$/.test(raw)) {
+    throw new Error('The amount must be a decimal string.');
+  }
+  const [whole, frac = ''] = raw.split('.');
+  const digits = whole.replace(/^0+(?=\d)/, '') || '0';
+  const trimmed = frac.replace(/0+$/, '');
+  return trimmed ? `${digits}.${trimmed}` : digits;
+}
+
 export function orderCoinAmount(product, currency) {
   const unit = String(product?.currency || '').toLowerCase();
   const wanted = String(currency || '').toLowerCase();
@@ -118,6 +135,25 @@ export function unitsToCoins(units, currency) {
   const factor = 10n ** BigInt(scale);
   const frac = (units % factor).toString().padStart(scale, '0').replace(/0+$/, '');
   return frac ? `${units / factor}.${frac}` : `${units / factor}`;
+}
+
+// The amount an acceptance locks in. Both sides of the deal read the amount
+// by one rule now — the same one the watcher path uses — so an order can
+// never carry a coin string the chain check cannot confirm. (security S7)
+// Trailing zeros are representation and are trimmed the way receipts spell
+// amounts. Nothing here rounds: half-up rounding stays where a report of a
+// real transaction needs it, never in a demand.
+export function acceptAmount(value, currency) {
+  const text = normalizeAmount(value);
+  const unit = String(currency || '').toLowerCase();
+  const scale = SCALE[unit];
+  if (scale == null) {
+    throw new Error(`Accept in BTC or XMR. ${String(currency).toUpperCase()} is not a coin this device checks on chain.`);
+  }
+  if (decimalUnits(text, scale) == null) {
+    throw new Error(`${text} is finer than ${unit.toUpperCase()} can count. The chain check could never confirm it, so ask for an amount with at most ${scale} decimal places.`);
+  }
+  return text;
 }
 
 export function amountCovers(reported, expected, currency) {

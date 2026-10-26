@@ -1,9 +1,11 @@
 import { schnorr } from '@noble/curves/secp256k1.js';
 import { sha256 } from '@noble/hashes/sha2.js';
 import { scopedGet, scopedSet } from './storage.js';
-import { ORDER_STATUS, RECEIPT_OUTCOMES } from './paymentState.js';
+import { ORDER_STATUS, RECEIPT_OUTCOMES, normalizeAmount } from './paymentState.js';
 
 // Spec: docs/proof-of-trade.md, version 1.
+// normalizeAmount lives in paymentState.js so the trade's one amount parser
+// is the accept dialog's parser too. It is re-exported here for its readers.
 
 function bytesToHex(bytes) {
   let out = '';
@@ -39,21 +41,10 @@ export function canonicalReceipt(input = {}) {
   };
 }
 
+export { normalizeAmount };
+
 export function receiptBytes(body) {
   return new TextEncoder().encode(JSON.stringify(canonicalReceipt(body)));
-}
-
-export function normalizeAmount(value) {
-  const raw = typeof value === 'number'
-    ? (Number.isFinite(value) ? String(value) : '')
-    : String(value ?? '').trim().replace(/[$,]/g, '');
-  if (!raw || /e/i.test(raw) || !/^\d+(\.\d+)?$/.test(raw)) {
-    throw new Error('The amount must be a decimal string.');
-  }
-  const [whole, frac = ''] = raw.split('.');
-  const digits = whole.replace(/^0+(?=\d)/, '') || '0';
-  const trimmed = frac.replace(/0+$/, '');
-  return trimmed ? `${digits}.${trimmed}` : digits;
 }
 
 export function receiptHash(body) {
