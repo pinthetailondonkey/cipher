@@ -60,6 +60,7 @@ function orderLabel(content) {
   if (content.status === 'shipped') return { text: 'Shipped', className: 'bg-accent text-accentInk' };
   if (content.status === 'completed') return { text: 'Delivered', className: 'bg-emerald-500 text-white' };
   if (content.status === 'cancelled') return { text: 'Cancelled', className: 'bg-white/15 text-white' };
+  if (content.status === 'refunded') return { text: 'Refunded', className: 'bg-white/15 text-white' };
   if (content.status === 'disputed') return { text: 'Disputed', className: 'bg-rose-500/20 text-rose-200' };
   if (content.paymentState === 'seen' && content.paymentSeenBy !== 'vendor') return { text: 'Seen on-chain', className: 'bg-accent text-accentInk' };
   if (content.status === 'paid' || content.paymentSeenBy === 'vendor') return { text: 'Marked paid', className: 'bg-accent text-accentInk' };

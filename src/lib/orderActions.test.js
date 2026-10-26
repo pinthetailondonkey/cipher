@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
 import { schnorr } from '@noble/curves/secp256k1.js';
-import { ORDER_ACTIONS, allowedActionsFor, issuedPaymentMethods, orderActionsFor, orderRecordForReceipt, orderState } from './orderActions.js';
+import { ORDER_ACTIONS, allowedActionsFor, issuedPaymentMethods, orderActionsFor, orderPaymentDetails, orderRecordForReceipt, orderState, reopenedStatus } from './orderActions.js';
 import { ORDER_STATUS, ORDER_STATUSES, RECEIPT_OUTCOMES } from './paymentState.js';
 import { signReceipt } from './proofOfTrade.js';
 
@@ -27,16 +27,18 @@ test('every status for both viewers gets exactly the actions in the table', () =
       shipped: [],
       completed: [],
       cancelled: [],
-      disputed: [],
+      refunded: [],
+      disputed: ['mark_refunded', 'resume_order'],
     },
     buyer: {
       pending: ['cancel_order'],
-      accepted: ['report_issue'],
-      paid: ['report_issue'],
+      accepted: ['check_chain', 'report_issue'],
+      paid: ['check_chain', 'report_issue'],
       shipped: ['confirm_delivery', 'report_issue'],
       completed: [],
       cancelled: [],
-      disputed: [],
+      refunded: [],
+      disputed: ['check_chain', 'cancel_order'],
     },
   };
   for (const viewer of ['vendor', 'buyer']) {
@@ -45,10 +47,15 @@ test('every status for both viewers gets exactly the actions in the table', () =
       assert.deepEqual(names(allowedActionsFor({ status, ...unpaid }, viewer)), expected[viewer][status], `${viewer} ${status}`);
     }
   }
-  // Payment state narrows the vendor's options.
+  // Payment state narrows both sides' options (security S6): a confirmed
+  // payment leaves nothing to check on the chain, on either card.
   assert.deepEqual(names(allowedActionsFor({ status: 'accepted', paymentState: 'seen', paymentSeenBy: 'vendor' }, 'vendor')), ['check_chain']);
   assert.deepEqual(names(allowedActionsFor({ status: 'paid', paymentState: 'seen' }, 'vendor')), ['check_chain', 'mark_shipped']);
   assert.deepEqual(names(allowedActionsFor({ status: 'paid', paymentState: 'confirmed' }, 'vendor')), ['mark_shipped']);
+  assert.deepEqual(names(allowedActionsFor({ status: 'accepted', paymentState: 'confirmed' }, 'buyer')), ['report_issue']);
+  // A disputed order is not a dead end (security S6): resolution exists.
+  for (const item of allowedActionsFor({ status: 'disputed' }, 'vendor')) assert.ok(['mark_refunded', 'resume_order'].includes(item.action), item.action);
+  for (const item of allowedActionsFor({ status: 'disputed' }, 'buyer')) assert.ok(['check_chain', 'cancel_order'].includes(item.action), item.action);
   // Every action has a label.
   for (const status of ORDER_STATUSES) for (const viewer of ['vendor', 'buyer']) {
     for (const item of allowedActionsFor({ status, ...unpaid }, viewer)) assert.ok(item.label, item.action);
@@ -58,7 +65,7 @@ test('every status for both viewers gets exactly the actions in the table', () =
 test('a status the machine does not know is an error, and the card shows no buttons', () => {
   assert.throws(() => allowedActionsFor({ status: 'delivered' }, 'vendor'), /Unknown order status: delivered/);
   assert.throws(() => allowedActionsFor({ status: 'pending' }, 'arbiter'), /Unknown order viewer/);
-  const odd = request(false, { status: 'refunded' });
+  const odd = request(false, { status: 'voided' });
   const warn = console.warn;
   console.warn = () => {};
   try {
@@ -267,4 +274,61 @@ test('a receipt both parties signed is the one artifact moving the payment', () 
     orderState([theirs, update('u7', false, ORDER_STATUS.PAID, 17, { receipt: sight })], 'order-1', theirs).paymentState,
     'seen',
   );
+});
+
+test('a disputed order keeps a resolution and a chain entry for both sides (security S6)', () => {
+  const pending = request(true, {});
+  const dispute = update('ud', false, 'disputed', 20, { disputeReason: 'never shipped' });
+  // Buyer card while the order is disputed: check the chain themselves, or
+  // abandon the order. Not nothing.
+  const seen = update('u1', false, 'accepted', 12, { paymentState: 'address_issued' });
+  assert.deepEqual(names(orderActionsFor(pending, [pending, seen, dispute])), ['check_chain', 'cancel_order']);
+  // A watched payment that is already confirmed leaves only the abandon step.
+  const confirmed = update('u2', false, 'paid', 14, { paymentState: 'confirmed' });
+  assert.deepEqual(names(orderActionsFor(pending, [pending, confirmed, dispute])), ['cancel_order']);
+  // Vendor card while disputed.
+  const theirs = request(false, {});
+  assert.deepEqual(orderActionsFor(theirs, [theirs, dispute]).map(({ action, target }) => `${action}:${target}`), ['mark_refunded:request', 'resume_order:request']);
+});
+
+test('a dispute reopen goes back to what the payment reached, and both sides compute the same', () => {
+  assert.equal(reopenedStatus('address_issued'), 'accepted');
+  assert.equal(reopenedStatus('created'), 'accepted');
+  assert.equal(reopenedStatus(undefined), 'accepted');
+  assert.equal(reopenedStatus('seen'), 'paid');
+  assert.equal(reopenedStatus('confirmed'), 'paid');
+  // A reopen names the status it restores, so the buyer's card takes the same
+  // step without recomputing history. Falls back when the payment never moved.
+  assert.equal(reopenedStatus(), 'accepted');
+  assert.equal(reopenedStatus('rugged'), 'accepted');
+});
+
+test('the payment details either side check come from the order updates (security S6)', () => {
+  const buyerCard = request(true, { status: 'pending' });
+  const acceptance = update('u1', false, 'accepted', 12, {
+    paymentState: 'address_issued',
+    paymentMethods: { btc: 'bc1qorder', xmr: '' },
+    coinAmount: '0.01',
+    coinCurrency: 'btc',
+  });
+  const paid = update('u2', false, 'paid', 20, { paymentState: 'seen', paymentSeenBy: 'watcher' });
+  const details = orderPaymentDetails([buyerCard, acceptance, paid], 'order-1');
+  // The buyer's own card carried no address; the acceptance supplies it.
+  assert.deepEqual(details.paymentMethods, { btc: 'bc1qorder', xmr: '' });
+  assert.equal(details.coinCurrency, 'btc');
+  assert.equal(details.coinAmount, '0.01');
+  // A received "seen" claim is not payment evidence (F7): the details carry
+  // what this device has earned, never what an update asserts.
+  assert.equal(details.paymentState, 'created');
+  assert.equal(details.paymentSeenBy, '');
+  assert.equal(details.status, 'paid');
+  // The vendor's own view reads the same updates for their card.
+  const vendorRecord = orderRecordForReceipt([request(false, {}), acceptance, paid], 'order-1');
+  assert.equal(vendorRecord.issuedAddress, 'bc1qorder');
+  // The vendor's card carries the same acceptance as its own patch fallback.
+  const vendorCard = request(false, { paymentMethods: { btc: 'bc1qcard', xmr: '' }, coinAmount: '0.02', coinCurrency: 'btc' });
+  assert.deepEqual(orderPaymentDetails([vendorCard, acceptance], 'order-1').paymentMethods, { btc: 'bc1qorder', xmr: '' });
+  // Nothing to read: no request card, no details.
+  assert.equal(orderPaymentDetails([acceptance], 'order-2'), null);
+  assert.equal(orderPaymentDetails([], 'order-1'), null);
 });

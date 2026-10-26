@@ -6,7 +6,7 @@ import { ORDER_STATUS, RECEIPT_OUTCOME, acceptAmount, acceptanceDemand, amountCo
 import { checkPayment } from '../../lib/paymentWatch';
 import { activeUrl, entryById } from '../../lib/egress';
 import { publicReceipt, rememberPublicView, receiptBindsOrder, signPublicView, signReceipt } from '../../lib/proofOfTrade';
-import { issuedPaymentMethods, orderRecordForReceipt, orderState } from '../../lib/orderActions';
+import { issuedPaymentMethods, orderPaymentDetails, orderRecordForReceipt, orderState, reopenedStatus } from '../../lib/orderActions';
 import { stampArrival } from './media';
 
 export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, openChat }) {
@@ -69,7 +69,7 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
     return true;
   };
   const handleOrderAction = async (action, msg) => {
-    if (!['accept_order', 'decline_order', 'cancel_order', 'confirm_payment', 'check_chain', 'mark_shipped', 'confirm_delivery', 'report_issue'].includes(action)) {
+    if (!['accept_order', 'decline_order', 'cancel_order', 'confirm_payment', 'check_chain', 'mark_shipped', 'confirm_delivery', 'report_issue', 'mark_refunded', 'resume_order'].includes(action)) {
       return false;
     }
   
@@ -245,33 +245,43 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
         return true;
       }
       if (action === 'check_chain') {
-        const methods = msg.data?.paymentMethods || {};
-        const currency = msg.data?.coinCurrency || (methods.xmr ? 'xmr' : (methods.btc ? 'btc' : ''));
+        const isBuyer = !!msg.isSender;
+        let details = null;
+        let chainedState;
+        try {
+          const history = await db.messages.where('chatId').equals(msg.pubkey).toArray();
+          // Either side runs this (security S6): a buyer is party to the
+          // receiving address by definition — they paid it. The buyer's own
+          // card never carried an address (the buyer wrote the request), so
+          // their check reads the acceptance the vendor sent, off the stored
+          // messages, the way F7 reads the state.
+          details = isBuyer ? orderPaymentDetails(history, msg.id) : null;
+          // F7: chain the watcher report off the order's real evidence, away
+          // from a claim a peer wrote into the card.
+          chainedState = orderState(history, msg.id, msg).paymentState;
+        } catch {
+          chainedState = 'address_issued';
+        }
+        const methods = details?.paymentMethods || msg.data?.paymentMethods || {};
+        const currency = details?.coinCurrency || msg.data?.coinCurrency || (methods.xmr ? 'xmr' : (methods.btc ? 'btc' : ''));
         const address = currency ? methods[currency] : '';
-        const amount = msg.data?.coinAmount;
+        const amount = details?.coinAmount ?? msg.data?.coinAmount;
         if (!amount) {
           setToast({ type: 'info', message: 'This order has no coin amount, so it cannot be checked.' });
           setSelectedMessage(null);
           return true;
         }
-        let chainedState;
-        try {
-          // F7: chain the watcher report off the order's real evidence, away
-          // from a claim a peer wrote into the card.
-          const history = await db.messages.where('chatId').equals(msg.pubkey).toArray();
-          chainedState = orderState(history, msg.id, msg).paymentState;
-        } catch {
-          chainedState = 'address_issued';
-        }
         // An order issued the account's shared address can never be separated
         // on chain: one transfer could pay many such orders. Orders from
         // before per-order derivation was required may carry one, so the
         // check refuses rather than guessing which payment it was. (security S1)
-        const shared = String(readPaymentAddresses()[currency] || '').trim();
-        if (shared && String(address || '').trim() === shared) {
-          setToast({ type: 'error', message: 'This order was issued the shared account address, so one transfer could pay many orders. Turn on address derivation in Profile, then accept the order again to give it its own address.' });
-          setSelectedMessage(null);
-          return true;
+        if (!isBuyer) {
+          const shared = String(readPaymentAddresses()[currency] || '').trim();
+          if (shared && String(address || '').trim() === shared) {
+            setToast({ type: 'error', message: 'This order was issued the shared account address, so one transfer could pay many orders. Turn on address derivation in Profile, then accept the order again to give it its own address.' });
+            setSelectedMessage(null);
+            return true;
+          }
         }
         try {
           const outcome = await checkPayment({
@@ -298,6 +308,18 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
             return true;
           }
           const confirmed = outcome.state === 'confirmed';
+          // The buyer signs no receipt — the vendor signs. Their own watcher
+          // check lands on their order card, persisted, and goes no further:
+          // an update a device sends about its own payment would rail the
+          // other side's state on a claim, and that fix (F7) is separate.
+          if (isBuyer) {
+            const statePatch = { paymentState: outcome.state, paymentSeenBy: 'watcher' };
+            const saved = await updateLocalOrder(msg.pubkey, msg.id, statePatch);
+            const okText = confirmed ? 'Your watcher confirmed the payment.' : 'Your watcher has seen the payment. It is not confirmed yet.';
+            setToast(saved ? { type: 'success', message: okText } : { type: 'error', message: `${okText} ${NOT_SAVED}` });
+            setSelectedMessage(null);
+            return true;
+          }
           if (confirmed) {
             if (!identity?.sk) throw new Error('Unlock the account before confirming. The receipt was not signed.');
             // One transfer speaks for one order. A txid already on a receipt,
@@ -407,6 +429,24 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
             setToast({ type: 'error', message: vouchResult?.error || 'The delivery was sent. The vouch was not.' });
           }
         }
+        return true;
+      }
+      if (action === 'mark_refunded' || action === 'resume_order') {
+        // A dispute keeps its exit on the chain (security S6): a refund marks
+        // the order refunded and stays there, and reopening restores the
+        // status the payment had already reached. Both sides see the same
+        // update, so neither card is left on a dead end. The payment state
+        // itself never moves here — a refund is a transaction a watcher
+        // reports for itself, not a step this table takes.
+        const refunding = action === 'mark_refunded';
+        const status = refunding ? ORDER_STATUS.REFUNDED : reopenedStatus(msg.data?.paymentState);
+        const payload = {
+          type: 'order_update',
+          orderId: msg.id,
+          productName: msg.data.product?.title || msg.data.productName,
+          status,
+        };
+        await deliverOrderUpdate(msg.pubkey, payload, { status }, refunding ? 'Order refunded' : 'Order reopened');
         return true;
       }
       if (action === 'report_issue') {
