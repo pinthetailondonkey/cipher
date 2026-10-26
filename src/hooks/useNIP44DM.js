@@ -10,6 +10,7 @@ import { allowsTyping } from '../lib/privacy';
 import { publishOwnRelayList, relaysForPeer } from '../lib/dmRelays';
 import { sortMessages, stampArrival } from '../features/chat/media';
 import { withBuzzTag } from '../lib/pushGateway';
+import { conversationKey } from '../lib/dmKeys';
 import { acceptPayment, rememberPublicView, sendCountersignOnce } from '../lib/proofOfTrade';
 import { scopedSet } from '../lib/storage';
 
@@ -56,7 +57,7 @@ export function useNIP44DM({ identity }) {
 
     try {
       const { finalizeEvent, nip44 } = await import('nostr-tools');
-      const shared = nip44.v2.utils.getConversationKey(identity.sk, targetDm);
+      const shared = conversationKey(identity.sk, targetDm);
       const encrypted = nip44.v2.encrypt(JSON.stringify(payload), shared);
       const tags = withBuzzTag([
         ['p', targetDm],
@@ -100,7 +101,7 @@ export function useNIP44DM({ identity }) {
       const { finalizeEvent, nip44 } = await import('nostr-tools');
       const pool = await getAuthenticatedPool(identity);
       const targets = await relaysForPeer(identity, recipientPubkey);
-      const shared = nip44.v2.utils.getConversationKey(identity.sk, recipientPubkey);
+      const shared = conversationKey(identity.sk, recipientPubkey);
       const encrypted = nip44.v2.encrypt(JSON.stringify({ type: 'typing' }), shared);
       const ev = finalizeEvent({
         kind: 4, // Use kind 4 so strict relays accept it
@@ -143,7 +144,7 @@ export function useNIP44DM({ identity }) {
               // Audit H8: drop messages from blocked users at ingestion
               const blocked = useChatStore.getState().blockedUsers || [];
               if (blocked.includes(counterparty)) return;
-              const shared = nip44.v2.utils.getConversationKey(identity.sk, counterparty);
+              const shared = conversationKey(identity.sk, counterparty);
               let text;
               try { text = nip44.v2.decrypt(event.content, shared); }
               catch (e) { return; }
@@ -259,7 +260,7 @@ export function useNIP44DM({ identity }) {
         if (!counterparty) continue;
         const blocked = useChatStore.getState().blockedUsers || [];
         if (blocked.includes(counterparty)) continue;
-        const shared = nip44.v2.utils.getConversationKey(identity.sk, counterparty);
+        const shared = conversationKey(identity.sk, counterparty);
         let text;
         try { text = nip44.v2.decrypt(ev.content, shared); }
         catch (e) { continue; }

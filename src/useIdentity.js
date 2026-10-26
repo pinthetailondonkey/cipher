@@ -630,6 +630,8 @@ export function useIdentity() {
     setKeys({ sk: null, pk: null, npub: null })
     try {
       const { clearPool } = await import('./lib/pool');
+      const { clearConversationKeyCache } = await import('./lib/dmKeys');
+      clearConversationKeyCache();
       clearPool();
       const { closeGroupSessions } = await import('./hooks/useNIP29Group');
       closeGroupSessions();
