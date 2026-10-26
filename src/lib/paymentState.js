@@ -7,6 +7,7 @@ export const ORDER_STATUS = Object.freeze({
   SHIPPED: 'shipped',
   COMPLETED: 'completed',
   CANCELLED: 'cancelled',
+  REFUNDED: 'refunded',
   DISPUTED: 'disputed',
 });
 export const ORDER_STATUSES = Object.freeze(Object.values(ORDER_STATUS));
@@ -19,6 +20,10 @@ export function isOrderStatus(status) {
   return ORDER_STATUSES.includes(status);
 }
 
+// The payment states stay a straight walk: created, address_issued, seen,
+// confirmed. Nothing skips, and nothing about a dispute lives here (security
+// S6) — a refund is a new transaction a watcher reports for itself, and the
+// dispute's life is the order's status layer, not this table.
 const NEXT = {
   created: { issue: 'address_issued' },
   address_issued: { see: 'seen' },
