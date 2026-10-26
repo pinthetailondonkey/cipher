@@ -252,7 +252,7 @@ export default function Wallet({ identity, onOpenChat, startView = 'main' }) {
   }
 
   if (view === 'orders') {
-    return <MyOrders dms={dms} profiles={chatProfiles} onBack={() => setView('main')} onOpenChat={onOpenChat} />;
+    return <MyOrders dms={dms} profiles={chatProfiles} onBack={() => setView('main')} onOpenChat={onOpenChat} identity={identity} />;
   }
 
   if (view === 'message_requests') {

@@ -32,6 +32,31 @@ function isRequest(data) {
 // claim alone is allowed to do.
 const PAYMENT_RANK = ['created', 'address_issued', 'seen', 'confirmed'];
 
+// A receipt verifies whoever signed it; it counts as payment only when the
+// parties it names are the two of this chat. Two keys the attacker holds
+// both verify, so the body must name the counterparty — and this device,
+// when the caller can name itself, or at least the role the direction of
+// the chat implies. (security F7)
+function receiptIsOfThisChat(receipt, orderId, request, ownPubkey) {
+  try {
+    if (!receipt?.body || String(receipt.body.orderId) !== String(orderId)) return false;
+    const body = canonicalReceipt(receipt.body);
+    const buyer = String(body.buyer || '').toLowerCase();
+    const vendor = String(body.vendor || '').toLowerCase();
+    if (!buyer || !vendor) return false;
+    const counterparty = String(request?.pubkey || '').toLowerCase();
+    if (ownPubkey) {
+      const chat = [counterparty, String(ownPubkey).toLowerCase()].sort().join();
+      return [buyer, vendor].sort().join() === chat;
+    }
+    if (!counterparty) return false;
+    const role = request.isSender ? vendor : buyer;
+    return role === counterparty;
+  } catch {
+    return false;
+  }
+}
+
 function paymentEvidence(messages, orderId, request, ownPubkey) {
   const rank = (state) => Math.max(0, PAYMENT_RANK.indexOf(state));
   let paymentState = '';
@@ -50,30 +75,7 @@ function paymentEvidence(messages, orderId, request, ownPubkey) {
   } else {
     adopt(request?.localPatch || null);
   }
-  // A receipt verifies whoever signed it; it counts as payment only when the
-  // parties it names are the two of this chat. Two keys the attacker holds
-  // both verify, so the body must name the counterparty — and this device,
-  // when the caller can name itself, or at least the role the direction of
-  // the chat implies. (security F7)
-  const receiptIsOfThisChat = (receipt) => {
-    try {
-      if (!receipt?.body || String(receipt.body.orderId) !== String(orderId)) return false;
-      const body = canonicalReceipt(receipt.body);
-      const buyer = String(body.buyer || '').toLowerCase();
-      const vendor = String(body.vendor || '').toLowerCase();
-      if (!buyer || !vendor) return false;
-      const counterparty = String(request?.pubkey || '').toLowerCase();
-      if (ownPubkey) {
-        const chat = [counterparty, String(ownPubkey).toLowerCase()].sort().join();
-        return [buyer, vendor].sort().join() === chat;
-      }
-      if (!counterparty) return false;
-      const role = request.isSender ? vendor : buyer;
-      return role === counterparty;
-    } catch {
-      return false;
-    }
-  };
+  // A receipt counts through the same gate the ledger's ✓ reads (below).
   for (const message of Array.isArray(messages) ? messages : []) {
     if (message?.data?.type !== 'order_update' || message.data.orderId !== orderId) continue;
     if (message.isSender) {
@@ -82,7 +84,7 @@ function paymentEvidence(messages, orderId, request, ownPubkey) {
     }
     adopt(message.localPatch || null);
     const receipt = message.data.receipt;
-    if (receipt && receiptIsOfThisChat(receipt) && verifyReceipt(receipt)) {
+    if (receipt && receiptIsOfThisChat(receipt, orderId, request, ownPubkey) && verifyReceipt(receipt)) {
       // A receipt the device never verified rows no payment. A signed one
       // names what the watcher saw: confirmed, or back to the payer.
       adopt({ paymentState: receipt.body.outcome === 'confirmed' ? 'confirmed' : 'seen' });
@@ -111,6 +113,17 @@ export function orderState(messages, orderId, request, ownPubkey) {
 // or further along. A pending order never agreed to anything and a cancelled
 // or disputed one stays closed, so neither stores nor signs a receipt.
 const RECEIPT_STATUSES = new Set([S.ACCEPTED, S.PAID, S.SHIPPED, S.COMPLETED]);
+
+// The orders ledger's ✓: a receipt both parties signed, binding this order
+// and this chat, that this device re-verified. Anything else is a claim,
+// never proof.
+export function orderHasVerifiedReceipt(messages, orderId, request, ownPubkey) {
+  return (Array.isArray(messages) ? messages : []).some((message) => {
+    if (message?.data?.type !== 'order_update' || message.data.orderId !== orderId) return false;
+    const receipt = message.data.receipt;
+    return Boolean(receipt && receiptIsOfThisChat(receipt, orderId, request, ownPubkey) && verifyReceipt(receipt));
+  });
+}
 
 // The payment details a chain check reads for an order, for either party. The
 // buyer's own card never carried an address (the buyer wrote the request), so
