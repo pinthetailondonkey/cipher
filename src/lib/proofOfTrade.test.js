@@ -259,3 +259,47 @@ test('a countersign that does not send says so, and the next load tries again', 
   assert.deepEqual(await Promise.all(both), [true, false]);
   assert.equal(sent, 1);
 });
+
+test('the vendor signature is never granted to a one-sided receipt, and a doctored view rides nowhere', () => {
+  // security F4 re-attack: a buyer-fabricated receipt on a real order passes
+  // every binding check — the amount and address are the order's own — so
+  // only the watcher-side role may originate the vendor signature. A
+  // vendor-only receipt is the normal artifact the buyer receives; the
+  // reverse, a buyer-only receipt reaching the vendor, is fabricated, and
+  // the vendor's device refusing to cosign is what keeps its fake txid
+  // from being certified.
+  const buyerKey = schnorr.utils.randomSecretKey();
+  const vendorKey = schnorr.utils.randomSecretKey();
+  const body = {
+    orderId: 'order-harvest',
+    buyer: hex(schnorr.getPublicKey(buyerKey)),
+    vendor: hex(schnorr.getPublicKey(vendorKey)),
+    currency: 'xmr',
+    address: '8secret',
+    amount: '2',
+    txid: 'fabricated',
+    at: 1_700_000_000,
+    outcome: 'confirmed',
+  };
+  const buyerOnly = signReceipt(buyerKey, body);
+  assert.equal(verifyReceipt(buyerOnly), false);
+  const refused = acceptPayment({
+    type: 'order_update', status: 'paid', orderId: body.orderId, receipt: buyerOnly,
+  }, vendorKey);
+  assert.equal(refused, null);
+  // A doctored public view beside a real receipt is dropped, not signed.
+  const real = coSignPayment(signReceipt(vendorKey, body), buyerKey);
+  assert.equal(verifyReceipt(real), true);
+  const doctored = acceptPayment({
+    type: 'order_update', status: 'paid', orderId: body.orderId, receipt: real, published: { ...publicReceipt(real), amount: '999' },
+  }, vendorKey);
+  assert.equal(doctored.published, null);
+  assert.equal(verifyReceipt(doctored.receipt), true);
+  // The matching view still carries: the buyer's countersign of the view
+  // rides beside the receipt, and the vendor's device completes it.
+  const buyerView = signPublicView(buyerKey, publicReceipt(real));
+  const carried = acceptPayment({
+    type: 'order_update', status: 'paid', orderId: body.orderId, receipt: real, published: buyerView,
+  }, vendorKey);
+  assert.equal(verifyPublicView(carried.published), true);
+});
