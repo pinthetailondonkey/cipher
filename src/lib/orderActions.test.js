@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
 import { schnorr } from '@noble/curves/secp256k1.js';
-import { ORDER_ACTIONS, allowedActionsFor, frozenIssuedMethods, issuedPaymentMethods, newestOwnIssuedMethods, orderActionsFor, orderHasVerifiedReceipt, orderPaymentDetails, orderRecordForReceipt, orderState, reopenedStatus } from './orderActions.js';
+import { ORDER_ACTIONS, allowedActionsFor, deviceWatchedOrderOf, frozenIssuedMethods, issuedPaymentMethods, newestOwnIssuedMethods, orderActionsFor, orderHasVerifiedReceipt, orderPaymentDetails, orderRecordForReceipt, orderState, reopenedStatus } from './orderActions.js';
 import { ORDER_STATUS, ORDER_STATUSES, RECEIPT_OUTCOMES } from './paymentState.js';
 import { signReceipt, verifyReceipt as verifyReceipt2 } from './proofOfTrade.js';
 
@@ -205,6 +205,34 @@ test('the freeze falls back to the newest own acceptance update for the order', 
   // Nothing own-sent: derive fresh.
   assert.equal(newestOwnIssuedMethods([update('u9', false, ORDER_STATUS.ACCEPTED, 10, { paymentMethods: { btc: 'bc1qpeer' } })], {}, 'order-1'), null);
   assert.equal(newestOwnIssuedMethods(null, {}, 'order-1'), null);
+});
+
+// N1 (round-three re-hack): a buyer's co-signature on a receipt must mean
+// this device's own watcher saw the money. The watcher check lands on the
+// order card as a local patch; until it has, the vendor's receipt is a
+// claim, and a confirmed over a txid that never happened signs nothing.
+test('only this device\'s own watcher check lets a receipt attach', () => {
+  const card = request(true, {});
+  // Nothing checked yet: the gate is shut.
+  assert.equal(deviceWatchedOrderOf([card], 'order-1'), false);
+  assert.equal(deviceWatchedOrderOf([], 'order-1'), false);
+  // A watcher outcome the peer wrote into a received card is not this
+  // device's own check.
+  const claimed = { ...card, localPatch: undefined };
+  const peerClaim = update('u1', false, ORDER_STATUS.PAID, 12, { paymentState: 'confirmed', paymentSeenBy: 'watcher' });
+  assert.equal(deviceWatchedOrderOf([claimed, peerClaim], 'order-1'), false);
+  // This device's own watcher sight, seen and confirmed both count.
+  const seenCard = { ...card, localPatch: { paymentState: 'seen', paymentSeenBy: 'watcher' } };
+  const confirmedCard = { ...card, localPatch: { paymentState: 'confirmed', paymentSeenBy: 'watcher' } };
+  assert.equal(deviceWatchedOrderOf([seenCard], 'order-1'), true);
+  assert.equal(deviceWatchedOrderOf([confirmedCard], 'order-1'), true);
+  // Any other written state stays a claim: address_issued is the vendor's
+  // acceptance, not the chain's word.
+  const issuedCard = { ...card, localPatch: { paymentState: 'address_issued' } };
+  assert.equal(deviceWatchedOrderOf([issuedCard], 'order-1'), false);
+  // Another order's card cannot light this one.
+  const other = { id: 'order-2', isSender: true, timestamp: 5, data: { type: 'order_request' }, localPatch: { paymentState: 'confirmed' } };
+  assert.equal(deviceWatchedOrderOf([other, card], 'order-1'), false);
 });
 
 test('a never-accepted vendor order builds no receipt record, whatever the peer claims', () => {
