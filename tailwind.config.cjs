@@ -24,6 +24,7 @@ module.exports = {
         inkSubtle: 'var(--text-subtle)',
         accent: 'var(--accent)',
         accentSoft: 'var(--accent-soft)',
+        accentInk: 'var(--accent-ink)',
         success: 'var(--success)',
         danger: 'var(--danger)',
         borderDark: 'var(--border-strong)',

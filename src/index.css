@@ -26,6 +26,7 @@
   --text-subtle: #6b7280;
   --accent: #3b82f6;
   --accent-soft: rgba(59, 130, 246, 0.12);
+  --accent-ink: #ffffff;
   --success: #10b981;
   --danger: #ef4444;
   --glow-a: rgba(59, 130, 246, 0.13);
@@ -47,6 +48,7 @@
   --text-subtle: #6d7681;
   --accent: #c9a227;
   --accent-soft: rgba(201, 162, 39, 0.14);
+  --accent-ink: #171204;
   --success: #10b981;
   --danger: #ef4444;
   --glow-a: rgba(201, 162, 39, 0.09);
@@ -69,6 +71,7 @@
   --text-subtle: #6e767e;
   --accent: #b9c6cf;
   --accent-soft: rgba(185, 198, 207, 0.12);
+  --accent-ink: #0b0d0f;
   --success: #10b981;
   --danger: #ef4444;
   --glow-a: rgba(234, 246, 255, 0.10);
