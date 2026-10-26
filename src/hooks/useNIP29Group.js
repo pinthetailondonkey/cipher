@@ -10,7 +10,7 @@ import { shortNpub } from '../lib/npub';
 import { getMyGroups, setMyGroups } from '../lib/myGroups';
 import { encodeGroupPayload, decodeGroupEvent } from '../lib/crypto/groupMessageCodec';
 import { getAllGroupKeys, getCurrentGroupKey, putGroupKey } from '../lib/crypto/groupKeyStore';
-import { authorizeGroupControl, authorizeGroupPin, authorizeMemberSnapshot, groupRelayPubkey, groupTimelinePlans, isRestrictedRelayClose, pickMemberSnapshot, trustedGroupCreator } from '../lib/crypto/groupMembership';
+import { authorizeGroupControl, authorizeGroupPin, authorizeMemberSnapshot, groupRelayPubkey, groupTimelinePlans, isRestrictedRelayClose, pickMemberSnapshot, pinnedMessageOf, trustedGroupCreator } from '../lib/crypto/groupMembership';
 import { grantKeyRequest, loadMemberSnapshot, loadMemberSnapshotRecord, memberKey, patchMemberSnapshot, rememberMembers, rotateGroupEpoch } from '../lib/crypto/groupKeyRotation';
 import { generateGroupKey } from '../lib/crypto/groupCipher';
 import { distributeGroupKey, epochsToBackfill } from '../lib/crypto/groupKeyDistribution';
@@ -1170,29 +1170,24 @@ export function useNIP29Group({ identity }) {
   const fetchPinnedMessage = useCallback(async (groupId) => {
     try {
       const pool = await getAuthenticatedPool(identity);
-      // Wide enough that a member flooding pins cannot push the admin's out
+      // Wide enough that a member flooding pins cannot push an admin's out
       // of the window: the standing check runs on everything, so a bigger
       // fetch only reads more events, never trusts more of them. (security S9)
-      const events = await queryWithTimeout(pool, groupRelays, { kinds: [9005], '#h': [groupId], limit: 500 }, 3000);
-      if (events.length === 0) {
-        setPinnedMessages(prev => ({ ...prev, [groupId]: null }));
-        return null;
-      }
-      // S9: a member's pin event is read by no one. Only pins signed by a
-      // creator or admin reach the shared slot, and with no standing author
-      // among the events the slot clears — fail closed, not open.
+      // A flood is still a shelf of its own width, so the owner's pin is
+      // read in a filter of its own that a member cannot crowd: the owner's
+      // pin wins the shared slot, and an admin's pin fills it only when the
+      // owner has none. (security S9 re-attack)
       const standing = await controlContext(groupId, identity.pk);
-      const allowed = events.filter((event) => (
+      const read = (filter) => queryWithTimeout(pool, groupRelays, filter, 3000).catch(() => []);
+      const [ownerEvents, memberEvents] = await Promise.all([
+        standing.creator ? read({ kinds: [9005], '#h': [groupId], authors: [standing.creator], limit: 10 }) : [],
+        read({ kinds: [9005], '#h': [groupId], limit: 500 }),
+      ]);
+      const pin = pinnedMessageOf(ownerEvents, memberEvents, (event) => (
         authorizeGroupPin({ sender: event.pubkey, members: standing.members, creator: standing.creator })
       ));
-      if (allowed.length === 0) {
-        setPinnedMessages(prev => ({ ...prev, [groupId]: null }));
-        return null;
-      }
-      allowed.sort((a, b) => b.created_at - a.created_at);
-      const eTag = allowed[0].tags.find(t => t[0] === 'e')?.[1];
-      setPinnedMessages(prev => ({ ...prev, [groupId]: eTag || null }));
-      return eTag || null;
+      setPinnedMessages(prev => ({ ...prev, [groupId]: pin }));
+      return pin;
     } catch (e) {
       return null;
     }

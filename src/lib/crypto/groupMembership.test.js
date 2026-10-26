@@ -15,6 +15,7 @@ import {
   isGroupAdmin,
   isRestrictedRelayClose,
   pickMemberSnapshot,
+  pinnedMessageOf,
   refetchMembersCached,
   resetGroupRelayPubkeyCache,
   resetMemberRereadCache,
@@ -549,6 +550,28 @@ test('a kind-9005 pin moves the shared slot only for a creator or admin', () => 
   assert.equal(authorizeGroupPin({ sender: admin, members: [], creator: '' }), false);
   // Case differences do not sneak past.
   assert.equal(authorizeGroupPin({ sender: creator.toUpperCase(), members, creator: creator.toUpperCase() }), true);
+});
+
+test('the shared pin slot belongs to the owner, and a member flood cannot end it', () => {
+  // A member fanned out 500 member pins; the relay window holds only those.
+  const flood = Array.from({ length: 10 }, (_, at) => (
+    { pubkey: member, created_at: at, tags: [['e', `flood-${at}`]] }
+  ));
+  // The owner's own pin rides a bucket of its own, whatever the flood did.
+  const owners = [{ pubkey: creator, created_at: 5, tags: [['e', 'owner-pin']] }];
+  const authorize = (event) => authorizeGroupPin({ sender: event.pubkey, members, creator });
+  assert.equal(pinnedMessageOf(owners, flood, authorize), 'owner-pin');
+  // The flood alone pins nothing — a member's pin is read by no one.
+  assert.equal(pinnedMessageOf([], flood, authorize), null);
+  // An admin's pin lands in the flood; it fills the slot when there is no
+  // owner pin, and loses to one when there is.
+  flood.push({ pubkey: admin, created_at: 1_000, tags: [['e', 'admin-pin']] });
+  assert.equal(pinnedMessageOf(owners, flood, authorize), 'owner-pin');
+  assert.equal(pinnedMessageOf([], flood, authorize), 'admin-pin');
+  // No owner filter ran (no creator known): the admin's pin still fills the
+  // slot, and the member flood never reaches it.
+  assert.equal(pinnedMessageOf(null, flood, authorize), 'admin-pin');
+  assert.equal(pinnedMessageOf([], [], authorize), null);
 });
 
 test('a failed re-read inside the freshness window still refuses a list older than the key', () => {

@@ -137,6 +137,21 @@ export function authorizeGroupPin({ sender, members, creator }) {
   return isGroupAdmin(members, sender, creator);
 }
 
+// The shared slot's pin: the owner's own pin wins, and an admin's pin fills
+// the slot only when the owner has none. The owner's list is fetched in an
+// authors filter of its own, so a member's pin flood can never crowd the
+// owner's events out of the window a member list is read through.
+// (security S9)
+export function pinnedMessageOf(ownerEvents = [], memberEvents = [], authorize) {
+  const pick = (events) => {
+    const allowed = (events || []).filter((event) => authorize(event));
+    if (allowed.length === 0) return null;
+    allowed.sort((a, b) => b.created_at - a.created_at);
+    return allowed[0].tags.find((t) => t[0] === 'e')?.[1] || null;
+  };
+  return pick(ownerEvents) ?? pick(memberEvents);
+}
+
 export function memberSnapshotGroupId(event) {
   const tags = event?.tags || [];
   return tags.find((tag) => tag[0] === 'd')?.[1] || tags.find((tag) => tag[0] === 'h')?.[1] || '';
