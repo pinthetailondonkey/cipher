@@ -448,6 +448,7 @@ export function useChatBootstrap({
       else if (timerStr === '1h') seconds = 3600;
       else if (timerStr === '24h') seconds = 86400;
       else if (timerStr === '7d') seconds = 604800;
+      else if (timerStr === '30d') seconds = 2592000;
       if (!seconds) return messages;
       const kept = messages.filter((message) => {
         const keep = (now - message.timestamp) < seconds;
