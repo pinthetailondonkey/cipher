@@ -53,6 +53,28 @@
   --glow-b: rgba(59, 130, 246, 0.05);
 }
 
+/* Chrome rooms — cold steel. Near-black wells, silver accents, ice-white
+   glows; money surfaces read like brushed metal. Activated by
+   data-theme="chromerooms". */
+[data-theme='chromerooms'] {
+  --bg: #070809;
+  --bg-soft: #0b0d0f;
+  --panel: #101214;
+  --panel-strong: #191c20;
+  --panel-alt: #212630;
+  --border: rgba(255, 255, 255, 0.09);
+  --border-strong: rgba(201, 216, 228, 0.30);
+  --text: #f4f6f8;
+  --text-muted: #a8b0b8;
+  --text-subtle: #6e767e;
+  --accent: #b9c6cf;
+  --accent-soft: rgba(185, 198, 207, 0.12);
+  --success: #10b981;
+  --danger: #ef4444;
+  --glow-a: rgba(234, 246, 255, 0.10);
+  --glow-b: rgba(234, 246, 255, 0.04);
+}
+
 html, body, #root {
   height: 100%;
   min-height: 100dvh;
