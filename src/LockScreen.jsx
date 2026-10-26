@@ -293,7 +293,7 @@ export default function LockScreen({ identity }) {
                     <input type="checkbox" checked={enableBio} onChange={(e) => setEnableBio(e.target.checked)} className="peer appearance-none w-5 h-5 border border-white/20 rounded-md bg-white/5 checked:bg-blue-600 checked:border-blue-600 transition-colors" />
                     <Check size={14} className="absolute text-white pointer-events-none opacity-0 peer-checked:opacity-100 transition-opacity" strokeWidth={3} />
                   </div>
-                  Enable Face ID / device passkey
+                  Set up Face ID / fingerprint
                 </label>
               )}
             </>
@@ -316,7 +316,7 @@ export default function LockScreen({ identity }) {
               {identity?.hasBiometric && (
                 <button type="button" onClick={handleBiometricUnlock} disabled={biometricLoading || loading} className={`flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl border border-white/10 bg-[#0A0A0A]/60 shadow-2xl backdrop-blur-2xl px-4 text-[15px] font-semibold text-blue-500 active:bg-white/10 disabled:opacity-50 ${pressable}`}>
                   {biometricLoading ? <RefreshCw size={17} className="animate-spin" /> : <Fingerprint size={17} />}
-                  Unlock or recover with Face ID / passkey
+                  Unlock or recover with Face ID / fingerprint
                 </button>
               )}
               <button type="button" onClick={() => { setMode('restore'); setError(''); setPin('') }} className="text-gray-500 hover:text-white text-sm font-medium transition-colors">
