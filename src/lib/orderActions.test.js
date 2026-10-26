@@ -390,6 +390,9 @@ test('the payment details either side check come from the order updates (securit
   assert.equal(details.paymentState, 'created');
   assert.equal(details.paymentSeenBy, '');
   assert.equal(details.status, 'paid');
+  // The acceptance carries the issuance date of the order's address, so the
+  // chain check can refuse a transfer dated before the address existed.
+  assert.equal(orderPaymentDetails([buyerCard, update('ui', false, 'accepted', 12, { issuedAt: 1234 })], 'order-1').issuedAt, 1234);
   // The vendor's own view of the same order: the record rests on the
   // vendor's own acceptance. A received acceptance alone is the vendor's
   // word to the buyer — it builds no record on the vendor side to bind.
