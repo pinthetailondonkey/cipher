@@ -74,6 +74,17 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
     }
   
       if (action === 'accept_order') {
+        // The order card is this vendor's own message, but its payload words
+        // are the buyer's text. A card whose stated order ID differs from the
+        // message it rides on could name a slot in the derivation record
+        // belonging to another order and get that order's address served as
+        // its own — the acceptance refuses rather than resolves the
+        // disagreement. (security re-attack)
+        if (msg.data.orderId && String(msg.data.orderId) !== String(msg.id)) {
+          setToast({ type: 'error', message: 'This order card does not name its own order. Nothing was accepted.' });
+          setSelectedMessage(null);
+          return true;
+        }
         // Once an address is issued for an order it is frozen on the order
         // card (security S5): acceptance reuses the pair this device issued —
         // the card's local patch, its own earlier write — and never derives a
@@ -102,7 +113,10 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
             try {
               paymentMethods = await getOrderPaymentMethods(
                 identity,
-                msg.data.orderId || msg.id,
+                // The derivation slot is the order card's message ID — this
+                // device's own write — never a buyer-authored payload field.
+                // (security re-attack)
+                msg.id,
                 { btc: baseBtc, xmr: baseXmr },
                 msg.data.paymentMethod || 'btc',
               );
@@ -313,6 +327,19 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
           const shared = String(readPaymentAddresses()[currency] || '').trim().toLowerCase();
           if (shared && String(address || '').trim().toLowerCase() === shared) {
             setToast({ type: 'error', message: 'This order was issued the shared account address, so one transfer could pay many orders. Turn on address derivation in Profile, then accept the order again to give it its own address.' });
+            setSelectedMessage(null);
+            return true;
+          }
+          // A legacy order carries no issuance date, so the transfer-date
+          // gate below has nothing to hold the watcher report to. Such an
+          // order may also sit on a shared address the profile has since
+          // rotated, which the compare above no longer names. An undated
+          // order cannot be told apart from money that arrived for something
+          // else, so it confirms nothing: accept the order again to date and
+          // re-address it. (security re-attack)
+          const issuedAtSec = Number(details?.issuedAt ?? vendorPair?.issuedAt);
+          if (!Number.isFinite(issuedAtSec) || issuedAtSec <= 0) {
+            setToast({ type: 'error', message: 'This order predates payment dating, so its chain check cannot tell its payment from older deposits. Accept the order again to give it a dated address of its own.' });
             setSelectedMessage(null);
             return true;
           }
