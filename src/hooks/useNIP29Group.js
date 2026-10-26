@@ -10,7 +10,7 @@ import { shortNpub } from '../lib/npub';
 import { getMyGroups, setMyGroups } from '../lib/myGroups';
 import { encodeGroupPayload, decodeGroupEvent } from '../lib/crypto/groupMessageCodec';
 import { getAllGroupKeys, getCurrentGroupKey, putGroupKey } from '../lib/crypto/groupKeyStore';
-import { authorizeGroupControl, authorizeMemberSnapshot, groupRelayPubkey, groupTimelinePlans, isRestrictedRelayClose, pickMemberSnapshot } from '../lib/crypto/groupMembership';
+import { authorizeGroupControl, authorizeMemberSnapshot, groupRelayPubkey, groupTimelinePlans, isRestrictedRelayClose, pickMemberSnapshot, trustedGroupCreator } from '../lib/crypto/groupMembership';
 import { grantKeyRequest, loadMemberSnapshot, loadMemberSnapshotRecord, memberKey, patchMemberSnapshot, rememberMembers, rotateGroupEpoch } from '../lib/crypto/groupKeyRotation';
 import { generateGroupKey } from '../lib/crypto/groupCipher';
 import { distributeGroupKey, epochsToBackfill } from '../lib/crypto/groupKeyDistribution';
@@ -47,14 +47,25 @@ async function fetchRelayMemberSnapshot(identity, groupId) {
   return members;
 }
 
-function controlContext(groupId) {
+// Creator can no longer ride on the store record alone: the record is fed by
+// forgeable channels (F3), so the claim needs standing before any control or
+// grant decision takes a creator shortcut. Self-attested creation (this
+// device made the group) or a non-member row in the relay-signed snapshot.
+async function controlContext(groupId, identityPk) {
   const state = useChatStore.getState();
   const group = (state.groups || []).find((item) => item.id === groupId)
     || (state.activeGroup?.id === groupId ? state.activeGroup : null);
   const live = state.activeGroup?.id === groupId ? state.groupMembers : null;
+  const members = Array.isArray(live) && live.length ? live : (group?.members || []);
+  const record = await loadMemberSnapshotRecord(groupId).catch(() => null);
+  const snapshot = Array.isArray(record?.members) && record.members.length ? record.members : members;
   return {
-    creator: group?.creator || '',
-    members: Array.isArray(live) && live.length ? live : (group?.members || []),
+    creator: trustedGroupCreator({
+      creator: group?.creator || '',
+      identityPk,
+      snapshot,
+    }),
+    members,
   };
 }
 const groupSessions = new Map();
@@ -95,7 +106,9 @@ async function fetchGroupMetadata(identity, groupId) {
     name: tag('name') || content.name || content.display_name || '',
     about: tag('about') || content.about || '',
     picture: tag('picture') || content.picture || '',
-    creator: latest.pubkey || '',
+    // F3: the event author is not the creator — it is who signed the newest
+    // metadata event. Nothing here draws a creator from forgeable metadata.
+    creator: '',
   };
 }
 
@@ -808,7 +821,7 @@ export function useNIP29Group({ identity }) {
         return;
       }
       if ([9000, 9001, 9002, 9021, 9022].includes(event.kind)) {
-        const { creator, members } = controlContext(groupId);
+        const { creator, members } = await controlContext(groupId, identity.pk);
         const subject = event.kind === 9021 || event.kind === 9022
           ? event.pubkey
           : (event.tags.find((tag) => tag[0] === 'p')?.[1] || event.pubkey);
@@ -931,11 +944,14 @@ export function useNIP29Group({ identity }) {
           if (event.pubkey !== identity.pk) {
             const record = await loadMemberSnapshotRecord(groupId);
             const current = await getCurrentGroupKey(groupId);
-            const { creator } = controlContext(groupId);
+            const { creator } = await controlContext(groupId, identity.pk);
             const decision = await grantKeyRequest({
               groupId,
               requester: event.pubkey,
               creator,
+              // F3: the device's own creation record is the one self-attested
+              // standing; even a relay outage cannot take the owner's grant.
+              selfCreated: useChatStore.getState().groups.some((it) => it.id === groupId && it.creator === identity.pk),
               snapshot: record?.members || null,
               updatedAt: record?.updatedAt,
               keyObtainedAt: current?.obtainedAt,

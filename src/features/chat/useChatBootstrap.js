@@ -283,9 +283,13 @@ export function useChatBootstrap({
       }).filter(g => g.id);
       // DM history goes through useNIP44DM.fetchDMs() — no inline nip44 here
       const allGroupsMap = new Map(localGroupsNow.map(g => [g.id, g]));
+      // F3: metadata events name no creator — ev.pubkey is just who signed
+      // the newest edit, and an attacker can publish one. A known local
+      // record keeps its own creator; the claim only fills a brand-new row.
       parsedGroupsNow.forEach(pg => {
-        if (allGroupsMap.has(pg.id)) {
-          allGroupsMap.set(pg.id, { ...allGroupsMap.get(pg.id), ...pg });
+        const existing = allGroupsMap.get(pg.id);
+        if (existing) {
+          allGroupsMap.set(pg.id, { ...existing, ...pg, creator: existing.creator || pg.creator });
         } else {
           allGroupsMap.set(pg.id, pg);
         }

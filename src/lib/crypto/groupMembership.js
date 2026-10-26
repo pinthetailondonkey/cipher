@@ -97,6 +97,24 @@ export function isGroupAdmin(members, pubkey, creator) {
   ));
 }
 
+// F3 fix (audit finding 3): a creator name is a claim, and the channel it
+// rode in on — the newest kind-39000/9002 metadata event, or an invite link —
+// is forgeable. Group creation on this device is the one self-attested case;
+// otherwise the claim needs standing in the relay-signed member snapshot: a
+// row with a non-member role. Anything else returns '' and no decision
+// downstream takes a creator shortcut.
+export function trustedGroupCreator({ creator, identityPk = '', selfCreated = false, snapshot = null }) {
+  const claimed = String(creator || '').toLowerCase();
+  if (!claimed) return '';
+  const me = String(identityPk || '').toLowerCase();
+  if (selfCreated || (me && claimed === me)) return claimed;
+  const row = (Array.isArray(snapshot) ? snapshot : []).find((member) => (
+    String(pubkeyOf(member)).toLowerCase() === claimed
+  ));
+  if (row && typeof row === 'object' && row.role && row.role !== 'member') return claimed;
+  return '';
+}
+
 export function controlSubject(event) {
   if (!event) return '';
   if (event.kind === 9021 || event.kind === 9022) return event.pubkey || '';
