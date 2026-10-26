@@ -26,3 +26,50 @@ Done when: the three stale claims are corrected.
 ## 5. Proof-of-trade v2 — STARTED
 Done when: the implementation matches the spec (docs/proof-of-trade.md v2).
 The spec is written; implementation is a separate item.
+
+## 6. Custom theme: modern / serious / iOS / trap-street hustle
+Done when: one token file (radius, shadow, surface levels) in src/index.css defines the whole geometry; every heavy card surface uses it; the `shadow-2xl backdrop-blur-2xl` stamp appears only where a sheet truly floats; message bubbles use the bubble radius, not a card radius; the tab bar badge is icon-anchored; empty states are py-8/py-10, never py-16. Glass (backdrop-blur) stays everywhere. Same colors. Founder's four words: modern, serious, iOS, trap-street hustle.
+Known bulk spots (audit, 2026-10-26): Wallet.jsx 13 heavy cards, LockScreen.jsx 9, dead Connections.jsx 6 (delete the file, route unreachable), VendorStorefront/VendorDashboard/GroupView/GroupInfoSidebar 5 each; FloatingMenu has `shadow-2xl` twice on one element (3 lines); nested card-in-card: OrderReceipt in MessageBubble, Avatar fallback inside cards.
+Also in this pass: when previews are ON, a message that is ONLY a URL should not also render the raw link text (double render); links should not trigger the bubble's long-press menu; chat list rows px-3 py-2.5 with h-10 avatars.
+
+## 7. Close the garage: built features with no way in
+Done when every built-but-unreachable feature has a door in the UI:
+- Mute, pin-chat, archive, disappearing timer toggles in the chat header (src/store/chatStore.js has them all; no screen calls them). Persist through scoped storage so a history fetch cannot resurrect them.
+- Product share link (?product=&vendor=) opens that product card. Today the app ignores the params.
+- QR scanner acts on what it scans (open group, open chat). Today the result only copies to clipboard.
+- Vendor dashboard shows the vendor's actual products. Today it reads a key nothing writes and always says "you haven't published any products".
+- In-app buzz (haptics) already test-covered; ship it for t=msg, t=order, t=call per CLAUDE.md.
+
+## 8. Vendor shop meshed into the menu page
+Done when: a channel-type space (a menu) owned by a vendor shows their shop: items, prices, sold-out state, banner, about — inside the menu page; "add to menu" from the vendor's chat; one share link and one QR for the whole shop; Discover's Menus section opens it. VendorStorefront.jsx and VendorDashboard.jsx both point at the same real product key. Founder's line: "menus are vendor shops" — a menu IS the shop, not a link to one.
+
+## 9. Free Telegram-premium: personalization
+Done when, all free, no tiers:
+- Sticker packs: send in DM and groups, custom emoji reactions, pack picker from any installed pack.
+- Per-chat themes and wallpapers, persisting in scoped storage across reload and account switch.
+- Emoji status as a public profile field.
+- Chat folders, search inside a chat, forwarded messages, drafts.
+Trap flavor per docs/VOICE.md: slang in copy only (plug, custy, trap, packs); never on buttons or labels; no emoji in UI copy.
+
+## 10. Speed and feel
+Done when:
+- index.html carries an inline no-JS loading shell (logo + "Loading Cipher…") so slow links see progress instead of a black void; modulepreload hints for the dependency chunks; service worker dedupes the ?_ship cache-buster (public/sw.js strips the query before caches.match). Perf agent measured 45s on EDGE links caused by a serial chunk waterfall + no feedback.
+- Group/menu creation completes visibly fast; the join-approval gate is not the bottleneck (measure before and after).
+- Notification bell gets an unread ticker; saved-messages modal becomes a dropdown; refresh button twirls and actually reloads.
+
+## 11. Money trust before scale
+Done when:
+- The Monero piconero unit guard lands: a float is never a coin amount; round half up, 12 decimals; test crossing watcher→app with a 1-piconero value.
+- The buyer's order card shows the same beats the vendor sees: created, address_issued, seen, confirmed — nothing skips.
+- Vendor key verification before first payment: a changed vendor key warns on the order card, never silently passes.
+- Refund flow per docs/proof-of-trade.md v2: a refunded receipt is a NEW signed receipt, never an edit.
+
+## 12. Account screens polish
+Done when:
+- Restore screen: PIN field renders (DONE 0c71d11), plus optional confirm-PIN field on restore.
+- Accounts screen: add/remove accounts (DONE a719ff5).
+- Lock row wording: Face ID / fingerprint (DONE c41dab3).
+- Save_key mode's vestigial PIN field removed or wired (audit NIT-3).
+
+## 13. Docs catch-up
+Done when: README names the canonical host (shipstatic) not stale Vercel; the watcher instructions do not reference the removed Connections row; STAGE2's "Test 3 approval screen does not exist" line is corrected (the gate merged at 3a2e57b); docs/VISION.md section 4's built/not-built lists get filled.
