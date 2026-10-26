@@ -381,3 +381,32 @@ test('the watcher signs every answer it gives, and the phone verifies the raw bo
   // sneak a byte past the check.
   assert.match(app, /parseExactAmounts\(raw\)/);
 });
+
+test('a transfer time that is not a sane unix second carries no weight', async () => {
+  // A report timestamped in milliseconds would read as "the future" and
+  // pass every issuance comparison. Out-of-range dates are dropped instead,
+  // which is exactly the undated case: seen may proceed, confirming
+  // refuses when the order knows when its address was issued.
+  const watcherUrl = 'https://watch.example/payment?token=secret';
+  const ms = await checkPayment({
+    watcherUrl,
+    address: '8sub',
+    currency: 'xmr',
+    state: 'address_issued',
+    issuedAt: Math.floor(Date.now() / 1000),
+    fetchImpl: () => watcherAnswer({ txid: 'ms', confirmations: 10, amount: '0.5', time: Date.now() * 12 }),
+  });
+  // The date is dropped, so the report looks undated — the same one the
+  // order refuses to consume at confirmation time.
+  assert.equal(ms.state, 'confirmed');
+  assert.equal(ms.report?.time, undefined);
+  const ago = () => watcherAnswer({ txid: 'old', confirmations: 10, amount: '0.5', time: 3141592653 });
+  const future = await checkPayment({
+    watcherUrl,
+    address: '8sub',
+    currency: 'xmr',
+    state: 'address_issued',
+    fetchImpl: ago,
+  });
+  assert.equal(future.report?.time, undefined);
+});
