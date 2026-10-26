@@ -31,6 +31,7 @@ export default function Connections({ onBack }) {
         <div className="rounded-2xl border border-line bg-panel p-4 shadow-lg">
           <p className="text-[15px] font-semibold text-white">For IP privacy, use Tor Browser or a VPN. The app doesn’t manage this.</p>
           <p className="mt-2 text-[13px] leading-snug text-white/50">Android: Orbot VPN mode. iOS: Onion Browser or the mirror.</p>
+          <p className="mt-2 text-[13px] leading-snug text-white/50">On Tails, the browser forgets everything at shutdown. Each boot: bring your key backup, unlock, and paste your rows again.</p>
           <p className="mt-2 text-[13px] leading-snug text-white/50">Calls reveal your IP unless you route everything. Calls use UDP, so Tor Browser alone won’t cover them. Orbot’s VPN mode will.</p>
         </div>
         <div className="overflow-hidden rounded-2xl border border-line bg-panel shadow-lg">
@@ -58,7 +59,7 @@ export default function Connections({ onBack }) {
         </button>
         {advanced && (
           <div className="space-y-4">
-            <p className="text-[13px] leading-snug text-white/50">An onion relay needs Tor Browser or Orbot. Paste it on a row, or point a row at a box you run. Type off to stop using that host. Defaults work if you change nothing. Restart after a change.</p>
+            <p className="text-[13px] leading-snug text-white/50">An onion relay needs Tor Browser or Orbot. Paste it on a row with its scheme included — wss://name.onion is the usual one, and a ws:// or http:// onion only opens when this page itself is open over Tor. Or point a row at a box you run. Type off to stop using that host. Defaults work if you change nothing. Restart after a change.</p>
             <label className="block rounded-2xl border border-line bg-panel p-4 shadow-lg">
               <span className="block text-[15px] font-semibold text-white">Message relays</span>
               <span className="mt-0.5 block text-[13px] text-white/40">One extra relay per line. Each person is written to one of them, plus that person’s own inbox, so no single relay sees every conversation.</span>
