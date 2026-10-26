@@ -6,6 +6,7 @@ import { ORDER_STATUS, RECEIPT_OUTCOME, nextPaymentState, orderCoinAmount } from
 import { checkPayment } from '../../lib/paymentWatch';
 import { activeUrl, entryById } from '../../lib/egress';
 import { publicReceipt, rememberPublicView, signPublicView, signReceipt } from '../../lib/proofOfTrade';
+import { stampArrival } from './media';
 
 export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, openChat }) {
   const setToast = useChatStore((s) => s.setToast);
@@ -330,7 +331,7 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
     const paymentMethod = scopedGet('preferred_payment_method', 'btc');
     const payload = { type: 'order_request', status: ORDER_STATUS.PENDING, paymentState: 'created', paymentMethod, product: orderProduct };
     const tempId = `temp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    const optimisticMessage = {
+    const optimisticMessage = stampArrival({
       id: tempId,
       clientId: tempId,
       isSender: true,
@@ -340,7 +341,7 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
       local_timestamp: Date.now(),
       deliveryStatus: 'sending',
       data: payload,
-    };
+    });
 
     openChat('dm', vendorPubkey);
     setVendorStorefrontPubkey(null);

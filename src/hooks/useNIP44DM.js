@@ -8,6 +8,7 @@ import { generalRelays, queryAllPages } from '../lib/relays';
 import { enqueueNostrEvent, startOutboxSync } from '../lib/outbox';
 import { allowsTyping } from '../lib/privacy';
 import { publishOwnRelayList, relaysForPeer } from '../lib/dmRelays';
+import { sortMessages, stampArrival } from '../features/chat/media';
 import { withBuzzTag } from '../lib/pushGateway';
 import { acceptPayment, rememberPublicView, sendCountersignOnce } from '../lib/proofOfTrade';
 import { scopedSet } from '../lib/storage';
@@ -44,13 +45,6 @@ export function useNIP44DM({ identity }) {
     if (!identity?.sk) return undefined;
     return startOutboxSync(identity);
   }, [identity?.pk, identity?.sk]);
-
-  const sortMessages = (a, b) => {
-    const tA = a.local_timestamp || (a.timestamp * 1000);
-    const tB = b.local_timestamp || (b.timestamp * 1000);
-    if (tA !== tB) return tA - tB;
-    return (a.id || '').localeCompare(b.id || '');
-  };
 
   // SEND A DM
   const sendDM = useCallback(async (recipientPubkey, payload, clientId = null, replyId = null) => {
@@ -201,13 +195,14 @@ export function useNIP44DM({ identity }) {
 
               const replyTag = event.tags.find(t => t[0] === 'e' && t[3] === 'reply');
               const clientId = event.tags.find(t => t[0] === 'client')?.[1];
-              const newMsg = {
+              const newMsg = stampArrival({
                 id: event.id, clientId, isSender,
                 timestamp: event.created_at, data,
                 pubkey: event.pubkey,
+                local_timestamp: Date.now(),
                 deliveryStatus: isSender ? 'sent' : undefined,
                 replyTo: replyTag ? replyTag[1] : null
-              };
+              });
               if (isSender && clientId) {
                 const optimisticMessage = await db.messages.where('clientId').equals(clientId).first();
                 if (optimisticMessage?.chatId === counterparty && optimisticMessage.isSender && optimisticMessage.id !== event.id) {
