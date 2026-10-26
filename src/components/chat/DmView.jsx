@@ -4,6 +4,7 @@ import MessageBubble from '../MessageBubble';
 import MessageInput from '../MessageInput';
 import ChatHeader from './ChatHeader';
 import { useChatStore } from '../../store/chatStore';
+import ToastBanner from '../../features/chat/ToastBanner';
 
 const EMPTY_MESSAGES = [];
 
@@ -24,6 +25,7 @@ export default function DmView({ sendMessage, handleMessageAction, handleImageUp
 
   return (
     <section className="relative flex h-full min-h-0 flex-col bg-transparent">
+      <ToastBanner />
       <ChatHeader mode="dm" />
       <div ref={scrollRef} className="flex min-h-0 flex-1 flex-col overflow-y-auto py-3">
         {visibleMessages.length === 0 ? (
