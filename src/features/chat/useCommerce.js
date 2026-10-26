@@ -85,6 +85,11 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
             setSelectedMessage(null);
             return;
           }
+          // The watcher is pinned to the order when the address is issued. The
+          // chain check later runs against this URL, not whatever sits in the
+          // row at check time, so a swap in Connections after acceptance
+          // cannot redirect the payment questions to another host.
+          const pinnedWatcherUrl = activeUrl(entryById('explorer'));
           const payload = {
             type: 'order_update', orderId: msg.id,
             productName: msg.data.product?.title || msg.data.productName,
@@ -94,6 +99,7 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
             paymentMethods,
             coinAmount,
             coinCurrency,
+            watcherUrl: pinnedWatcherUrl,
           };
           const result = await sendDM(msg.pubkey, payload);
           if (!result.success) {
@@ -107,6 +113,7 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
             paymentMethods: payload.paymentMethods,
             coinAmount,
             coinCurrency,
+            watcherUrl: pinnedWatcherUrl,
           });
           const acceptedText = result.queued ? 'Acceptance queued; it will send when connected.' : 'Order accepted';
           setToast(saved ? { type: 'success', message: acceptedText } : { type: 'error', message: `${acceptedText} ${NOT_SAVED}` });
@@ -144,7 +151,14 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
       if (action === 'confirm_payment') {
         let paymentState;
         try {
-          const current = msg.data?.paymentState || 'address_issued';
+          const current = msg.data?.paymentState || 'created';
+          if (current === 'created') {
+            // "I saw the payment" is a wallet check on a live order. An update
+            // that skipped the address-issuing step has nothing to check.
+            setToast({ type: 'error', message: 'This order has no payment address yet. Accept it first.' });
+            setSelectedMessage(null);
+            return true;
+          }
           paymentState = nextPaymentState(current, 'see');
         } catch (error) {
           setToast({ type: 'error', message: error.message });
@@ -180,11 +194,17 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
         }
         try {
           const outcome = await checkPayment({
-            watcherUrl: activeUrl(entryById('explorer')),
+            // The URL pinned when the address was issued, with the row's
+            // current value only as a fallback for orders accepted before
+            // pinning existed. applyWatcherReport still refuses an empty one.
+            watcherUrl: msg.data?.watcherUrl || activeUrl(entryById('explorer')),
             address,
             currency,
             amount,
-            state: msg.data?.paymentState || 'address_issued',
+            // The default is what this order was born at, not what a missing
+            // field pretends: a created order is checked from created, and no
+            // update can skip the issuing step by forgetting its state.
+            state: msg.data?.paymentState || 'created',
           });
           if (outcome.short) {
             setToast({ type: 'info', message: 'The payment is short of the order.' });
