@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
-import { allowsLinkPreviews, getPrivacy, setPrivacy } from './privacy.js';
+import { allowsGroupJoins, allowsLinkPreviews, setPrivacy, getPrivacy } from './privacy.js';
 import { scopedGet, scopedSet } from './storage.js';
 
 const memory = new Map();
@@ -42,6 +42,26 @@ test('scoped storage does not allocate a new value on every read', () => {
   const first = scopedGet('example', {});
   assert.equal(scopedGet('example', {}), first);
   assert.deepEqual(first, { ok: true });
+});
+
+test('the Groups setting is refused by an engine, not a placebo: nobody denies new join requests', () => {
+  localStorage.setItem('cipher_active_pubkey', '78'.repeat(32));
+  assert.equal(getPrivacy().groups, 'everyone');
+  assert.equal(allowsGroupJoins(), true);
+  setPrivacy({ groups: 'nobody' });
+  assert.equal(allowsGroupJoins(), false);
+  const handler = fs.readFileSync(new URL('../hooks/useNIP29Group.js', import.meta.url), 'utf8');
+  const queue = handler.indexOf("} else if (!allowsGroupJoins()) {");
+  const deny = handler.indexOf('denyPendingJoin(groupId, pk)');
+  const queueJoin = handler.indexOf('queuePendingJoin(groupId,');
+  assert.ok(queue !== -1 && deny !== -1 && queueJoin !== -1);
+  // The deny arm sits ahead of the queue arm: a Nobody setting refuses a
+  // first request durably before the queue can hold it.
+  assert.ok(queue < queueJoin);
+  setPrivacy({ groups: 'everyone' });
+  assert.equal(allowsGroupJoins(), true);
+  const settings = fs.readFileSync(new URL('../components/chat/PrivacySettings.jsx', import.meta.url), 'utf8');
+  assert.match(settings, /Nobody refuses new requests/);
 });
 
 test('link previews are off until the user turns them on', () => {

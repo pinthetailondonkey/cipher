@@ -82,7 +82,7 @@ export default function PrivacySettings({ onBack }) {
           <Choice icon={Phone} label="Calls" hint="Voice only. Video is not available." value={privacy.calls} options={[{ id: 'everyone', label: 'Everyone' }, { id: 'nobody', label: 'Nobody' }]} onChange={(calls) => update({ calls })} />
           <Choice icon={Eye} label="Last seen" hint="Nobody also stops your typing status." value={privacy.lastSeen} options={[{ id: 'everyone', label: 'Everyone' }, { id: 'nobody', label: 'Nobody' }]} onChange={(lastSeen) => update({ lastSeen })} />
           <Choice icon={Image} label="Profile photo" hint="Hidden the next time you save your profile." value={privacy.profilePhoto} options={[{ id: 'everyone', label: 'Everyone' }, { id: 'nobody', label: 'Nobody' }]} onChange={(profilePhoto) => update({ profilePhoto })} />
-          <Choice icon={Users} label="Groups" hint="Nobody means only you can join." value={privacy.groups} options={[{ id: 'everyone', label: 'Everyone' }, { id: 'nobody', label: 'Nobody' }]} onChange={(groups) => update({ groups })} />
+          <Choice icon={Users} label="Groups" hint="Who can ask to join your groups. Nobody refuses new requests without showing them to you." value={privacy.groups} options={[{ id: 'everyone', label: 'Everyone' }, { id: 'nobody', label: 'Nobody' }]} onChange={(groups) => update({ groups })} />
         </div>
         <div className="overflow-hidden rounded-2xl border border-line bg-panel shadow-lg">
           <Toggle icon={CheckCheck} label="Read receipts" hint="Let people know when you opened their chat." checked={privacy.readReceipts} onChange={(readReceipts) => update({ readReceipts })} />
