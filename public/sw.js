@@ -62,8 +62,10 @@ self.addEventListener('push', (event) => {
     if (data && data.kind === 'order') kind = 'order';
     if (data && data.kind === 'call') kind = 'call';
   } catch { /* a push with no JSON is still just "new message" */ }
-  const title = kind === 'order' ? 'New order' : kind === 'call' ? 'Incoming call' : 'New message';
-  event.waitUntil(self.registration.showNotification(title, {
+  // The relay audience can spend the t tag that picks a title, so the
+  // banner names only what a push can honestly claim. The kind rides in
+  // data for the app's counters.
+  event.waitUntil(self.registration.showNotification('New message', {
     body: 'Open Cipher to view it.',
     icon: '/icon-192.png',
     data: { kind },

@@ -15,8 +15,11 @@ function b64url(value) {
 }
 
 export function noticeFor(kind) {
-  if (kind === 'call') return { title: 'Incoming call', kind: 'call' };
-  if (kind === 'message' || kind === 'order') return { title: kind === 'order' ? 'New order' : 'New message', kind: kind === 'order' ? 'order' : 'message' };
+  // A forged t tag on a relay is all a stranger needs to spend "Incoming
+  // call" or "New order" on a locked phone, so the title says only what
+  // every buzz can prove. The kind still rides along for the counters.
+  // (security S11 re-attack)
+  if (kind === 'call' || kind === 'order' || kind === 'message') return { title: 'New message', kind };
   return null;
 }
 
