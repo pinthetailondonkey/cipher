@@ -22,6 +22,7 @@ import Picture from './components/ui/Picture';
 import ScreenHeader from './components/ui/ScreenHeader';
 import { pressable } from './components/ui/Button';
 import { copyText } from './lib/copyText';
+import { scopedGet, scopedSet } from './lib/storage';
 import { productRelays } from './lib/relays';
 import { blossomServers } from './lib/egress';
 import { THEMES, currentTheme, setTheme } from './lib/theme';
@@ -74,6 +75,34 @@ export default function Wallet({ identity, onOpenChat, startView = 'main' }) {
   const [btcNetwork, setBtcNetwork] = useState('bc')
   const [xmrPrivateViewKey, setXmrPrivateViewKey] = useState('')
   const [status, setStatus] = useState('')
+
+  // Order settings: the buyer-side defaults the engines already read.
+  // preferred_payment_method seeds new order requests (useCommerce);
+  // confirmations overrides the watcher's paid threshold (paymentWatch);
+  // auto_vouch_on_delivery gates the vendor vouch after a delivery.
+  const [preferredMethod, setPreferredMethod] = useState(() => scopedGet('preferred_payment_method', 'btc'));
+  const savedConf = scopedGet('confirmations', {}) || {};
+  const [confBtc, setConfBtc] = useState(savedConf.btc != null ? String(savedConf.btc) : '');
+  const [confXmr, setConfXmr] = useState(savedConf.xmr != null ? String(savedConf.xmr) : '');
+  const [autoVouch, setAutoVouch] = useState(() => scopedGet('auto_vouch_on_delivery', true) !== false);
+
+  const saveConfirmations = (event) => {
+    event.preventDefault();
+    const overrides = {};
+    const btc = Number.parseInt(confBtc, 10);
+    const xmr = Number.parseInt(confXmr, 10);
+    if (Number.isInteger(btc) && btc >= 1) overrides.btc = btc;
+    if (Number.isInteger(xmr) && xmr >= 1) overrides.xmr = xmr;
+    // An empty save returns to the defaults: Bitcoin 3, Monero 10.
+    scopedSet('confirmations', overrides);
+    setStatus('Confirmation counts saved on this device.');
+  };
+
+  const toggleAutoVouch = () => {
+    const next = !autoVouch;
+    setAutoVouch(next);
+    scopedSet('auto_vouch_on_delivery', next);
+  };
   const [isPublishing, setIsPublishing] = useState(false)
   const [uploadingImage, setUploadingImage] = useState(false)
   const [copied, setCopied] = useState(false)
@@ -245,6 +274,53 @@ export default function Wallet({ identity, onOpenChat, startView = 'main' }) {
     setIsVendor(true);
     setStatus('Vendor mode is active. Payment addresses are saved on this device.');
     setView('main');
+  }
+
+  if (view === 'order_settings') {
+    return (
+      <div className="h-full overflow-y-auto bg-transparent pb-safe">
+        <ScreenHeader title="Order settings" onBack={() => setView('main')} />
+        <div className="space-y-4 p-4">
+          <p className="text-[13px] text-ink/40">Defaults for new orders and chain checks. Everything stays on this device.</p>
+          <div className="overflow-hidden rounded-2xl border border-line bg-panel shadow-lg">
+            <div className="p-4">
+              <p className="text-[15px] font-semibold text-ink">Preferred payment</p>
+              <p className="mt-0.5 text-[13px] text-ink/40">The coin a new order asks for first.</p>
+              <div className="mt-3 grid grid-cols-2 rounded-xl border border-line p-1">
+                <button type="button" onClick={() => { setPreferredMethod('btc'); scopedSet('preferred_payment_method', 'btc'); }} className={`min-h-[40px] rounded-lg py-2 text-[13px] font-bold ${preferredMethod === 'btc' ? 'bg-accent text-accentInk' : 'text-ink/60'}`}>Bitcoin</button>
+                <button type="button" onClick={() => { setPreferredMethod('xmr'); scopedSet('preferred_payment_method', 'xmr'); }} className={`min-h-[40px] rounded-lg py-2 text-[13px] font-bold ${preferredMethod === 'xmr' ? 'bg-accent text-accentInk' : 'text-ink/60'}`}>Monero</button>
+              </div>
+            </div>
+          </div>
+          <form onSubmit={saveConfirmations} className="overflow-hidden rounded-2xl border border-line bg-panel shadow-lg">
+            <div className="p-4">
+              <p className="text-[15px] font-semibold text-ink">Confirmation count</p>
+              <p className="mt-0.5 text-[13px] text-ink/40">How many mined blocks before an order reads paid. Leave a count empty to keep its default: Bitcoin 3, Monero 10.</p>
+            </div>
+            <div className="grid grid-cols-2 border-t border-ink/5">
+              <label className="border-r border-ink/5 p-4">
+                <span className="block text-[11px] font-semibold uppercase tracking-wide text-ink/40">Bitcoin blocks</span>
+                <input type="number" min="1" inputMode="numeric" autoComplete="off" value={confBtc} onChange={(event) => setConfBtc(event.target.value)} placeholder="3" className="mt-1 w-full bg-transparent text-[17px] font-bold text-ink outline-none placeholder:text-ink/30" />
+              </label>
+              <label className="p-4">
+                <span className="block text-[11px] font-semibold uppercase tracking-wide text-ink/40">Monero blocks</span>
+                <input type="number" min="1" inputMode="numeric" autoComplete="off" value={confXmr} onChange={(event) => setConfXmr(event.target.value)} placeholder="10" className="mt-1 w-full bg-transparent text-[17px] font-bold text-ink outline-none placeholder:text-ink/30" />
+              </label>
+            </div>
+            <button type="submit" className="w-full border-t border-ink/5 bg-transparent py-3 text-[14px] font-bold text-accent active:bg-ink/5">Save counts</button>
+          </form>
+          <div className="overflow-hidden rounded-2xl border border-line bg-panel shadow-lg">
+            <button type="button" onClick={toggleAutoVouch} aria-pressed={autoVouch} className="flex w-full items-center gap-3 p-4 text-left">
+              <Shield size={18} className="text-ink/40" />
+              <span className="min-w-0 flex-1"><span className="block text-[15px] font-semibold text-ink">Auto-vouch on delivery</span><span className="block text-[13px] text-ink/40">After you deliver, vouch the trade automatically.</span></span>
+              <span aria-hidden="true" className={`relative h-6 w-10 shrink-0 rounded-full transition-colors ${autoVouch ? 'bg-accent' : 'bg-ink/15'}`}>
+                <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-accentInk shadow transition-all ${autoVouch ? 'left-[18px]' : 'left-0.5'}`} />
+              </span>
+            </button>
+          </div>
+        </div>
+      </div>
+    );
   }
 
   if (view === 'account_switcher') {
@@ -428,6 +504,14 @@ export default function Wallet({ identity, onOpenChat, startView = 'main' }) {
               </button>
             </>
           )}
+        </div>
+
+        <div className="overflow-hidden rounded-2xl border border-line bg-panel shadow-lg">
+          <button onClick={() => setView('order_settings')} className="flex w-full items-center gap-3 p-4 text-left">
+            <Package size={18} className="text-ink/40" />
+            <span className="min-w-0 flex-1"><span className="block text-[15px] font-semibold text-ink">Order settings</span><span className="block text-[13px] text-ink/40">Preferred coin, confirmation count, auto-vouch</span></span>
+            <ChevronRight size={18} className="text-ink/30" />
+          </button>
         </div>
 
         <div className="overflow-hidden rounded-2xl border border-line bg-panel shadow-lg">
