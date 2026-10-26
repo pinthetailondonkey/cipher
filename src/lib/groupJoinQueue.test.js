@@ -10,7 +10,6 @@ import { getActivePubkey } from './storage.js';
 // localStorage. A fixed store stands in for it, per account.
 function withStorage(run) {
   const store = new Map();
-  const now = getActivePubkey();
   globalThis.localStorage = {
     getItem: (key) => (store.has(key) ? store.get(key) : null),
     setItem: (key, value) => { store.set(key, String(value)); },
