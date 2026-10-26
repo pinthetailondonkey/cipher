@@ -32,32 +32,56 @@ function isRequest(data) {
 // claim alone is allowed to do.
 const PAYMENT_RANK = ['created', 'address_issued', 'seen', 'confirmed'];
 
+// The chat's two keys, from wherever they can be named. A received request
+// card carries the peer at its pubkey — but the buyer's own sent card
+// carries THIS device, so on that side the peer has to come from the
+// caller's hand or from the chat itself: an event this device sent is
+// signed with this device's key, and nothing else received in the DM is
+// from anyone but the peer. Callers that know the DM pass it explicitly.
+// (security F7, N2)
+function chatPairOf(messages, request, ownPubkey, peerPubkey) {
+  const list = Array.isArray(messages) ? messages : [];
+  const own = String(
+    ownPubkey
+      || list.find((message) => message?.isSender)?.pubkey
+      || '',
+  ).toLowerCase();
+  const requestPk = String(request?.pubkey || '').toLowerCase();
+  const peer = String(
+    peerPubkey
+      || (requestPk && requestPk !== own ? requestPk : '')
+      || list.find((message) => message && message.isSender === false)?.pubkey
+      || '',
+  ).toLowerCase();
+  return { own, counterparty: peer };
+}
+
 // A receipt verifies whoever signed it; it counts as payment only when the
 // parties it names are the two of this chat. Two keys the attacker holds
 // both verify, so the body must name the counterparty — and this device,
-// when the caller can name itself, or at least the role the direction of
-// the chat implies. (security F7)
-function receiptIsOfThisChat(receipt, orderId, request, ownPubkey) {
+// when the pair can name it, or at least the role the direction of the chat
+// implies. (security F7)
+function receiptIsOfThisChat(receipt, orderId, request, ownPubkey, peerPubkey, messages) {
   try {
     if (!receipt?.body || String(receipt.body.orderId) !== String(orderId)) return false;
     const body = canonicalReceipt(receipt.body);
     const buyer = String(body.buyer || '').toLowerCase();
     const vendor = String(body.vendor || '').toLowerCase();
     if (!buyer || !vendor) return false;
-    const counterparty = String(request?.pubkey || '').toLowerCase();
-    if (ownPubkey) {
-      const chat = [counterparty, String(ownPubkey).toLowerCase()].sort().join();
+    const pair = chatPairOf(messages, request, ownPubkey, peerPubkey);
+    if (pair.own) {
+      const chat = [pair.counterparty, pair.own].sort().join();
       return [buyer, vendor].sort().join() === chat;
     }
-    if (!counterparty) return false;
+    if (!pair.counterparty) return false;
     const role = request.isSender ? vendor : buyer;
-    return role === counterparty;
+    return role === pair.counterparty;
   } catch {
     return false;
   }
 }
 
-function paymentEvidence(messages, orderId, request, ownPubkey) {
+function paymentEvidence(messages, orderId, request, ownPubkey, peerPubkey) {
   const rank = (state) => Math.max(0, PAYMENT_RANK.indexOf(state));
   let paymentState = '';
   let paymentSeenBy = '';
@@ -84,7 +108,7 @@ function paymentEvidence(messages, orderId, request, ownPubkey) {
     }
     adopt(message.localPatch || null);
     const receipt = message.data.receipt;
-    if (receipt && receiptIsOfThisChat(receipt, orderId, request, ownPubkey) && verifyReceipt(receipt)) {
+    if (receipt && receiptIsOfThisChat(receipt, orderId, request, ownPubkey, peerPubkey, messages) && verifyReceipt(receipt)) {
       // A receipt the device never verified rows no payment. A signed one
       // names what the watcher saw: confirmed, or back to the payer.
       adopt({ paymentState: receipt.body.outcome === 'confirmed' ? 'confirmed' : 'seen' });
@@ -96,12 +120,12 @@ function paymentEvidence(messages, orderId, request, ownPubkey) {
 // The order's state is the newest update either side sent for it, over what
 // this device changed on the request card itself. Payment facts are evidence,
 // never the newest claim (F7 above).
-export function orderState(messages, orderId, request, ownPubkey) {
+export function orderState(messages, orderId, request, ownPubkey, peerPubkey) {
   const updates = (Array.isArray(messages) ? messages : [])
     .filter((message) => message?.data?.type === 'order_update' && message.data.orderId === orderId)
     .sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0) || String(a.id).localeCompare(String(b.id)));
   const latest = updates[updates.length - 1] || null;
-  const payment = paymentEvidence(messages, orderId, request, ownPubkey);
+  const payment = paymentEvidence(messages, orderId, request, ownPubkey, peerPubkey);
   return {
     status: latest?.data?.status || request?.data?.status || S.PENDING,
     paymentState: payment.paymentState,
@@ -117,11 +141,11 @@ const RECEIPT_STATUSES = new Set([S.ACCEPTED, S.PAID, S.SHIPPED, S.COMPLETED]);
 // The orders ledger's ✓: a receipt both parties signed, binding this order
 // and this chat, that this device re-verified. Anything else is a claim,
 // never proof.
-export function orderHasVerifiedReceipt(messages, orderId, request, ownPubkey) {
+export function orderHasVerifiedReceipt(messages, orderId, request, ownPubkey, peerPubkey) {
   return (Array.isArray(messages) ? messages : []).some((message) => {
     if (message?.data?.type !== 'order_update' || message.data.orderId !== orderId) return false;
     const receipt = message.data.receipt;
-    return Boolean(receipt && receiptIsOfThisChat(receipt, orderId, request, ownPubkey) && verifyReceipt(receipt));
+    return Boolean(receipt && receiptIsOfThisChat(receipt, orderId, request, ownPubkey, peerPubkey, messages) && verifyReceipt(receipt));
   });
 }
 
@@ -129,11 +153,11 @@ export function orderHasVerifiedReceipt(messages, orderId, request, ownPubkey) {
 // buyer's own card never carried an address (the buyer wrote the request), so
 // the acceptance the vendor sent — an update in this chat — is where the
 // address and the coin amount come from. Both sides read the same updates.
-export function orderPaymentDetails(messages, orderId, ownPubkey) {
+export function orderPaymentDetails(messages, orderId, ownPubkey, peerPubkey) {
   const list = Array.isArray(messages) ? messages : [];
   const request = list.find((message) => message?.id === orderId && isRequest(message.data));
   if (!request) return null;
-  const state = orderState(list, orderId, request, ownPubkey);
+  const state = orderState(list, orderId, request, ownPubkey, peerPubkey);
   const updates = list.filter((m) => m?.data?.type === 'order_update' && m.data.orderId === orderId);
   const latest = (prop) => [...updates].reverse().find((update) => update.data?.[prop] != null && update.data?.[prop] !== '');
   return {
@@ -304,11 +328,11 @@ export function allowedActionsFor(order, viewer) {
 // Buttons for one card. Only the request card carries them, so each order
 // has one place to act. The vendor's actions go to the buyer, msg.pubkey on
 // that card; the buyer's go to the vendor, the chat peer.
-export function orderActionsFor(message, messages, ownPubkey) {
+export function orderActionsFor(message, messages, ownPubkey, peerPubkey) {
   if (!isRequest(message?.data)) return [];
   const viewer = message.isSender ? 'buyer' : 'vendor';
   try {
-    return allowedActionsFor(orderState(messages, message.id, message, ownPubkey), viewer)
+    return allowedActionsFor(orderState(messages, message.id, message, ownPubkey, peerPubkey), viewer)
       .map((item) => ({ ...item, target: viewer === 'vendor' ? 'request' : 'peer' }));
   } catch (error) {
     console.warn('[orders] No actions for this order:', error.message);

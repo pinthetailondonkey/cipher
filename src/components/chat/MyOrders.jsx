@@ -15,8 +15,8 @@ export default function MyOrders({ dms = {}, profiles = {}, onBack, onOpenChat, 
       .map((message) => ({
         message,
         vendorPubkey,
-        state: orderState(messages, message.id, message, ownPubkey),
-        countersigned: orderHasVerifiedReceipt(messages, message.id, message, ownPubkey),
+        state: orderState(messages, message.id, message, ownPubkey, vendorPubkey),
+        countersigned: orderHasVerifiedReceipt(messages, message.id, message, ownPubkey, vendorPubkey),
       }))
   )).sort((a, b) => b.message.timestamp - a.message.timestamp);
 

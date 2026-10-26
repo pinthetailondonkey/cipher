@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
 import { schnorr } from '@noble/curves/secp256k1.js';
-import { ORDER_ACTIONS, allowedActionsFor, frozenIssuedMethods, issuedPaymentMethods, orderActionsFor, orderPaymentDetails, orderRecordForReceipt, orderState, reopenedStatus } from './orderActions.js';
+import { ORDER_ACTIONS, allowedActionsFor, frozenIssuedMethods, issuedPaymentMethods, orderActionsFor, orderHasVerifiedReceipt, orderPaymentDetails, orderRecordForReceipt, orderState, reopenedStatus } from './orderActions.js';
 import { ORDER_STATUS, ORDER_STATUSES, RECEIPT_OUTCOMES } from './paymentState.js';
 import { signReceipt, verifyReceipt as verifyReceipt2 } from './proofOfTrade.js';
 
@@ -107,7 +107,7 @@ test('the action table and the handlers name the same actions, with nothing left
   const bubble = fs.readFileSync(new URL('../components/MessageBubble.jsx', import.meta.url), 'utf8');
   for (const action of ORDER_ACTIONS) assert.equal(bubble.includes(`onAction?.('${action}'`), false, `${action} is wired outside the table`);
   assert.equal(bubble.includes("['accept_order', BadgeCheck"), false);
-  assert.match(bubble, /orderActionsFor\(\{ \.\.\.message, data: content \}, chatMessages\)/);
+  assert.match(bubble, /orderActionsFor\(\{ \.\.\.message, data: content \}, chatMessages, '', activeDm\)/);
 });
 
 test('every message action has a way in from the UI, and every menu item has a handler', () => {
@@ -405,4 +405,46 @@ test('the payment details either side check come from the order updates (securit
   // Nothing to read: no request card, no details.
   assert.equal(orderPaymentDetails([acceptance], 'order-2'), null);
   assert.equal(orderPaymentDetails([], 'order-1'), null);
+});
+
+// N2 (round-three re-hack): the ledger's gates degenerated on the buyer's
+// own card — request.pubkey IS the buyer there, so the chat compare built
+// [buyer, buyer] and a genuinely two-signed receipt never lit the ✓. The
+// chat pair now resolves from the caller's hand or the chat's own messages.
+test('a real countersigned receipt lights the buyer\'s own ledger row', () => {
+  const buyerKey = schnorr.utils.randomSecretKey();
+  const vendorKey = schnorr.utils.randomSecretKey();
+  const buyer = hexOf(schnorr.getPublicKey(buyerKey));
+  const vendor = hexOf(schnorr.getPublicKey(vendorKey));
+  const body = {
+    orderId: 'order-1',
+    buyer,
+    vendor,
+    currency: 'xmr',
+    address: '8secret',
+    amount: '1',
+    txid: 'aa',
+    at: 1_700_000_000,
+    outcome: 'confirmed',
+  };
+  const signed = signReceipt(vendorKey, body, signReceipt(buyerKey, body));
+  // The buyer's own sent card: pubkey is the buyer, the degenerate shape.
+  const mine = { ...request(true, { status: ORDER_STATUS.PAID }), pubkey: buyer };
+  const receipted = (id, ts, receipt) => ({ id, isSender: false, pubkey: vendor, timestamp: ts, data: { type: 'order_update', orderId: 'order-1', status: ORDER_STATUS.PAID, receipt } });
+  const riding = receipted('u4', 14, signed);
+  // The chat peer named by hand, the way MyOrders rows and the thread badge
+  // name it, and the receipt adopts.
+  assert.equal(orderHasVerifiedReceipt([mine, riding], 'order-1', mine, buyer, vendor), true);
+  const state = orderState([mine, riding], 'order-1', mine, buyer, vendor);
+  assert.equal(state.paymentState, 'confirmed');
+  // And with no caller-supplied peer at all, the chat's own messages still
+  // name the two sides: one sent message (the buyer), one received (vendor).
+  assert.equal(orderState([mine, riding], 'order-1', mine).paymentState, 'confirmed');
+  assert.equal(orderHasVerifiedReceipt([mine, riding], 'order-1', mine), true);
+  // The degenerate read the fix replaced: before, [buyer, buyer] never
+  // matched and a forged stranger receipt gains nothing either way.
+  const evilBody = { ...body, buyer: vendor, vendor: vendor };
+  const evil = signReceipt(vendorKey, evilBody, signReceipt(vendorKey, evilBody));
+  assert.equal(orderHasVerifiedReceipt([mine, receipted('u9', 20, evil)], 'order-1', mine, buyer, vendor), false);
+  assert.equal(orderState([mine, receipted('u9', 20, evil)], 'order-1', mine).paymentState, 'created');
 });
