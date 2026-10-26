@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  acceptAmount,
   acceptanceDemand,
   amountCovers,
   applyWatcherReport,
@@ -8,6 +9,7 @@ import {
   listedItem,
   nextPaymentState,
   orderCoinAmount,
+  normalizeAmount,
 } from './paymentState.js';
 
 test('a dollar price is not a coin amount', () => {
@@ -67,6 +69,27 @@ test('an order covers its menu only when the written amount reaches the menu pri
   assert.equal(amountCovers('0.10000000000000000000000009', '0.1', 'btc'), false);
   assert.equal(amountCovers('0.2', '0.2', 'xmr'), true);
   assert.equal(amountCovers('0.000000000001', '0.000000000001', 'xmr'), true);
+});
+
+test('the accept-time parser and the watcher parser read an amount the same way', () => {
+  // the one parser both sides share, spelled the way receipts spell amounts
+  assert.equal(normalizeAmount('$2.50'), '2.5');
+  assert.equal(normalizeAmount(' 0.010000000000 '), '0.01');
+  // accept keeps what the chain can express
+  assert.equal(acceptAmount('0.001', 'btc'), '0.001');
+  assert.equal(acceptAmount(' 0.010000000000 ', 'btc'), '0.01');
+  assert.equal(acceptAmount('0.000000000001', 'xmr'), '0.000000000001');
+  // and rejects what it cannot: over-scale decimals would sit short of the
+  // order forever, so they never enter an acceptance
+  assert.throws(() => acceptAmount('0.10000000000000000000000009', 'btc'), /finer than BTC can count/);
+  assert.throws(() => acceptAmount('0.1000000001', 'btc'), /decimal places/);
+  assert.throws(() => acceptAmount('0.0000000000001', 'btc'), /finer than BTC can count/);
+  assert.throws(() => acceptAmount('0.0000000000000001', 'xmr'), /finer than XMR can count/);
+  assert.throws(() => acceptAmount('0.1e3', 'btc'), /decimal string/);
+  // nothing rounds at acceptance: a nine on the far edge is refused, not
+  // carried up, because half-up belongs to a report of a real transaction
+  assert.throws(() => acceptAmount('0.999999995', 'btc'), /finer than BTC can count/);
+  assert.throws(() => acceptAmount('1', 'usd'), /Accept in BTC or XMR/);
 });
 
 test('a payment moves created, address issued, seen, confirmed, and skips nothing', () => {

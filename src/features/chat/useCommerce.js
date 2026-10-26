@@ -2,7 +2,7 @@ import { useChatStore } from '../../store/chatStore';
 import { db, patchMessage, saveMessage } from '../../db';
 import { scopedGet, scopedSet } from '../../lib/storage';
 import { getOrderPaymentMethods, readPaymentAddresses } from '../../lib/vendorPayments';
-import { ORDER_STATUS, RECEIPT_OUTCOME, acceptanceDemand, amountCovers, nextPaymentState, orderCoinAmount } from '../../lib/paymentState';
+import { ORDER_STATUS, RECEIPT_OUTCOME, acceptAmount, acceptanceDemand, amountCovers, nextPaymentState, orderCoinAmount } from '../../lib/paymentState';
 import { checkPayment } from '../../lib/paymentWatch';
 import { activeUrl, entryById } from '../../lib/egress';
 import { publicReceipt, rememberPublicView, signPublicView, signReceipt } from '../../lib/proofOfTrade';
@@ -73,7 +73,19 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
     }
   
       if (action === 'accept_order') {
-        const sendAcceptance = async (coinAmount, coinCurrency) => {
+        const sendAcceptance = async (rawAmount, coinCurrency) => {
+          // An acceptance only locks in an amount the chain can express. A
+          // string finer than the coin counts would sit 'short of the order'
+          // forever, and rail the vendor onto their own wallet. (security S7)
+          let coinAmount;
+          try {
+            coinAmount = acceptAmount(rawAmount, coinCurrency);
+          } catch (error) {
+            console.error('[orders] Acceptance amount rejected:', error);
+            setToast({ type: 'error', message: error?.message || 'The amount could not be read as coins.' });
+            setSelectedMessage(null);
+            return;
+          }
           const { btc: baseBtc, xmr: baseXmr } = readPaymentAddresses();
           let paymentMethods;
           try {
