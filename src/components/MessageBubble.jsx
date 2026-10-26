@@ -34,7 +34,10 @@ function messageText(data) {
 }
 
 function orderLabel(content) {
-  if (content.paymentState === 'confirmed') return { text: 'Confirmed', className: 'bg-blue-600 text-white' };
+  // Confirmed is watcher evidence only. A vendor's or a stranger's word sits
+  // below it: their 'confirmed' claim shows as seen on-chain at most, and
+  // their own word as Marked paid with the amber strip.
+  if (content.paymentState === 'confirmed' && content.paymentSeenBy === 'watcher') return { text: 'Confirmed', className: 'bg-blue-600 text-white' };
   if (content.status === 'shipped') return { text: 'Shipped', className: 'bg-blue-600 text-white' };
   if (content.status === 'completed') return { text: 'Delivered', className: 'bg-emerald-500 text-white' };
   if (content.status === 'cancelled') return { text: 'Cancelled', className: 'bg-white/15 text-white' };
