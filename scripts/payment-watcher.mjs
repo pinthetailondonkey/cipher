@@ -23,11 +23,20 @@
 // RPC answers in piconero, so it is shifted twelve places before it enters the
 // report. `amount` is the sum of every output to the address. `outputAmount`
 // and `txid` are the largest single output, which is what a receipt names.
+//
+// Monero direction. The wallet's `get_transfers` answers come in buckets:
+// `in` is a transfer that arrived and is mined, `pool` is one that arrived and
+// is still unconfirmed, and `pending`, `out` and `failed` are this wallet's
+// own sends. This watcher asks only for `in` and `pool`, and
+// `src/lib/paymentWatch.js` checks every row's own label again, dropping a row
+// marked `pending`, `out` or `failed` even if the wallet filed it wrong. The
+// vendor's own outgoing spend can therefore never be read as an incoming
+// payment. (security S3)
 
 import http from 'node:http';
 import fs from 'node:fs';
 import { createHmac, timingSafeEqual } from 'node:crypto';
-import { moneroRows, parseExactAmounts, reportFromTransfers, rowsFromScan } from '../src/lib/paymentWatch.js';
+import { incomingMoneroTransfers, parseExactAmounts, reportFromTransfers, rowsFromScan } from '../src/lib/paymentWatch.js';
 
 if (fs.existsSync('.env')) process.loadEnvFile('.env');
 
@@ -80,9 +89,13 @@ async function moneroTransfers(address) {
     jsonrpc: '2.0',
     id: '0',
     method: 'get_transfers',
-    params: { in: true, pending: true, pool: true },
+    // Arriving transfers only. `pending` and `out` are this wallet's own
+    // sends; asking for them would feed money leaving into a check for
+    // money arriving. incomingMoneroTransfers enforces the same filter row
+    // by row. (security S3)
+    params: { in: true, pool: true },
   }, { exactAmounts: true });
-  const rows = moneroRows([...(result?.in || []), ...(result?.pending || []), ...(result?.pool || [])]);
+  const rows = incomingMoneroTransfers(result);
   return reportFromTransfers(rows, address, 'xmr');
 }
 
