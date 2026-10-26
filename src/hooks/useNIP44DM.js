@@ -178,7 +178,7 @@ export function useNIP44DM({ identity }) {
               }
               if (dmControlAction(data) === 'gkey') {
                 openDBFor(identity.pk);
-                const installed = await installMemberGroupKey(data);
+                const installed = await installMemberGroupKey(data, event.pubkey);
                 if (!installed) console.error('[group-key] A key message arrived and was not installed.');
                 return;
               }
@@ -274,7 +274,7 @@ export function useNIP44DM({ identity }) {
         try { data = JSON.parse(text); } catch (e) { data = { type: 'text', message: text }; }
         if (dmControlAction(data) === 'gkey') {
           openDBFor(identity.pk);
-          const installed = await installMemberGroupKey(data);
+          const installed = await installMemberGroupKey(data, ev.pubkey);
           if (!installed) console.error('[group-key] A key message arrived and was not installed.');
           continue;
         }
