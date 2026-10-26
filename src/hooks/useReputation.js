@@ -2,6 +2,7 @@ import { useCallback, useState } from 'react';
 import { getAuthenticatedPool } from '../lib/pool';
 import { generalRelays, queryWithTimeout } from '../lib/relays';
 import { enqueueNostrEvent } from '../lib/outbox';
+import { shortNpub } from '../lib/npub';
 
 // Defense layer cache — profile timestamps keyed by pubkey
 // Prevents re-fetching the same profile on every modal open
@@ -80,7 +81,7 @@ export function useReputation({ identity }) {
         cache[ev.pubkey] = {
           createdAt: ev.created_at,          // profile's last update time
           fetchedAt: now,
-          name: meta.display_name || meta.name || ev.pubkey.slice(0, 6),
+          name: meta.display_name || meta.name || shortNpub(ev.pubkey),
           picture: meta.picture || null,
         };
       }
@@ -99,7 +100,7 @@ export function useReputation({ identity }) {
 
         const info = {
           pubkey: ev.pubkey,
-          name: profile?.name || `User ${ev.pubkey.slice(0, 4)}`,
+          name: profile?.name || shortNpub(ev.pubkey),
           picture: profile?.picture || null,
           ageDays: Math.floor(ageSec / 86400),
           valid,

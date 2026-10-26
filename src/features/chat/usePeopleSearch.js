@@ -1,4 +1,5 @@
 import { db } from '../../db';
+import { noHexName, shortNpub } from '../../lib/npub';
 import { getAuthenticatedPool } from '../../lib/pool';
 import { queryWithTimeout, profileRelays, groupOnlyRelays, searchRelays } from '../../lib/relays';
 import { useChatStore } from '../../store/chatStore';
@@ -186,7 +187,7 @@ export function usePeopleSearch({ identity }) {
             targetPubkey = Array.from(targetPubkey).map(b => b.toString(16).padStart(2, '0')).join('');
           }
         }
-        state.setSearchResults([{ type: 'user', pubkey: targetPubkey, name: targetPubkey.slice(0, 8), picture: null }]);
+        state.setSearchResults([{ type: 'user', pubkey: targetPubkey, name: noHexName(null, targetPubkey), picture: null }]);
 
         const profileEvents = await queryWithTimeout(
           pool,
@@ -200,7 +201,7 @@ export function usePeopleSearch({ identity }) {
             const p = JSON.parse(profileEvents[0].content);
             state.setSearchResults([{ 
               type: 'user', pubkey: targetPubkey, 
-              name: p.display_name || p.name || targetPubkey.slice(0, 8), 
+              name: p.display_name || p.name || shortNpub(targetPubkey),
               picture: p.picture 
             }]);
           } catch (e) {}
@@ -225,7 +226,7 @@ export function usePeopleSearch({ identity }) {
         if (ev.kind === 0) {
           try {
             const d = JSON.parse(ev.content);
-            matchedProfiles.push({ type: 'user', pubkey: ev.pubkey, name: d.display_name || d.name || ev.pubkey.slice(0, 8), picture: d.picture });
+            matchedProfiles.push({ type: 'user', pubkey: ev.pubkey, name: d.display_name || d.name || shortNpub(ev.pubkey), picture: d.picture });
           } catch (e) {}
         } else if (ev.kind === 41) {
           try {
