@@ -71,11 +71,15 @@ Result (XMR):
 Proves: joining is by owner approval, a non-member cannot read group messages,
 and a removed member cannot read what comes after removal.
 
-Setup: three accounts on three devices or browser profiles. Account A creates a
-group and an invite link. B and C request to join through it. The entry points
-are `src/lib/groupJoin.js` (join publishes NIP-29 kind 9021) and the owner's
-approval screen in Message Requests; the group key is granted only after
-approval (`src/lib/crypto/groupKeyRequest.js`).
+Desired setup: three accounts on three devices or browser profiles. Account A creates a
+group and an invite link. B and C request to join through it. The join itself
+issues NIP-29 kind 9021 (`src/lib/groupJoin.js`). An owner approval screen
+does not exist yet — Message Requests is DM-only (`src/components/chat/MessageRequests.jsx`)
+and the join handler adds the requester straight to the member list
+(`src/hooks/useNIP29Group.js`), after which the key request is granted from
+membership (`src/lib/crypto/groupMembership.js`). Run the steps anyway: they
+check the desired behavior, and where the app falls short is a product gap,
+not a pass.
 
 Steps:
 1. A creates the group and posts one message to it.
@@ -126,6 +130,7 @@ Result:
 | 3 | Group invite link, Message Requests (approve), group info (remove) | `src/lib/groupJoin.js`, `src/lib/crypto/groupKeyRequest.js`, `src/components/chat/MessageRequests.jsx` |
 | 4 | Chat composer (photo), tap to view | `src/features/chat/useComposer.js`, `src/lib/mediaCrypto.js`, `src/lib/imageCompression.js` |
 
-All four entry points exist in the app today. Nothing on this page is a
-product gap; every gap that shows up will be a broken run, not a missing
-screen.
+Entry points for Tests 1, 2 and 4 exist in the app today. Test 3's approval
+screen does not: its run is expected to end in a product gap, not a passing
+Result line, until a join-approval gate is built. The criteria above are not
+relaxed to fit what exists.
