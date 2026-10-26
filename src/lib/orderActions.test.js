@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
 import { schnorr } from '@noble/curves/secp256k1.js';
-import { ORDER_ACTIONS, allowedActionsFor, frozenIssuedMethods, issuedPaymentMethods, orderActionsFor, orderHasVerifiedReceipt, orderPaymentDetails, orderRecordForReceipt, orderState, reopenedStatus } from './orderActions.js';
+import { ORDER_ACTIONS, allowedActionsFor, frozenIssuedMethods, issuedPaymentMethods, newestOwnIssuedMethods, orderActionsFor, orderHasVerifiedReceipt, orderPaymentDetails, orderRecordForReceipt, orderState, reopenedStatus } from './orderActions.js';
 import { ORDER_STATUS, ORDER_STATUSES, RECEIPT_OUTCOMES } from './paymentState.js';
 import { signReceipt, verifyReceipt as verifyReceipt2 } from './proofOfTrade.js';
 
@@ -162,6 +162,49 @@ test('acceptance freezes only the pair this device issued, never the buyer\'s wo
     { btc: null, xmr: '8sub' },
   );
   assert.equal(frozenIssuedMethods(null, {}), null);
+});
+
+// S5 re-attack (round three, cross-device): a second device holds neither
+// the card's patch nor the first device's derivation slot, so 'nothing
+// frozen' would derive a second address while the buyer already paid the
+// first. The newest own-sent acceptance update in the chat is the same
+// trusted source the chain check reads — the freeze falls back to it.
+test('the freeze falls back to the newest own acceptance update for the order', () => {
+  const acceptance = update('a1', true, ORDER_STATUS.ACCEPTED, 20, {
+    paymentMethods: { btc: 'bc1qorder', xmr: '8order' },
+  });
+  const otherOrder = { id: 'a0', isSender: true, timestamp: 5, data: { type: 'order_update', orderId: 'order-0', paymentMethods: { btc: 'bc1qother', xmr: '' } } };
+  const shipUpdate = update('s1', true, ORDER_STATUS.SHIPPED, 30);
+  assert.deepEqual(newestOwnIssuedMethods([acceptance, otherOrder, shipUpdate], {}, 'order-1'), { btc: 'bc1qorder', xmr: '8order' });
+  // A wrong-order id derives fresh rather than serving another order's pair.
+  assert.equal(newestOwnIssuedMethods([acceptance], {}, 'order-2'), null);
+  // Bigger timestamps count as newer even out of order in the list.
+  const reissue = update('a2', true, ORDER_STATUS.ACCEPTED, 60, { paymentMethods: { btc: 'bc1qnewer', xmr: '' } });
+  assert.deepEqual(newestOwnIssuedMethods([acceptance, reissue], {}, 'order-1'), { btc: 'bc1qnewer', xmr: null });
+  // The latest update without a pair does not hide an older issued one; the
+  // last pair ever issued wins.
+  assert.deepEqual(newestOwnIssuedMethods([acceptance, reissue, shipUpdate], {}, 'order-1'), { btc: 'bc1qnewer', xmr: null });
+  // Update id and no orderId field on an old update: only the ones naming
+  // this order count.
+  assert.deepEqual(
+    newestOwnIssuedMethods(
+      [{ id: 'a3', isSender: true, timestamp: 70, data: { type: 'order_update', paymentMethods: { btc: 'bc1qnoId' } } }, acceptance],
+      {},
+      'order-1',
+    ),
+    { btc: 'bc1qorder', xmr: '8order' },
+  );
+  // An arm equal to the account's shared address does not freeze — the
+  // same case-blind refusal the card patch gets; the other arm still does.
+  assert.deepEqual(
+    newestOwnIssuedMethods([acceptance], { btc: 'bc1qother', xmr: '8order' }, 'order-1'),
+    { btc: 'bc1qorder', xmr: null },
+  );
+  // Both arms shared: nothing freezes, a fresh derivation serves instead.
+  assert.equal(newestOwnIssuedMethods([acceptance], { btc: 'bc1qorder', xmr: '8order' }, 'order-1'), null);
+  // Nothing own-sent: derive fresh.
+  assert.equal(newestOwnIssuedMethods([update('u9', false, ORDER_STATUS.ACCEPTED, 10, { paymentMethods: { btc: 'bc1qpeer' } })], {}, 'order-1'), null);
+  assert.equal(newestOwnIssuedMethods(null, {}, 'order-1'), null);
 });
 
 test('a never-accepted vendor order builds no receipt record, whatever the peer claims', () => {

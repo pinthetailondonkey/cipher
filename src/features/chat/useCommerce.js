@@ -6,7 +6,7 @@ import { ORDER_STATUS, RECEIPT_OUTCOME, acceptAmount, acceptanceDemand, amountCo
 import { checkPayment } from '../../lib/paymentWatch';
 import { activeUrl, entryById } from '../../lib/egress';
 import { publicReceipt, rememberPublicView, receiptBindsOrder, signPublicView, signReceipt } from '../../lib/proofOfTrade';
-import { frozenIssuedMethods, issuedPaymentMethods, orderPaymentDetails, orderRecordForReceipt, orderState, reopenedStatus } from '../../lib/orderActions';
+import { frozenIssuedMethods, issuedPaymentMethods, newestOwnIssuedMethods, orderPaymentDetails, orderRecordForReceipt, orderState, reopenedStatus } from '../../lib/orderActions';
 import { stampArrival } from './media';
 
 export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, openChat }) {
@@ -93,7 +93,21 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
         // never freezes: paymentMethods authored on an order request is the
         // buyer's word, and freezing it would let the acceptance adopt and
         // receipt-bind whatever address the buyer typed. (security S5)
-        const frozen = frozenIssuedMethods(msg, readPaymentAddresses());
+        let frozen = frozenIssuedMethods(msg, readPaymentAddresses());
+        if (!frozen) {
+          // S5 re-attack (round three): this device may share the chat but
+          // hold neither the card's patch nor the derivation slot — deriving
+          // fresh here issued a second address while the buyer had already
+          // paid the first. The freeze falls back to the newest own-sent
+          // acceptance this device put in the chat, the same source the
+          // chain check reads. No such update — derive fresh, as before.
+          try {
+            const history = await db.messages.where('chatId').equals(msg.pubkey).toArray();
+            frozen = newestOwnIssuedMethods(history, readPaymentAddresses(), msg.id);
+          } catch (error) {
+            console.error('[orders] Could not read the order history for the frozen pair:', error);
+          }
+        }
         const sendAcceptance = async (rawAmount, coinCurrency) => {
           // An acceptance only locks in an amount the chain can express. A
           // string finer than the coin counts would sit 'short of the order'
