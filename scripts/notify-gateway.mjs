@@ -96,7 +96,11 @@ async function notify(pubkey, kind) {
   recipients.set(pubkey, now);
   trimThrottle(recent);
   trimThrottle(recipients);
-  const notice = kind === 'order' || kind === 'call' ? kind : 'message';
+  // The payload no longer carries the classification forward: "order" and
+  // "call" were titles the relay audience could spend on a stranger's
+  // phone, so the notice just says something arrived and the app shows
+  // what it was. The kind still steers the per-kind throttle. (security S11)
+  const notice = 'message';
   const targets = state.subs.filter((row) => row.pubkey === pubkey).slice(0, MAX_PHONES_PER_RECIPIENT);
   const native = (state.native || []).filter((row) => row.pubkey === pubkey).slice(0, MAX_PHONES_PER_RECIPIENT);
   await Promise.all(native.map(async (row) => {

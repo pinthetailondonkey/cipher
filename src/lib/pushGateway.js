@@ -1,5 +1,5 @@
 // A locked phone buzzes only after a gateway you run is pasted in Connections.
-// The notice is "New message", "New order", or "Incoming call". The gateway is not given the text.
+// The notice says "New message": the app, not the banner, names what arrived.
 // Messages are tagged t=msg. Orders are tagged t=order. Calls are tagged t=call. Typing, receipts, and key bundles are not.
 
 export const BUZZ_TAG = 'msg';
@@ -42,10 +42,17 @@ export function eventShouldOrder(event) {
 }
 
 export function notificationFromPush(raw) {
-  const kind = raw && typeof raw === 'object' && (raw.kind === 'order' || raw.kind === 'call') ? raw.kind : 'message';
-  const title = kind === 'order' ? 'New order' : kind === 'call' ? 'Incoming call' : 'New message';
+  // The banner used to trust the payload's category: "New order",
+  // "Incoming call". But the gateway is never given the text, and anyone on
+  // a relay can spend the address tag that drives the category, so the
+  // claim on the lock screen was one forged tag away from a call or an
+  // order nobody made. The banner now only says the true thing — something
+  // arrived — and what it was shows inside the app, which saw the real
+  // event. The kind still rides in data for the box's own counters.
+  // (security S11 re-attack)
+  const kind = raw && typeof raw === 'object' && typeof raw.kind === 'string' ? raw.kind : 'message';
   return {
-    title,
+    title: 'New message',
     body: 'Open Cipher to view it.',
     data: { kind },
   };

@@ -30,8 +30,10 @@ test('a push notice never carries the message', () => {
     body: 'Open Cipher to view it.',
     data: { kind: 'message' },
   });
-  assert.equal(notificationFromPush({ kind: 'order', text: '2g of whatever' }).title, 'New order');
-  assert.equal(notificationFromPush({ kind: 'call', state: 'ringing' }).title, 'Incoming call');
+  assert.equal(notificationFromPush({ kind: 'order', text: '2g of whatever' }).title, 'New message');
+  assert.equal(notificationFromPush({ kind: 'order' }).data.kind, 'order');
+  assert.equal(notificationFromPush({ kind: 'call', state: 'ringing' }).title, 'New message');
+  assert.equal(notificationFromPush({ kind: 'call' }).data.kind, 'call');
   assert.equal(notificationFromPush('meet at the corner').body, 'Open Cipher to view it.');
   const sw = fs.readFileSync(new URL('../../public/sw.js', import.meta.url), 'utf8');
   assert.equal(sw.includes('event.data.text'), false);
