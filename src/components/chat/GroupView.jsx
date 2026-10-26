@@ -134,6 +134,13 @@ export default function GroupView({
   const activeGroup = useChatStore((state) => state.activeGroup);
   const messages = useChatStore((state) => state.groupMessages[state.activeGroup?.id] || EMPTY_MESSAGES);
   const profiles = useChatStore((state) => state.profiles);
+  const members = useChatStore((state) => state.groupMembers);
+  // S9: only a creator or admin may pin, matching the standing check the
+  // group hook applies before a kind-9005 event is even sent.
+  const canManage = activeGroup?.creator === identity?.pk
+    || (Array.isArray(members) ? members : []).some((member) => (
+      member.pubkey === identity?.pk && ['admin', 'owner'].includes(member.role)
+    ));
   const deletedMsgs = useChatStore((state) => state.deletedMsgs);
   const pinnedMessageId = useChatStore((state) => state.pinnedMessages[state.activeGroup?.id]);
   const showGroupInfo = useChatStore((state) => state.showGroupInfo);
@@ -339,6 +346,7 @@ export default function GroupView({
               avatarUrl={senderProfile?.picture}
               avatarInitial={senderProfile?.displayName?.charAt(0) || '?'}
               isPinnedListing={message.id === pinnedMessageId}
+              canPin={canManage}
               onAction={handleMessageAction}
             />
           );

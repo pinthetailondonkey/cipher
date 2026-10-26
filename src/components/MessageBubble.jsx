@@ -91,7 +91,7 @@ function OrderReceipt({ content }) {
   );
 }
 
-export default function MessageBubble({ message, data, onAction, senderName, isPinnedListing = false, showAvatar = false, avatarUrl = '', avatarInitial = '?' }) {
+export default function MessageBubble({ message, data, onAction, senderName, isPinnedListing = false, showAvatar = false, avatarUrl = '', avatarInitial = '?', canPin = false }) {
   const content = data || message?.data || {};
   const text = messageText(content) || messageText(message?.rawContent) || messageText(message?.text) || '';
   const isSender = !!message?.isSender;
@@ -187,7 +187,9 @@ export default function MessageBubble({ message, data, onAction, senderName, isP
     ['reply', Reply, 'Reply'],
     ['copy', Copy, 'Copy'],
     ['bookmark', Bookmark, 'Save'],
-    ...(inGroup ? [['pin', Pin, 'Pin']] : []),
+    // S9: the shared pinned slot is an owner or admin choice, so the pin
+    // option only shows for one. The group hook re-checks standing anyway.
+    ...(inGroup && canPin ? [['pin', Pin, 'Pin']] : []),
     ...(content.type === 'product' && !isSender ? [['buy_product', ShoppingBag, 'Buy'], ['view_vendor', Store, 'Seller shop']] : []),
     ...(content.type === 'product' && isSender ? [['broadcast_product', Radio, 'Share'], ['edit_product', Pencil, 'Edit listing']] : []),
     ...(isSender && text && content.type !== 'product' ? [['edit', Pencil, 'Edit']] : []),

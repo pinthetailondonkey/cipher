@@ -129,6 +129,14 @@ export function authorizeGroupControl({ kind, sender, subject, members, creator 
   return false;
 }
 
+// S9 fix (audit finding 9): the shared pinned slot is a control surface, so
+// the same standing that may kick or edit may pin — a creator or a relay-
+// snapshot admin. A plain member's pin event is ignored: it never moves the
+// slot for the group.
+export function authorizeGroupPin({ sender, members, creator }) {
+  return isGroupAdmin(members, sender, creator);
+}
+
 export function memberSnapshotGroupId(event) {
   const tags = event?.tags || [];
   return tags.find((tag) => tag[0] === 'd')?.[1] || tags.find((tag) => tag[0] === 'h')?.[1] || '';

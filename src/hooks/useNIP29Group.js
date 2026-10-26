@@ -10,7 +10,7 @@ import { shortNpub } from '../lib/npub';
 import { getMyGroups, setMyGroups } from '../lib/myGroups';
 import { encodeGroupPayload, decodeGroupEvent } from '../lib/crypto/groupMessageCodec';
 import { getAllGroupKeys, getCurrentGroupKey, putGroupKey } from '../lib/crypto/groupKeyStore';
-import { authorizeGroupControl, authorizeMemberSnapshot, groupRelayPubkey, groupTimelinePlans, isRestrictedRelayClose, pickMemberSnapshot, trustedGroupCreator } from '../lib/crypto/groupMembership';
+import { authorizeGroupControl, authorizeGroupPin, authorizeMemberSnapshot, groupRelayPubkey, groupTimelinePlans, isRestrictedRelayClose, pickMemberSnapshot, trustedGroupCreator } from '../lib/crypto/groupMembership';
 import { grantKeyRequest, loadMemberSnapshot, loadMemberSnapshotRecord, memberKey, patchMemberSnapshot, rememberMembers, rotateGroupEpoch } from '../lib/crypto/groupKeyRotation';
 import { generateGroupKey } from '../lib/crypto/groupCipher';
 import { distributeGroupKey, epochsToBackfill } from '../lib/crypto/groupKeyDistribution';
@@ -1123,6 +1123,13 @@ export function useNIP29Group({ identity }) {
   }, [identity, setGroupMessages, setGroupTypingUsers, setGroupMembers, appendSystemMessage]);
 
   const pinMessage = useCallback(async (groupId, messageEventId) => {
+    // S9: the pinned slot belongs to the group, so it moves only for a
+    // creator or admin — the same standing the membership control kinds
+    // demand. A member's pin goes nowhere and moves no one's slot.
+    const standing = await controlContext(groupId, identity.pk);
+    if (!authorizeGroupPin({ sender: identity.pk, members: standing.members, creator: standing.creator })) {
+      throw new Error('Only the group owner or an admin can pin.');
+    }
     const pool = await getAuthenticatedPool(identity);
     const ev = finalizeEvent({
       kind: 9005,
@@ -1139,6 +1146,11 @@ export function useNIP29Group({ identity }) {
   }, [identity?.pk, identity?.sk, setPinnedMessages]);
 
   const unpinMessage = useCallback(async (groupId) => {
+    // S9: unpinning moves the shared slot too, so it demands the same standing.
+    const standing = await controlContext(groupId, identity.pk);
+    if (!authorizeGroupPin({ sender: identity.pk, members: standing.members, creator: standing.creator })) {
+      throw new Error('Only the group owner or an admin can unpin.');
+    }
     const pool = await getAuthenticatedPool(identity);
     const ev = finalizeEvent({
       kind: 9005,
@@ -1162,8 +1174,19 @@ export function useNIP29Group({ identity }) {
         setPinnedMessages(prev => ({ ...prev, [groupId]: null }));
         return null;
       }
-      events.sort((a, b) => b.created_at - a.created_at);
-      const eTag = events[0].tags.find(t => t[0] === 'e')?.[1];
+      // S9: a member's pin event is read by no one. Only pins signed by a
+      // creator or admin reach the shared slot, and with no standing author
+      // among the events the slot clears — fail closed, not open.
+      const standing = await controlContext(groupId, identity.pk);
+      const allowed = events.filter((event) => (
+        authorizeGroupPin({ sender: event.pubkey, members: standing.members, creator: standing.creator })
+      ));
+      if (allowed.length === 0) {
+        setPinnedMessages(prev => ({ ...prev, [groupId]: null }));
+        return null;
+      }
+      allowed.sort((a, b) => b.created_at - a.created_at);
+      const eTag = allowed[0].tags.find(t => t[0] === 'e')?.[1];
       setPinnedMessages(prev => ({ ...prev, [groupId]: eTag || null }));
       return eTag || null;
     } catch (e) {
