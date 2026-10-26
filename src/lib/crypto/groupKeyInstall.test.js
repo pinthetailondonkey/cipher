@@ -41,8 +41,13 @@ test('a member of record may NOT roll the epoch back', () => {
   assert.equal(senderAuthorizedForGroupKey({ snapshot: SNAPSHOT, sender: MEMBER, maxEpoch: 0, currentEpoch: 5 }), false);
 });
 
-test('an admin of record may install even a rollback bundle (they rotate keys)', () => {
-  assert.equal(senderAuthorizedForGroupKey({ snapshot: SNAPSHOT, sender: ADMIN, maxEpoch: 3, currentEpoch: 5 }), true);
+// H2 fix (round-three re-hack): the old gate gave ANY non-member role a
+// free pass — install ANY epoch including a rollback to 0 — and that role
+// is one relay-writable roster row. Roles no longer skip the epoch check;
+// a genuine rotation is always at or above the current epoch.
+test('a roster role is not a license: no role installs a rollback epoch', () => {
+  assert.equal(senderAuthorizedForGroupKey({ snapshot: SNAPSHOT, sender: ADMIN, maxEpoch: 3, currentEpoch: 5 }), false);
+  assert.equal(senderAuthorizedForGroupKey({ snapshot: SNAPSHOT, sender: ADMIN, maxEpoch: 0, currentEpoch: 5 }), false);
 });
 
 test('case differences in pubkey comparison do not bypass the check', () => {

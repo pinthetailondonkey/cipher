@@ -655,3 +655,49 @@ test('a denied peer is refused the key even when the roster still names them', a
     globalThis.localStorage = hadStorage;
   }
 });
+
+// H2 fix (round-three re-hack): a relay-asserted admin row is one roster row
+// the relay can write about anyone, and it used to authorize control AGAINST
+// the creator. A relay row cannot dethrone the identity that created the
+// group; only the creator's own key may kick, demote or edit the creator.
+test('a relay-admin cannot kick, demote or edit the creator', () => {
+  // The dethrone path: an upcast row names the peer an admin, and the peer
+  // moves against the owner.
+  assert.equal(authorizeGroupControl({
+    kind: 9001, sender: admin, subject: creator, members, creator,
+  }), false, 'a snapshot-admin cannot kick the creator');
+  assert.equal(authorizeGroupControl({
+    kind: 9002, sender: admin, subject: creator, members, creator,
+  }), false, 'a snapshot-admin cannot edit the creator');
+  assert.equal(authorizeGroupControl({
+    kind: 9000, sender: admin, subject: creator, members, creator,
+  }), false, 'a snapshot-admin cannot demote the creator');
+  // Case differences stay closed.
+  assert.equal(authorizeGroupControl({
+    kind: 9001, sender: admin, subject: creator.toUpperCase(), members, creator,
+  }), false);
+  // Control that is not AGAINST the creator is untouched.
+  assert.equal(authorizeGroupControl({
+    kind: 9001, sender: admin, subject: member, members, creator,
+  }), true);
+  assert.equal(authorizeGroupControl({
+    kind: 9002, sender: admin, subject: member, members, creator,
+  }), true);
+  // The creator acts on their own group as before — including on admins.
+  assert.equal(authorizeGroupControl({
+    kind: 9001, sender: creator, subject: admin, members, creator,
+  }), true);
+  assert.equal(authorizeGroupControl({
+    kind: 9001, sender: creator, subject: creator, members, creator,
+  }), true);
+  // With no creator known, the guard stays out of the way rather than
+  // silently forbidding every admin action.
+  assert.equal(authorizeGroupControl({
+    kind: 9001, sender: admin, subject: member, members, creator: '',
+  }), true);
+  // Since the creator row also carries a relay-asserted role, the guard
+  // mandates the sender IS the creator, not merely an admin row equal to it.
+  assert.equal(authorizeGroupControl({
+    kind: 9001, sender: creator, subject: creator, members: [{ pubkey: creator, role: 'admin' }], creator: '',
+  }), true);
+});
