@@ -201,10 +201,9 @@ export default function LockScreen({ identity }) {
 
   return (
     <div className="relative flex h-[100dvh] w-full flex-col items-center justify-center overflow-y-auto bg-black px-6 py-12">
-      <div className="pointer-events-none fixed inset-0">
-        <div className="absolute left-[-10%] top-[-10%] h-[50%] w-[50%] rounded-full bg-blue-600/20 blur-[120px]" />
-        <div className="absolute bottom-[-10%] right-[-10%] h-[50%] w-[50%] rounded-full bg-purple-600/10 blur-[120px]" />
-      </div>
+      <div className="pointer-events-none fixed inset-0" style={{
+        background: 'radial-gradient(ellipse 55% 38% at 12% 0%, var(--glow-a), transparent 65%), radial-gradient(ellipse 50% 30% at 92% 100%, var(--glow-b), transparent 70%)',
+      }} />
       <div className="w-full max-w-sm flex flex-col items-center">
         
         {/* CLEAN CRISP LOGO - No weird glows */}

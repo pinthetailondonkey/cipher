@@ -14,10 +14,9 @@ export default function SearchView({ handleSearch, joinGroupById, openChat }) {
 
   return (
     <div className="absolute inset-0 z-50 flex h-full w-full flex-col bg-black">
-      <div className="pointer-events-none absolute inset-0">
-        <div className="absolute left-[-10%] top-[-10%] h-[50%] w-[50%] rounded-full bg-blue-600/20 blur-[120px]" />
-        <div className="absolute bottom-[-10%] right-[-10%] h-[50%] w-[50%] rounded-full bg-purple-600/10 blur-[120px]" />
-      </div>
+      <div className="pointer-events-none absolute inset-0" style={{
+        background: 'radial-gradient(ellipse 55% 38% at 12% 0%, var(--glow-a), transparent 65%), radial-gradient(ellipse 50% 30% at 92% 100%, var(--glow-b), transparent 70%)',
+      }} />
       <div className="relative z-10 flex min-h-0 flex-1 flex-col">
         <ScreenHeader title="Search" onBack={() => setView('list')} />
         <div className="px-4 pb-3">

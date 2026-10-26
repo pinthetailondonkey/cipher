@@ -34,11 +34,9 @@ export default function AuthenticatedApp({ identity }) {
   }, []);
 
   return (
-    <div className="relative flex h-[100dvh] w-full justify-center overflow-hidden bg-black text-white">
-      <div className="pointer-events-none fixed inset-0 overflow-hidden">
-        <div className="absolute left-[-10%] top-[-10%] h-[50%] w-[50%] rounded-full bg-blue-600/20 blur-[120px]" />
-        <div className="absolute bottom-0 right-[-10%] h-[30%] w-[50%] rounded-full bg-purple-600/10 blur-[100px]" />
-      </div>
+    <div className="relative flex h-[100dvh] w-full justify-center overflow-hidden bg-base text-white">
+      {/* The shell glow is drawn once by App.jsx; screens add no own copies
+          — a 120px live blur re-rasterizes per frame and stung Safari. */}
       <TutorialModal isOpen={showTutorial} onClose={() => { useChatStore.getState().setShowTutorial(false); localStorage.removeItem('cipher_new_account'); }} />
       <GlobalDialog />
       <CallOverlay />
@@ -54,10 +52,6 @@ export default function AuthenticatedApp({ identity }) {
             <Suspense fallback={tabFallback}>
               {activeTab === 'explore' && (
                 <div className="relative flex h-full flex-col">
-                  <div className="pointer-events-none absolute inset-0">
-                    <div className="absolute left-[-20%] top-[-10%] h-[55%] w-[70%] rounded-full bg-blue-500/30 blur-[100px]" />
-                    <div className="absolute bottom-[-15%] right-[-20%] h-[50%] w-[70%] rounded-full bg-purple-500/25 blur-[110px]" />
-                  </div>
                   <div className="relative z-10 px-4 pb-1 pt-3">
                     <div className="grid grid-cols-2 rounded-2xl border border-white/15 bg-panelStrong p-1 shadow-lg">
                       <button type="button" onClick={() => setExploreMode('shop')} className={`min-h-[44px] rounded-xl py-2.5 text-[13px] font-bold ${exploreMode === 'shop' ? 'bg-blue-600 text-white shadow-lg' : 'text-white/60'}`}>Shop</button>

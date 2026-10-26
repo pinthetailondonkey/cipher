@@ -53,11 +53,14 @@ export default function App() {
   return (
     <MotionConfig reducedMotion="user">
       <ErrorBoundary>
-        <div className="relative min-h-[100dvh] bg-black">
-          <div className="pointer-events-none fixed inset-0 overflow-hidden">
-            <div className="absolute left-[-10%] top-[-10%] h-[50%] w-[50%] rounded-full bg-blue-600/20 blur-[120px]" />
-            <div className="absolute bottom-0 right-[-10%] h-[30%] w-[50%] rounded-full bg-purple-600/10 blur-[100px]" />
-          </div>
+        <div className="relative min-h-[100dvh] bg-base">
+          {/* One shell glow for the whole app, pre-baked as gradients instead
+              of live blur (WebKit re-rasterizes a 120px blur every frame).
+              Colors come from the theme (var(--glow-a/b)), so it follows the
+              theme switcher; screens must not draw their own copies. */}
+          <div className="pointer-events-none fixed inset-0" style={{
+            background: 'radial-gradient(ellipse 55% 38% at 12% 0%, var(--glow-a), transparent 65%), radial-gradient(ellipse 50% 30% at 92% 100%, var(--glow-b), transparent 70%)',
+          }} />
           <MainApp />
         </div>
       </ErrorBoundary>
