@@ -222,12 +222,17 @@ function publicBody(input = {}) {
 export function publicReceipt(signed) {
   try {
     const body = signed?.body ? canonicalReceipt(signed.body) : {};
+    if (!body.orderId) return null;
+    // The view is built from the signed body alone. The receipt object also
+    // carries top-level amount/currency/buyer/vendor fields outside the
+    // signature, and a relay copy with an inflated top-level amount must
+    // never set the terms of the view this device signs. (security re-attack)
     return publicBody({
-      hash: signed?.hash || (signed?.body ? receiptHash(body) : ''),
-      amount: signed?.amount || body.amount,
-      currency: signed?.currency || body.currency,
-      buyer: signed?.buyer || body.buyer,
-      vendor: signed?.vendor || body.vendor,
+      hash: receiptHash(body),
+      amount: body.amount,
+      currency: body.currency,
+      buyer: body.buyer,
+      vendor: body.vendor,
     });
   } catch {
     return null;

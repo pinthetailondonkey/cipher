@@ -303,3 +303,44 @@ test('the vendor signature is never granted to a one-sided receipt, and a doctor
   }, vendorKey);
   assert.equal(verifyPublicView(carried.published), true);
 });
+
+test('the view the countersign blesses comes from the signed body, never the envelope', () => {
+  // security re-attack A1: the receipt's top-level amount/currency/buyer/
+  // vendor fields are outside the signature. A malicious vendor re-sending
+  // the real two-signed receipt with an inflated top-level amount, plus a
+  // matching doctored view, must not get the buyer's signature on the lie —
+  // the compare reads the body only, so expected and view can no longer
+  // both agree on attacker-chosen values.
+  const buyerKey = schnorr.utils.randomSecretKey();
+  const vendorKey = schnorr.utils.randomSecretKey();
+  const body = {
+    orderId: 'order-envelope',
+    buyer: hex(schnorr.getPublicKey(buyerKey)),
+    vendor: hex(schnorr.getPublicKey(vendorKey)),
+    currency: 'xmr',
+    address: '8secret',
+    amount: '2',
+    txid: 'ab',
+    at: 1_700_000_000,
+    outcome: 'confirmed',
+  };
+  const real = coSignPayment(signReceipt(vendorKey, body), buyerKey);
+  const inflated = { ...real, amount: '7000' };
+  const inflatedView = { ...publicReceipt(real), amount: '7000' };
+  const wanting = acceptPayment({
+    type: 'order_update', status: 'paid', orderId: body.orderId, receipt: inflated,
+    published: inflatedView,
+  }, buyerKey);
+  // The receipt still verifies (the top-level fields are not in the signed
+  // bytes), but the view it proposes names 7000 where the body says 2, so
+  // the buyer's signature never lands on it.
+  assert.equal(verifyReceipt(wanting.receipt), true);
+  assert.equal(wanting.published, null);
+  // The same lie credited to a third party rides nowhere either.
+  const accomplice = { ...real, vendor: hex(schnorr.utils.randomSecretKey()) };
+  const named = acceptPayment({
+    type: 'order_update', status: 'paid', orderId: body.orderId, receipt: accomplice,
+    published: { ...publicReceipt(real), vendor: accomplice.vendor },
+  }, buyerKey);
+  assert.equal(named.published, null);
+});
