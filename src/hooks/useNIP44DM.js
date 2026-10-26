@@ -12,7 +12,8 @@ import { sortMessages, stampArrival } from '../features/chat/media';
 import { withBuzzTag } from '../lib/pushGateway';
 import { conversationKey } from '../lib/dmKeys';
 import { noteFirstSeen } from '../lib/safetyNumber';
-import { acceptPayment, rememberPublicView, sendCountersignOnce } from '../lib/proofOfTrade';
+import { acceptPayment, rememberPublicView, receiptBindsOrder, sendCountersignOnce } from '../lib/proofOfTrade';
+import { orderRecordForReceipt } from '../lib/orderActions';
 import { scopedSet } from '../lib/storage';
 
 function sendCountersign(sendDM, counterparty, orderId, accepted) {
@@ -42,6 +43,39 @@ const shouldSuppress = (chatId) => {
 export function useNIP44DM({ identity }) {
   const setDms = useChatStore((s) => s.setDms);
   const setTypingUsers = useChatStore((s) => s.setTypingUsers);
+
+  // Audit F4: storing or cosigning an incoming receipt is only for an order
+  // this device tracks that is accepted or further along, and only when every
+  // field the order already fixed matches (orderId, coin amount, issued
+  // address, the two parties of this chat). A fabricated update can still
+  // render as an order_update bubble, but it plants no receipt and harvests
+  // no signature.
+  const receiptMayBind = useCallback(async (data, counterparty) => {
+    try {
+      if (!identity?.pk || !data?.orderId || !data?.receipt?.body) return false;
+      const messages = await db.messages.where('chatId').equals(counterparty).toArray();
+      const record = orderRecordForReceipt(messages, data.orderId);
+      if (!record) {
+        console.warn('[orders] A receipt arrived for an order this device does not track as accepted. It was not stored or signed.');
+        return false;
+      }
+      const bound = receiptBindsOrder({
+        receipt: data.receipt,
+        orderId: data.orderId,
+        orderCoinAmount: record.coinAmount,
+        issuedAddress: record.issuedAddress,
+        orderCurrency: record.coinCurrency,
+        buyerPubkey: record.isBuyer ? identity.pk : counterparty,
+        vendorPubkey: record.isBuyer ? counterparty : identity.pk,
+        update: data,
+      });
+      if (!bound) console.warn('[orders] A receipt did not match the order it arrived under. It was not stored or signed.');
+      return bound;
+    } catch (error) {
+      console.warn('[orders] The receipt could not be checked against the order:', error);
+      return false;
+    }
+  }, [identity]);
 
   useEffect(() => {
     if (!identity?.sk) return undefined;
@@ -184,12 +218,18 @@ export function useNIP44DM({ identity }) {
               }
               if (data.type === 'pin') return;
               if (data.type === 'order_update' && data.receipt && !isSender) {
-                const accepted = acceptPayment(data, identity.sk);
-                if (accepted) {
-                  scopedSet(`receipt_${data.orderId}`, accepted.receipt);
-                  if (accepted.published) rememberPublicView(accepted.published);
-                  data = { ...data, receipt: accepted.receipt, ...(accepted.published ? { published: accepted.published } : {}) };
-                  sendCountersign(sendDM, counterparty, data.orderId, accepted);
+                if (await receiptMayBind(data, counterparty)) {
+                  const accepted = acceptPayment(data, identity.sk);
+                  if (accepted) {
+                    scopedSet(`receipt_${data.orderId}`, accepted.receipt);
+                    // S10: the mark of a receipt this device countersigned
+                    // after it passed the order binding. A stored receipt
+                    // without this mark is never re-signed for a dispute.
+                    scopedSet(`bound_receipt_${data.orderId}`, accepted.receipt.hash);
+                    if (accepted.published) rememberPublicView(accepted.published);
+                    data = { ...data, receipt: accepted.receipt, ...(accepted.published ? { published: accepted.published } : {}) };
+                    sendCountersign(sendDM, counterparty, data.orderId, accepted);
+                  }
                 }
               }
               // Audit H9: drop messages that already expired (delivery lag)
@@ -246,7 +286,7 @@ export function useNIP44DM({ identity }) {
       mounted.current = false;
       subs.forEach(s => { try { s.close(); } catch (e) {} });
     };
-  }, [identity, setDms, setTypingUsers, sendDM]);
+  }, [identity, setDms, setTypingUsers, sendDM, receiptMayBind]);
 
   // FULL FETCH OF DM HISTORY
   const fetchDMs = useCallback(async () => {
@@ -282,12 +322,17 @@ export function useNIP44DM({ identity }) {
           continue;
         }
         if (!isSender && data.type === 'order_update' && data.receipt) {
-          const accepted = acceptPayment(data, identity.sk);
-          if (accepted) {
-            scopedSet(`receipt_${data.orderId}`, accepted.receipt);
-            if (accepted.published) rememberPublicView(accepted.published);
-            data = { ...data, receipt: accepted.receipt, ...(accepted.published ? { published: accepted.published } : {}) };
-            sendCountersign(sendDM, counterparty, data.orderId, accepted);
+          if (await receiptMayBind(data, counterparty)) {
+            const accepted = acceptPayment(data, identity.sk);
+            if (accepted) {
+              scopedSet(`receipt_${data.orderId}`, accepted.receipt);
+              // S10: same bound mark as the live path, so the dispute button
+              // can never re-sign a receipt this device never cosigned.
+              scopedSet(`bound_receipt_${data.orderId}`, accepted.receipt.hash);
+              if (accepted.published) rememberPublicView(accepted.published);
+              data = { ...data, receipt: accepted.receipt, ...(accepted.published ? { published: accepted.published } : {}) };
+              sendCountersign(sendDM, counterparty, data.orderId, accepted);
+            }
           }
         }
         if (data.expires_at && Math.floor(Date.now() / 1000) >= data.expires_at) continue;
@@ -317,7 +362,7 @@ export function useNIP44DM({ identity }) {
       const counterparty = isSender ? ev.tags.find(t => t[0] === 'p')?.[1] : ev.pubkey;
       if (counterparty) counterparties.add(counterparty);
     }
-  }, [identity, sendDM]);
+  }, [identity, sendDM, receiptMayBind]);
 
   return { sendDM, sendTypingIndicator, subscribeToDMs, fetchDMs };
 }

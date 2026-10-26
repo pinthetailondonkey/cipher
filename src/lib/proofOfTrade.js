@@ -143,6 +143,35 @@ export async function sendCountersignOnce({ sendDM, counterparty, orderId, accep
   }
 }
 
+// The binding decision for an incoming receipt. A receipt is stored and
+// cosigned only when it names exactly the order this device tracks and paid
+// into: the same orderId on the receipt and on the update, the order's coin
+// amount (a larger single output may cover the order, a smaller one never),
+// the payment address this device issued, and the two parties of this chat.
+// Any mismatch fails closed, so a fabricated update can never plant a
+// receipt or harvest this device's signature.
+export function receiptBindsOrder({ receipt, orderId, orderCoinAmount, issuedAddress, orderCurrency, buyerPubkey, vendorPubkey, update } = {}) {
+  const body = receipt?.body || null;
+  if (!body) return false;
+  if (!orderId || String(body.orderId ?? '') !== String(orderId)) return false;
+  if (update?.orderId != null && String(update.orderId) !== String(orderId)) return false;
+  const currency = String(orderCurrency ?? '').toLowerCase();
+  if (!currency) return false;
+  if (String(body.currency ?? '').toLowerCase() !== currency) return false;
+  const got = amountUnits(body.amount, currency);
+  const need = amountUnits(orderCoinAmount, currency);
+  if (got == null || need == null || got < need) return false;
+  const issued = String(issuedAddress ?? '');
+  if (!issued.trim()) return false;
+  if (String(body.address ?? '') !== issued) return false;
+  if (update?.address != null && String(update.address) !== issued) return false;
+  const buyer = String(buyerPubkey ?? '').toLowerCase();
+  const vendor = String(vendorPubkey ?? '').toLowerCase();
+  if (buyer && String(body.buyer ?? '').toLowerCase() !== buyer) return false;
+  if (vendor && String(body.vendor ?? '').toLowerCase() !== vendor) return false;
+  return true;
+}
+
 export function verifyReceipt(signed) {
   try {
     if (!signed?.body || !signed?.sigs?.buyer || !signed?.sigs?.vendor) return false;

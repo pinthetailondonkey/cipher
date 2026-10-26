@@ -34,6 +34,38 @@ export function orderState(messages, orderId, request) {
   };
 }
 
+// An incoming receipt binds only an order this device tracks that is accepted
+// or further along. A pending order never agreed to anything and a cancelled
+// or disputed one stays closed, so neither stores nor signs a receipt.
+const RECEIPT_STATUSES = new Set([S.ACCEPTED, S.PAID, S.SHIPPED, S.COMPLETED]);
+
+// The order record a receipt must bind to: the request card on this device,
+// the latest coin amount either side put on the order, and the address this
+// device issued for it. Null when the order is missing or not open to a
+// receipt yet.
+export function orderRecordForReceipt(messages, orderId) {
+  const list = Array.isArray(messages) ? messages : [];
+  const request = list.find((message) => message?.id === orderId
+    && (message.data?.type === 'order_request' || message.data?.type === 'cipher_order'));
+  if (!request) return null;
+  const status = orderState(list, orderId, request).status;
+  if (!RECEIPT_STATUSES.has(status)) return null;
+  const updates = (list.filter((m) => m?.data?.type === 'order_update' && m.data.orderId === orderId))
+    .sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0) || String(a.id).localeCompare(String(b.id)));
+  const latest = (prop) => [...updates].reverse().find((update) => update.data?.[prop] != null && update.data?.[prop] !== '');
+  const coinCurrency = latest('coinCurrency')?.data.coinCurrency || request.data.coinCurrency || '';
+  const coinAmount = latest('coinAmount')?.data.coinAmount ?? request.data.coinAmount ?? '';
+  const methods = [...updates].reverse().find((update) => update.data?.paymentMethods)?.data.paymentMethods
+    || request.data.paymentMethods || null;
+  return {
+    status,
+    coinAmount,
+    coinCurrency,
+    issuedAddress: coinCurrency && methods ? String(methods[coinCurrency] || '') : '',
+    isBuyer: !!request.isSender,
+  };
+}
+
 // The one table of what each side may do with an order in each state. Every
 // order button renders from this. A status it does not know is an error.
 export function allowedActionsFor(order, viewer) {
