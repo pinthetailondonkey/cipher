@@ -298,6 +298,18 @@ export function newestOwnIssuedMethods(updates, sharedAddresses, orderId) {
   return null;
 }
 
+// Whether THIS device's own watcher has spoken for this order. The buyer's
+// chain check (security S6) lands on the order card as a local patch — the
+// device's own write, persisted beyond a reload. Until one has landed, a
+// receipt arriving from the peer is still only the vendor's claim, whatever
+// it says. (security F4 residual, N1)
+export function deviceWatchedOrderOf(messages, orderId) {
+  const request = (Array.isArray(messages) ? messages : [])
+    .find((message) => message?.id === orderId && isRequest(message.data));
+  const patch = request?.localPatch;
+  return Boolean(patch && ['seen', 'confirmed'].includes(patch.paymentState));
+}
+
 // What a disputed order returns to when this side reopens it. Not history:
 // the payment state the order already reached decides it. Money seen or
 // confirmed puts the order back to paid; anything else back to accepted, so

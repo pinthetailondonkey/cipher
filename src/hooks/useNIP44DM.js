@@ -13,7 +13,7 @@ import { withBuzzTag } from '../lib/pushGateway';
 import { conversationKey } from '../lib/dmKeys';
 import { noteFirstSeen } from '../lib/safetyNumber';
 import { acceptPayment, rememberPublicView, receiptBindsOrder, sendCountersignOnce } from '../lib/proofOfTrade';
-import { orderRecordForReceipt } from '../lib/orderActions';
+import { deviceWatchedOrderOf, orderRecordForReceipt } from '../lib/orderActions';
 import { scopedSet } from '../lib/storage';
 
 function sendCountersign(sendDM, counterparty, orderId, accepted) {
@@ -70,6 +70,17 @@ export function useNIP44DM({ identity }) {
         update: data,
       });
       if (!bound) console.warn('[orders] A receipt did not match the order it arrived under. It was not stored or signed.');
+      // N1 fix (round-three re-hack): a buyer's co-signature on a receipt,
+      // and on its public view if one rides along, must mean THIS device saw
+      // the money with its own watcher — not that the vendor wrote a
+      // confirmed receipt over a txid that never happened. The buyer's own
+      // check writes seen or confirmed on the order card (security S6);
+      // until one landed there, a receipt arriving stores nothing, signs
+      // nothing and stays a claim. Their own check is one button away.
+      if (bound && record.isBuyer && !deviceWatchedOrderOf(messages, data.orderId)) {
+        console.warn('[orders] A receipt arrived before this device checked the payment with its own watcher. It was not stored or signed.');
+        return false;
+      }
       return bound;
     } catch (error) {
       console.warn('[orders] The receipt could not be checked against the order:', error);
