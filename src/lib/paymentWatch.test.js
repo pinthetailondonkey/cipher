@@ -1,11 +1,32 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
-import { atomicToCoins, checkPayment, isPublicExplorer, moneroRows, parseExactAmounts, paymentWatchUrl, reportFromTransfers, rowsFromScan } from './paymentWatch.js';
+import { atomicToCoins, checkPayment, isPublicExplorer, moneroRows, parseExactAmounts, paymentWatchUrl, reportFromTransfers, rowsFromScan, verifyWatcherResponse } from './paymentWatch.js';
 
-test('an empty watcher and a public explorer are refused before any request', async () => {
+const TOKEN = 'secret';
+const hexOf = (buffer) => [...new Uint8Array(buffer)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
+const signBody = async (raw, token = TOKEN) => {
+  const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(token), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  return `v1=${hexOf(await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(raw)))}`;
+};
+
+// A stand-in for a signed watcher answer. Every 200 answer carries the two
+// signature headers over the exact raw text it returns.
+const watcherAnswer = async (body, { token = TOKEN, tsSec, sig } = {}) => {
+  const raw = typeof body === 'string' ? body : JSON.stringify(body);
+  const headers = { 'content-type': 'application/json', 'x-cipher-ts': String(tsSec ?? Math.floor(Date.now() / 1000)) };
+  headers['x-cipher-sig'] = sig ?? (await signBody(raw, token));
+  return {
+    ok: true,
+    status: 200,
+    headers: { get: (name) => headers[String(name).toLowerCase()] ?? null },
+    text: async () => raw,
+  };
+};
+
+test('an empty watcher, a public explorer, and a plain internet http watcher are refused before any request', async () => {
   let called = false;
-  const fetchImpl = async () => { called = true; return { ok: true, json: async () => ({}) }; };
+  const fetchImpl = async () => { called = true; return { ok: true, headers: { get: () => null }, text: async () => '{}' }; };
   await assert.rejects(
     () => checkPayment({ watcherUrl: '', address: '8abc', currency: 'xmr', state: 'address_issued', fetchImpl }),
     /block explorer/,
@@ -19,7 +40,17 @@ test('an empty watcher and a public explorer are refused before any request', as
     () => checkPayment({ watcherUrl: 'https://watch.example/payment', address: '8abc', currency: 'xmr', state: 'address_issued', fetchImpl }),
     /needs a token/,
   );
+  await assert.rejects(
+    () => checkPayment({ watcherUrl: 'http://watch.example/payment?token=secret', address: '8abc', currency: 'xmr', state: 'address_issued', fetchImpl }),
+    /must use HTTPS/,
+  );
   assert.equal(called, false);
+});
+
+test('a localhost watcher over plain http is allowed', () => {
+  for (const host of ['127.0.0.1:8788', 'localhost:8788', '[::1]:8788']) {
+    assert.equal(new URL(paymentWatchUrl(`http://${host}/payment?token=secret`, { address: '8abc', currency: 'xmr' })).searchParams.get('address'), '8abc');
+  }
 });
 
 test('a watcher you run can mark seen, then confirmed, and silence is not a success', async () => {
@@ -30,7 +61,7 @@ test('a watcher you run can mark seen, then confirmed, and silence is not a succ
     address: '8abc',
     currency: 'xmr',
     state: 'address_issued',
-    fetchImpl: async () => ({ ok: true, json: async () => ({ pending: true }) }),
+    fetchImpl: () => watcherAnswer({ pending: true }),
   });
   assert.equal(pending.moved, false);
   const seen = await checkPayment({
@@ -38,7 +69,7 @@ test('a watcher you run can mark seen, then confirmed, and silence is not a succ
     address: '8abc',
     currency: 'xmr',
     state: 'address_issued',
-    fetchImpl: async () => ({ ok: true, json: async () => ({ txid: 'ab', confirmations: 0 }) }),
+    fetchImpl: () => watcherAnswer({ txid: 'ab', confirmations: 0 }),
   });
   assert.equal(seen.moved, true);
   assert.equal(seen.state, 'seen');
@@ -47,7 +78,7 @@ test('a watcher you run can mark seen, then confirmed, and silence is not a succ
     address: '8abc',
     currency: 'xmr',
     state: 'seen',
-    fetchImpl: async () => ({ ok: true, json: async () => ({ source: 'watcher', txid: 'ab', confirmations: 10 }) }),
+    fetchImpl: () => watcherAnswer({ source: 'watcher', txid: 'ab', confirmations: 10 }),
   });
   assert.equal(confirmed.state, 'confirmed');
   await assert.rejects(
@@ -62,6 +93,78 @@ test('a watcher you run can mark seen, then confirmed, and silence is not a succ
   );
 });
 
+test('a forged or unsigned answer moves nothing', async () => {
+  const watcherUrl = 'https://watch.example/payment?token=secret';
+  // An attacker picked a different key. The answer is well formed and says paid.
+  await assert.rejects(
+    () => checkPayment({
+      watcherUrl,
+      address: '8abc',
+      currency: 'xmr',
+      state: 'address_issued',
+      fetchImpl: () => watcherAnswer({ txid: 'forged', confirmations: 10 }, { token: 'attacker' }),
+    }),
+    /signature check/,
+  );
+  // An older self-hosted watcher sends no signature headers.
+  await assert.rejects(
+    () => checkPayment({
+      watcherUrl,
+      address: '8abc',
+      currency: 'xmr',
+      state: 'address_issued',
+      fetchImpl: async () => ({ ok: true, status: 200, headers: { get: () => null }, text: async () => JSON.stringify({ txid: 'ab', confirmations: 10 }) }),
+    }),
+    /signature check/,
+  );
+});
+
+test('an answer signed with the right key but an old or future time is refused', async () => {
+  const watcherUrl = 'https://watch.example/payment?token=secret';
+  const now = Math.floor(Date.now() / 1000);
+  await assert.rejects(
+    () => checkPayment({
+      watcherUrl,
+      address: '8abc',
+      currency: 'xmr',
+      state: 'address_issued',
+      fetchImpl: () => watcherAnswer({ txid: 'ab', confirmations: 10 }, { tsSec: now - 121 }),
+    }),
+    /signature check/,
+  );
+  await assert.rejects(
+    () => checkPayment({
+      watcherUrl,
+      address: '8abc',
+      currency: 'xmr',
+      state: 'address_issued',
+      fetchImpl: () => watcherAnswer({ txid: 'ab', confirmations: 10 }, { tsSec: now + 130 }),
+    }),
+    /signature check/,
+  );
+});
+
+test('verifyWatcherResponse takes valid, and refuses tampered, wrong key, stale, future, or unsigned', async () => {
+  const raw = JSON.stringify({ txid: 'ab', confirmations: 3, amount: '0.01' });
+  const sig = await signBody(raw);
+  const now = Math.floor(Date.now() / 1000);
+  const check = (over) => verifyWatcherResponse({ rawBody: raw, sig, ts: String(now), token: TOKEN, nowSec: now, ...over });
+  assert.equal(await check({}), true);
+  assert.equal(await check({ rawBody: `${raw} ` }), false);
+  assert.equal(await check({ rawBody: raw.replace('0.01', '0.99') }), false);
+  assert.equal(await check({ token: 'other' }), false);
+  assert.equal(await check({ sig: `v1=${'0'.repeat(64)}` }), false);
+  assert.equal(await check({ sig: sig.slice(3) }), false);
+  assert.equal(await check({ sig: undefined }), false);
+  assert.equal(await check({ ts: String(now - 121) }), false);
+  assert.equal(await check({ ts: String(now + 121) }), false);
+  assert.equal(await check({ ts: String(now - 120) }), true);
+  assert.equal(await check({ ts: String(now + 120) }), true);
+  assert.equal(await check({ ts: 'yesterday' }), false);
+  assert.equal(await check({ rawBody: '' }), false);
+  assert.equal(await check({ nowSec: 'n/a' }), false);
+});
+
 test('a short payment does not move, and a covering payment does', async () => {
   const watcherUrl = 'https://watch.example/payment?token=secret';
   const short = await checkPayment({
@@ -70,7 +173,7 @@ test('a short payment does not move, and a covering payment does', async () => {
     currency: 'btc',
     state: 'address_issued',
     amount: '0.01',
-    fetchImpl: async () => ({ ok: true, json: async () => ({ txid: 'dust', confirmations: 3, amount: '0.00000001' }) }),
+    fetchImpl: () => watcherAnswer({ txid: 'dust', confirmations: 3, amount: '0.00000001' }),
   });
   assert.deepEqual(short, { moved: false, short: true, state: 'address_issued' });
   const paid = await checkPayment({
@@ -79,7 +182,7 @@ test('a short payment does not move, and a covering payment does', async () => {
     currency: 'btc',
     state: 'address_issued',
     amount: '0.01',
-    fetchImpl: async () => ({ ok: true, json: async () => ({ txid: 'paid', confirmations: 3, amount: '0.01' }) }),
+    fetchImpl: () => watcherAnswer({ txid: 'paid', confirmations: 3, amount: '0.01' }),
   });
   assert.equal(paid.moved, true);
   assert.equal(paid.state, 'confirmed');
@@ -91,7 +194,7 @@ test('a short payment does not move, and a covering payment does', async () => {
       currency: 'btc',
       state: 'address_issued',
       amount: '0.01',
-      fetchImpl: async () => ({ ok: true, json: async () => ({ txid: 'bare', confirmations: 3 }) }),
+      fetchImpl: () => watcherAnswer({ txid: 'bare', confirmations: 3 }),
     }),
     /did not report an amount/,
   );
@@ -126,7 +229,7 @@ test('a stock-node scan of one address becomes a bitcoin report', () => {
 
 test('a Monero piconero amount is shifted to whole XMR before it is compared', async () => {
   const watcherUrl = 'https://watch.example/payment?token=secret';
-  const answer = (rows) => async () => ({ ok: true, json: async () => reportFromTransfers(moneroRows(rows), '8sub', 'xmr') });
+  const answer = (rows) => () => watcherAnswer(reportFromTransfers(moneroRows(rows), '8sub', 'xmr'));
   const full = reportFromTransfers(moneroRows([{ address: '8sub', txid: 'full', confirmations: 10, amount: 500000000000 }]), '8sub', 'xmr');
   assert.equal(full.amount, '0.5');
   assert.equal(full.outputAmount, '0.5');
@@ -163,7 +266,7 @@ test('a payment split across two outputs is summed, and the receipt keeps the la
   assert.equal(report.txid, 'aa');
   const paid = await checkPayment({
     watcherUrl, address: 'bc1q', currency: 'btc', state: 'address_issued', amount: '0.01',
-    fetchImpl: async () => ({ ok: true, json: async () => report }),
+    fetchImpl: () => watcherAnswer(report),
   });
   assert.equal(paid.state, 'confirmed');
   assert.equal(paid.report.outputAmount, '0.006');
@@ -175,4 +278,17 @@ test('a payment split across two outputs is summed, and the receipt keeps the la
   const young = reportFromTransfers(rowsFromScan(shallow, 'bc1q'), 'bc1q', 'btc');
   assert.equal(young.confirmations, 1);
   assert.equal(young.confirmed, false);
+});
+
+test('the watcher signs every answer it gives, and the phone verifies the raw body', () => {
+  const watcher = fs.readFileSync(new URL('../../scripts/payment-watcher.mjs', import.meta.url), 'utf8');
+  assert.match(watcher, /createHmac\('sha256', watchToken\)/);
+  assert.match(watcher, /x-cipher-sig/);
+  assert.match(watcher, /x-cipher-ts/);
+  const app = fs.readFileSync(new URL('./paymentWatch.js', import.meta.url), 'utf8');
+  assert.match(app, /x-cipher-sig/);
+  assert.match(app, /x-cipher-ts/);
+  // The body is verified before it is parsed, so JSON round-tripping cannot
+  // sneak a byte past the check.
+  assert.match(app, /parseExactAmounts\(raw\)/);
 });
