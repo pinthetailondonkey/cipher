@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { BadgeCheck, Link2, LogOut, Package, Pencil, Store, Users, X } from 'lucide-react';
+import { BadgeCheck, Link2, LogOut, Package, Pencil, Store, UserPlus, Users, X } from 'lucide-react';
 import { useChatStore } from '../../store/chatStore';
 import Avatar from '../ui/Avatar';
 import Picture from '../ui/Picture';
 import { pressable } from '../ui/Button';
 import { copyText } from '../../lib/copyText';
+import { denyPendingJoin, dropPendingJoin, pendingJoinsFor, subscribeJoinRequests } from '../../lib/groupJoinQueue.js';
 
 const EMPTY_MESSAGES = [];
 
@@ -28,6 +29,7 @@ export default function GroupInfoSidebar({
   onUnpin,
   leaveGroup,
   kickMember,
+  approveJoin,
   updateGroupSettings,
 }) {
   const group = useChatStore((state) => state.activeGroup);
@@ -58,6 +60,15 @@ export default function GroupInfoSidebar({
   const canManage = group?.creator === identity?.pk || memberList.some((member) => (
     member.pubkey === identity?.pk && ['admin', 'owner'].includes(member.role)
   ));
+  const isOwner = group?.creator === identity?.pk;
+  const [pendingJoins, setPendingJoins] = useState(() => (group?.id ? pendingJoinsFor(group.id) : []));
+
+  useEffect(() => {
+    if (!group?.id) return undefined;
+    const refresh = () => setPendingJoins(pendingJoinsFor(group.id));
+    refresh();
+    return subscribeJoinRequests(refresh);
+  }, [group?.id]);
   const pinnedId = pinnedMessages[group?.id];
 
   const shareGroup = async () => {
@@ -127,6 +138,32 @@ export default function GroupInfoSidebar({
     });
   };
 
+  const approvePending = async (row) => {
+    if (!group?.id) return;
+    setPending(true);
+    setError('');
+    try {
+      await approveJoin?.(group.id, row.pubkey);
+      dropPendingJoin(group.id, row.pubkey);
+    } catch (approveError) {
+      console.error('[GroupInfoSidebar] Could not approve the join request:', approveError);
+      setError(approveError?.message || 'Could not approve the join request.');
+    } finally {
+      setPending(false);
+    }
+  };
+
+  const denyPending = (row) => {
+    if (!group?.id) return;
+    useChatStore.getState().openDialog({
+      title: 'Deny join request',
+      message: 'They stay out of the group and never receive its key.',
+      type: 'danger',
+      confirmText: 'Deny',
+      onConfirm: () => denyPendingJoin(group.id, row.pubkey),
+    });
+  };
+
   const leave = () => {
     useChatStore.getState().openDialog({
       title: 'Leave group',
@@ -179,6 +216,26 @@ export default function GroupInfoSidebar({
                 {canManage && <button type="button" onClick={editGroup} disabled={pending} className="flex w-full items-center gap-3 border-b border-white/5 p-4 text-left text-[15px] font-semibold text-white disabled:opacity-40 active:bg-white/5"><Pencil size={18} className="text-white/40" /> Edit group</button>}
                 <button type="button" onClick={leave} disabled={pending} className="flex w-full items-center gap-3 p-4 text-left text-[15px] font-semibold text-red-400 disabled:opacity-40 active:bg-white/5"><LogOut size={18} /> Leave group</button>
               </div>
+              {isOwner && pendingJoins.length > 0 && (
+                <div className="overflow-hidden rounded-2xl border border-white/10 bg-[#0A0A0A]/60 shadow-2xl backdrop-blur-2xl">
+                  <p className="flex items-center gap-2 border-b border-white/5 px-4 py-3 text-[13px] text-white/40"><UserPlus size={16} /> Join requests</p>
+                  {pendingJoins.map((row) => {
+                    const profile = profiles[row.pubkey] || {};
+                    const name = profile.displayName || profile.name || `${row.pubkey.slice(0, 8)}…`;
+                    return (
+                      <div key={row.pubkey} className="flex items-center gap-3 border-b border-white/5 px-4 py-3 last:border-0">
+                        <Avatar src={profile.picture} name={name} />
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-[15px] font-semibold text-white">{name}</span>
+                          <span className="block truncate text-[13px] text-white/40">wants to join</span>
+                        </span>
+                        <button type="button" onClick={() => denyPending(row)} disabled={pending} className={`text-[13px] font-semibold text-white/60 disabled:opacity-50 ${pressable}`}>Deny</button>
+                        <button type="button" onClick={() => approvePending(row)} disabled={pending} aria-label={`Approve ${name}`} className={`text-[13px] font-semibold text-blue-500 disabled:opacity-50 ${pressable}`}>Approve</button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
               <div className="overflow-hidden rounded-2xl border border-white/10 bg-[#0A0A0A]/60 shadow-2xl backdrop-blur-2xl">
                 <p className="flex items-center gap-2 border-b border-white/5 px-4 py-3 text-[13px] text-white/40"><Users size={16} /> Members</p>
                 {memberList.length === 0 && <p className="px-4 py-3 text-[13px] text-white/40">Looking up members…</p>}
