@@ -30,6 +30,16 @@ test('a listing priced in BTC or XMR is not read as dollars, from the shop card 
   assert.equal(orderCoinAmount(orderProduct(usd), 'btc'), null);
 });
 
+test('a listing carries no payment address — a menu is not a coin you can pay directly', () => {
+  // The event still carries payment tags as they arrive from the wire; the
+  // listing must not turn them into addresses a checkout could offer. That
+  // entry point skipped the order flow: no accept, no issued address, no
+  // receipt, nothing to ship against. (security S2)
+  assert.equal('btc' in listingFromEvent(event('40', 'USD')), false);
+  assert.equal('xmr' in listingFromEvent(event('40', 'USD')), false);
+  assert.equal(listingFromEvent(event('40', 'USD')).btc, undefined);
+});
+
 test('older orders that only carried priceUsd still show dollars', () => {
   assert.equal(orderPriceLabel({ product: { priceUsd: '12', price: '12' } }), '$12');
   assert.equal(orderPriceLabel({ product: { price: '0.5', currency: 'xmr' } }), '0.5 XMR');
