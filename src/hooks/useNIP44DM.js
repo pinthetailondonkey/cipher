@@ -54,7 +54,7 @@ export function useNIP44DM({ identity }) {
     try {
       if (!identity?.pk || !data?.orderId || !data?.receipt?.body) return false;
       const messages = await db.messages.where('chatId').equals(counterparty).toArray();
-      const record = orderRecordForReceipt(messages, data.orderId);
+      const record = orderRecordForReceipt(messages, data.orderId, identity.pk);
       if (!record) {
         console.warn('[orders] A receipt arrived for an order this device does not track as accepted. It was not stored or signed.');
         return false;

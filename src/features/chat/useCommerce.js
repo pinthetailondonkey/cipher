@@ -223,7 +223,7 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
           // F7: the current payment state comes from the order's evidence,
           // not from whatever a received card once wrote into itself.
           const history = await db.messages.where('chatId').equals(msg.pubkey).toArray();
-          const current = orderState(history, msg.id, msg).paymentState;
+          const current = orderState(history, msg.id, msg, identity.pk).paymentState;
           paymentState = nextPaymentState(current, 'see');
         } catch (error) {
           setToast({ type: 'error', message: error.message });
@@ -259,7 +259,7 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
           // card never carried an address (the buyer wrote the request), so
           // their check reads the acceptance the vendor sent, off the stored
           // messages, the way F7 reads the state.
-          details = isBuyer ? orderPaymentDetails(history, msg.id) : null;
+          details = isBuyer ? orderPaymentDetails(history, msg.id, identity.pk) : null;
           // The pair a vendor checks is the one it issued: the card's local
           // patch — its own write when it accepted — or its own acceptance
           // update in history. The received card is the buyer's word: a
@@ -284,7 +284,7 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
           }
           // F7: chain the watcher report off the order's real evidence, away
           // from a claim a peer wrote into the card.
-          chainedState = orderState(history, msg.id, msg).paymentState;
+          chainedState = orderState(history, msg.id, msg, identity.pk).paymentState;
         } catch {
           chainedState = 'address_issued';
         }
@@ -495,7 +495,7 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
               let binds = false;
               try {
                 const messages = await db.messages.where('chatId').equals(msg.pubkey).toArray();
-                const record = orderRecordForReceipt(messages, msg.id);
+                const record = orderRecordForReceipt(messages, msg.id, identity.pk);
                 binds = !!record
                   && scopedGet(`bound_receipt_${msg.id}`, '') === stored.hash
                   && receiptBindsOrder({
