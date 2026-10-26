@@ -23,7 +23,7 @@ function Choice({ icon: Icon, label, hint, value, options, onChange }) {
                 type="button"
                 aria-pressed={value === option.id}
                 onClick={() => onChange(option.id)}
-                className={`rounded-2xl border px-3 py-2 text-[13px] font-bold active:scale-95 ${value === option.id ? 'border-blue-500 bg-blue-600 text-white' : 'border-line bg-panelStrong text-white/55'}`}
+                className={`rounded-2xl border px-3 py-2 text-[13px] font-bold active:scale-95 ${value === option.id ? 'border-accent bg-accent text-accentInk' : 'border-line bg-panelStrong text-white/55'}`}
               >
                 {option.label}
               </button>
@@ -43,7 +43,7 @@ function Toggle({ icon: Icon, label, hint, checked, onChange }) {
         <span className="block text-[15px] font-semibold text-white">{label}</span>
         {hint && <span className="mt-0.5 block text-[13px] text-white/40">{hint}</span>}
       </span>
-      <span className={`relative h-6 w-11 shrink-0 rounded-full ${checked ? 'bg-blue-600' : 'bg-white/15'}`}>
+      <span className={`relative h-6 w-11 shrink-0 rounded-full ${checked ? 'bg-accent' : 'bg-white/15'}`}>
         <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white transition-transform ${checked ? 'translate-x-5' : 'translate-x-0.5'}`} />
       </span>
     </button>
@@ -100,7 +100,7 @@ export default function PrivacySettings({ onBack }) {
               <div key={pubkey} className="flex items-center gap-3 border-b border-white/5 p-4 last:border-0">
                 <Avatar src={profiles[pubkey]?.picture} name={name} />
                 <span className="min-w-0 flex-1 truncate text-[15px] font-semibold text-white">{name}</span>
-                <button type="button" onClick={() => toggleBlockUser(pubkey)} className={`text-[13px] font-bold text-blue-500 ${pressable}`}>Unblock</button>
+                <button type="button" onClick={() => toggleBlockUser(pubkey)} className={`text-[13px] font-bold text-accent ${pressable}`}>Unblock</button>
               </div>
             );
           })}

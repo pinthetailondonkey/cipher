@@ -59,7 +59,7 @@ export default function ProductEditModal({ editingProduct, onClose, onSubmit }) 
           </label>
         </div>
         {error && <p role="alert" className="text-[13px] text-red-400">{error}</p>}
-        <button type="submit" className="w-full rounded-2xl bg-blue-600 py-3.5 font-bold text-white hover:bg-blue-500">Save listing</button>
+        <button type="submit" className="w-full rounded-2xl bg-accent py-3.5 font-bold text-accentInk hover:bg-accent">Save listing</button>
       </form>
     </div>
   );

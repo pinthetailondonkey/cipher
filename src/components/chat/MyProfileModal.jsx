@@ -49,7 +49,7 @@ export default function MyProfileModal({ identity }) {
         <Button onClick={copyNpub} className="mt-5 flex w-full items-center justify-center gap-2">
           <Copy size={16} /> Copy npub
         </Button>
-        {notice && <p role="status" className="mt-3 text-center text-[13px] text-blue-500">{notice}</p>}
+        {notice && <p role="status" className="mt-3 text-center text-[13px] text-accent">{notice}</p>}
         {error && <p role="alert" className="mt-3 text-center text-[13px] text-red-400">{error}</p>}
       </section>
     </div>

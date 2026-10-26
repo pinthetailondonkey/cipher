@@ -54,7 +54,7 @@ export default function AccountSwitcher({ identity, onClose }) {
                 <span className="block truncate text-[15px] font-semibold text-white">{name}</span>
                 <span className="block truncate text-[13px] text-white/40">{account.handle ? `@${account.handle}` : shortNpub(account.pubkey)}</span>
               </span>
-              {account.isActive ? <Check size={18} className="text-blue-500" /> : null}
+              {account.isActive ? <Check size={18} className="text-accent" /> : null}
             </div>
             {!account.isActive && (
               <div className="mt-3 flex gap-2">
@@ -62,7 +62,7 @@ export default function AccountSwitcher({ identity, onClose }) {
                   <KeyRound size={16} className="shrink-0 text-white/40" />
                   <input type="password" inputMode="numeric" autoComplete="current-password" value={pins[account.pubkey] || ''} onChange={(event) => setPins((current) => ({ ...current, [account.pubkey]: event.target.value }))} placeholder="PIN" className="min-w-0 flex-1 bg-transparent py-3 text-[15px] text-white outline-none placeholder:text-white/30" />
                 </label>
-                <button type="button" disabled={pending === account.pubkey} onClick={() => handleSwitch(account)} className={`rounded-2xl bg-blue-600 px-4 font-bold text-white active:bg-blue-700 ${pressable}`}>{pending === account.pubkey ? '…' : 'Switch'}</button>
+                <button type="button" disabled={pending === account.pubkey} onClick={() => handleSwitch(account)} className={`rounded-2xl bg-accent px-4 font-bold text-accentInk active:bg-accent ${pressable}`}>{pending === account.pubkey ? '…' : 'Switch'}</button>
                 <button type="button" aria-label="Remove account" onClick={() => handleRemove(account)} className={`flex min-h-11 min-w-11 items-center justify-center rounded-2xl border border-white/10 text-red-400 active:bg-white/10 ${pressable}`}>
                   {confirmRemove === account.pubkey ? <span className="text-[12px] font-bold">Sure?</span> : <Trash2 size={16} />}
                 </button>
@@ -73,7 +73,7 @@ export default function AccountSwitcher({ identity, onClose }) {
       })}
       {accounts.length === 0 && <p className="rounded-2xl border border-line bg-panel shadow-lg px-4 py-10 text-center text-[13px] text-white/40">No saved accounts on this device.</p>}
       <button type="button" onClick={identity?.addNewAccount} className={`flex w-full items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 font-semibold text-white active:bg-white/10 ${pressable}`}>
-        <Plus size={18} className="text-blue-500" />
+        <Plus size={18} className="text-accent" />
         Add account
       </button>
       {error && <p role="alert" className="text-[13px] text-red-400">{error}</p>}

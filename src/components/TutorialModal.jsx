@@ -69,16 +69,16 @@ export default function TutorialModal({ isOpen, onClose }) {
           <h2 className="text-2xl font-bold text-white mb-3">{step.title}</h2>
           <p className="text-[14px] text-white/60 leading-relaxed mb-4 px-2">{step.desc}</p>
           {currentStep === steps.length - 1 && (
-            <p className="text-[13px] text-blue-500 leading-relaxed mb-4 px-2">You can reopen this guide any time under Profile → How to use.</p>
+            <p className="text-[13px] text-accent leading-relaxed mb-4 px-2">You can reopen this guide any time under Profile → How to use.</p>
           )}
 
           <div className="flex gap-2 mb-8">
             {steps.map((_, i) => (
-              <div key={i} className={`h-1.5 rounded-full transition-all duration-300 ${i === currentStep ? 'w-6 bg-blue-500' : 'w-1.5 bg-white/10'}`} />
+              <div key={i} className={`h-1.5 rounded-full transition-all duration-300 ${i === currentStep ? 'w-6 bg-accent' : 'w-1.5 bg-white/10'}`} />
             ))}
           </div>
 
-          <button onClick={handleNext} className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-3.5 rounded-xl flex items-center justify-center gap-2 transition-colors">
+          <button onClick={handleNext} className="w-full bg-accent hover:bg-accent text-accentInk font-bold py-3.5 rounded-xl flex items-center justify-center gap-2 transition-colors">
             {currentStep === steps.length - 1 ? "Start Using Cipher" : "Next"}
             {currentStep !== steps.length - 1 && <ChevronRight size={18} />}
           </button>

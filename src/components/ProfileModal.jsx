@@ -85,9 +85,9 @@ export default function ProfileModal({ pubkey, identity, onClose, onMessage }) {
           </Button>
         )}
         <div className="mt-5 flex items-center gap-2 rounded-xl border border-line bg-panelStrong shadow-lg px-4 py-3">
-          <BadgeCheck size={19} className={vouchCount >= 3 ? 'text-blue-400' : 'text-white/35'} />
+          <BadgeCheck size={19} className={vouchCount >= 3 ? 'text-accent' : 'text-white/35'} />
           <span className="flex-1 text-sm text-white/70">{loading ? 'Checking vouches…' : `${vouchCount} vouch${vouchCount === 1 ? '' : 'es'}`}</span>
-          {vouchCount >= 3 && <span className="text-xs font-semibold text-blue-400">Trusted Vendor</span>}
+          {vouchCount >= 3 && <span className="text-xs font-semibold text-accent">Trusted Vendor</span>}
         </div>
         {!isSelf && identity?.sk && (
           <Button onClick={vouchForVendor} disabled={sending || hasVouched} className="mt-4 flex w-full items-center justify-center gap-2">

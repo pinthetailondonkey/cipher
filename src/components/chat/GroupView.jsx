@@ -40,7 +40,7 @@ function GroupStorefront({ items, pinnedId, canList, onBuy, onList, pendingLists
       <span className="min-w-0 flex-1">
         {featuredCard && <span className="block text-[11px] font-semibold uppercase tracking-wide text-amber-200">Pinned</span>}
         <span className="block truncate text-[15px] font-semibold text-white">{item.product.title || item.product.name || 'Item'}</span>
-        <span className="block text-[13px] font-bold text-blue-500">{money(item.product)}</span>
+        <span className="block text-[13px] font-bold text-accent">{money(item.product)}</span>
       </span>
     </button>
   );
@@ -67,7 +67,7 @@ function GroupStorefront({ items, pinnedId, canList, onBuy, onList, pendingLists
           </div>
         );
       })}
-      {canList && !open && <button type="button" onClick={() => setOpen(true)} className="w-full rounded-2xl bg-blue-600 py-3.5 font-bold text-white">List an item</button>}
+      {canList && !open && <button type="button" onClick={() => setOpen(true)} className="w-full rounded-2xl bg-accent py-3.5 font-bold text-accentInk">List an item</button>}
       {canList && open && (
         <form onSubmit={(event) => {
           event.preventDefault();
@@ -81,7 +81,7 @@ function GroupStorefront({ items, pinnedId, canList, onBuy, onList, pendingLists
           <input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Item" className="w-full border-b border-white/5 bg-transparent px-4 py-3 text-[15px] text-white outline-none placeholder:text-white/30" />
           <input value={price} onChange={(event) => setPrice(event.target.value)} placeholder="Price in USD" inputMode="decimal" className="w-full border-b border-white/5 bg-transparent px-4 py-3 text-[15px] text-white outline-none placeholder:text-white/30" />
           <input value={note} onChange={(event) => setNote(event.target.value)} placeholder="Note" className="w-full border-b border-white/5 bg-transparent px-4 py-3 text-[15px] text-white outline-none placeholder:text-white/30" />
-          <button type="submit" className="w-full bg-blue-600 py-3.5 font-bold text-white">Post to shop</button>
+          <button type="submit" className="w-full bg-accent py-3.5 font-bold text-accentInk">Post to shop</button>
           {formError && <p role="alert" className="px-4 py-3 text-[13px] text-red-400">{formError}</p>}
         </form>
       )}
@@ -303,7 +303,7 @@ export default function GroupView({
       <ChatHeader mode="group" />
       <div className="grid grid-cols-2 border-b border-white/5 px-4">
         {[['chat', 'Chat'], ['shop', 'Shop']].map(([id, label]) => (
-          <button key={id} type="button" onClick={() => setPane(id)} className={`py-2.5 text-[13px] font-semibold ${pane === id ? 'border-b-2 border-blue-600 text-white' : 'text-white/40'}`}>{label}</button>
+          <button key={id} type="button" onClick={() => setPane(id)} className={`py-2.5 text-[13px] font-semibold ${pane === id ? 'border-b-2 border-accent text-white' : 'text-white/40'}`}>{label}</button>
         ))}
       </div>
       {pane === 'shop' ? (
@@ -345,8 +345,8 @@ export default function GroupView({
       </div>
       {replyingTo && (
         <div className="mx-3 mb-2 flex items-center gap-3 rounded-2xl border border-line bg-panel shadow-lg px-4 py-3">
-          <div className="min-w-0 flex-1 border-l-2 border-blue-500 pl-3">
-            <p className="text-[11px] font-semibold text-blue-400">{replyingTo.isSender ? 'You' : 'Replying'}</p>
+          <div className="min-w-0 flex-1 border-l-2 border-accent pl-3">
+            <p className="text-[11px] font-semibold text-accent">{replyingTo.isSender ? 'You' : 'Replying'}</p>
             <p className="truncate text-[13px] text-white/60">{replyingTo.data?.message || replyingTo.rawContent || 'Message'}</p>
           </div>
           <button type="button" onClick={() => setReplyingTo(null)} aria-label="Cancel reply" className="p-2 text-white/45 hover:text-white"><X size={18} /></button>

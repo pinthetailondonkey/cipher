@@ -277,7 +277,7 @@ export default function Wallet({ identity, onOpenChat }) {
             <input value={xmrAddress} onChange={(event) => setXmrAddress(event.target.value)} autoComplete="off" spellCheck="false" placeholder="Monero address" className="w-full bg-transparent px-4 py-4 text-[15px] text-white outline-none placeholder:text-white/30" />
           </div>
           {status && <p role="status" className="text-[13px] text-amber-300">{status}</p>}
-          <button type="submit" className="w-full rounded-2xl bg-blue-600 py-3.5 font-bold text-white hover:bg-blue-500">Save and turn on selling</button>
+          <button type="submit" className="w-full rounded-2xl bg-accent py-3.5 font-bold text-accentInk hover:bg-accent">Save and turn on selling</button>
         </form>
       </div>
     );
@@ -307,7 +307,7 @@ export default function Wallet({ identity, onOpenChat }) {
               <option value="bcrt">Bitcoin regtest</option>
             </select>
           </div>
-          <button type="submit" disabled={savingAdvanced} className="w-full rounded-2xl bg-blue-600 py-3.5 font-bold text-white disabled:opacity-40">
+          <button type="submit" disabled={savingAdvanced} className="w-full rounded-2xl bg-accent py-3.5 font-bold text-accentInk disabled:opacity-40">
             {savingAdvanced ? 'Saving…' : 'Save'}
           </button>
           {status && <p role="status" className={`text-center text-sm ${status.startsWith('Could not') || status.startsWith('Error') ? 'text-red-400' : 'text-emerald-400'}`}>{status}</p>}
@@ -322,8 +322,8 @@ export default function Wallet({ identity, onOpenChat }) {
       <div className="h-full overflow-y-auto bg-transparent pb-8">
         <ScreenHeader title="New listing" onBack={() => setView('main')} />
         <div className="space-y-4 p-4">
-          <input placeholder="Product Title" value={title} onChange={e => setTitle(e.target.value)} className="w-full border border-line bg-panelStrong shadow-lg rounded-2xl p-4 text-sm focus:border-blue-500 outline-none" />
-          <textarea placeholder="Description" value={description} onChange={e => setDescription(e.target.value)} className="w-full border border-line bg-panelStrong shadow-lg rounded-2xl p-4 text-sm focus:border-blue-500 outline-none resize-none h-24" />
+          <input placeholder="Product Title" value={title} onChange={e => setTitle(e.target.value)} className="w-full border border-line bg-panelStrong shadow-lg rounded-2xl p-4 text-sm focus:border-accent outline-none" />
+          <textarea placeholder="Description" value={description} onChange={e => setDescription(e.target.value)} className="w-full border border-line bg-panelStrong shadow-lg rounded-2xl p-4 text-sm focus:border-accent outline-none resize-none h-24" />
           
           <div className="flex items-center gap-4 p-4 border border-line bg-panelStrong shadow-lg rounded-2xl">
             <Picture src={image} alt="product" className="w-16 h-16 rounded-xl object-cover" fallback={<div className="flex h-16 w-16 items-center justify-center rounded-xl border border-white/10 bg-white/5"><Camera size={24} className="text-white/20" /></div>} />
@@ -336,13 +336,13 @@ export default function Wallet({ identity, onOpenChat }) {
           </div>
 
           <div className="flex gap-3">
-            <input placeholder="Price" type="number" value={price} onChange={e => setPrice(e.target.value)} className="flex-1 border border-line bg-panelStrong shadow-lg rounded-2xl p-4 text-sm focus:border-blue-500 outline-none" />
-            <select value={currency} onChange={e => setCurrency(e.target.value)} className="border border-line bg-panelStrong shadow-lg rounded-2xl px-4 text-sm focus:border-blue-500 outline-none">
+            <input placeholder="Price" type="number" value={price} onChange={e => setPrice(e.target.value)} className="flex-1 border border-line bg-panelStrong shadow-lg rounded-2xl p-4 text-sm focus:border-accent outline-none" />
+            <select value={currency} onChange={e => setCurrency(e.target.value)} className="border border-line bg-panelStrong shadow-lg rounded-2xl px-4 text-sm focus:border-accent outline-none">
               <option value="USD">USD</option><option value="BTC">BTC</option><option value="XMR">XMR</option>
             </select>
           </div>
           
-          <button onClick={publishProduct} disabled={isPublishing || uploadingImage} className="w-full py-4 bg-blue-600 text-white rounded-2xl font-bold text-sm mt-4 flex justify-center items-center gap-2 hover:bg-blue-500 transition-colors">
+          <button onClick={publishProduct} disabled={isPublishing || uploadingImage} className="w-full py-4 bg-accent text-accentInk rounded-2xl font-bold text-sm mt-4 flex justify-center items-center gap-2 hover:bg-accent transition-colors">
             {isPublishing ? <RefreshCw size={16} className="animate-spin"/> : 'Publish to Store'}
           </button>
         </div>
@@ -353,7 +353,7 @@ export default function Wallet({ identity, onOpenChat }) {
   // --- MAIN PROFILE TAB ---
   return (
     <div className="animate-fade-in overflow-y-auto h-full pb-4 pb-[env(safe-area-inset-bottom)]">
-      {status && <div className="fixed left-1/2 -translate-x-1/2 bg-blue-600 text-white px-4 py-2 rounded-xl text-xs font-bold shadow-lg z-50 animate-fade-in" style={{ top: `calc(5rem + env(safe-area-inset-top))` }}>{status}</div>}
+      {status && <div className="fixed left-1/2 -translate-x-1/2 bg-accent text-accentInk px-4 py-2 rounded-xl text-xs font-bold shadow-lg z-50 animate-fade-in" style={{ top: `calc(5rem + env(safe-area-inset-top))` }}>{status}</div>}
 
       {/* HEADER PROFILE CARD */}
       <div className="flex flex-col items-center px-4 pb-2 pt-8">
@@ -468,7 +468,7 @@ export default function Wallet({ identity, onOpenChat }) {
               }
               useChatStore.getState().setToast({ type: 'success', message: 'Switched to buyer mode. Payment details were cleared from this device.' });
             }} className="flex w-full items-center gap-3 border-b border-white/5 p-4 text-left">
-              <span className="text-[15px] font-semibold text-blue-500">Switch to buyer mode</span>
+              <span className="text-[15px] font-semibold text-accent">Switch to buyer mode</span>
             </button>
           )}
           <button onClick={() => setShowPanicConfirm(true)} className="flex w-full items-center gap-3 p-4 text-left">

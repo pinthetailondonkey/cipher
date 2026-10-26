@@ -56,13 +56,13 @@ function urlTokens(text) {
 }
 
 function orderLabel(content) {
-  if (content.paymentState === 'confirmed') return { text: 'Confirmed', className: 'bg-blue-600 text-white' };
-  if (content.status === 'shipped') return { text: 'Shipped', className: 'bg-blue-600 text-white' };
+  if (content.paymentState === 'confirmed') return { text: 'Confirmed', className: 'bg-accent text-accentInk' };
+  if (content.status === 'shipped') return { text: 'Shipped', className: 'bg-accent text-accentInk' };
   if (content.status === 'completed') return { text: 'Delivered', className: 'bg-emerald-500 text-white' };
   if (content.status === 'cancelled') return { text: 'Cancelled', className: 'bg-white/15 text-white' };
   if (content.status === 'disputed') return { text: 'Disputed', className: 'bg-rose-500/20 text-rose-200' };
-  if (content.paymentState === 'seen' && content.paymentSeenBy !== 'vendor') return { text: 'Seen on-chain', className: 'bg-blue-600 text-white' };
-  if (content.status === 'paid' || content.paymentSeenBy === 'vendor') return { text: 'Marked paid', className: 'bg-blue-600 text-white' };
+  if (content.paymentState === 'seen' && content.paymentSeenBy !== 'vendor') return { text: 'Seen on-chain', className: 'bg-accent text-accentInk' };
+  if (content.status === 'paid' || content.paymentSeenBy === 'vendor') return { text: 'Marked paid', className: 'bg-accent text-accentInk' };
   if (content.status === 'accepted' || content.paymentState === 'address_issued') return { text: 'Address sent', className: 'bg-amber-400 text-black' };
   return { text: 'Awaiting payment', className: 'bg-amber-400 text-black' };
 }
@@ -81,7 +81,7 @@ function OrderReceipt({ content }) {
           <p className="text-[15px] font-semibold text-white">{title}</p>
           <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold ${pill.className}`}>{pill.text}</span>
         </div>
-        {price && <p className="mt-1 text-[13px] font-bold text-blue-500">{price}</p>}
+        {price && <p className="mt-1 text-[13px] font-bold text-accent">{price}</p>}
         {content.paymentSeenBy === 'vendor' && content.paymentState !== 'confirmed' && (
           <p className="mt-1 text-[13px] text-amber-300">Not checked on-chain.</p>
         )}
@@ -127,7 +127,7 @@ export default function MessageBubble({ message, data, onAction, senderName, isP
     return () => clearInterval(id);
   }, [message?.deliveryStatus, message?.id]);
 
-  const avatarColor = ['text-blue-400', 'text-sky-400', 'text-indigo-300', 'text-cyan-300'][(message?.pubkey?.charCodeAt(0) || 0) % 4];
+  const avatarColor = ['text-accent', 'text-sky-400', 'text-indigo-300', 'text-cyan-300'][(message?.pubkey?.charCodeAt(0) || 0) % 4];
   const securingSince = message?.securingSince || message?.local_timestamp || (validTimestamp ? validTimestamp * 1000 : 0);
   const securingStuck = message?.deliveryStatus === 'securing' && securingPhase(securingSince, clock) === 'stuck';
   const deliveryLabel = {
@@ -138,7 +138,7 @@ export default function MessageBubble({ message, data, onAction, senderName, isP
   }[message?.deliveryStatus];
   const read = message?.read || message?.deliveryStatus === 'read';
   const checks = isSender && !deliveryLabel
-    ? <span className={read ? 'text-blue-400' : 'text-white/45'}>{read ? '✓✓' : '✓'}</span>
+    ? <span className={read ? 'text-accent' : 'text-white/45'}>{read ? '✓✓' : '✓'}</span>
     : null;
   const timeLabel = validTimestamp === null ? '' : new Date(validTimestamp * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   const time = (
@@ -215,9 +215,9 @@ export default function MessageBubble({ message, data, onAction, senderName, isP
         onPointerCancel={clearPress}
         onPointerMove={movePress}
         onContextMenu={(event) => { event.preventDefault(); haptic('medium'); setOpen(true); }}
-        className={`max-w-[78%] min-w-[4.5rem] rounded-2xl border px-3 py-2 ${isSender ? 'border-blue-500 bg-blue-600 text-white' : 'border-line bg-panel shadow-lg text-white'}`}
+        className={`max-w-[78%] min-w-[4.5rem] rounded-2xl border px-3 py-2 ${isSender ? 'border-accent bg-accent text-accentInk' : 'border-line bg-panel shadow-lg text-white'}`}
       >
-        {!isSender && senderName && <p className="mb-0.5 text-[11px] font-semibold leading-none text-blue-400">{senderName}</p>}
+        {!isSender && senderName && <p className="mb-0.5 text-[11px] font-semibold leading-none text-accent">{senderName}</p>}
         {(content.type === 'cipher_order' || content.type === 'order_request' || content.type === 'order_update') && (
           <OrderReceipt content={content.type === 'order_update' ? content : { ...content, ...orderState(chatMessages, message?.id, { data: content }) }} />
         )}
@@ -340,7 +340,7 @@ export default function MessageBubble({ message, data, onAction, senderName, isP
                 {noHexName(profiles[person.pubkey], person.pubkey)}
               </p>
             ))}
-            <button type="button" onClick={() => setShowReactors(false)} className="mt-3 text-[13px] font-semibold text-blue-500">Close</button>
+            <button type="button" onClick={() => setShowReactors(false)} className="mt-3 text-[13px] font-semibold text-accent">Close</button>
           </div>
         </div>
       )}

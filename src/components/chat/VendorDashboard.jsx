@@ -49,14 +49,14 @@ export default function VendorDashboard({ identity, products = [], onBack, onCre
       )}
       <VolumeList title="Countersigned" rows={standing.countersigned} />
       <VolumeList title="Vendor signature only" rows={standing.vendor} />
-      {onCreate && <button type="button" onClick={onCreate} className="flex w-full items-center justify-center gap-2 rounded-2xl bg-blue-600 py-3.5 font-bold text-white hover:bg-blue-500"><Plus size={16} /> List an item</button>}
+      {onCreate && <button type="button" onClick={onCreate} className="flex w-full items-center justify-center gap-2 rounded-2xl bg-accent py-3.5 font-bold text-accentInk hover:bg-accent"><Plus size={16} /> List an item</button>}
       <div className="overflow-hidden rounded-2xl border border-line bg-panel shadow-lg">
         {products.length === 0 ? (
           <p className="p-4 text-[13px] text-white/40">You haven’t published any products yet.</p>
         ) : products.map((product) => (
           <div key={product.id || product.dTag || product.name} className="flex items-center gap-3 border-b border-white/5 p-4 last:border-0">
             <Picture src={product.image} alt="" className="h-12 w-12 rounded-xl object-cover" fallback={<div className="flex h-12 w-12 items-center justify-center rounded-xl bg-black"><Package size={18} className="text-white/40" /></div>} />
-            <div className="min-w-0 flex-1"><p className="truncate text-[15px] font-semibold text-white">{product.name || product.title || 'Product'}</p><p className="text-[13px] text-blue-500">{product.price || product.priceUsd || ''} {product.currency || (product.priceUsd ? 'USD' : '')}</p></div>
+            <div className="min-w-0 flex-1"><p className="truncate text-[15px] font-semibold text-white">{product.name || product.title || 'Product'}</p><p className="text-[13px] text-accent">{product.price || product.priceUsd || ''} {product.currency || (product.priceUsd ? 'USD' : '')}</p></div>
           </div>
         ))}
       </div>

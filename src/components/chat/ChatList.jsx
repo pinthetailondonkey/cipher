@@ -72,7 +72,7 @@ export default function ChatList({ onOpenChat }) {
                   </span>
                 )}
                 {unreadCounts[chat.id] > 0 && (
-                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-blue-600 text-[10px] font-bold text-white">
+                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-accent text-[10px] font-bold text-accentInk">
                     {unreadCounts[chat.id]}
                   </span>
                 )}
@@ -90,7 +90,7 @@ export default function ChatList({ onOpenChat }) {
             className={row}
           >
             <span className="flex min-w-0 items-center gap-3">
-              <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-white/10 bg-black text-blue-500">
+              <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-white/10 bg-black text-accent">
                 <Icon size={22} />
               </span>
               <span className="min-w-0">
@@ -103,7 +103,7 @@ export default function ChatList({ onOpenChat }) {
               </span>
             </span>
             {unreadCounts[chat.id] > 0 && (
-              <span className="ml-2 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-blue-600 text-[10px] font-bold text-white">
+              <span className="ml-2 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-accent text-[10px] font-bold text-accentInk">
                 {unreadCounts[chat.id]}
               </span>
             )}

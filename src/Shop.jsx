@@ -135,7 +135,7 @@ export default function Shop({ identity, setActiveTab }) {
       <div className="flex-1 overflow-y-auto pb-4">
         {loading ? (
           <div className="mt-20 flex flex-col items-center justify-center text-white/40">
-            <Loader2 size={32} className="mb-4 animate-spin text-blue-500" />
+            <Loader2 size={32} className="mb-4 animate-spin text-accent" />
             <p className="text-sm">Fetching products from the network...</p>
           </div>
         ) : error ? (
@@ -163,8 +163,8 @@ export default function Shop({ identity, setActiveTab }) {
                 </div>
                 <div className="px-1.5 pb-1 pt-3">
                   <p className="truncate text-[15px] font-semibold text-white">{p.name}</p>
-                  <p className="text-[13px] font-bold text-blue-400">{priceLabel(p.price, p.currency)}</p>
-                  <button type="button" onClick={() => { haptic('heavy'); setCheckoutProduct(p); }} className="mt-3 flex min-h-[44px] w-full items-center justify-center rounded-2xl bg-blue-600 py-2 text-[13px] font-bold text-white shadow-lg">Buy</button>
+                  <p className="text-[13px] font-bold text-accent">{priceLabel(p.price, p.currency)}</p>
+                  <button type="button" onClick={() => { haptic('heavy'); setCheckoutProduct(p); }} className="mt-3 flex min-h-[44px] w-full items-center justify-center rounded-2xl bg-accent py-2 text-[13px] font-bold text-accentInk shadow-lg">Buy</button>
                   <button type="button" onClick={() => shareProduct(p)} className="mt-1 flex min-h-[44px] w-full items-center justify-center rounded-xl py-2 text-[12px] font-semibold text-white/50">Copy link</button>
                 </div>
               </div>
