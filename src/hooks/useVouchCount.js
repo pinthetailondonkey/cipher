@@ -1,6 +1,7 @@
 import { useCallback, useState, useEffect } from 'react';
 import { getAuthenticatedPool } from '../lib/pool';
 import { generalRelays, queryWithTimeout } from '../lib/relays';
+import { receiptBindingOf, vouchCoversTrade } from '../lib/reputation';
 
 export function useVouchCount({ identity, targetPubkey }) {
   const [vouchCount, setVouchCount] = useState(0);
@@ -36,7 +37,12 @@ export function useVouchCount({ identity, targetPubkey }) {
             ev.kind === 10004 &&
             ev.pubkey !== targetPubkey &&
             explicitlyVouches &&
-            ev.tags.some((tag) => tag[0] === 'p' && tag[1] === targetPubkey)
+            ev.tags.some((tag) => tag[0] === 'p' && tag[1] === targetPubkey) &&
+            // S8: only a vouch bound to a receipt — and naming the trade
+            // both the target and the vouching party stood in — counts. The
+            // counter was the one reader the receipt check never reached.
+            !!receiptBindingOf(ev) &&
+            vouchCoversTrade(ev, targetPubkey)
           ) {
             uniqueVouchers.add(ev.pubkey);
           }

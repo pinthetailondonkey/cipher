@@ -38,13 +38,14 @@ export default function ProfileModal({ pubkey, identity, onClose, onMessage }) {
     setError('');
     setNotice('');
     // S8: a vouch binds to the receipt hash of a trade with this vendor that
-    // this device holds a public view of. Never been traded, no vouch.
-    const traded = readPublicViews().some((view) => view?.hash && (
+    // this device holds a public view of, and publishes the trade's own
+    // vendor and buyer under this signature, so the vouch cannot be
+    // transplanted onto a trade it does not belong to. Never been traded,
+    // no vouch.
+    const traded = readPublicViews().find((view) => view?.hash && (
       view.vendor === pubkey || view.buyer === pubkey
     ));
-    const result = await sendVouch(pubkey, traded ? readPublicViews().find((view) => (
-      view?.hash && (view.vendor === pubkey || view.buyer === pubkey)
-    )).hash : '');
+    const result = await sendVouch(pubkey, traded?.hash || '', traded ? { vendor: traded.vendor, buyer: traded.buyer } : null);
     setSending(false);
     if (!result.success) {
       setError(result.error || 'Could not publish your vouch.');
