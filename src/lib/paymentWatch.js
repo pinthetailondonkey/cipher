@@ -201,9 +201,12 @@ function hexEqual(a, b) {
   return diff === 0;
 }
 
-async function watcherSignature(rawBody, token) {
+async function watcherSignature(rawBody, token, ts) {
   const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(token), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
-  const mac = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(rawBody));
+  // The timestamp is inside the signed bytes. A captured answer replayed
+  // with a re-stamped date verified under a bare-body HMAC; with the date
+  // covered, a replay's stamp no longer matches and freshness bites. (security F6)
+  const mac = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(`${ts}:${rawBody}`));
   let hex = '';
   for (const byte of new Uint8Array(mac)) hex += byte.toString(16).padStart(2, '0');
   return hex;
@@ -219,7 +222,7 @@ export async function verifyWatcherResponse({ rawBody, sig, ts, token, nowSec } 
   const presented = String(sig ?? '').trim();
   const match = presented.match(/^v1=([0-9a-f]{64})$/);
   if (!match) return false;
-  const computed = await watcherSignature(rawBody, token);
+  const computed = await watcherSignature(rawBody, token, String(ts).trim());
   return hexEqual(computed, match[1]);
 }
 

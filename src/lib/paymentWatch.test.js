@@ -5,17 +5,19 @@ import { atomicToCoins, checkPayment, incomingMoneroTransfers, isPublicExplorer,
 
 const TOKEN = 'secret';
 const hexOf = (buffer) => [...new Uint8Array(buffer)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
-const signBody = async (raw, token = TOKEN) => {
+const signBody = async (raw, token = TOKEN, tsSec) => {
   const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(token), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
-  return `v1=${hexOf(await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(raw)))}`;
+  const ts = String(tsSec ?? Math.floor(Date.now() / 1000));
+  return `v1=${hexOf(await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(`${ts}:${raw}`)))}`;
 };
 
 // A stand-in for a signed watcher answer. Every 200 answer carries the two
 // signature headers over the exact raw text it returns.
 const watcherAnswer = async (body, { token = TOKEN, tsSec, sig } = {}) => {
   const raw = typeof body === 'string' ? body : JSON.stringify(body);
-  const headers = { 'content-type': 'application/json', 'x-cipher-ts': String(tsSec ?? Math.floor(Date.now() / 1000)) };
-  headers['x-cipher-sig'] = sig ?? (await signBody(raw, token));
+  const ts = String(tsSec ?? Math.floor(Date.now() / 1000));
+  const headers = { 'content-type': 'application/json', 'x-cipher-ts': ts };
+  headers['x-cipher-sig'] = sig ?? (await signBody(raw, token, ts));
   return {
     ok: true,
     status: 200,
@@ -146,9 +148,9 @@ test('an answer signed with the right key but an old or future time is refused',
 
 test('verifyWatcherResponse takes valid, and refuses tampered, wrong key, stale, future, or unsigned', async () => {
   const raw = JSON.stringify({ txid: 'ab', confirmations: 3, amount: '0.01' });
-  const sig = await signBody(raw);
-  const now = Math.floor(Date.now() / 1000);
-  const check = (over) => verifyWatcherResponse({ rawBody: raw, sig, ts: String(now), token: TOKEN, nowSec: now, ...over });
+  const ts = Math.floor(Date.now() / 1000);
+  const sig = await signBody(raw, TOKEN, ts);
+  const check = (over) => verifyWatcherResponse({ rawBody: raw, sig, ts: String(ts), token: TOKEN, nowSec: ts, ...over });
   assert.equal(await check({}), true);
   assert.equal(await check({ rawBody: `${raw} ` }), false);
   assert.equal(await check({ rawBody: raw.replace('0.01', '0.99') }), false);
@@ -156,13 +158,19 @@ test('verifyWatcherResponse takes valid, and refuses tampered, wrong key, stale,
   assert.equal(await check({ sig: `v1=${'0'.repeat(64)}` }), false);
   assert.equal(await check({ sig: sig.slice(3) }), false);
   assert.equal(await check({ sig: undefined }), false);
-  assert.equal(await check({ ts: String(now - 121) }), false);
-  assert.equal(await check({ ts: String(now + 121) }), false);
-  assert.equal(await check({ ts: String(now - 120) }), true);
-  assert.equal(await check({ ts: String(now + 120) }), true);
+  assert.equal(await check({ ts: String(ts - 121) }), false);
+  assert.equal(await check({ ts: String(ts + 121) }), false);
   assert.equal(await check({ ts: 'yesterday' }), false);
   assert.equal(await check({ rawBody: '' }), false);
   assert.equal(await check({ nowSec: 'n/a' }), false);
+  // The timestamp sits inside the signed bytes, so a captured answer cannot
+  // be replayed with a re-stamped date: the new stamp fails the signature.
+  // (security F6)
+  assert.equal(await check({ ts: String(ts - 1) }), false);
+  const edgeOld = await signBody(raw, TOKEN, ts - 120);
+  assert.equal(await verifyWatcherResponse({ rawBody: raw, sig: edgeOld, ts: String(ts - 120), token: TOKEN, nowSec: ts }), true);
+  const edgeFuture = await signBody(raw, TOKEN, ts + 120);
+  assert.equal(await verifyWatcherResponse({ rawBody: raw, sig: edgeFuture, ts: String(ts + 120), token: TOKEN, nowSec: ts }), true);
 });
 
 test('a short payment does not move, and a covering payment does', async () => {
