@@ -240,5 +240,9 @@ function watch() {
 server.listen(port, pushHost, () => {
   console.log(`[push] http://127.0.0.1:${port}`);
   console.log('[push] Paste that address into Connections. Nothing buzzes until a phone subscribes.');
+  console.log('[push] To serve this box as an onion service instead, add to torrc:');
+  console.log('[push]   HiddenServiceDir /var/lib/tor/cipher-push/');
+  console.log(`[push]   HiddenServicePort 80 127.0.0.1:${port}`);
+  console.log('[push] then reload tor; the .onion name sits in that directory\'s hostname file, and phones over Tor reach the box that way.');
   watch();
 });
