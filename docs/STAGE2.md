@@ -24,8 +24,15 @@ Proves: the push gateway you run reaches a phone with the screen off, and the
 app can register a real subscription without holding the message text.
 
 Setup: phone A installs the app as a PWA and pastes the gateway URL in
-Connections. The entry point is `src/lib/pushGateway.js` (`registerWithGateway`);
-the toggle lives in Connections.
+Connections' Advanced row. The entry point is `src/lib/pushGateway.js`
+(`registerWithGateway`). There is no toggle: registration runs on its own once
+a gateway URL is pasted (`src/features/chat/useChatBootstrap.js`).
+
+With the gateway as shipped, this test is not reachable: HTTPS on a LAN host
+is blocked as mixed content, the LAN app serves no service worker, and the
+installed-app path answers `buzzing: false` until the gateway holds FCM or
+APNs keys (`.env.example` already says no device has been buzzed). The test
+stays; its expected result is a recorded product gap until push keys exist.
 
 Steps:
 1. Lock phone A and put it screen-down.
@@ -45,7 +52,10 @@ Proves: the full payment path, watched on the real chain, with nothing skipped.
 
 Setup: vendor account A publishes a menu with one priced item. Buyer account B
 has a funded wallet of the chain under test. Paste the watcher URL in
-Connections on B's device — it is printed by `npm run boxes`. The entry point
+Connections on A's device — the vendor's, not B's — because "Check the chain"
+on A's order card is the only caller of `checkPayment`
+(`src/features/chat/useCommerce.js`); B's device never contacts the watcher.
+The URL is printed by `npm run boxes`. The entry point
 is `src/lib/paymentWatch.js` (`paymentWatchUrl`); the app refuses a public
 block explorer as the watcher host.
 
@@ -60,7 +70,10 @@ blocks (XMR).
 
 Disqualified when: any state is skipped, the vendor's own wallet is treated as
 a confirmation, a public block explorer was contacted, or the amounts do not
-match (BTC 8 decimals, XMR 12, rounding half up — no dropped digits).
+match (BTC 8 decimals, XMR 12, rounding half up — no dropped digits). No UI
+sets `preferred_payment_method` today (`src/features/chat/useCommerce.js:330`
+only reads it, defaulting to BTC), so the XMR Result line stays empty until a
+payment-method control exists — the BTC leg runs as written.
 
 Result (BTC):
 
@@ -104,7 +117,8 @@ readable, and arrive without their metadata.
 
 Setup: accounts A and B in a direct chat. Take a photo with GPS and camera
 metadata on phone A (a phone camera shot, not a screenshot). The entry point is
-`src/features/chat/useComposer.js` line 212 (`uploadPrivateMedia`); the hosts
+the photo path `sendPrivateImage` (`src/features/chat/useComposer.js:182`,
+`src/lib/mediaCrypto.js:113`); line 212 is the voice-note call. The hosts
 it uses are Blossom (blossom.primal.net, nostr.build, blossom.band).
 
 Steps:
