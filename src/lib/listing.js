@@ -1,6 +1,7 @@
 // A listing's price is an amount and a unit. Only USD is dollars: a listing
 // priced in BTC or XMR keeps its coin amount all the way to the order card,
 // where the vendor's acceptance reads it as the coin amount to collect.
+// The listing never carries a payment address (security S2).
 
 export function priceLabel(amount, currency) {
   const text = String(amount ?? '').trim();
@@ -14,7 +15,10 @@ export function listingFromEvent(event) {
   const priceTag = tag('price');
   const amount = String(priceTag?.[1] || '').trim();
   const currency = String(priceTag?.[2] || 'USD').toUpperCase();
-  const payments = event.tags.filter((item) => item[0] === 'payment').map((item) => item[1] || '');
+  // A listing's own `payment` tags are never read here. An address the buyer
+  // scans straight off the menu skips the order — no accept, no issued
+  // address, no chain check, no receipt — so nothing on a menu starts a
+  // payment. The only address a buyer is sent comes through the order flow.
   return {
     id: tag('d')?.[1] || event.id,
     name: tag('title')?.[1] || 'Unnamed Product',
@@ -23,8 +27,6 @@ export function listingFromEvent(event) {
     ...(currency === 'USD' ? { priceUsd: amount } : {}),
     image: tag('image')?.[1] || '',
     vendorPubkey: event.pubkey,
-    btc: payments.find((value) => value.startsWith('btc:'))?.slice(4) || '',
-    xmr: payments.find((value) => value.startsWith('xmr:'))?.slice(4) || '',
   };
 }
 
