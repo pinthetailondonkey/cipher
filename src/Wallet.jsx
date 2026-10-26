@@ -50,6 +50,8 @@ export default function Wallet({ identity, onOpenChat }) {
     setThemeId(next.id);
     setTheme(next.id);
   };
+  // The Appearance row shows the current theme's blurb (lib/theme.js).
+  const themeBlurb = THEMES.find((theme) => theme.id === themeId)?.blurb ?? THEMES[0].blurb;
 
   // Profile state
   const [username, setUsername] = useState('') 
