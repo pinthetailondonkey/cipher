@@ -1,6 +1,6 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Plus, Users, MessageSquare, Radio } from 'lucide-react';
+import { Plus, Users, MessageSquare, Radio, Flame } from 'lucide-react';
 import { useChatStore } from '../../store/chatStore';
 import { pressable } from '../ui/Button';
 
@@ -10,6 +10,7 @@ export default function FloatingMenu() {
   const setView = useChatStore((s) => s.setView);
   const setShowCreateGroup = useChatStore((s) => s.setShowCreateGroup);
   const setIsChannel = useChatStore((s) => s.setIsChannel);
+  const setShowDeadDrop = useChatStore((s) => s.setShowDeadDrop);
 
   return (
     <>
@@ -51,6 +52,14 @@ export default function FloatingMenu() {
               >
                 <span className="text-sm font-bold tracking-wide">New Channel</span>
                 <div className="p-2 bg-accent rounded-full text-accentInk shadow-lg"><Radio size={16} /></div>
+              </button>
+
+              <button
+                onClick={() => { setShowMenu(false); setShowDeadDrop(true); }}
+                className={`flex items-center gap-3 rounded-2xl border border-line bg-panel shadow-lg px-5 py-3.5 font-bold text-white shadow-lg active:bg-white/10 ${pressable}`}
+              >
+                <span className="text-sm font-bold tracking-wide">Burn Note</span>
+                <div className="p-2 bg-accent rounded-full text-accentInk shadow-lg"><Flame size={16} /></div>
               </button>
             </motion.div>
           </>
