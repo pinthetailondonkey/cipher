@@ -29,15 +29,21 @@ export default function DmView({ sendMessage, handleMessageAction, handleImageUp
       <div ref={scrollRef} className="flex min-h-0 flex-1 flex-col overflow-y-auto py-3">
         {visibleMessages.length === 0 ? (
           <p className="m-auto mx-4 rounded-2xl border border-line bg-panel shadow-lg px-4 py-8 text-center text-[13px] text-ink/40">Your messages stay private between you and this person.</p>
-        ) : visibleMessages.map((message) => (
-          <MessageBubble
-            key={message.id}
-            message={message}
-            data={message.data}
-            senderName={!message.isSender ? (profiles[message.pubkey]?.displayName || profiles[message.pubkey]?.name) : null}
-            onAction={handleMessageAction}
-          />
-        ))}
+        ) : visibleMessages.map((message) => {
+          const peer = profiles[message.pubkey];
+          return (
+            <MessageBubble
+              key={message.id}
+              message={message}
+              data={message.data}
+              senderName={!message.isSender ? (peer?.displayName || peer?.name) : null}
+              showAvatar={!message.isSender}
+              avatarUrl={peer?.picture}
+              avatarInitial={peer?.displayName?.charAt(0) || '?'}
+              onAction={handleMessageAction}
+            />
+          );
+        })}
       </div>
       {replyingTo && (
         <div className="mx-3 mb-2 flex items-center gap-3 rounded-2xl border border-line bg-panel shadow-lg px-4 py-3">

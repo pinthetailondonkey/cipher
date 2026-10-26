@@ -55,6 +55,9 @@ export default function ChatHeader({ mode }) {
   const title = mode === 'dm'
     ? (profile?.displayName || profile?.name || shortNpub(activeDm) || 'Chat')
     : activeGroup?.name || 'Group';
+  // One picker serves both kinds of chat: the send path already reads the
+  // timer keyed by chat id (groups included) and stamps expires_at.
+  const activeChatId = mode === 'dm' ? activeDm : activeGroup?.id;
   const someoneTyping = mode === 'dm'
     ? Boolean(typingAt && now - typingAt < 6000)
     : Object.values(groupTyping || {}).some((stamp) => now - stamp < 6000);
@@ -88,26 +91,24 @@ export default function ChatHeader({ mode }) {
         </button>
       </div>
       <div className="flex items-center">
-        {mode === 'dm' && (
-          <button
-            type="button"
-            onClick={() => setShowTimer((open) => !open)}
-            aria-label="Message timer"
-            aria-expanded={showTimer}
-            className={`p-2 ${timer && timer !== 'off' ? 'text-accent' : 'text-ink/70 hover:text-ink'}`}
-          >
-            <Hourglass size={17} />
-          </button>
-        )}
+        <button
+          type="button"
+          onClick={() => setShowTimer((open) => !open)}
+          aria-label="Message timer"
+          aria-expanded={showTimer}
+          className={`p-2 ${timer && timer !== 'off' ? 'text-accent' : 'text-ink/70 hover:text-ink'}`}
+        >
+          <Hourglass size={17} />
+        </button>
         {mode === 'group' && <button type="button" onClick={() => setShowGroupInfo(true)} aria-label="Group information and pinned listing" className="p-2 text-ink/50 hover:text-ink"><Info size={19} /></button>}
         {mode === 'dm' && <button type="button" onClick={placeCall} aria-label="Voice call" className="p-2 text-ink/70 hover:text-ink"><Phone size={18} /></button>}
       </div>
-      {showTimer && mode === 'dm' && (
+      {showTimer && activeChatId && (
         <TimerPicker
-          chatId={activeDm}
+          chatId={activeChatId}
           timer={timer}
           onPick={(value) => {
-            useChatStore.getState().setDisappearingTimer(activeDm, value);
+            useChatStore.getState().setDisappearingTimer(activeChatId, value);
             setShowTimer(false);
           }}
         />
