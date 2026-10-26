@@ -1,4 +1,5 @@
 import { ORDER_STATUS as S, isOrderStatus } from './paymentState.js';
+import { verifyReceipt } from './proofOfTrade.js';
 
 const REQUEST_TYPES = new Set(['order_request', 'cipher_order']);
 
@@ -19,18 +20,58 @@ function isRequest(data) {
   return REQUEST_TYPES.has(data?.type);
 }
 
+// F7: the payment facts on an order are earned on this device, not asserted
+// by the peer. A received card or update can name any paymentState or
+// paymentSeenBy it likes, so none of those fields count as evidence unless
+// (a) this device set them — a localPatch, or a message this device sent —
+// or (b) the update carries a two-sided verified receipt that names this
+// order, the one artifact both parties signed. The lifecycle status still
+// reads as the newest update states it; the gates on actions decide what a
+// claim alone is allowed to do.
+const PAYMENT_RANK = ['created', 'address_issued', 'seen', 'confirmed'];
+
+function paymentEvidence(messages, orderId, request) {
+  const rank = (state) => Math.max(0, PAYMENT_RANK.indexOf(state));
+  let paymentState = '';
+  let paymentSeenBy = '';
+  const adopt = (source) => {
+    if (!source) return;
+    const state = PAYMENT_RANK.includes(source.paymentState) ? source.paymentState : '';
+    if (state && rank(state) > rank(paymentState)) paymentState = state;
+    if (!paymentSeenBy && source.paymentSeenBy) paymentSeenBy = source.paymentSeenBy;
+  };
+  if (request?.isSender) adopt(request.data);
+  else adopt(request?.localPatch || null);
+  for (const message of Array.isArray(messages) ? messages : []) {
+    if (message?.data?.type !== 'order_update' || message.data.orderId !== orderId) continue;
+    if (message.isSender) {
+      adopt(message.data);
+      continue;
+    }
+    adopt(message.localPatch || null);
+    const receipt = message.data.receipt;
+    if (receipt?.body && String(receipt.body.orderId) === String(orderId) && verifyReceipt(receipt)) {
+      // A receipt the device never verified rows no payment. A signed one
+      // names what the watcher saw: confirmed, or back to the payer.
+      adopt({ paymentState: receipt.body.outcome === 'confirmed' ? 'confirmed' : 'seen' });
+    }
+  }
+  return { paymentState: paymentState || 'created', paymentSeenBy };
+}
+
 // The order's state is the newest update either side sent for it, over what
-// this device changed on the request card itself.
+// this device changed on the request card itself. Payment facts are evidence,
+// never the newest claim (F7 above).
 export function orderState(messages, orderId, request) {
   const updates = (Array.isArray(messages) ? messages : [])
     .filter((message) => message?.data?.type === 'order_update' && message.data.orderId === orderId)
     .sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0) || String(a.id).localeCompare(String(b.id)));
   const latest = updates[updates.length - 1] || null;
-  const withPayment = [...updates].reverse().find((update) => update.data.paymentState);
+  const payment = paymentEvidence(messages, orderId, request);
   return {
     status: latest?.data?.status || request?.data?.status || S.PENDING,
-    paymentState: withPayment?.data.paymentState || request?.data?.paymentState || 'created',
-    paymentSeenBy: withPayment?.data.paymentSeenBy || request?.data?.paymentSeenBy || '',
+    paymentState: payment.paymentState,
+    paymentSeenBy: payment.paymentSeenBy,
   };
 }
 
@@ -77,7 +118,10 @@ export function allowedActionsFor(order, viewer) {
     const actions = [];
     if (status === S.ACCEPTED && paymentSeenBy !== 'vendor' && paymentState !== 'confirmed') actions.push('confirm_payment');
     if ((status === S.ACCEPTED || status === S.PAID) && paymentState !== 'confirmed') actions.push('check_chain');
-    if (status === S.PAID) actions.push('mark_shipped');
+    // F7: shipping stands on payment evidence — the vendor's own wallet
+    // sight or a countersigned receipt. A status the peer claimed on its own
+    // never opens it.
+    if (status === S.PAID && (paymentState === 'seen' || paymentState === 'confirmed')) actions.push('mark_shipped');
     return named(...actions);
   }
   if (viewer === 'buyer') {
