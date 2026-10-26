@@ -70,6 +70,21 @@ webpush.setVapidDetails('mailto:cipher@localhost', state.publicKey, state.privat
 // to a victim buzzes a phone. Kinds cycle trivially, so a per-kind cap alone
 // does not bound the noise — the cap is per recipient, with a short
 // per-source headroom. Gas is limited; sand is cheap.
+
+// Registration keeps the box small enough to stay alive: a pubkey holds a
+// bounded handful of phones, the book of phones never grows past the cap,
+// and the throttle memories evict to slack. Anyone can register anything,
+// so nothing that accepts registration may be unbounded. (security A4)
+const MAX_PHONES_PER_RECIPIENT = 8;
+const MAX_PHONE_ROWS = 2048;
+const MAX_THROTTLE_KEYS = 10000;
+
+function trimThrottle(map) {
+  while (map.size > MAX_THROTTLE_KEYS) {
+    map.delete(map.keys().next().value);
+  }
+}
+
 async function notify(pubkey, kind) {
   const now = Date.now();
   const recipientLast = recipients.get(pubkey) || 0;
@@ -79,9 +94,11 @@ async function notify(pubkey, kind) {
   if (now - last < 15000) return;
   recent.set(recentKey, now);
   recipients.set(pubkey, now);
+  trimThrottle(recent);
+  trimThrottle(recipients);
   const notice = kind === 'order' || kind === 'call' ? kind : 'message';
-  const targets = state.subs.filter((row) => row.pubkey === pubkey);
-  const native = (state.native || []).filter((row) => row.pubkey === pubkey);
+  const targets = state.subs.filter((row) => row.pubkey === pubkey).slice(0, MAX_PHONES_PER_RECIPIENT);
+  const native = (state.native || []).filter((row) => row.pubkey === pubkey).slice(0, MAX_PHONES_PER_RECIPIENT);
   await Promise.all(native.map(async (row) => {
     try {
       const result = await sendNative({ transport: row.transport, token: row.token, kind: notice });
@@ -103,10 +120,19 @@ async function notify(pubkey, kind) {
   }));
 }
 
-function readBody(req) {
+function readBody(req, limit = 65536) {
   return new Promise((resolve, reject) => {
     const chunks = [];
-    req.on('data', (chunk) => chunks.push(chunk));
+    let size = 0;
+    req.on('data', (chunk) => {
+      size += chunk.length;
+      if (size > limit) {
+        reject(new Error('The request is too large.'));
+        req.destroy();
+        return;
+      }
+      chunks.push(chunk);
+    });
     req.on('end', () => {
       try {
         resolve(JSON.parse(Buffer.concat(chunks).toString() || '{}'));
@@ -116,6 +142,14 @@ function readBody(req) {
     });
     req.on('error', reject);
   });
+}
+
+// One pubkey keeps a bounded number of phones, and the book keeps a bounded
+// number total — open registration must not be able to grow the state file,
+// the relay filter, or a single buzz's fan-out. (security A4)
+function roomFor(list, pubkey) {
+  const seats = list.filter((row) => row.pubkey === pubkey).length;
+  return seats < MAX_PHONES_PER_RECIPIENT && state.subs.length + state.native.length < MAX_PHONE_ROWS;
 }
 
 const server = http.createServer(async (req, res) => {
@@ -129,6 +163,10 @@ const server = http.createServer(async (req, res) => {
     try {
       const body = await readBody(req);
       if (!body?.pubkey || !body?.subscription?.endpoint) throw new Error('A subscription needs a pubkey and an endpoint.');
+      const replacing = state.subs.some((row) => row.subscription?.endpoint === body.subscription.endpoint);
+      if (!replacing && !roomFor(state.subs, body.pubkey)) {
+        throw new Error(`This account already holds ${MAX_PHONES_PER_RECIPIENT} phones, or the box is full.`);
+      }
       state.subs = state.subs.filter((row) => row.subscription?.endpoint !== body.subscription.endpoint);
       state.subs.push({ pubkey: body.pubkey, subscription: body.subscription });
       save(state);
@@ -147,6 +185,10 @@ const server = http.createServer(async (req, res) => {
       const body = await readBody(req);
       if (!body?.pubkey || !body?.token) throw new Error('A native subscription needs a pubkey and a token.');
       if (body.transport !== 'fcm' && body.transport !== 'apns') throw new Error('Native push is FCM or APNs.');
+      const replacing = (state.native || []).some((row) => row.token === body.token);
+      if (!replacing && !roomFor(state.native, body.pubkey)) {
+        throw new Error(`This account already holds ${MAX_PHONES_PER_RECIPIENT} phones, or the box is full.`);
+      }
       state.native = state.native.filter((row) => row.token !== body.token);
       state.native.push({ pubkey: body.pubkey, transport: body.transport, token: body.token });
       save(state);
