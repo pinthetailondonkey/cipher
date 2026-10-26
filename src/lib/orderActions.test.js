@@ -72,6 +72,33 @@ test('a buyer cancel removes Accept from the vendor card, and buyer actions sit 
   assert.deepEqual(orderActionsFor(theirs, [theirs, update('u3', true, 'accepted', 11)]).map(({ target }) => target), ['request', 'request']);
 });
 
+test('a crafted update cannot display or erase a confirmation, or deal the payment back', () => {
+  const theirs = request(false, {});
+  const accepted = update('u1', false, 'accepted', 11, { paymentState: 'address_issued' });
+  const base = orderState([theirs, accepted], 'order-1', theirs);
+  assert.equal(base.paymentState, 'address_issued');
+  assert.equal(base.paymentSeenBy, '');
+
+  // A stranger's word is not a confirmation. The display caps at the evidence.
+  const forged = update('u2', false, 'paid', 12, { paymentState: 'confirmed' });
+  assert.equal(orderState([theirs, accepted, forged], 'order-1', theirs).paymentState, 'seen');
+  const bareSeen = update('u3', false, 'paid', 12, { paymentState: 'seen' });
+  assert.equal(orderState([theirs, accepted, bareSeen], 'order-1', theirs).paymentState, 'address_issued');
+  const namedSeen = update('u4', false, 'paid', 12, { paymentState: 'seen', paymentSeenBy: 'watcher' });
+  assert.equal(orderState([theirs, accepted, namedSeen], 'order-1', theirs).paymentState, 'seen');
+
+  // Nothing walks back, and an unknown state is ignored outright.
+  const seen = orderState([theirs, accepted, namedSeen], 'order-1', theirs);
+  const regress = update('u5', false, 'accepted', 13, { paymentState: 'created' });
+  assert.equal(orderState([theirs, accepted, namedSeen, regress], 'order-1', theirs).paymentState, 'seen');
+  const nonsense = update('u6', false, 'paid', 14, { paymentState: 'settled' });
+  assert.deepEqual(
+    [orderState([theirs, accepted, namedSeen, nonsense], 'order-1', theirs).paymentState,
+      orderState([theirs, accepted, namedSeen, nonsense], 'order-1', theirs).paymentSeenBy],
+    [seen.paymentState, seen.paymentSeenBy],
+  );
+});
+
 test('every status an order message is written with is one the machine knows', () => {
   const read = (path) => fs.readFileSync(new URL(path, import.meta.url), 'utf8');
   const sources = ['../features/chat/useCommerce.js', '../Shop.jsx', '../components/OneTapCheckout.jsx', './proofOfTrade.js'].map(read);
