@@ -1,4 +1,4 @@
-import React, { lazy, Suspense, useCallback, useState } from 'react';
+import React, { lazy, Suspense, useCallback, useEffect, useState } from 'react';
 import { MessageSquare, Compass, User } from 'lucide-react';
 import { motion } from 'framer-motion';
 import TutorialModal from './components/TutorialModal';
@@ -20,9 +20,13 @@ export default function AuthenticatedApp({ identity }) {
     useChatStore.getState().openChat('dm', pubkey);
     setActiveTab('chat');
   }, []);
-  const [showTutorial, setShowTutorial] = useState(() => (
-    !!identity?.pk && localStorage.getItem('cipher_new_account') === 'true'
-  ));
+  const showTutorial = useChatStore((state) => state.showTutorial);
+  useEffect(() => {
+    // New accounts get the walkthrough once; Profile opens it any time after.
+    if (identity?.pk && localStorage.getItem('cipher_new_account') === 'true') {
+      useChatStore.getState().setShowTutorial(true);
+    }
+  }, [identity?.pk]);
   const tabFallback = <div className="flex h-full items-center justify-center bg-black"><div className="h-7 w-7 animate-spin rounded-full border-2 border-white/20 border-t-blue-500" /></div>;
 
   React.useEffect(() => {
@@ -35,7 +39,7 @@ export default function AuthenticatedApp({ identity }) {
         <div className="absolute left-[-10%] top-[-10%] h-[50%] w-[50%] rounded-full bg-blue-600/20 blur-[120px]" />
         <div className="absolute bottom-0 right-[-10%] h-[30%] w-[50%] rounded-full bg-purple-600/10 blur-[100px]" />
       </div>
-      <TutorialModal isOpen={showTutorial} onClose={() => { setShowTutorial(false); localStorage.removeItem('cipher_new_account'); }} />
+      <TutorialModal isOpen={showTutorial} onClose={() => { useChatStore.getState().setShowTutorial(false); localStorage.removeItem('cipher_new_account'); }} />
       <GlobalDialog />
       <CallOverlay />
 
