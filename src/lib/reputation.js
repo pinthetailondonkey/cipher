@@ -15,6 +15,31 @@ export function receiptBindingOf(event) {
   return HEX64.test(hash) ? hash : '';
 }
 
+// The trade a vouch names, beyond the hash: the vendor and buyer of the
+// completed trade it points at, both published under the author's own
+// signature. The hash alone cannot be checked by a reader — the receipt is
+// private — so the role tags are what keep a vouch from being transplanted
+// onto a trade it does not belong to. (security S8)
+export function vouchTradeOf(event) {
+  const tag = (name) => String((event?.tags || []).find((row) => row[0] === name)?.[1] || '').toLowerCase();
+  const vendor = tag('trade_vendor');
+  const buyer = tag('trade_buyer');
+  return vendor && buyer && vendor !== buyer ? { vendor, buyer } : null;
+}
+
+// A vouch counts toward a target only when the named trade involves both the
+// target and the author. Anything else is one real receipt vouching for a
+// stranger: the part the hash-check could not see reader-side.
+export function vouchCoversTrade(event, targetPubkey) {
+  const trade = vouchTradeOf(event);
+  if (!trade) return false;
+  const author = String(event?.pubkey || '').toLowerCase();
+  const target = String(targetPubkey || '').toLowerCase();
+  return (target === trade.vendor || target === trade.buyer)
+    && (author === trade.vendor || author === trade.buyer)
+    && author !== target;
+}
+
 // A rating outside 0..5 is a numbers game, not an opinion. Anything
 // unparseable is a zero, anything negative is a zero, anything above 5 is a 5.
 export function clampRating(value) {

@@ -7,7 +7,7 @@ import { shortNpub } from '../lib/npub';
 // Defense layer cache — profile timestamps keyed by pubkey
 // Prevents re-fetching the same profile on every modal open
 import { scopedGet, scopedSet } from '../lib/storage';
-import { averageRating, clampRating, receiptBindingOf } from '../lib/reputation';
+import { averageRating, clampRating, receiptBindingOf, vouchCoversTrade } from '../lib/reputation';
 const PROFILE_CACHE_KEY = 'rep_profile_cache';
 const PROFILE_CACHE_TTL = 24 * 60 * 60 * 1000; // 24h
 const MIN_VOUCHER_AGE_DAYS = 7;
@@ -36,12 +36,15 @@ export function useReputation({ identity }) {
         queryWithTimeout(pool, generalRelays, { kinds: [10004], '#p': [targetPubkey] }, 3000),
         queryWithTimeout(pool, generalRelays, { kinds: [10005], '#p': [targetPubkey] }, 3000)
       ]);
-      // S8: a vouch counts only when it names the receipt hash of a trade.
-      // The hash is all the event carries; the receipt stays private.
+      // S8: a vouch counts only when it names the receipt hash of a trade,
+      // and the trade it names involves both the target and the author —
+      // the role tags the author's own signature vouches for. The hash is
+      // all the event carries; the receipt stays private.
       const rawVouches = vouchEvents.filter((event) => (
         event.tags.some((tag) => tag[0] === 'p' && tag[1] === targetPubkey) &&
         event.tags.some((tag) => tag[0] === 'vouch' && tag[1] === 'true') &&
-        !!receiptBindingOf(event)
+        !!receiptBindingOf(event) &&
+        vouchCoversTrade(event, targetPubkey)
       ));
 
       // 2. Defense Layer 1: reject self-vouches + duplicate vouches
@@ -152,7 +155,10 @@ export function useReputation({ identity }) {
   // and names the receipt hash of the trade it vouches for. No receipt hash,
   // no vouch — anyone can claim trust for a stranger; only a completed trade
   // earns it. The hash is all that is published; the receipt stays private.
-  const sendVouch = useCallback(async (targetPubkey, receiptHash) => {
+  // trade names the vendor and buyer of the trade this device took part in,
+  // under this signature — so the vouch cannot be transplanted onto anyone
+  // else. (security S8)
+  const sendVouch = useCallback(async (targetPubkey, receiptHash, trade = null) => {
     // Defense Layer 1: refuse to vouch yourself
     if (!targetPubkey || !identity?.pk || !identity?.sk) {
       return { success: false, error: 'Unlock your account before vouching.' };
@@ -164,6 +170,12 @@ export function useReputation({ identity }) {
     if (!binding) {
       return { success: false, error: 'A vouch needs the receipt of a completed trade.' };
     }
+    const vendor = String(trade?.vendor || '').toLowerCase();
+    const buyer = String(trade?.buyer || '').toLowerCase();
+    if (!vendor || !buyer || vendor === buyer
+      || ![targetPubkey.toLowerCase(), identity.pk.toLowerCase()].every((party) => party === vendor || party === buyer)) {
+      return { success: false, error: 'A vouch names the trade this device took part in.' };
+    }
 
     let event;
     try {
@@ -171,7 +183,10 @@ export function useReputation({ identity }) {
       event = finalizeEvent({
         kind: 10004,
         created_at: Math.floor(Date.now() / 1000),
-        tags: [['p', targetPubkey], ['vouch', 'true'], ['receipt', binding]],
+        tags: [
+          ['p', targetPubkey], ['vouch', 'true'], ['receipt', binding],
+          ['trade_vendor', vendor], ['trade_buyer', buyer],
+        ],
         content: 'Vouched via Cipher',
       }, identity.sk);
 

@@ -460,10 +460,15 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
         const sent = await deliverOrderUpdate(msg.pubkey, payload, { status: ORDER_STATUS.COMPLETED }, 'Delivered');
         if (sent && scopedGet('auto_vouch_on_delivery', true)) {
           // S8: the auto-vouch carries the receipt hash of the trade it
-          // confirms. No receipt on this device, no vouch — the delivery
-          // alone is still sent either way.
+          // confirms, and the trade's vendor and buyer under this signature.
+          // No receipt on this device, no vouch — the delivery alone is
+          // still sent either way.
           const stored = scopedGet(`receipt_${msg.id}`, null);
-          const vouchResult = await sendVouch(msg.pubkey, stored?.hash || '');
+          const trade = stored?.body ? {
+            vendor: String(stored.body.vendor || '').toLowerCase(),
+            buyer: String(stored.body.buyer || '').toLowerCase(),
+          } : null;
+          const vouchResult = await sendVouch(msg.pubkey, stored?.hash || '', trade);
           if (!vouchResult?.success) {
             console.error('[orders] Automatic delivery vouch failed:', vouchResult?.error);
             setToast({ type: 'error', message: vouchResult?.error || 'The delivery was sent. The vouch was not.' });
