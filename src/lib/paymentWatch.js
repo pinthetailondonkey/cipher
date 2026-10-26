@@ -280,6 +280,17 @@ export async function checkPayment({ watcherUrl, address, currency, state, amoun
   if (body.amount != null) report.amount = body.amount;
   if (body.outputAmount != null) report.outputAmount = body.outputAmount;
   if (body.time != null) report.time = body.time;
+  // The dates are unix seconds — bitcoin's epoch up through a few hours
+  // past this device's clock. Anything else is a unit crossing, most likely
+  // milliseconds, and a milliseconds value sails past every issuance
+  // comparison as "the future". It carries no weight instead of lying.
+  if (report.time != null) {
+    const now = Math.floor(Date.now() / 1000);
+    const time = Number(report.time);
+    if (!Number.isFinite(time) || time < 1231006505 || time > now + 7200) {
+      delete report.time;
+    }
+  }
   // A transfer the chain dates before this order's address was issued is
   // refused before anything moves, seen or confirmed. (security S1)
   if (issuePrecedes(report, issuedAt)) {
