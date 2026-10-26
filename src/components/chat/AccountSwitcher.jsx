@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Check, KeyRound } from 'lucide-react';
+import { Check, KeyRound, Plus, Trash2 } from 'lucide-react';
 import ScreenHeader from '../ui/ScreenHeader';
 import Avatar from '../ui/Avatar';
 import { pressable } from '../ui/Button';
@@ -7,6 +7,7 @@ import { pressable } from '../ui/Button';
 export default function AccountSwitcher({ identity, onClose }) {
   const [pins, setPins] = useState({});
   const [pending, setPending] = useState('');
+  const [confirmRemove, setConfirmRemove] = useState('');
   const [error, setError] = useState('');
   // Read on every render: a fifth wrong PIN removes that account from the list.
   const accounts = identity?.getAccounts?.() || [];
@@ -25,6 +26,17 @@ export default function AccountSwitcher({ identity, onClose }) {
     } finally {
       setPending('');
     }
+  };
+
+  const handleRemove = async (account) => {
+    if (confirmRemove === account.pubkey) {
+      setConfirmRemove('');
+      setError('');
+      const result = await identity.removeAccount?.(account.pubkey);
+      if (result && !result.success) setError(result.error || 'Unable to remove the account.');
+      return;
+    }
+    setConfirmRemove(account.pubkey);
   };
 
   return (
@@ -50,12 +62,19 @@ export default function AccountSwitcher({ identity, onClose }) {
                   <input type="password" inputMode="numeric" autoComplete="current-password" value={pins[account.pubkey] || ''} onChange={(event) => setPins((current) => ({ ...current, [account.pubkey]: event.target.value }))} placeholder="PIN" className="min-w-0 flex-1 bg-transparent py-3 text-[15px] text-white outline-none placeholder:text-white/30" />
                 </label>
                 <button type="button" disabled={pending === account.pubkey} onClick={() => handleSwitch(account)} className={`rounded-2xl bg-blue-600 px-4 font-bold text-white active:bg-blue-700 ${pressable}`}>{pending === account.pubkey ? '…' : 'Switch'}</button>
+                <button type="button" aria-label="Remove account" onClick={() => handleRemove(account)} className={`flex min-h-11 min-w-11 items-center justify-center rounded-2xl border border-white/10 text-red-400 active:bg-white/10 ${pressable}`}>
+                  {confirmRemove === account.pubkey ? <span className="text-[12px] font-bold">Sure?</span> : <Trash2 size={16} />}
+                </button>
               </div>
             )}
           </div>
         );
       })}
       {accounts.length === 0 && <p className="rounded-2xl border border-white/10 bg-[#0A0A0A]/60 shadow-2xl backdrop-blur-2xl px-4 py-10 text-center text-[13px] text-white/40">No saved accounts on this device.</p>}
+      <button type="button" onClick={identity?.addNewAccount} className={`flex w-full items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 font-semibold text-white active:bg-white/10 ${pressable}`}>
+        <Plus size={18} className="text-blue-500" />
+        Add account
+      </button>
       {error && <p role="alert" className="text-[13px] text-red-400">{error}</p>}
       </div>
     </div>

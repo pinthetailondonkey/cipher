@@ -753,6 +753,36 @@ export function useIdentity() {
     return result.sort((a, b) => b.createdAt - a.createdAt);
   };
 
+  // Removes a saved account from this device. The active account is refused;
+  // switch away first, so removing never strands the account the app boots
+  // into. Everything the device holds for that account goes with it: the
+  // encrypted vault, its lockout counters, its scoped messages and settings.
+  const removeAccount = async (targetPk) => {
+    try {
+      if (targetPk === (getActivePubkey() || keys.pk)) {
+        return { success: false, error: 'Switch to another account first.' };
+      }
+      const vaults = getVaults();
+      if (!vaults[targetPk]) return { success: false, error: 'Account not found' };
+      delete vaults[targetPk];
+      saveVaults(vaults);
+      resetPinFailures(localStorage, targetPk);
+      await deleteLockedOutDatabase(targetPk);
+      // Scoped per-account keys: cipher_<pk prefix>_*
+      const prefix = `cipher_${targetPk.slice(0, 8)}_`;
+      for (const name of Object.keys(localStorage)) {
+        if (name.startsWith(prefix)) localStorage.removeItem(name);
+      }
+      if (localStorage.getItem('cipher_biometric_pubkey') === targetPk) {
+        localStorage.removeItem('cipher_biometric_pubkey');
+        localStorage.removeItem('cipher_biometric_enabled');
+      }
+      return { success: true };
+    } catch (e) {
+      return { success: false, error: e.message };
+    }
+  };
+
   const switchAccount = async (targetPk, pin) => {
     try {
       const vaults = getVaults();
@@ -813,7 +843,7 @@ export function useIdentity() {
 
   return { 
     ...keys, hasVault, hasBiometric, loadingSession,
-    getAccounts, switchAccount, addNewAccount, getMnemonic, 
+    getAccounts, switchAccount, removeAccount, addNewAccount, getMnemonic,
     unlock, unlockWithBiometric, enableBiometric, restoreFromRelays, restoreFromMnemonic, createVault, finalizeLogin, lockApp, panicWipe
   }
 }
