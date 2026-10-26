@@ -6,7 +6,7 @@ import { ORDER_STATUS, RECEIPT_OUTCOME, acceptAmount, acceptanceDemand, amountCo
 import { checkPayment } from '../../lib/paymentWatch';
 import { activeUrl, entryById } from '../../lib/egress';
 import { publicReceipt, rememberPublicView, receiptBindsOrder, signPublicView, signReceipt } from '../../lib/proofOfTrade';
-import { orderRecordForReceipt } from '../../lib/orderActions';
+import { orderRecordForReceipt, orderState } from '../../lib/orderActions';
 import { stampArrival } from './media';
 
 export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, openChat }) {
@@ -203,7 +203,10 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
       if (action === 'confirm_payment') {
         let paymentState;
         try {
-          const current = msg.data?.paymentState || 'address_issued';
+          // F7: the current payment state comes from the order's evidence,
+          // not from whatever a received card once wrote into itself.
+          const history = await db.messages.where('chatId').equals(msg.pubkey).toArray();
+          const current = orderState(history, msg.id, msg).paymentState;
           paymentState = nextPaymentState(current, 'see');
         } catch (error) {
           setToast({ type: 'error', message: error.message });
@@ -237,13 +240,22 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
           setSelectedMessage(null);
           return true;
         }
+        let chainedState;
+        try {
+          // F7: chain the watcher report off the order's real evidence, away
+          // from a claim a peer wrote into the card.
+          const history = await db.messages.where('chatId').equals(msg.pubkey).toArray();
+          chainedState = orderState(history, msg.id, msg).paymentState;
+        } catch {
+          chainedState = 'address_issued';
+        }
         try {
           const outcome = await checkPayment({
             watcherUrl: activeUrl(entryById('explorer')),
             address,
             currency,
             amount,
-            state: msg.data?.paymentState || 'address_issued',
+            state: chainedState,
           });
           if (outcome.short) {
             setToast({ type: 'info', message: 'The payment is short of the order.' });

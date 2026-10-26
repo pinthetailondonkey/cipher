@@ -1,8 +1,17 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
+import { schnorr } from '@noble/curves/secp256k1.js';
 import { ORDER_ACTIONS, allowedActionsFor, orderActionsFor, orderRecordForReceipt, orderState } from './orderActions.js';
 import { ORDER_STATUS, ORDER_STATUSES, RECEIPT_OUTCOMES } from './paymentState.js';
+import { signReceipt } from './proofOfTrade.js';
+
+// F7: the payment facts on an order are earned on this device, never asserted
+// by the peer. These tests are the attack they shut down: a peer writes
+// paymentState 'confirmed'/paymentSeenBy 'watcher' into updates and cards, and
+// nothing on the order gives that claim standing.
+
+const hexOf = (bytes) => [...bytes].map((byte) => byte.toString(16).padStart(2, '0')).join('');
 
 const names = (actions) => actions.map((item) => item.action);
 const request = (isSender, data = {}) => ({ id: 'order-1', isSender, timestamp: 10, data: { type: 'order_request', status: 'pending', product: { title: 'Tee' }, ...data } });
@@ -14,7 +23,7 @@ test('every status for both viewers gets exactly the actions in the table', () =
     vendor: {
       pending: ['accept_order', 'decline_order'],
       accepted: ['confirm_payment', 'check_chain'],
-      paid: ['check_chain', 'mark_shipped'],
+      paid: ['check_chain'],
       shipped: [],
       completed: [],
       cancelled: [],
@@ -38,6 +47,7 @@ test('every status for both viewers gets exactly the actions in the table', () =
   }
   // Payment state narrows the vendor's options.
   assert.deepEqual(names(allowedActionsFor({ status: 'accepted', paymentState: 'seen', paymentSeenBy: 'vendor' }, 'vendor')), ['check_chain']);
+  assert.deepEqual(names(allowedActionsFor({ status: 'paid', paymentState: 'seen' }, 'vendor')), ['check_chain', 'mark_shipped']);
   assert.deepEqual(names(allowedActionsFor({ status: 'paid', paymentState: 'confirmed' }, 'vendor')), ['mark_shipped']);
   // Every action has a label.
   for (const status of ORDER_STATUSES) for (const viewer of ['vendor', 'buyer']) {
@@ -108,7 +118,6 @@ test('every message action has a way in from the UI, and every menu item has a h
   assert.match(overlays, /<VendorStorefront\s+isOpen=\{!!vendorStorefrontPubkey\}/);
   assert.match(overlays, /<ProductEditModal editingProduct=\{editingProduct\}[^\n]*onSubmit=\{handleSaveEditedProduct\}/);
 });
-
 test('a receipt binds only an order this device tracks as accepted or later', () => {
   const acceptance = update('u1', false, ORDER_STATUS.ACCEPTED, 20, {
     paymentState: 'address_issued',
@@ -147,4 +156,80 @@ test('a receipt binds only an order this device tracks as accepted or later', ()
   assert.equal(orderRecordForReceipt([request(false, {}), acceptance, paid], 'order-1').isBuyer, false);
   // A chat with only non-order messages binds nothing.
   assert.equal(orderRecordForReceipt([{ id: 'u5', isSender: false, timestamp: 20, data: { type: 'text', message: 'hi' } }], 'order-1'), null);
+});
+
+// F7: the payment facts on an order are earned on this device, never asserted
+// by the peer.
+test('a peer cannot forge the payment facts an order acts on', () => {
+  // A forged request card pre-claims 'confirmed' and watcher sight, and a
+  // forged update repeats it. The claim shows as the status, but no payment
+  // fact adopts it without local evidence or a verified receipt.
+  const claimedCard = request(false, { status: ORDER_STATUS.ACCEPTED, paymentState: 'confirmed', paymentSeenBy: 'watcher' });
+  const claimed = update('u1', false, ORDER_STATUS.PAID, 11, { paymentState: 'confirmed', paymentSeenBy: 'watcher' });
+  const state = orderState([claimedCard, claimed], 'order-1', claimedCard);
+  assert.equal(state.status, ORDER_STATUS.PAID);
+  assert.equal(state.paymentState, 'created');
+  assert.equal(state.paymentSeenBy, '');
+  // The chain check survives the claim, and the claim alone never opens
+  // shipping.
+  assert.deepEqual(names(allowedActionsFor(state, 'vendor')), ['check_chain']);
+});
+
+test('the device\'s own actions are the evidence the card acts on', () => {
+  const theirs = request(false);
+  const acceptCard = { ...theirs, localPatch: { status: ORDER_STATUS.ACCEPTED, paymentState: 'address_issued' } };
+  assert.equal(orderState([acceptCard], 'order-1', acceptCard).paymentState, 'address_issued');
+  // The vendor's own update carries their own wallet sight.
+  const seen = update('u2', true, ORDER_STATUS.PAID, 12, { paymentState: 'seen', paymentSeenBy: 'vendor' });
+  const state = orderState([acceptCard, seen], 'order-1', acceptCard);
+  assert.equal(state.paymentState, 'seen');
+  assert.equal(state.paymentSeenBy, 'vendor');
+  assert.deepEqual(names(allowedActionsFor({ ...state, status: seen.data.status }, 'vendor')), ['check_chain', 'mark_shipped']);
+  // A local patch sets the same evidence a seen update does.
+  const confirmedCard = { ...theirs, localPatch: { status: ORDER_STATUS.PAID, paymentState: 'confirmed' } };
+  assert.equal(orderState([confirmedCard], 'order-1', confirmedCard).paymentState, 'confirmed');
+  // The vendor's own card with an issued address, then a claim riding in
+  // from the peer: the record still refuses the peer's payment facts.
+  assert.equal(orderState([confirmedCard, update('u3', false, ORDER_STATUS.PAID, 13, { paymentState: 'confirmed' })], 'order-1', confirmedCard).paymentState, 'confirmed');
+});
+
+test('a receipt both parties signed is the one artifact moving the payment', () => {
+  const buyerKey = schnorr.utils.randomSecretKey();
+  const vendorKey = schnorr.utils.randomSecretKey();
+  const body = {
+    orderId: 'order-1',
+    buyer: hexOf(schnorr.getPublicKey(buyerKey)),
+    vendor: hexOf(schnorr.getPublicKey(vendorKey)),
+    currency: 'xmr',
+    address: '8secret',
+    amount: '1',
+    txid: 'aa',
+    at: 1_700_000_000,
+    outcome: 'confirmed',
+  };
+  const signed = signReceipt(vendorKey, body, signReceipt(buyerKey, body));
+  const theirs = request(false, { status: ORDER_STATUS.PAID });
+  const riding = update('u4', false, ORDER_STATUS.PAID, 14, { paymentState: 'confirmed', paymentSeenBy: 'watcher', receipt: signed });
+  const state = orderState([theirs, riding], 'order-1', theirs);
+  assert.equal(state.paymentState, 'confirmed');
+  assert.deepEqual(names(allowedActionsFor(state, 'vendor')), ['mark_shipped']);
+  // A receipt naming another order buys nothing here.
+  const signedOther = signReceipt(vendorKey, { ...body, orderId: 'order-2' }, signReceipt(buyerKey, { ...body, orderId: 'order-2' }));
+  assert.equal(
+    orderState([theirs, update('u5', false, ORDER_STATUS.PAID, 15, { receipt: signedOther })], 'order-1', theirs).paymentState,
+    'created',
+  );
+  // A tampered receipt fails verification, and verification failing means
+  // nothing moves.
+  const tampered = { ...signed, body: { ...signed.body, amount: '2' } };
+  assert.equal(
+    orderState([theirs, update('u6', false, ORDER_STATUS.PAID, 16, { receipt: tampered })], 'order-1', theirs).paymentState,
+    'created',
+  );
+  // A receipt with no stated outcome still proves the chain saw the payment.
+  const sight = signReceipt(vendorKey, { ...body, outcome: '' }, signReceipt(buyerKey, { ...body, outcome: '' }));
+  assert.equal(
+    orderState([theirs, update('u7', false, ORDER_STATUS.PAID, 17, { receipt: sight })], 'order-1', theirs).paymentState,
+    'seen',
+  );
 });

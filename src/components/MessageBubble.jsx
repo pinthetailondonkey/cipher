@@ -219,7 +219,10 @@ export default function MessageBubble({ message, data, onAction, senderName, isP
       >
         {!isSender && senderName && <p className="mb-0.5 text-[11px] font-semibold leading-none text-accent">{senderName}</p>}
         {(content.type === 'cipher_order' || content.type === 'order_request' || content.type === 'order_update') && (
-          <OrderReceipt content={content.type === 'order_update' ? content : { ...content, ...orderState(chatMessages, message?.id, { data: content }) }} />
+          // F7: the badge reads derived payment facts, not what the update
+          // itself claims — a received "confirmed" with no receipt behind it
+          // reads back as its real state.
+          <OrderReceipt content={{ ...content, ...orderState(chatMessages, message?.id, { data: content }) }} />
         )}
         {orderActionsFor({ ...message, data: content }, chatMessages).map(({ action, label, target }) => {
           // Vendor actions send to the buyer, msg.pubkey; buyer actions to the chat peer.
