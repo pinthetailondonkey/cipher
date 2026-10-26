@@ -127,7 +127,7 @@ export default function GroupView({
   pinMessage,
   unpinMessage,
 }) {
-  const { sendGroupMessage, leaveGroup, kickMember, updateGroupSettings } = useNIP29Group({ identity });
+  const { sendGroupMessage, leaveGroup, kickMember, updateGroupSettings, addMember } = useNIP29Group({ identity });
   const activeGroup = useChatStore((state) => state.activeGroup);
   const messages = useChatStore((state) => state.groupMessages[state.activeGroup?.id] || EMPTY_MESSAGES);
   const profiles = useChatStore((state) => state.profiles);
@@ -365,6 +365,7 @@ export default function GroupView({
         onUnpin={unpinMessage}
         leaveGroup={leaveGroup}
         kickMember={kickMember}
+        approveJoin={addMember}
         updateGroupSettings={updateGroupSettings}
       />
     </section>
