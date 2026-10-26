@@ -1,6 +1,17 @@
 # Backlog
 One branch, one done-when per item. Take the top unfinished one.
 Read docs/VISION.md before starting any item.
+Owners' view after the founder's 2026-10-26 board (score today: 4/10; reachable when the board lands: 9/10 — "dispute-free, or math refunds you"): design-lane (6, 9, 10) plus the UI doors in 7 stay with this session; escrow spec, show-proof beats, PoT v2 and membrane wiring belong to the Breakthrough lane; tor/tailes drills stay with the tails lane (feat/tor-tails is MERGED, on-hardware walkthrough still owed).
+
+## 14. Two-sided UI: one app, dark + paper + drawer
+Done when:
+- Theme tokens (DONE c15951c): every white/black literal rides ink/scrim, glass/hover/shadow tokens live per theme in src/index.css, Paper (light) joins vault/lobby/chromerooms, dark stays default.
+- Phone (< md) shell is a side drawer — profile card up top (avatar, shield/fingerprint), then Chats · Menus · Orders · Groups, Connections and Lock now; badges on rows. At md+ the desktop left rail stands (1367803 two-pane merged as 267a77e); drawer < md, rail >= md. Desktop and mobile read the same tokens and ship the same screens — Telegram-style one-app consistency.
+- Chat list rows carry avatar, name, time, unread count and the last message; the preview is privacy-blurred until the row is long-pressed (reveal just that row until you leave the list).
+- Orders ledger screen: one timeline, newest first, state badge inline, receipt ✓ when countersigned; chat order cards unchanged, both share the detail view.
+- Mute and archive buttons exist on chat rows (chatStore already persists them); a group header gets the disappearing-timer button; Profile/Wallet gains the confirmations-count field, the buyer payment-method choice and the auto-vouch toggle; the bell shows its unread number; DM bubbles show avatars like groups do.
+- The two honesty bugs die: privacy.groups either gates joins or says what it does; the TURN hint names the screen that actually holds the control.
+- Verification drills above ride per fix; dead code (proofOfTrade verify trio, nip65.partitionWriteRelay, notificationFromPush, chatStore pinned trio) removed in its own cleanup commit.
 
 ## 1. One-command install for both boxes — DONE (1752f6f)
 Done when: from a clean clone, `npm run boxes` prints a watcher URL, and a wrong Node version fails naming it.
@@ -28,8 +39,8 @@ Done when: the implementation matches the spec (docs/proof-of-trade.md v2).
 The spec is written; implementation is a separate item.
 
 ## 6. Custom theme: modern / serious / iOS / trap-street hustle
-Done when: one token file (radius, shadow, surface levels) in src/index.css defines the whole geometry; every heavy card surface uses it; the `shadow-2xl backdrop-blur-2xl` stamp appears only where a sheet truly floats; message bubbles use the bubble radius, not a card radius; the tab bar badge is icon-anchored; empty states are py-8/py-10, never py-16. Glass (backdrop-blur) stays everywhere. Same colors. Founder's four words: modern, serious, iOS, trap-street hustle.
-Known bulk spots (audit, 2026-10-26): Wallet.jsx 13 heavy cards, LockScreen.jsx 9, dead Connections.jsx 6 (delete the file, route unreachable), VendorStorefront/VendorDashboard/GroupView/GroupInfoSidebar 5 each; FloatingMenu has `shadow-2xl` twice on one element (3 lines); nested card-in-card: OrderReceipt in MessageBubble, Avatar fallback inside cards.
+Done when: one token file (radius, shadow, surface levels) in src/index.css defines the whole geometry; every heavy card surface uses it; the `shadow-2xl backdrop-blur-2xl` stamp appears only where a sheet truly floats; message bubbles use the bubble radius, not a card radius; the tab bar badge is icon-anchored; empty states are py-8/py-10, never py-16. Glass (backdrop-blur) stays everywhere. Same colors. Founder's four words: modern, serious, iOS, trap-street hustle. (Token colors landed c15951c; geometry pass still owed.)
+Known bulk spots (audit, 2026-10-26): Wallet.jsx 13 heavy cards, LockScreen.jsx 9, dead Connections.jsx 6 (STILL says unreachable — stale: Connections mounts from Wallet.jsx and is reachable), VendorStorefront/VendorDashboard/GroupView/GroupInfoSidebar 5 each; FloatingMenu has `shadow-2xl` twice on one element (3 lines); nested card-in-card: OrderReceipt in MessageBubble, Avatar fallback inside cards.
 Also in this pass: when previews are ON, a message that is ONLY a URL should not also render the raw link text (double render); links should not trigger the bubble's long-press menu; chat list rows px-3 py-2.5 with h-10 avatars.
 
 ## 7. Close the garage: built features with no way in
