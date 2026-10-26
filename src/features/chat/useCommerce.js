@@ -6,7 +6,7 @@ import { ORDER_STATUS, RECEIPT_OUTCOME, acceptAmount, acceptanceDemand, amountCo
 import { checkPayment } from '../../lib/paymentWatch';
 import { activeUrl, entryById } from '../../lib/egress';
 import { publicReceipt, rememberPublicView, receiptBindsOrder, signPublicView, signReceipt } from '../../lib/proofOfTrade';
-import { issuedPaymentMethods, orderPaymentDetails, orderRecordForReceipt, orderState, reopenedStatus } from '../../lib/orderActions';
+import { frozenIssuedMethods, issuedPaymentMethods, orderPaymentDetails, orderRecordForReceipt, orderState, reopenedStatus } from '../../lib/orderActions';
 import { stampArrival } from './media';
 
 export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, openChat }) {
@@ -75,11 +75,14 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
   
       if (action === 'accept_order') {
         // Once an address is issued for an order it is frozen on the order
-        // card (security S5): acceptance reuses the card's own addresses and
-        // never derives a fresh pair, so a buyer who already paid the first
-        // issued address is never strafed by a newer one. A fresh derive
-        // would orphan the first address's confirmation.
-        const frozen = issuedPaymentMethods(msg.data);
+        // card (security S5): acceptance reuses the pair this device issued —
+        // the card's local patch, its own earlier write — and never derives a
+        // fresh one, so a buyer who already paid the first issued address is
+        // never strafed by a newer one. The pair on the fresh received card
+        // never freezes: paymentMethods authored on an order request is the
+        // buyer's word, and freezing it would let the acceptance adopt and
+        // receipt-bind whatever address the buyer typed. (security S5)
+        const frozen = frozenIssuedMethods(msg, readPaymentAddresses());
         const sendAcceptance = async (rawAmount, coinCurrency) => {
           // An acceptance only locks in an amount the chain can express. A
           // string finer than the coin counts would sit 'short of the order'
@@ -248,6 +251,7 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
         const isBuyer = !!msg.isSender;
         let details = null;
         let chainedState;
+        let vendorPair = null;
         try {
           const history = await db.messages.where('chatId').equals(msg.pubkey).toArray();
           // Either side runs this (security S6): a buyer is party to the
@@ -256,16 +260,38 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
           // their check reads the acceptance the vendor sent, off the stored
           // messages, the way F7 reads the state.
           details = isBuyer ? orderPaymentDetails(history, msg.id) : null;
+          // The pair a vendor checks is the one it issued: the card's local
+          // patch — its own write when it accepted — or its own acceptance
+          // update in history. The received card is the buyer's word: a
+          // paymentMethods, coin amount or currency typed on an order request
+          // never reaches a chain check, so a buyer cannot aim this vendor's
+          // confirmation and receipt at an address the vendor never issued.
+          // (security S5)
+          if (!isBuyer) {
+            const own = issuedPaymentMethods(msg.localPatch)
+              ? msg.localPatch
+              : ([...history].reverse().find((m) => m?.isSender
+                && m?.data?.type === 'order_update' && m.data.orderId === msg.id
+                && issuedPaymentMethods(m.data))?.data || null);
+            if (own) {
+              vendorPair = {
+                paymentMethods: issuedPaymentMethods(own),
+                coinCurrency: String(own.coinCurrency || ''),
+                coinAmount: own.coinAmount,
+                issuedAt: own.issuedAt,
+              };
+            }
+          }
           // F7: chain the watcher report off the order's real evidence, away
           // from a claim a peer wrote into the card.
           chainedState = orderState(history, msg.id, msg).paymentState;
         } catch {
           chainedState = 'address_issued';
         }
-        const methods = details?.paymentMethods || msg.data?.paymentMethods || {};
-        const currency = details?.coinCurrency || msg.data?.coinCurrency || (methods.xmr ? 'xmr' : (methods.btc ? 'btc' : ''));
+        const methods = details?.paymentMethods || vendorPair?.paymentMethods || {};
+        const currency = details?.coinCurrency || vendorPair?.coinCurrency || (methods.xmr ? 'xmr' : (methods.btc ? 'btc' : ''));
         const address = currency ? methods[currency] : '';
-        const amount = details?.coinAmount ?? msg.data?.coinAmount;
+        const amount = details?.coinAmount ?? vendorPair?.coinAmount;
         if (!amount) {
           setToast({ type: 'info', message: 'This order has no coin amount, so it cannot be checked.' });
           setSelectedMessage(null);
