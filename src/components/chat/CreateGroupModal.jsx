@@ -12,6 +12,7 @@ export default function CreateGroupModal({ isOpen, onClose, createGroup }) {
   const setAbout = useChatStore((state) => state.setNewGroupAbout);
   const setIsChannel = useChatStore((state) => state.setIsChannel);
   const [creating, setCreating] = useState(false);
+  const [listed, setListed] = useState(true);
 
   if (!isOpen) return null;
 
@@ -20,7 +21,7 @@ export default function CreateGroupModal({ isOpen, onClose, createGroup }) {
     if (!name.trim() || creating) return;
     setCreating(true);
     try {
-      await createGroup(event);
+      await createGroup(event, listed);
     } finally {
       setCreating(false);
     }
@@ -50,8 +51,15 @@ export default function CreateGroupModal({ isOpen, onClose, createGroup }) {
           About <span className="font-normal">(optional)</span>
           <textarea value={about} onChange={(event) => setAbout(event.target.value)} maxLength={500} rows={3} placeholder="What is this space for?" className="mt-2 w-full resize-none rounded-2xl border border-white/10 bg-[#0A0A0A]/60 shadow-2xl backdrop-blur-2xl p-4 text-[15px] text-white placeholder-white/30 focus:outline-none focus:border-blue-500/50" />
         </label>
+        <label className="flex items-center justify-center gap-3 text-gray-400 text-sm mt-1 cursor-pointer hover:text-white transition-colors">
+          <div className="relative flex items-center justify-center w-5 h-5">
+            <input type="checkbox" checked={listed} onChange={(e) => setListed(e.target.checked)} className="peer appearance-none w-5 h-5 border border-white/20 rounded-md bg-white/5 checked:bg-blue-600 checked:border-blue-600 transition-colors" />
+            <svg viewBox="0 0 16 16" className="absolute h-3.5 w-3.5 pointer-events-none opacity-0 peer-checked:opacity-100 transition-opacity" fill="none" stroke="white" strokeWidth="2.5"><path d="M3 8.5 6.5 12 13 4.5" /></svg>
+          </div>
+          Show this {isChannel ? 'menu' : 'group'} in search
+        </label>
         <Button type="submit" disabled={!name.trim() || creating} className="mt-5 w-full rounded-2xl py-3.5 font-bold">
-          {creating ? 'Creating…' : `Create ${isChannel ? 'channel' : 'group'}`}
+          {creating ? 'Creating…' : `Create ${isChannel ? 'menu' : 'group'}`}
         </Button>
       </form>
     </div>

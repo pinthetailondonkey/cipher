@@ -459,7 +459,7 @@ export function useNIP29Group({ identity }) {
     });
   }, [setGroupMessages]);
 
-  const createGroup = useCallback(async (name, about, isChannel) => {
+  const createGroup = useCallback(async (name, about, isChannel, { listed = true } = {}) => {
     const pool = await getAuthenticatedPool(identity);
     const groupId = (globalThis.crypto?.randomUUID?.() || Date.now().toString()).replace(/-/g, '').slice(0, 16);
 
@@ -473,7 +473,10 @@ export function useNIP29Group({ identity }) {
     const ok = r9007.some(r => r.status === 'fulfilled');
     if (!ok) throw new Error('No relay accepted 9007');
 
+    // Unlisted spaces omit the [cipher] discovery tag, so the app's search
+    // screen never picks them up; members still reach them by link or QR.
     const metaTags = [['h', groupId], ['name', name], ['about', about || '']];
+    if (listed) metaTags.push(['cipher', 'true']);
     if (isChannel) {
       metaTags.push(['channel', 'true']);
       metaTags.push(['broadcast', 'true']);

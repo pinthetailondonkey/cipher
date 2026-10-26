@@ -93,7 +93,7 @@ export function useGroupDirectory({ identity, createGroupHook, setGroups }) {
     }
   };
 
-  const createGroup = async (e) => {
+  const createGroup = async (e, listed = true) => {
     if (e) e.preventDefault();
     const state = useChatStore.getState();
     if (!state.newGroupName.trim()) return;
@@ -106,7 +106,7 @@ export function useGroupDirectory({ identity, createGroupHook, setGroups }) {
     state.setNewGroupAbout(""); 
     state.setIsChannel(false);
     try {
-      const group = await createGroupHook(gName.trim(), gAbout.trim(), gChannel);
+      const group = await createGroupHook(gName.trim(), gAbout.trim(), gChannel, { listed });
       if (group) openChat('group', group.id, group);
       setToast({ type: 'success', message: 'Group created!' });
     } catch (err) { 
