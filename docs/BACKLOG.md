@@ -2,16 +2,17 @@
 One branch, one done-when per item. Take the top unfinished one.
 Read docs/VISION.md before starting any item.
 Owners' view after the founder's 2026-10-26 board (score today: 4/10; reachable when the board lands: 9/10 — "dispute-free, or math refunds you"): design-lane (6, 9, 10) plus the UI doors in 7 stay with this session; escrow spec, show-proof beats, PoT v2 and membrane wiring belong to the Breakthrough lane; tor/tailes drills stay with the tails lane (feat/tor-tails is MERGED, on-hardware walkthrough still owed).
+Escrow is founder-locked (docs/ESCROW.md on feat/escrow-2of2 @ fa0e546): 5% total = 2.5% buyer + 2.5% vendor, charged once at successful release only; everything rides the order card, no new screens; whale-order fee cap stays a constant the founder flips, nothing hardcoded. Build order, all six the Breakthrough lane's: escrow-fsm → escrow-script → escrow-membrane → escrow-psbt → escrow-ui → re-attack round.
 
-## 14. Two-sided UI: one app, dark + paper + drawer
+## 14. Two-sided UI: one app, dark + paper + drawer — DONE (c15951c, 714d5b9, de1ae20, 899024c, 057ae45, 9fbcec1, f429e59, eb46fb0, ba94bc6)
 Done when:
 - Theme tokens (DONE c15951c): every white/black literal rides ink/scrim, glass/hover/shadow tokens live per theme in src/index.css, Paper (light) joins vault/lobby/chromerooms, dark stays default.
-- Phone (< md) shell is a side drawer — profile card up top (avatar, shield/fingerprint), then Chats · Menus · Orders · Groups, Connections and Lock now; badges on rows. At md+ the desktop left rail stands (1367803 two-pane merged as 267a77e); drawer < md, rail >= md. Desktop and mobile read the same tokens and ship the same screens — Telegram-style one-app consistency.
-- Chat list rows carry avatar, name, time, unread count and the last message; the preview is privacy-blurred until the row is long-pressed (reveal just that row until you leave the list).
-- Orders ledger screen: one timeline, newest first, state badge inline, receipt ✓ when countersigned; chat order cards unchanged, both share the detail view.
-- Mute and archive buttons exist on chat rows (chatStore already persists them); a group header gets the disappearing-timer button; Profile/Wallet gains the confirmations-count field, the buyer payment-method choice and the auto-vouch toggle; the bell shows its unread number; DM bubbles show avatars like groups do.
-- The two honesty bugs die: privacy.groups either gates joins or says what it does; the TURN hint names the screen that actually holds the control.
-- Verification drills above ride per fix; dead code (proofOfTrade verify trio, nip65.partitionWriteRelay, notificationFromPush, chatStore pinned trio) removed in its own cleanup commit.
+- Phone (< md) shell is a side drawer (DONE 714d5b9): profile card up top, then Chats · Menus · Orders · Groups with badges, Connections and Lock now; the desktop left rail stands at md+; drawer < md, rail >= md; same tokens both sides.
+- Chat list rows (DONE de1ae20): avatar, name, time, unread count, last message; the preview is privacy-blurred until the row is long-pressed (reveal just that row until you leave the list). Mute and archive buttons live on each row via the kebab; archived chats sit under their own heading.
+- Orders ledger (DONE 899024c): one timeline, newest first, state read from the same derived facts the order card reads, ✓ marks a countersigned receipt this device verified; rows open the vendor's thread, which holds the detail view.
+- The doors (DONE de1ae20, 057ae45, 9fbcec1): mute and archive on chat rows; the group header's disappearing-timer button (the send path already stamped group timers); Profile's Order settings screen holds the preferred-payment choice, the confirmation-count fields (BTC 3 / XMR 10 defaults kept) and the auto-vouch toggle; the bell shows its unread number; DM bubbles show avatars like groups do.
+- The two honesty bugs die (DONE f429e59, eb46fb0): privacy.groups now denies join requests durably through the 9021 gate (the hint matches the engine); the call-relay hint names the Connections Advanced panel, where the control actually lives.
+- Dead code removed in its own cleanup commit (DONE ba94bc6, corrected scope): unreachable publicViewChecks, dead client notificationFromPush (the worker carries the banner copy), and the unused chat-pin pair. Re-verified before cutting: the rest of the audit's "verify trio" is alive through rankVolumeByStanding, and nip65.partitionWriteRelay has an internal caller — both kept.
 
 ## 1. One-command install for both boxes — DONE (1752f6f)
 Done when: from a clean clone, `npm run boxes` prints a watcher URL, and a wrong Node version fails naming it.
