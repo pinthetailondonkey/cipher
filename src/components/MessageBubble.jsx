@@ -33,6 +33,27 @@ function messageText(data) {
   return data.message || data.caption || data.text || data.body || '';
 }
 
+// Split message text into plain strings and { url } tokens so links render
+// as real anchors. Uses the same URL shape firstUrl already accepts; trailing
+// punctuation stays with the text around the link.
+const URL_RE = /https?:\/\/[^\s<>"']+/g;
+
+function urlTokens(text) {
+  const out = [];
+  let last = 0;
+  for (const match of text.matchAll(URL_RE)) {
+    if (match.index > last) out.push(text.slice(last, match.index));
+    const raw = match[0];
+    const trail = raw.match(/[),.!?]+$/)?.[0] || '';
+    const url = trail ? raw.slice(0, raw.length - trail.length) : raw;
+    out.push({ url });
+    if (trail) out.push(trail);
+    last = match.index + raw.length;
+  }
+  if (last < text.length) out.push(text.slice(last));
+  return out;
+}
+
 function orderLabel(content) {
   if (content.paymentState === 'confirmed') return { text: 'Confirmed', className: 'bg-blue-600 text-white' };
   if (content.status === 'shipped') return { text: 'Shipped', className: 'bg-blue-600 text-white' };
@@ -235,7 +256,23 @@ export default function MessageBubble({ message, data, onAction, senderName, isP
         )}
         {text ? (
           <p className="whitespace-pre-wrap break-words text-[14.5px] leading-[1.28]">
-            {text}
+            {urlTokens(text).map((token, i) => (
+              typeof token === 'string'
+                ? <React.Fragment key={i}>{token}</React.Fragment>
+                : (
+                  <a
+                    key={i}
+                    href={token.url}
+                    target="_blank"
+                    rel="noreferrer noopener"
+                    onPointerDown={(event) => event.stopPropagation()}
+                    onClick={(event) => event.stopPropagation()}
+                    className={`break-all underline ${isSender ? 'text-white' : 'text-blue-300'}`}
+                  >
+                    {token.url}
+                  </a>
+                )
+            ))}
             {time}
           </p>
         ) : (
