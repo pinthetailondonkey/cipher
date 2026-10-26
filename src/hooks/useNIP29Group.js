@@ -842,9 +842,16 @@ export function useNIP29Group({ identity }) {
         } else if (isJoinDenied(groupId, pk)) {
           // Denied senders stay out even when this device's snapshot has been
           // widened by a relay: the deny outvotes every replay path below.
+          // (F1 re-attack: these arms must stop here — falling through to the
+          // patch below let a replayed 9021 write a queued or denied sender
+          // straight onto the snapshot, which F1's key gate then trusted.)
+          return;
         } else if (loadPendingJoins()[groupId]?.some((row) => row.pubkey === pk)) {
-          // Already queued, or already denied: a relay replay of the same 9021
-          // must not re-queue the sender or repost the join-request message.
+          // Already queued: a relay replay of the same 9021 must not re-queue
+          // the sender, and it must not fall through to the patch below —
+          // two replayed joins were enough to sit on the member snapshot and
+          // pass F1's sender-standing check.
+          return;
         } else if (!(Array.isArray(members) && members.some((member) => memberKey(member) === pk))) {
           // First join request from this sender: it goes to the pending queue
           // for owner approval instead of onto the snapshot. Nothing auto-adds
