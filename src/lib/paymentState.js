@@ -117,10 +117,22 @@ export function applyWatcherReport({ state, watcherUrl, report, currency, thresh
       throw new Error('The payment is short of the order.');
     }
   }
+  const confirmations = Number(report.confirmations);
+  if (!Number.isInteger(confirmations) || confirmations < 0) {
+    throw new Error('The watcher report names no confirmations. A report that says nothing about depth does not move a payment.');
+  }
   let current = state;
-  if (current === 'address_issued') current = nextPaymentState(current, 'see');
+  if (current === 'address_issued') {
+    // Seen means the payment is on-chain. A txid alone proves nothing: a
+    // mempool entry has a txid and confirmations 0, and on Bitcoin a UTXO-set
+    // scan cannot see one at all. No depth, no move.
+    if (confirmations < 1) {
+      throw new Error('The payment has no depth yet. Confirmations 0 did not move the payment.');
+    }
+    current = nextPaymentState(current, 'see');
+  }
   const need = threshold == null ? confirmationsRequired(currency) : Number(threshold);
-  const confirmed = Number(report.confirmations) >= need;
+  const confirmed = confirmations >= need;
   if (confirmed) {
     if (current !== 'seen') throw new Error('A payment has to be seen before it can be confirmed.');
     current = nextPaymentState(current, 'confirm');

@@ -26,8 +26,20 @@ test('the vendor device cannot confirm a payment, and an empty watcher refuses',
     () => applyWatcherReport({ state: 'address_issued', watcherUrl: 'http://watcher.example', report: { source: 'vendor', txid: 'ab' } }),
     /Only a watcher report/,
   );
+  assert.throws(
+    () => applyWatcherReport({ state: 'address_issued', watcherUrl: 'http://watcher.example', report: { source: 'watcher', txid: 'ab', confirmations: 0 } }),
+    /did not move/,
+  );
+  assert.throws(
+    () => applyWatcherReport({ state: 'address_issued', watcherUrl: 'http://watcher.example', report: { source: 'watcher', txid: 'ab' } }),
+    /names no confirmations/,
+  );
+  assert.throws(
+    () => applyWatcherReport({ state: 'address_issued', watcherUrl: 'http://watcher.example', report: { source: 'watcher', txid: 'ab', confirmations: -1 } }),
+    /names no confirmations/,
+  );
   assert.equal(
-    applyWatcherReport({ state: 'address_issued', watcherUrl: 'http://watcher.example', report: { source: 'watcher', txid: 'ab', confirmations: 0 } }),
+    applyWatcherReport({ state: 'address_issued', watcherUrl: 'http://watcher.example', report: { source: 'watcher', txid: 'ab', confirmations: 1 } }),
     'seen',
   );
   assert.equal(

@@ -33,12 +33,21 @@ test('a watcher you run can mark seen, then confirmed, and silence is not a succ
     fetchImpl: async () => ({ ok: true, text: async () => JSON.stringify({ pending: true }) }),
   });
   assert.equal(pending.moved, false);
-  const seen = await checkPayment({
+  const mempool = await checkPayment({
     watcherUrl,
     address: '8abc',
     currency: 'xmr',
     state: 'address_issued',
     fetchImpl: async () => ({ ok: true, text: async () => JSON.stringify({ txid: 'ab', confirmations: 0 }) }),
+  });
+  // A txid in the mempool names no depth: on the app side, seen waits for the chain.
+  assert.deepEqual(mempool, { moved: false, state: 'address_issued' });
+  const seen = await checkPayment({
+    watcherUrl,
+    address: '8abc',
+    currency: 'xmr',
+    state: 'address_issued',
+    fetchImpl: async () => ({ ok: true, text: async () => JSON.stringify({ txid: 'ab', confirmations: 1 }) }),
   });
   assert.equal(seen.moved, true);
   assert.equal(seen.state, 'seen');
