@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
-import { atomicToCoins, checkPayment, incomingMoneroTransfers, isPublicExplorer, moneroRows, parseExactAmounts, paymentWatchUrl, reportFromTransfers, rowsFromScan, verifyWatcherResponse } from './paymentWatch.js';
+import { atomicToCoins, checkPayment, incomingMoneroTransfers, isPublicExplorer, issuePrecedes, moneroRows, parseExactAmounts, paymentWatchUrl, reportFromTransfers, rowsFromScan, verifyWatcherResponse } from './paymentWatch.js';
 
 const TOKEN = 'secret';
 const hexOf = (buffer) => [...new Uint8Array(buffer)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
@@ -298,6 +298,66 @@ test('a payment split across two outputs is summed, and the receipt keeps the la
   const young = reportFromTransfers(rowsFromScan(shallow, 'bc1q'), 'bc1q', 'btc');
   assert.equal(young.confirmations, 1);
   assert.equal(young.confirmed, false);
+});
+
+test('a report carries the oldest time of its covering rows, and a scan keeps its height', () => {
+  const rows = moneroRows([
+    { address: '8sub', txid: 'a', confirmations: 10, amount: 300000000000, timestamp: 2000, type: 'in' },
+    { address: '8sub', txid: 'b', confirmations: 10, amount: 200000000000, timestamp: 1000, type: 'in' },
+  ]);
+  const report = reportFromTransfers(rows, '8sub', 'xmr');
+  assert.equal(report.time, 1000);
+  assert.equal(report.amount, '0.5');
+  // One undated part and the report carries no date, so an order with an
+  // issuance time refuses to consume the txid.
+  const partly = reportFromTransfers([
+    { address: '8sub', txid: 'a', confirmations: 10, amount: 0.3, timestamp: 2000 },
+    { address: '8sub', txid: 'b', confirmations: 10, amount: 0.2 },
+  ], '8sub', 'xmr');
+  assert.equal(partly.time, undefined);
+  const scan = rowsFromScan({ height: 104, unspents: [{ txid: 'aa', height: 102, amount: 0.01 }] }, 'bc1q');
+  assert.equal(scan[0].height, 102);
+});
+
+test('a transfer recorded before the order\'s address was issued cannot pay it', async () => {
+  const watcherUrl = 'https://watch.example/payment?token=secret';
+  const issuedAt = Math.floor(Date.now() / 1000) - 600;
+  const stale = await checkPayment({
+    watcherUrl,
+    address: '8sub',
+    currency: 'xmr',
+    state: 'address_issued',
+    issuedAt,
+    fetchImpl: () => watcherAnswer({ txid: 'old', confirmations: 10, amount: '0.5', time: issuedAt - 3600 }),
+  });
+  assert.deepEqual(stale, { moved: false, stale: true, state: 'address_issued' });
+  const fresh = await checkPayment({
+    watcherUrl,
+    address: '8sub',
+    currency: 'xmr',
+    state: 'address_issued',
+    issuedAt,
+    fetchImpl: () => watcherAnswer({ txid: 'new', confirmations: 10, amount: '0.5', time: issuedAt + 60 }),
+  });
+  assert.equal(fresh.moved, true);
+  assert.equal(fresh.state, 'confirmed');
+  // An undated report is not refused here; the order refuses to consume it
+  // at confirmation instead, which is where the txid is spoken for.
+  const undated = await checkPayment({
+    watcherUrl,
+    address: '8sub',
+    currency: 'xmr',
+    state: 'seen',
+    issuedAt,
+    fetchImpl: () => watcherAnswer({ txid: 'ab', confirmations: 1, amount: '0.5' }),
+  });
+  assert.equal(undated.moved, true);
+  // The pure gate: equal time is not before issuance, a missing one proves nothing.
+  assert.equal(issuePrecedes({ time: issuedAt - 1 }, issuedAt), true);
+  assert.equal(issuePrecedes({ time: issuedAt }, issuedAt), false);
+  assert.equal(issuePrecedes({}, issuedAt), false);
+  assert.equal(issuePrecedes({ time: 5 }, undefined), false);
+  assert.equal(issuePrecedes({ time: 5 }, 'yesterday'), false);
 });
 
 test('the watcher signs every answer it gives, and the phone verifies the raw body', () => {
