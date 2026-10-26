@@ -101,6 +101,18 @@ test('a payment moves created, address issued, seen, confirmed, and skips nothin
   assert.throws(() => nextPaymentState('confirmed', 'see'), /cannot see/);
 });
 
+test('a dispute is not a payment state, and the table stays pure (security S6)', () => {
+  // Nothing in the walk is named after, or triggered by, a dispute: the
+  // dispute's life is the order status layer, and a refund is a transaction a
+  // watcher reports on its own.
+  for (const state of ['created', 'address_issued', 'seen', 'confirmed']) {
+    assert.throws(() => nextPaymentState(state, 'dispute'), /cannot/);
+    assert.throws(() => nextPaymentState(state, 'refund'), /cannot/);
+    assert.throws(() => nextPaymentState(state, 'resolve'), /cannot/);
+    assert.throws(() => nextPaymentState('disputed', 'confirm'), /cannot/);
+  }
+});
+
 test('the vendor device cannot confirm a payment, and an empty watcher refuses', () => {
   assert.throws(
     () => applyWatcherReport({ state: 'address_issued', watcherUrl: '', report: { source: 'watcher', txid: 'ab', confirmations: 10 } }),
