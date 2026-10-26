@@ -302,8 +302,11 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
         // before per-order derivation was required may carry one, so the
         // check refuses rather than guessing which payment it was. (security S1)
         if (!isBuyer) {
-          const shared = String(readPaymentAddresses()[currency] || '').trim();
-          if (shared && String(address || '').trim() === shared) {
+          // Bech32 is case-insensitive: the same address can arrive uppercase.
+          // An exact compare would let a mixed-case twin of the shared
+          // address pass as a fresh per-order one. (security S1)
+          const shared = String(readPaymentAddresses()[currency] || '').trim().toLowerCase();
+          if (shared && String(address || '').trim().toLowerCase() === shared) {
             setToast({ type: 'error', message: 'This order was issued the shared account address, so one transfer could pay many orders. Turn on address derivation in Profile, then accept the order again to give it its own address.' });
             setSelectedMessage(null);
             return true;

@@ -202,13 +202,15 @@ export default function Wallet({ identity, onOpenChat }) {
       const dTag = Date.now().toString()
       
       const tags = [
-        ['d', dTag], ['title', title], ['price', price, currency], 
+        ['d', dTag], ['title', title], ['price', price, currency],
         ['image', image || '/app-icon-512.png'], ['stock', '1'],
         ['status', 'active'], ['published_at', Math.floor(Date.now() / 1000).toString()],
         ['t', 'cipher_marketplace']
       ]
-      if (btcAddress) tags.push(['payment', `btc:${btcAddress}`])
-      if (xmrAddress) tags.push(['payment', `xmr:${xmrAddress}`])
+      // A listing never carries a payment address: the account's shared
+      // address on a public event tells the world where every order's money
+      // lands. The only address a buyer sees arrives on the accepted order,
+      // derived fresh for that order. (security S2)
       
       const content = JSON.stringify({ name: title, description, price, currency, image })
       const ev = finalizeEvent({ kind: 30402, created_at: Math.floor(Date.now() / 1000), tags, content }, identity.sk)
