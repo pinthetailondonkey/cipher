@@ -1,8 +1,34 @@
 import React, { useState, useEffect } from 'react';
-import { Search, Users, Megaphone, Loader2 } from 'lucide-react';
+import { Search, Store, Users, Loader2 } from 'lucide-react';
 import { useChatStore } from './store/chatStore';
 import { joinGroup } from './lib/groupJoin';
 import { groupOnlyRelays } from './lib/relays';
+
+// One row of the public directory. A space this account is already in opens
+// on tap; anything else offers Join and shows the join in flight.
+function DiscoverRow({ group, joined, joining, onOpen }) {
+  const Icon = group.isChannel ? Store : Users;
+  const label = joining ? '…' : joined ? 'Open' : 'Join';
+  return (
+    <button
+      type="button"
+      onClick={() => onOpen(group)}
+      disabled={joining}
+      className="flex w-full items-center justify-between border-b border-white/5 p-4 text-left last:border-0 active:bg-white/5 disabled:opacity-50"
+    >
+      <div className="flex items-center gap-3">
+        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-white/15 bg-white/10 text-blue-400">
+          <Icon size={22} />
+        </div>
+        <div>
+          <h3 className="text-[15px] font-semibold text-white">{group.name}</h3>
+          <p className="text-[13px] text-white/40 line-clamp-1">{group.about}</p>
+        </div>
+      </div>
+      <span className={`rounded-2xl px-3 py-1.5 text-[13px] font-bold ${joined ? 'text-white/60' : 'bg-blue-600 text-white'}`}>{label}</span>
+    </button>
+  );
+}
 
 export default function Discover({ identity, onJoined }) {
   const [query, setQuery] = useState('');
@@ -14,14 +40,18 @@ export default function Discover({ identity, onJoined }) {
   const groupKey = (storeGroups || []).map((group) => group.id).sort().join('|');
 
   useEffect(() => {
-    const groups = useChatStore.getState().groups || [];
+    // The relay directory is always read, even when this account already
+    // belongs to groups: discovery exists to show menus and rooms you are
+    // NOT in yet — vendors grow through it, so joined chats never replace
+    // the public list.
+    let alive = true;
     const fetchGroups = async () => {
       setLoading(true);
       try {
         const { SimplePool } = await import('nostr-tools');
         const pool = new SimplePool();
-        
-        const timeoutPromise = new Promise((_, reject) => 
+
+        const timeoutPromise = new Promise((_, reject) =>
           setTimeout(() => reject(new Error('Relay timeout')), 4000)
         );
 
@@ -31,6 +61,7 @@ export default function Discover({ identity, onJoined }) {
         );
 
         const events = await Promise.race([fetchPromise, timeoutPromise]);
+        if (!alive) return;
 
         const parsed = events.map(ev => {
           const getTag = (name) => ev.tags.find(t => t[0] === name)?.[1];
@@ -39,34 +70,58 @@ export default function Discover({ identity, onJoined }) {
             name: getTag('name') || getTag('title') || 'Unnamed Group',
             about: getTag('about') || 'No description',
             isChannel: ev.tags.some(t => t[0] === 'channel' || t[0] === 'broadcast'),
+            // Spaces created inside this app carry [cipher]; the wider
+            // network's groups stay out of this screen.
+            isCipher: ev.tags.some(t => t[0] === 'cipher'),
           };
         });
 
         const unique = Array.from(new Map(parsed.map(g => [g.id, g])).values());
-        setRealGroups(unique);
+        const cipherGroups = unique.filter(g => g.isCipher);
+        setRealGroups(cipherGroups);
+        // Every group this account belongs to stays listed, but only those
+        // the relay directory does not publish itself.
+        const published = new Set(cipherGroups.map(g => g.id));
+        const mine = (useChatStore.getState().groups || [])
+          .filter((group) => !published.has(group.id))
+          .map((group) => ({
+            id: group.id,
+            name: group.name || 'Unnamed Group',
+            about: group.about || 'No description',
+            isChannel: group.isChannel === true,
+            isCipher: true,
+          }));
+        setRealGroups([...cipherGroups, ...mine]);
       } catch (err) {
         console.error("Failed to fetch groups:", err);
+        if (!alive) return;
         setRealGroups(useChatStore.getState().groups || []);
       } finally {
-        setLoading(false);
+        if (alive) setLoading(false);
       }
     };
 
-    if (groups.length > 0) {
-      setRealGroups(groups);
-      setLoading(false);
-    } else {
-      fetchGroups();
-    }
+    fetchGroups();
+    return () => { alive = false; };
   }, [groupKey]);
 
-  const displayGroups = realGroups.filter(g => 
-    (g.name || '').toLowerCase().includes(query.toLowerCase()) || 
+  const joinedIds = new Set((storeGroups || []).map((group) => group.id));
+
+  const displayGroups = realGroups.filter(g =>
+    (g.name || '').toLowerCase().includes(query.toLowerCase()) ||
     (g.about || '').toLowerCase().includes(query.toLowerCase())
   );
+  const menus = displayGroups.filter(g => g.isChannel);
+  const rooms = displayGroups.filter(g => !g.isChannel);
 
   const join = async (group) => {
     if (!identity?.pk || joiningId) return;
+    if (joinedIds.has(group.id)) {
+      const joined = (storeGroups || []).find((item) => item.id === group.id);
+      if (joined) useChatStore.getState().openChat('group', joined.id, joined);
+      onJoined?.();
+      return;
+    }
     setJoiningId(group.id);
     setError('');
     try {
@@ -107,34 +162,24 @@ export default function Discover({ identity, onJoined }) {
         ) : displayGroups.length === 0 ? (
           <div className="mx-4 rounded-2xl border border-white/10 bg-[#0A0A0A]/60 px-4 py-16 text-center shadow-2xl backdrop-blur-2xl">
             <Users size={28} className="mx-auto mb-3 text-white/30" />
-            <p className="text-[15px] font-semibold text-white">No groups</p>
+            <p className="text-[15px] font-semibold text-white">No menus or groups yet</p>
           </div>
         ) : (
-          <div className="mx-4 overflow-hidden rounded-3xl border border-white/15 bg-white/10 shadow-2xl backdrop-blur-2xl">
-          {displayGroups.map((group) => {
-            const Icon = group.isChannel ? Megaphone : Users;
-            return (
-              <button
-                type="button"
-                key={group.id}
-                onClick={() => join(group)}
-                disabled={joiningId === group.id}
-                className="flex w-full items-center justify-between border-b border-white/5 p-4 text-left last:border-0 active:bg-white/5 disabled:opacity-50"
-              >
-                <div className="flex items-center gap-3">
-                  <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-white/15 bg-white/10 text-blue-400">
-                    <Icon size={22} />
-                  </div>
-                  <div>
-                    <h3 className="text-[15px] font-semibold text-white">{group.name}</h3>
-                    <p className="text-[13px] text-white/40 line-clamp-1">{group.about}</p>
-                  </div>
-                </div>
-                <span className="rounded-2xl bg-blue-600 px-3 py-1.5 text-[13px] font-bold text-white">{joiningId === group.id ? '…' : 'Join'}</span>
-              </button>
-            );
-          })}
-          </div>
+          <>
+            {menus.length > 0 && (
+              <div className="mx-4 mb-4 overflow-hidden rounded-3xl border border-white/15 bg-white/10 shadow-2xl backdrop-blur-2xl">
+                <p className="px-4 pt-3 text-[11px] font-semibold uppercase tracking-wider text-white/40">Menus</p>
+                <p className="px-4 pb-1 text-[12px] text-white/25">Menus are for buying. Groups are for talking.</p>
+                {menus.map((group) => <DiscoverRow key={group.id} group={group} joined={joinedIds.has(group.id)} joining={joiningId === group.id} onOpen={join} />)}
+              </div>
+            )}
+            {rooms.length > 0 && (
+              <div className="mx-4 overflow-hidden rounded-3xl border border-white/15 bg-white/10 shadow-2xl backdrop-blur-2xl">
+                <p className="px-4 pt-3 text-[11px] font-semibold uppercase tracking-wider text-white/40">Groups</p>
+                {rooms.map((group) => <DiscoverRow key={group.id} group={group} joined={joinedIds.has(group.id)} joining={joiningId === group.id} onOpen={join} />)}
+              </div>
+            )}
+          </>
         )}
       </div>
     </div>
