@@ -283,9 +283,13 @@ test('a disputed order keeps a resolution and a chain entry for both sides (secu
   // abandon the order. Not nothing.
   const seen = update('u1', false, 'accepted', 12, { paymentState: 'address_issued' });
   assert.deepEqual(names(orderActionsFor(pending, [pending, seen, dispute])), ['check_chain', 'cancel_order']);
-  // A watched payment that is already confirmed leaves only the abandon step.
+  // A watched payment that is already confirmed leaves only the abandon
+  // step. The confirmation is the buyer's own watcher fact — a local patch on
+  // their card — not a received claim, which never counts as evidence (F7).
   const confirmed = update('u2', false, 'paid', 14, { paymentState: 'confirmed' });
-  assert.deepEqual(names(orderActionsFor(pending, [pending, confirmed, dispute])), ['cancel_order']);
+  assert.deepEqual(names(orderActionsFor(pending, [pending, confirmed, dispute])), ['check_chain', 'cancel_order']);
+  const confirmedCard = { ...pending, localPatch: { paymentState: 'confirmed' } };
+  assert.deepEqual(names(orderActionsFor(confirmedCard, [confirmedCard, dispute])), ['cancel_order']);
   // Vendor card while disputed.
   const theirs = request(false, {});
   assert.deepEqual(orderActionsFor(theirs, [theirs, dispute]).map(({ action, target }) => `${action}:${target}`), ['mark_refunded:request', 'resume_order:request']);

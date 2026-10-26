@@ -42,8 +42,14 @@ function paymentEvidence(messages, orderId, request) {
     if (state && rank(state) > rank(paymentState)) paymentState = state;
     if (!paymentSeenBy && source.paymentSeenBy) paymentSeenBy = source.paymentSeenBy;
   };
-  if (request?.isSender) adopt(request.data);
-  else adopt(request?.localPatch || null);
+  if (request?.isSender) {
+    adopt(request.data);
+    // A local patch on this device's own card is its own write too — the
+    // buyer's watcher check lands there (security S6).
+    if (request.localPatch) adopt(request.localPatch);
+  } else {
+    adopt(request?.localPatch || null);
+  }
   for (const message of Array.isArray(messages) ? messages : []) {
     if (message?.data?.type !== 'order_update' || message.data.orderId !== orderId) continue;
     if (message.isSender) {
