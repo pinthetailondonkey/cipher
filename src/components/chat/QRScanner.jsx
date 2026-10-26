@@ -111,11 +111,11 @@ export default function QRScanner({ onClose }) {
   };
 
   return (
-    <div className="fixed inset-0 z-[999] flex flex-col bg-black pt-safe pb-safe" role="dialog" aria-modal="true" aria-label="Scan QR code">
+    <div className="fixed inset-0 z-[999] flex flex-col bg-black pt-safe pb-safe md:items-center md:justify-center md:bg-black/70" role="dialog" aria-modal="true" aria-label="Scan QR code">
       <div className="pointer-events-none absolute inset-0" style={{
         background: 'radial-gradient(ellipse 55% 38% at 12% 0%, var(--glow-a), transparent 65%), radial-gradient(ellipse 50% 30% at 92% 100%, var(--glow-b), transparent 70%)',
       }} />
-      <div className="relative z-10 flex min-h-0 flex-1 flex-col">
+      <div className="relative z-10 flex min-h-0 flex-1 flex-col md:w-[420px] md:max-h-[80vh] md:flex-none md:rounded-2xl md:border md:border-line md:bg-panel md:shadow-2xl md:overflow-hidden">
         <ScreenHeader title="Scan" onBack={onClose} />
         <div className="flex flex-1 flex-col items-center justify-center gap-5 overflow-y-auto p-4">
           {error ? (
