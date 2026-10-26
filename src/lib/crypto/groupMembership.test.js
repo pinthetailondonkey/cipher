@@ -6,6 +6,7 @@ import {
   MEMBER_REREAD_NEGATIVE_TTL_MS,
   NIP11_NEGATIVE_TTL_MS,
   authorizeGroupControl,
+  authorizeGroupPin,
   authorizeMemberSnapshot,
   controlSubject,
   groupRelayPubkey,
@@ -534,6 +535,20 @@ test('trustedGroupCreator honors only self-attested creation and snapshot standi
   assert.equal(trustedGroupCreator({ creator: claimed.toUpperCase(), snapshot: [{ pubkey: claimed, role: 'admin' }] }), claimed.toLowerCase());
   // An empty claim is empty.
   assert.equal(trustedGroupCreator({ creator: '', snapshot: [{ pubkey: claimed, role: 'admin' }] }), '');
+});
+
+test('a kind-9005 pin moves the shared slot only for a creator or admin', () => {
+  // The creator and a snapshot admin may pin.
+  assert.equal(authorizeGroupPin({ sender: creator, members, creator }), true);
+  assert.equal(authorizeGroupPin({ sender: admin, members, creator }), true);
+  // A plain member's pin is ignored, as is a stranger's.
+  assert.equal(authorizeGroupPin({ sender: member, members, creator }), false);
+  assert.equal(authorizeGroupPin({ sender: stranger, members, creator }), false);
+  // No sender, no standing, no pin.
+  assert.equal(authorizeGroupPin({ sender: '', members, creator }), false);
+  assert.equal(authorizeGroupPin({ sender: admin, members: [], creator: '' }), false);
+  // Case differences do not sneak past.
+  assert.equal(authorizeGroupPin({ sender: creator.toUpperCase(), members, creator: creator.toUpperCase() }), true);
 });
 
 test('a failed re-read inside the freshness window still refuses a list older than the key', () => {

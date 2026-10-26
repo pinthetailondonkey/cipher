@@ -168,8 +168,14 @@ export function useMessageCommands({
       return;
     }
     if (action === 'pin' && activeGroup) {
-      await pinMessage(activeGroup.id, msg.id);
-      setToast({ type: 'success', message: 'Pinned' });
+      try {
+        await pinMessage(activeGroup.id, msg.id);
+        setToast({ type: 'success', message: 'Pinned' });
+      } catch (error) {
+        // S9: the hook refuses a pin from a member; say so instead of a dead click.
+        console.error('[Chat] Pin refused:', error);
+        setToast({ type: 'error', message: error?.message || 'Could not pin that.' });
+      }
       setSelectedMessage(null); return;
     }
     if (action === 'view_vendor') {
