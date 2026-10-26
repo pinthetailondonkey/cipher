@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
-  JOIN_REQUESTS_EVENT, dropPendingJoin, loadPendingJoins, pendingJoinsFor,
-  queuePendingJoin, subscribeJoinRequests,
+  JOIN_REQUESTS_EVENT, denyPendingJoin, dropPendingJoin, isJoinDenied,
+  loadPendingJoins, pendingJoinsFor, queuePendingJoin, subscribeJoinRequests,
 } from './groupJoinQueue.js';
 import { getActivePubkey } from './storage.js';
 
@@ -40,6 +40,21 @@ test('a join request is written to storage, and a stored one reads back after a 
     // A reopen reads back the stored rows through the same shim.
     globalThis.localStorage.setItem(`cipher_${getActivePubkey().slice(0, 8)}_join_pending`, raw);
     assert.deepEqual(loadPendingJoins()[GROUP], [{ pubkey: OTHER, eventId: 'ev9', at: 42 }]);
+  });
+});
+
+test('a denied sender stays denied: the 9021 replay cannot re-queue them', () => {
+  withStorage(() => {
+    queuePendingJoin(GROUP, { pubkey: PK, eventId: 'ev3', at: 10 });
+    assert.equal(denyPendingJoin(GROUP, PK), true);
+    assert.equal(isJoinDenied(GROUP, PK), true);
+    assert.deepEqual(pendingJoinsFor(GROUP), []);
+    // A deny was recorded in per-account storage before the row went.
+    const raw = globalThis.localStorage.getItem(`cipher_${getActivePubkey().slice(0, 8)}_join_denied`);
+    assert.match(raw, /"a+"/);
+    // The replayed 9021 runs through the same queue call from fresh state.
+    assert.equal(queuePendingJoin(GROUP, { pubkey: PK, eventId: 'ev3', at: 20 }), false);
+    assert.equal(loadPendingJoins()[GROUP], undefined);
   });
 });
 

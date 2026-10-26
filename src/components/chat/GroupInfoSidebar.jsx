@@ -6,7 +6,7 @@ import Avatar from '../ui/Avatar';
 import Picture from '../ui/Picture';
 import { pressable } from '../ui/Button';
 import { copyText } from '../../lib/copyText';
-import { dropPendingJoin, pendingJoinsFor, subscribeJoinRequests } from '../../lib/groupJoinQueue.js';
+import { denyPendingJoin, dropPendingJoin, pendingJoinsFor, subscribeJoinRequests } from '../../lib/groupJoinQueue.js';
 
 const EMPTY_MESSAGES = [];
 
@@ -139,6 +139,7 @@ export default function GroupInfoSidebar({
   };
 
   const approvePending = async (row) => {
+    if (!group?.id) return;
     setPending(true);
     setError('');
     try {
@@ -153,12 +154,13 @@ export default function GroupInfoSidebar({
   };
 
   const denyPending = (row) => {
+    if (!group?.id) return;
     useChatStore.getState().openDialog({
       title: 'Deny join request',
       message: 'They stay out of the group and never receive its key.',
       type: 'danger',
       confirmText: 'Deny',
-      onConfirm: () => dropPendingJoin(group.id, row.pubkey),
+      onConfirm: () => denyPendingJoin(group.id, row.pubkey),
     });
   };
 

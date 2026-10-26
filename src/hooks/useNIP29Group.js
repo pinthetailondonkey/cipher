@@ -17,7 +17,7 @@ import { enqueueNostrEvent, startOutboxSync } from '../lib/outbox';
 import { groupSocketUrl } from '../lib/egress';
 import { relaysForPeer } from '../lib/dmRelays';
 import { dropSecuringSend, forgetPendingKeyRequest, queueSecuringSend, resetKeyRequest, securingSendsFor } from '../lib/crypto/groupKeyRequest';
-import { dropPendingJoin, loadPendingJoins, notifyJoinRequests, pendingJoinsFor, queuePendingJoin } from '../lib/groupJoinQueue.js';
+import { dropPendingJoin, isJoinDenied, loadPendingJoins, notifyJoinRequests, pendingJoinsFor, queuePendingJoin } from '../lib/groupJoinQueue.js';
 
 function currentGroupRelay() {
   return groupSocketUrl() || '';
@@ -815,6 +815,9 @@ export function useNIP29Group({ identity }) {
           // Own join echo: the creator's bootstrap join lands on the snapshot
           // unchanged. A rejoin case is kept here too — an already-member
           // sender still auto-adds (a no-op on the snapshot row).
+        } else if (loadPendingJoins()[groupId]?.some((row) => row.pubkey === pk) || isJoinDenied(groupId, pk)) {
+          // Already queued, or already denied: a relay replay of the same 9021
+          // must not re-queue the sender or repost the join-request message.
         } else if (!(Array.isArray(members) && members.some((member) => memberKey(member) === pk))) {
           // First join request from this sender: it goes to the pending queue
           // for owner approval instead of onto the snapshot. Nothing auto-adds
