@@ -1,4 +1,34 @@
 import { Capacitor } from '@capacitor/core';
+import { NOTIFICATION_PER_PEER_MS, NOTIFICATION_QUIET_MS, notificationAllowed } from './notificationThrottle';
+
+// The gate every OS notification passes before it can fire. It remembers the
+// time of the last notification overall and the last one per counterparty,
+// and refuses whenever the pure timing rule from notificationThrottle says
+// a burst is under way. (security S11)
+const lastPerPeer = new Map();
+let lastAny = 0;
+
+export function gateNotification(peer = '', now = Date.now()) {
+  const allowed = notificationAllowed({
+    peer,
+    now,
+    lastPerPeer: Object.fromEntries(lastPerPeer),
+    lastAny,
+    perPeerMs: NOTIFICATION_PER_PEER_MS,
+    quietMs: NOTIFICATION_QUIET_MS,
+  });
+  if (allowed) {
+    lastPerPeer.set(peer, now);
+    lastAny = now;
+  }
+  return allowed;
+}
+
+// For tests only: clears the remembered times.
+export function resetNotificationGate() {
+  lastPerPeer.clear();
+  lastAny = 0;
+}
 
 export const requestNotificationPermission = async () => {
   try {
@@ -20,7 +50,10 @@ export const requestNotificationPermission = async () => {
   }
 };
 
-export const showNotification = async (type = 'message') => {
+export const showNotification = async (type = 'message', peer = '') => {
+  // The message has already landed, saved, and marked unread by the time
+  // this is called; the throttle holds back only this OS notification.
+  if (!gateNotification(peer)) return;
   const isOrder = type === 'order';
   const title = isOrder ? 'New Order' : 'New Message';
   const body = 'Open Cipher to view it.';

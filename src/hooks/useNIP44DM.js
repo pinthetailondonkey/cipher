@@ -262,7 +262,9 @@ export function useNIP44DM({ identity }) {
                 }
               }
               if (!isSender && data.type !== 'typing' && data.type !== 'read' && !shouldSuppress(counterparty)) {
-                showNotification(data.type === 'order_request' ? 'order' : 'message');
+                // S11: the counterparty is the throttle key. Ingestion above
+                // is untouched — the message has already landed and marked unread.
+                showNotification(data.type === 'order_request' ? 'order' : 'message', counterparty);
               }
               setDms(prev => {
                 const chatMsgs = prev[counterparty] || [];
