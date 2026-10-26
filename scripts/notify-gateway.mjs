@@ -28,6 +28,9 @@ if (typeof globalThis.WebSocket !== 'function') {
 const port = Number(process.env.PUSH_PORT || 8787);
 const dir = process.env.CIPHER_PUSH_DIR || path.join(process.cwd(), 'data', 'push-gateway');
 const relays = (process.env.CIPHER_RELAYS || 'wss://relay.primal.net').split(',').map((item) => item.trim()).filter(Boolean);
+// Same default as the watcher: the machine itself. PUSH_HOST=0.0.0.0 restores
+// serving the LAN for a phone that needs to subscribe over the network.
+const pushHost = String(process.env.PUSH_HOST || '127.0.0.1');
 const statePath = path.join(dir, 'state.json');
 
 function load() {
@@ -234,7 +237,7 @@ function watch() {
   closer = () => sub.close();
 }
 
-server.listen(port, '0.0.0.0', () => {
+server.listen(port, pushHost, () => {
   console.log(`[push] http://127.0.0.1:${port}`);
   console.log('[push] Paste that address into Connections. Nothing buzzes until a phone subscribes.');
   watch();
