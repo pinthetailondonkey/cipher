@@ -35,14 +35,14 @@ export default function ChatList({ onOpenChat }) {
   );
 
   if (allChats.length === 0) {
-    return <p className="mx-4 mt-6 rounded-2xl border border-line bg-panel shadow-lg px-4 py-10 text-center text-[13px] text-white/40">No chats yet. Tap + to start.</p>;
+    return <p className="mx-4 mt-6 rounded-2xl border border-line bg-panel shadow-lg px-4 py-10 text-center text-[13px] text-ink/40">No chats yet. Tap + to start.</p>;
   }
 
   return (
     <div className="px-4 pb-4">
       <div className="overflow-hidden rounded-2xl border border-line bg-panel shadow-lg">
       {allChats.map((chat) => {
-        const row = `flex w-full items-center justify-between border-b border-white/5 p-4 text-left last:border-0 active:bg-white/5 ${pressable}`;
+        const row = `flex w-full items-center justify-between border-b border-ink/5 p-4 text-left last:border-0 active:bg-ink/5 ${pressable}`;
 
         if (chat.type === 'dm') {
           const profile = profiles[chat.id] || { displayName: noHexName(null, chat.id), picture: null };
@@ -56,8 +56,8 @@ export default function ChatList({ onOpenChat }) {
               <span className="flex min-w-0 items-center gap-3">
                 <Avatar src={profile.picture} name={profile.displayName || profile.name} />
                 <span className="min-w-0">
-                  <span className="block truncate text-[15px] font-semibold text-white">{profile.displayName}</span>
-                  <span className="block truncate text-[13px] text-white/40">
+                  <span className="block truncate text-[15px] font-semibold text-ink">{profile.displayName}</span>
+                  <span className="block truncate text-[13px] text-ink/40">
                     {chat.lastMsg?.data?.type === 'cipher_order' ? 'Order'
                       : chat.lastMsg?.data?.type === 'image' ? 'Photo'
                       : chat.lastMsg?.data?.type === 'audio' ? 'Voice note'
@@ -67,7 +67,7 @@ export default function ChatList({ onOpenChat }) {
               </span>
               <span className="ml-2 flex shrink-0 flex-col items-end gap-1">
                 {chat.lastMsg?.timestamp && (
-                  <span className="text-[11px] font-medium text-white/30">
+                  <span className="text-[11px] font-medium text-ink/30">
                     {new Date(chat.lastMsg.timestamp * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                   </span>
                 )}
@@ -90,14 +90,14 @@ export default function ChatList({ onOpenChat }) {
             className={row}
           >
             <span className="flex min-w-0 items-center gap-3">
-              <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-white/10 bg-black text-accent">
+              <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-ink/10 bg-scrim text-accent">
                 <Icon size={22} />
               </span>
               <span className="min-w-0">
-                <span className="block truncate text-[15px] font-semibold text-white">
+                <span className="block truncate text-[15px] font-semibold text-ink">
                   {chat.group.name && !chat.group.name.startsWith('Group ') ? chat.group.name : 'Unnamed Group'}
                 </span>
-                <span className="block truncate text-[13px] text-white/40">
+                <span className="block truncate text-[13px] text-ink/40">
                   {chat.group.isChannel ? 'Channel' : 'Public group'}
                 </span>
               </span>

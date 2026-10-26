@@ -10,12 +10,12 @@ import { shortNpub } from '../../lib/npub';
 
 function Choice({ icon: Icon, label, hint, value, options, onChange }) {
   return (
-    <div className="border-b border-white/5 p-4 last:border-0">
+    <div className="border-b border-ink/5 p-4 last:border-0">
       <div className="flex items-start gap-3">
-        <Icon size={18} className="mt-0.5 shrink-0 text-white/40" />
+        <Icon size={18} className="mt-0.5 shrink-0 text-ink/40" />
         <div className="min-w-0 flex-1">
-          <p className="text-[15px] font-semibold text-white">{label}</p>
-          {hint && <p className="mt-0.5 text-[13px] text-white/40">{hint}</p>}
+          <p className="text-[15px] font-semibold text-ink">{label}</p>
+          {hint && <p className="mt-0.5 text-[13px] text-ink/40">{hint}</p>}
           <div className="mt-3 flex gap-2">
             {options.map((option) => (
               <button
@@ -23,7 +23,7 @@ function Choice({ icon: Icon, label, hint, value, options, onChange }) {
                 type="button"
                 aria-pressed={value === option.id}
                 onClick={() => onChange(option.id)}
-                className={`rounded-2xl border px-3 py-2 text-[13px] font-bold active:scale-95 ${value === option.id ? 'border-accent bg-accent text-accentInk' : 'border-line bg-panelStrong text-white/55'}`}
+                className={`rounded-2xl border px-3 py-2 text-[13px] font-bold active:scale-95 ${value === option.id ? 'border-accent bg-accent text-accentInk' : 'border-line bg-panelStrong text-ink/55'}`}
               >
                 {option.label}
               </button>
@@ -37,14 +37,14 @@ function Choice({ icon: Icon, label, hint, value, options, onChange }) {
 
 function Toggle({ icon: Icon, label, hint, checked, onChange }) {
   return (
-    <button type="button" role="switch" aria-checked={checked} onClick={() => onChange(!checked)} className={`flex w-full items-center gap-3 border-b border-white/5 p-4 text-left last:border-0 active:bg-white/5 ${pressable}`}>
-      <Icon size={18} className="shrink-0 text-white/40" />
+    <button type="button" role="switch" aria-checked={checked} onClick={() => onChange(!checked)} className={`flex w-full items-center gap-3 border-b border-ink/5 p-4 text-left last:border-0 active:bg-ink/5 ${pressable}`}>
+      <Icon size={18} className="shrink-0 text-ink/40" />
       <span className="min-w-0 flex-1">
-        <span className="block text-[15px] font-semibold text-white">{label}</span>
-        {hint && <span className="mt-0.5 block text-[13px] text-white/40">{hint}</span>}
+        <span className="block text-[15px] font-semibold text-ink">{label}</span>
+        {hint && <span className="mt-0.5 block text-[13px] text-ink/40">{hint}</span>}
       </span>
-      <span className={`relative h-6 w-11 shrink-0 rounded-full ${checked ? 'bg-accent' : 'bg-white/15'}`}>
-        <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white transition-transform ${checked ? 'translate-x-5' : 'translate-x-0.5'}`} />
+      <span className={`relative h-6 w-11 shrink-0 rounded-full ${checked ? 'bg-accent' : 'bg-ink/15'}`}>
+        <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-ink transition-transform ${checked ? 'translate-x-5' : 'translate-x-0.5'}`} />
       </span>
     </button>
   );
@@ -93,13 +93,13 @@ export default function PrivacySettings({ onBack }) {
         </div>
         <div className="overflow-hidden rounded-2xl border border-line bg-panel shadow-lg">
           {(blocked || []).length === 0 ? (
-            <p className="flex items-center gap-3 p-4 text-[15px] text-white/40"><Ban size={18} /> No blocked people</p>
+            <p className="flex items-center gap-3 p-4 text-[15px] text-ink/40"><Ban size={18} /> No blocked people</p>
           ) : blocked.map((pubkey) => {
             const name = profiles[pubkey]?.displayName || shortNpub(pubkey);
             return (
-              <div key={pubkey} className="flex items-center gap-3 border-b border-white/5 p-4 last:border-0">
+              <div key={pubkey} className="flex items-center gap-3 border-b border-ink/5 p-4 last:border-0">
                 <Avatar src={profiles[pubkey]?.picture} name={name} />
-                <span className="min-w-0 flex-1 truncate text-[15px] font-semibold text-white">{name}</span>
+                <span className="min-w-0 flex-1 truncate text-[15px] font-semibold text-ink">{name}</span>
                 <button type="button" onClick={() => toggleBlockUser(pubkey)} className={`text-[13px] font-bold text-accent ${pressable}`}>Unblock</button>
               </div>
             );

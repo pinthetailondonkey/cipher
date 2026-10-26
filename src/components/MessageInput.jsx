@@ -37,7 +37,7 @@ export default function MessageInput({ sendMessage, handleImageUpload, startReco
           event.target.value = '';
         }}
       />
-      <button type="button" onClick={() => fileInput.current?.click()} disabled={uploading} aria-label="Attach images" className="shrink-0 p-2 text-white/55 hover:text-white disabled:opacity-40">
+      <button type="button" onClick={() => fileInput.current?.click()} disabled={uploading} aria-label="Attach images" className="shrink-0 p-2 text-ink/55 hover:text-ink disabled:opacity-40">
         <ImagePlus size={20} />
       </button>
       <textarea
@@ -52,10 +52,10 @@ export default function MessageInput({ sendMessage, handleImageUpload, startReco
         }}
         placeholder={uploading ? 'Uploading…' : 'Message'}
         aria-label="Message"
-        className="max-h-32 min-h-10 flex-1 resize-y rounded-2xl border border-line bg-panel shadow-lg px-4 py-2.5 text-[15px] text-white outline-none placeholder:text-white/35 focus:border-accentSoft"
+        className="max-h-32 min-h-10 flex-1 resize-y rounded-2xl border border-line bg-panel shadow-lg px-4 py-2.5 text-[15px] text-ink outline-none placeholder:text-ink/35 focus:border-accentSoft"
       />
       {recording ? (
-        <button type="button" onClick={stopRecording} aria-label="Stop recording" className="shrink-0 rounded-full bg-red-600 p-2.5 text-white hover:bg-red-500">
+        <button type="button" onClick={stopRecording} aria-label="Stop recording" className="shrink-0 rounded-full bg-red-600 p-2.5 text-ink hover:bg-red-500">
           <Square size={18} />
         </button>
       ) : input.trim() ? (
@@ -63,7 +63,7 @@ export default function MessageInput({ sendMessage, handleImageUpload, startReco
           <Send size={18} />
         </button>
       ) : (
-        <button type="button" onClick={startRecording} disabled={uploading} aria-label="Record voice message" className="shrink-0 p-2.5 text-white/55 hover:text-white disabled:opacity-40">
+        <button type="button" onClick={startRecording} disabled={uploading} aria-label="Record voice message" className="shrink-0 p-2.5 text-ink/55 hover:text-ink disabled:opacity-40">
           <Mic size={20} />
         </button>
       )}

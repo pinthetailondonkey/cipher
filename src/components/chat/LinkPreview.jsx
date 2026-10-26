@@ -57,22 +57,22 @@ export default function LinkPreview({ url }) {
 
   if (loading) {
     return (
-      <div className="mb-1 overflow-hidden rounded-xl border border-white/10 bg-black/30">
-        <div className="h-20 animate-pulse bg-white/10" />
+      <div className="mb-1 overflow-hidden rounded-xl border border-ink/10 bg-scrim/30">
+        <div className="h-20 animate-pulse bg-ink/10" />
         <div className="space-y-2 p-2">
-          <div className="h-3 w-2/3 animate-pulse rounded bg-white/10" />
-          <div className="h-2 w-full animate-pulse rounded bg-white/10" />
+          <div className="h-3 w-2/3 animate-pulse rounded bg-ink/10" />
+          <div className="h-2 w-full animate-pulse rounded bg-ink/10" />
         </div>
       </div>
     );
   }
   if (!meta?.title && !meta?.image) return null;
   return (
-    <a href={url} target="_blank" rel="noreferrer" onClick={(event) => event.stopPropagation()} className="mb-1 block overflow-hidden rounded-xl border border-white/10 bg-black/40 text-left">
+    <a href={url} target="_blank" rel="noreferrer" onClick={(event) => event.stopPropagation()} className="mb-1 block overflow-hidden rounded-xl border border-ink/10 bg-scrim/40 text-left">
       <Picture src={meta.image} alt="" className="h-24 w-full object-cover" />
       <span className="block p-2">
-        <span className="block truncate text-[13px] font-semibold text-white">{meta.title || url}</span>
-        {meta.description && <span className="mt-0.5 line-clamp-2 block text-[12px] text-white/50">{meta.description}</span>}
+        <span className="block truncate text-[13px] font-semibold text-ink">{meta.title || url}</span>
+        {meta.description && <span className="mt-0.5 line-clamp-2 block text-[12px] text-ink/50">{meta.description}</span>}
       </span>
     </a>
   );

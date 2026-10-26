@@ -20,8 +20,8 @@ const DmView = lazy(() => import('./components/chat/DmView'));
 const GroupView = lazy(() => import('./components/chat/GroupView'));
 
 const screenFallback = (
-  <div className="flex h-full items-center justify-center bg-black">
-    <div className="h-7 w-7 animate-spin rounded-full border-2 border-white/20 border-t-blue-500" />
+  <div className="flex h-full items-center justify-center bg-scrim">
+    <div className="h-7 w-7 animate-spin rounded-full border-2 border-ink/20 border-t-blue-500" />
   </div>
 );
 
@@ -134,8 +134,8 @@ export default function Chat({ identity }) {
           />
         ) : thread || (
           <div className="m-auto mx-4 w-full max-w-sm rounded-2xl border border-line bg-panel px-4 py-8 text-center shadow-lg">
-            <p className="text-[15px] font-semibold text-white">No chat open</p>
-            <p className="mt-1 text-[13px] text-white/40">Pick a chat from the list.</p>
+            <p className="text-[15px] font-semibold text-ink">No chat open</p>
+            <p className="mt-1 text-[13px] text-ink/40">Pick a chat from the list.</p>
           </div>
         )}
       </div>

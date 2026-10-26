@@ -13,7 +13,7 @@ export default function SearchView({ handleSearch, joinGroupById, openChat }) {
   const isSearching = useChatStore((s) => s.isSearching);
 
   return (
-    <div className="absolute inset-0 z-50 flex h-full w-full flex-col bg-black">
+    <div className="absolute inset-0 z-50 flex h-full w-full flex-col bg-scrim">
       <div className="pointer-events-none absolute inset-0" style={{
         background: 'radial-gradient(ellipse 55% 38% at 12% 0%, var(--glow-a), transparent 65%), radial-gradient(ellipse 50% 30% at 92% 100%, var(--glow-b), transparent 70%)',
       }} />
@@ -21,7 +21,7 @@ export default function SearchView({ handleSearch, joinGroupById, openChat }) {
         <ScreenHeader title="Search" onBack={() => setView('list')} />
         <div className="px-4 pb-3">
           <div className="flex items-center gap-2 rounded-2xl border border-line bg-panel px-4 py-3 shadow-lg">
-            <Search size={18} className="text-white/40" />
+            <Search size={18} className="text-ink/40" />
             <input
               autoFocus
               type="text"
@@ -31,7 +31,7 @@ export default function SearchView({ handleSearch, joinGroupById, openChat }) {
               onKeyDown={(e) => {
                 if (e.key === 'Enter') handleSearch();
               }}
-              className="w-full bg-transparent text-[15px] text-white placeholder-white/40 outline-none"
+              className="w-full bg-transparent text-[15px] text-ink placeholder-ink/40 outline-none"
             />
           </div>
         </div>
@@ -42,8 +42,8 @@ export default function SearchView({ handleSearch, joinGroupById, openChat }) {
             </div>
           ) : searchResults.length === 0 ? (
             <div className="rounded-2xl border border-line bg-panel px-4 py-16 text-center shadow-lg">
-              <p className="text-[15px] font-semibold text-white">{searchQuery ? 'No results' : 'Find someone'}</p>
-              <p className="mt-1 text-[13px] text-white/40">{searchQuery ? 'Try another name.' : 'Search a name or a group.'}</p>
+              <p className="text-[15px] font-semibold text-ink">{searchQuery ? 'No results' : 'Find someone'}</p>
+              <p className="mt-1 text-[13px] text-ink/40">{searchQuery ? 'Try another name.' : 'Search a name or a group.'}</p>
             </div>
           ) : (
             <div className="overflow-hidden rounded-2xl border border-line bg-panel shadow-lg">
@@ -52,7 +52,7 @@ export default function SearchView({ handleSearch, joinGroupById, openChat }) {
                   type="button"
                   key={result.id || result.pubkey || i}
                   disabled={result.type === 'user' ? !result.pubkey : !result.id}
-                  className="flex w-full items-center justify-between border-b border-white/5 p-4 text-left last:border-0 active:bg-white/5 disabled:opacity-50"
+                  className="flex w-full items-center justify-between border-b border-ink/5 p-4 text-left last:border-0 active:bg-ink/5 disabled:opacity-50"
                   onClick={() => {
                     if (result.type === 'user') {
                       openChat('dm', result.pubkey);
@@ -62,7 +62,7 @@ export default function SearchView({ handleSearch, joinGroupById, openChat }) {
                   }}
                 >
                   <span className="flex min-w-0 items-center gap-3">
-                    <span className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-full border border-white/10 bg-white/5 text-accent">
+                    <span className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-full border border-ink/10 bg-ink/5 text-accent">
                       <Picture
                         src={result.picture}
                         alt=""
@@ -72,8 +72,8 @@ export default function SearchView({ handleSearch, joinGroupById, openChat }) {
                       />
                     </span>
                     <span className="min-w-0">
-                      <span className="block truncate text-[15px] font-semibold text-white">{result.name || noHexName(null, result.pubkey)}</span>
-                      <span className="block text-[13px] text-white/40">{result.type === 'group' ? 'Group' : 'Person'}</span>
+                      <span className="block truncate text-[15px] font-semibold text-ink">{result.name || noHexName(null, result.pubkey)}</span>
+                      <span className="block text-[13px] text-ink/40">{result.type === 'group' ? 'Group' : 'Person'}</span>
                     </span>
                   </span>
                   <span className="ml-3 shrink-0 rounded-2xl bg-accent px-3 py-1.5 text-[13px] font-bold text-accentInk">

@@ -28,7 +28,7 @@ export default function DmView({ sendMessage, handleMessageAction, handleImageUp
       <ChatHeader mode="dm" />
       <div ref={scrollRef} className="flex min-h-0 flex-1 flex-col overflow-y-auto py-3">
         {visibleMessages.length === 0 ? (
-          <p className="m-auto mx-4 rounded-2xl border border-line bg-panel shadow-lg px-4 py-8 text-center text-[13px] text-white/40">Your messages stay private between you and this person.</p>
+          <p className="m-auto mx-4 rounded-2xl border border-line bg-panel shadow-lg px-4 py-8 text-center text-[13px] text-ink/40">Your messages stay private between you and this person.</p>
         ) : visibleMessages.map((message) => (
           <MessageBubble
             key={message.id}
@@ -43,9 +43,9 @@ export default function DmView({ sendMessage, handleMessageAction, handleImageUp
         <div className="mx-3 mb-2 flex items-center gap-3 rounded-2xl border border-line bg-panel shadow-lg px-4 py-3">
           <div className="min-w-0 flex-1 border-l-2 border-accent pl-3">
             <p className="text-[11px] font-semibold text-accent">{replyingTo.isSender ? 'You' : 'Replying'}</p>
-            <p className="truncate text-[13px] text-white/60">{replyingTo.data?.message || replyingTo.rawContent || 'Message'}</p>
+            <p className="truncate text-[13px] text-ink/60">{replyingTo.data?.message || replyingTo.rawContent || 'Message'}</p>
           </div>
-          <button type="button" onClick={() => setReplyingTo(null)} aria-label="Cancel reply" className="p-2 text-white/45 hover:text-white"><X size={18} /></button>
+          <button type="button" onClick={() => setReplyingTo(null)} aria-label="Cancel reply" className="p-2 text-ink/45 hover:text-ink"><X size={18} /></button>
         </div>
       )}
       <div className="pb-safe">

@@ -44,15 +44,15 @@ export default function GlobalDialog() {
   };
 
   return (
-    <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/80 p-4" role="presentation">
+    <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-scrim/80 p-4" role="presentation">
       <form ref={panelRef} onSubmit={confirm} role="dialog" aria-modal="true" aria-labelledby="global-dialog-title" className="w-full max-w-sm rounded-3xl border border-line bg-panel p-6">
         <div className="flex items-start gap-3">
           {dialog.type === 'danger' && <AlertTriangle size={21} className="mt-1 shrink-0 text-red-400" />}
           <div className="min-w-0 flex-1">
-            <h2 id="global-dialog-title" className="text-xl font-bold text-white">{dialog.title || 'Confirm'}</h2>
-            {dialog.message && <p className="mt-2 whitespace-pre-wrap text-[13px] text-white/55">{dialog.message}</p>}
+            <h2 id="global-dialog-title" className="text-xl font-bold text-ink">{dialog.title || 'Confirm'}</h2>
+            {dialog.message && <p className="mt-2 whitespace-pre-wrap text-[13px] text-ink/55">{dialog.message}</p>}
           </div>
-          <button type="button" onClick={closeDialog} aria-label="Close" className="p-1 text-white/45 hover:text-white"><X size={19} /></button>
+          <button type="button" onClick={closeDialog} aria-label="Close" className="p-1 text-ink/45 hover:text-ink"><X size={19} /></button>
         </div>
         {dialog.hasInput && (
           <textarea
@@ -62,13 +62,13 @@ export default function GlobalDialog() {
             readOnly={Boolean(dialog.inputLocked)}
             placeholder={dialog.placeholder || ''}
             rows={dialog.inputRows || 4}
-            className={`mt-4 w-full resize-y rounded-xl border border-line bg-panelStrong shadow-lg p-3 text-sm outline-none placeholder:text-white/35 focus:border-accent ${dialog.inputLocked ? 'text-white/55' : 'text-white'}`}
+            className={`mt-4 w-full resize-y rounded-xl border border-line bg-panelStrong shadow-lg p-3 text-sm outline-none placeholder:text-ink/35 focus:border-accent ${dialog.inputLocked ? 'text-ink/55' : 'text-ink'}`}
           />
         )}
         {error && <p role="alert" className="mt-3 text-sm text-red-400">{error}</p>}
         <div className="mt-5 flex gap-3">
-          <button type="button" onClick={closeDialog} disabled={busy} className="flex-1 rounded-xl border border-white/10 py-3 text-sm font-semibold text-white/70 hover:bg-white/5">Cancel</button>
-          <button type="submit" disabled={busy} className={`flex-1 rounded-xl py-3 text-sm font-semibold text-white disabled:opacity-50 ${dialog.type === 'danger' ? 'bg-red-600 hover:bg-red-500' : 'bg-accent hover:bg-accent'}`}>
+          <button type="button" onClick={closeDialog} disabled={busy} className="flex-1 rounded-xl border border-ink/10 py-3 text-sm font-semibold text-ink/70 hover:bg-ink/5">Cancel</button>
+          <button type="submit" disabled={busy} className={`flex-1 rounded-xl py-3 text-sm font-semibold text-ink disabled:opacity-50 ${dialog.type === 'danger' ? 'bg-red-600 hover:bg-red-500' : 'bg-accent hover:bg-accent'}`}>
             {busy ? 'Working…' : <>{dialog.confirmText || 'Continue'} <Check className="ml-1 inline" size={15} /></>}
           </button>
         </div>

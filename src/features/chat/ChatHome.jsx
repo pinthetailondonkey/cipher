@@ -26,14 +26,14 @@ export default function ChatHome({ identity, openChat, createGroup, fetchChats }
       <div className="mb-2 flex items-center justify-between px-4 pt-3 md:px-3">
         <div className="flex items-center gap-3 md:gap-2">
           <Logo size={28} />
-          <h2 className="text-2xl font-bold tracking-tight text-white md:text-xl">Chats</h2>
+          <h2 className="text-2xl font-bold tracking-tight text-ink md:text-xl">Chats</h2>
         </div>
         <div className="flex gap-1 rounded-2xl border border-line bg-panel p-1 shadow-lg md:gap-0.5">
-          <button type="button" onClick={() => setShowBookmarks(true)} className="p-2 text-white/50 hover:text-white min-h-[44px] min-w-[44px] md:min-h-[40px] md:min-w-[40px] md:p-1.5"><Bookmark size={20} /></button>
-          <button type="button" onClick={() => setShowNotifCenter(true)} className="p-2 text-white/50 hover:text-white min-h-[44px] min-w-[44px] md:min-h-[40px] md:min-w-[40px] md:p-1.5" aria-label="Notifications"><Bell size={20} /></button>
-          <button type="button" onClick={() => setShowQRScanner(true)} className="p-2 text-white/50 hover:text-white min-h-[44px] min-w-[44px] md:min-h-[40px] md:min-w-[40px] md:p-1.5" aria-label="Scan QR code"><QrCode size={20} /></button>
-          <button type="button" onClick={fetchChats} className="p-2 text-white/50 hover:text-white min-h-[44px] min-w-[44px] md:min-h-[40px] md:min-w-[40px] md:p-1.5"><RefreshCw size={20} /></button>
-          <button type="button" onClick={() => setView('search')} className="p-2 text-white/50 hover:text-white min-h-[44px] min-w-[44px] md:min-h-[40px] md:min-w-[40px] md:p-1.5"><Search size={20} /></button>
+          <button type="button" onClick={() => setShowBookmarks(true)} className="p-2 text-ink/50 hover:text-ink min-h-[44px] min-w-[44px] md:min-h-[40px] md:min-w-[40px] md:p-1.5"><Bookmark size={20} /></button>
+          <button type="button" onClick={() => setShowNotifCenter(true)} className="p-2 text-ink/50 hover:text-ink min-h-[44px] min-w-[44px] md:min-h-[40px] md:min-w-[40px] md:p-1.5" aria-label="Notifications"><Bell size={20} /></button>
+          <button type="button" onClick={() => setShowQRScanner(true)} className="p-2 text-ink/50 hover:text-ink min-h-[44px] min-w-[44px] md:min-h-[40px] md:min-w-[40px] md:p-1.5" aria-label="Scan QR code"><QrCode size={20} /></button>
+          <button type="button" onClick={fetchChats} className="p-2 text-ink/50 hover:text-ink min-h-[44px] min-w-[44px] md:min-h-[40px] md:min-w-[40px] md:p-1.5"><RefreshCw size={20} /></button>
+          <button type="button" onClick={() => setView('search')} className="p-2 text-ink/50 hover:text-ink min-h-[44px] min-w-[44px] md:min-h-[40px] md:min-w-[40px] md:p-1.5"><Search size={20} /></button>
         </div>
       </div>
       <ChatList onOpenChat={openChat} />

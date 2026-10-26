@@ -17,9 +17,9 @@ export default function MessageRequests({ dms = {}, profiles = {}, onBack, onOpe
       <ScreenHeader title="Message Requests" onBack={onBack} />
       {requests.length === 0 ? (
         <div className="px-6 py-16 text-center">
-          <MessageCircle size={28} className="mx-auto text-white/30" />
-          <h2 className="mt-3 text-[15px] font-semibold text-white">No message requests</h2>
-          <p className="mt-1 text-[13px] text-white/40">New conversations you have not answered show up here.</p>
+          <MessageCircle size={28} className="mx-auto text-ink/30" />
+          <h2 className="mt-3 text-[15px] font-semibold text-ink">No message requests</h2>
+          <p className="mt-1 text-[13px] text-ink/40">New conversations you have not answered show up here.</p>
         </div>
       ) : (
         <div className="p-4">
@@ -28,11 +28,11 @@ export default function MessageRequests({ dms = {}, profiles = {}, onBack, onOpe
             const profile = profiles[pubkey] || {};
             const name = noHexName(profile, pubkey);
             return (
-              <button type="button" key={pubkey} onClick={() => onOpenChat?.(pubkey)} className="flex w-full items-center gap-3 border-b border-white/5 p-4 text-left last:border-0 active:bg-white/5">
+              <button type="button" key={pubkey} onClick={() => onOpenChat?.(pubkey)} className="flex w-full items-center gap-3 border-b border-ink/5 p-4 text-left last:border-0 active:bg-ink/5">
                 <Avatar src={profile.picture} name={name} />
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate text-[15px] font-semibold text-white">{name}</span>
-                  <span className="block truncate text-[13px] text-white/40">{message.data?.message || 'New message'}</span>
+                  <span className="block truncate text-[15px] font-semibold text-ink">{name}</span>
+                  <span className="block truncate text-[13px] text-ink/40">{message.data?.message || 'New message'}</span>
                 </span>
               </button>
             );
