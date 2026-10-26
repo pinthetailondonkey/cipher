@@ -28,7 +28,7 @@ export default function VendorDashboard({ identity, products = [], onBack, onCre
   }, [fetchStats, identity?.pk]);
 
   return (
-    <div className="h-full overflow-y-auto bg-transparent pb-24">
+    <div className="h-full overflow-y-auto bg-transparent pb-24 md:pb-4">
       <ScreenHeader title="Vendor" onBack={onBack} />
       <div className="space-y-4 p-4">
       <div className="grid grid-cols-2 gap-3">

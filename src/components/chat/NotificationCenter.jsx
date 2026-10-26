@@ -60,11 +60,11 @@ export default function NotificationCenter({ onClose, onJump }) {
   };
 
   return (
-    <div className="fixed inset-0 z-[999] flex flex-col bg-black" role="dialog" aria-modal="true" aria-label="Notifications">
+    <div className="fixed inset-0 z-[999] flex flex-col bg-black md:right-auto md:left-[72px] md:top-0 md:bottom-0 md:w-[340px] md:bg-base md:border-r md:border-line md:shadow-2xl" role="dialog" aria-modal="true" aria-label="Notifications">
       <div className="pointer-events-none absolute inset-0" style={{
         background: 'radial-gradient(ellipse 55% 38% at 12% 0%, var(--glow-a), transparent 65%), radial-gradient(ellipse 50% 30% at 92% 100%, var(--glow-b), transparent 70%)',
       }} />
-      <div className="relative z-10 flex min-h-0 flex-1 flex-col">
+      <div className="relative z-10 mx-auto flex min-h-0 w-full max-w-md flex-1 flex-col">
       <ScreenHeader title="Notifications" onBack={onClose} />
       {notifications.length === 0 ? (
         <div className="m-4 rounded-2xl border border-line bg-panel px-4 py-16 text-center shadow-lg">

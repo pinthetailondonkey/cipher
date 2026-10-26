@@ -308,6 +308,7 @@ export default function GroupView({
 
   return (
     <section className="relative flex h-full min-h-0 flex-col bg-transparent">
+      <div className="mx-auto flex min-h-0 w-full max-w-3xl flex-1 flex-col">
       <ChatHeader mode="group" />
       <div className="grid grid-cols-2 border-b border-white/5 px-4">
         {[['chat', 'Chat'], ['shop', 'Shop']].map(([id, label]) => (
@@ -366,6 +367,7 @@ export default function GroupView({
       </div>
       </>
       )}
+      </div>
       <GroupInfoSidebar
         isOpen={showGroupInfo}
         onClose={() => setShowGroupInfo(false)}
