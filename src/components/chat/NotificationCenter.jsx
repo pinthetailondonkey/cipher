@@ -2,6 +2,13 @@ import { useEffect } from 'react';
 import { Bell, Users } from 'lucide-react';
 import ScreenHeader from '../ui/ScreenHeader';
 import { useChatStore } from '../../store/chatStore';
+import { db } from '../../db';
+
+// Writing the read-marker from module scope keeps the impure time call out of
+// the component; it is called from event handlers, never render.
+function markChatRead(chatId) {
+  db.chatReads.put({ chatId, lastRead: Math.floor(Date.now() / 1000) });
+}
 
 function previewText(message) {
   const data = message?.data;
@@ -43,6 +50,11 @@ export default function NotificationCenter({ onClose, onJump }) {
 
   const openNotification = (item) => {
     useChatStore.getState().setUnreadCounts((current) => ({ ...current, [item.id]: 0 }));
+    // The unread counters are recomputed from the message database on every
+    // boot, so only zeroing the counter makes the badge come back as soon as
+    // the screen re-opens. Writing the durable read-marker here is what makes
+    // the clear stick.
+    markChatRead(item.id);
     onJump?.(item.type, item.id);
     onClose?.();
   };
