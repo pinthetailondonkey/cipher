@@ -60,7 +60,11 @@ test('defaults work with no config, and an onion replaces only that row', () => 
   }).includes('wss://inbox.example'), false);
   const removed = listEgress({ overrides: { 'blossom-primal': 'off' }, lists: {} }).find((row) => row.id === 'blossom-primal');
   assert.equal(removed.transport, 'off');
-  assert.equal(listEgress({ overrides: {}, lists: {} }).find((row) => row.id === 'turn').transport, 'unset');
+  const turnRow = listEgress({ overrides: {}, lists: {} }).find((row) => row.id === 'turn');
+  assert.equal(turnRow.transport, 'clearnet');
+  const turnServer = iceServers({ overrides: {}, lists: {} }).find((item) => String(item.urls).startsWith('turn:'));
+  assert.equal(turnServer.username, 'openrelayproject');
+  assert.equal(String(turnServer.urls).includes('@'), false);
   assert.equal(listEgress({ overrides: {}, lists: {} }).find((row) => row.id === 'explorer').transport, 'unset');
   const kept = listEgress({ overrides: { 'group-relay': onion }, lists: {} }).find((row) => row.id === 'group-relay');
   assert.equal(kept.transport, 'tor');

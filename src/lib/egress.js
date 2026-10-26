@@ -15,10 +15,10 @@ export const EGRESS = [
   { id: 'blossom-nostr-build', role: 'Media host', url: 'https://nostr.build', sees: 'Chat photos and voice notes: your IP and the encrypted file when you send, under a throwaway key; each reader\u2019s IP and when they opened it. Not the content. Profile and product pictures are public and stored as they are.' },
   { id: 'blossom-band', role: 'Media host', url: 'https://blossom.band', sees: 'Chat photos and voice notes: your IP and the encrypted file when you send, under a throwaway key; each reader\u2019s IP and when they opened it. Not the content. Profile and product pictures are public and stored as they are.' },
   { id: 'link-preview', role: 'Link previews', url: 'https://api.microlink.io', sees: 'Nothing until you turn on Link previews in Privacy. Then your IP and every link a preview is fetched for.' },
-  { id: 'stun-google', role: 'Call routing', url: 'stun:stun.l.google.com:19302', sees: 'Your real IP during a call. This bypasses Tor.', webrtc: true },
-  { id: 'stun-google-1', role: 'Call routing', url: 'stun:stun1.l.google.com:19302', sees: 'Your real IP during a call. This bypasses Tor.', webrtc: true },
-  { id: 'stun-twilio', role: 'Call routing', url: 'stun:global.stun.twilio.com:3478', sees: 'Your real IP during a call. This bypasses Tor.', webrtc: true },
-  { id: 'turn', role: 'Call relay', url: '', hint: 'Not set', sees: 'Your IP during a call, at the relay you paste. Empty means calls use Google and Twilio, which show your real IP. Calls use UDP, so Tor Browser alone does not cover them. No call relay is shipped with the app.' },
+  { id: 'stun-google', role: 'Call routing', url: 'stun:stun.l.google.com:19302', sees: 'Your IP while a call connects. It never carries the audio.' },
+  { id: 'stun-google-1', role: 'Call routing', url: 'stun:stun1.l.google.com:19302', sees: 'Your IP while a call connects. It never carries the audio.' },
+  { id: 'stun-twilio', role: 'Call routing', url: 'stun:global.stun.twilio.com:3478', sees: 'Your IP while a call connects. It never carries the audio.' },
+  { id: 'turn', role: 'Call relay', url: 'turn:openrelayproject:openrelayproject@openrelay.metered.ca:80?transport=tcp', hint: 'Built in. Swap or turn off under Privacy.', sees: 'Routes the audio when a direct link will not cross two networks. The relay sees your IP, never the audio: it is encrypted end to end.' },
   { id: 'dns', role: 'Name lookup', url: '', hint: 'This device’s resolver', sees: 'Every hostname, at the resolver on this device. Cipher cannot choose it or turn it off.', dynamic: true },
   { id: 'images', role: 'Pictures', url: '', hint: 'Each picture’s own host', sees: 'Your IP and the address of every chat or product picture. The browser fetches each host. The app does not choose that path.', dynamic: true },
   { id: 'profile-photo', role: 'Profile photos', url: '', hint: 'Each photo’s own host', sees: 'Your IP and whatever host a profile photo points at. A photo can be any site. The app does not proxy it.', dynamic: true },
@@ -213,12 +213,16 @@ function iceServerFrom(url) {
   const raw = String(url || '').trim();
   if (!raw) return null;
   const server = { urls: raw };
-  const httpForm = raw.replace(/^turns?:/i, 'https:');
   try {
-    const parsed = new URL(httpForm.includes('://') ? httpForm : `https://${httpForm}`);
+    // Accept both turn://user:pass@host and the spec form turn:user:pass@host.
+    const withoutScheme = raw.replace(/^turns?:\/?\/?/i, '');
+    const parsed = new URL(`https://${withoutScheme}`);
     if (parsed.username) server.username = decodeURIComponent(parsed.username);
     if (parsed.password) server.credential = decodeURIComponent(parsed.password);
-    if (parsed.username || parsed.password) server.urls = raw.replace(/\/\/[^@/]+@/, '//');
+    if (parsed.username || parsed.password) {
+      // The login never rides in the urls prop; the browser gets it separately.
+      server.urls = raw.replace(/^(turns?:)\/?\/?[^@/]*@/i, '$1');
+    }
   } catch { /* a bare stun or turn URL is still usable */ }
   return server;
 }

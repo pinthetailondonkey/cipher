@@ -64,7 +64,6 @@ export default function CallOverlay() {
         <Avatar src={profile.picture} name={name} className={`!h-32 !w-32 text-4xl ${call.status === 'ringing' || call.status === 'calling' ? 'animate-pulse' : ''}`} />
         <h2 className="mt-5 max-w-full truncate text-2xl font-bold tracking-tight text-white">{name}</h2>
         <p className="mt-1 text-[15px] text-white/50">{status}</p>
-        <p className="mt-4 max-w-xs text-center text-[13px] leading-snug text-amber-300">This call can show your real IP. Calls use UDP, so Tor Browser alone does not cover them. Orbot’s VPN mode does.</p>
       </div>
       <div className={`flex items-end justify-center gap-14 px-8 pb-16 ${call.status === 'ringing' && call.direction === 'in' ? '' : ''}`}>
         {call.status === 'active' && (
