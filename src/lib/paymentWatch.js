@@ -149,7 +149,10 @@ export async function checkPayment({ watcherUrl, address, currency, state, amoun
   }
   let body = null;
   try {
-    body = await response.json();
+    // Quote every integer before parsing. A piconero amount passes 2^53, where
+    // JSON.parse would silently round it. This is the same contract the
+    // watcher's own RPC path runs under, app-side too.
+    body = parseExactAmounts(await response.text());
   } catch {
     body = null;
   }
@@ -157,6 +160,12 @@ export async function checkPayment({ watcherUrl, address, currency, state, amoun
     throw new Error(body?.error || `The payment watcher refused the check (${response.status}).`);
   }
   if (!body || body.pending || !body.txid) return { moved: false, state };
+  // Missing fields refuse the check: a reply with no confirmations count says
+  // nothing about depth, so no payment moves on it.
+  const confirmations = Number(body.confirmations);
+  if (!Number.isInteger(confirmations) || confirmations < 0) {
+    throw new Error('The watcher reply names no confirmations. Nothing moves on a reply that says nothing about depth.');
+  }
   const report = {
     source: 'watcher',
     txid: String(body.txid),

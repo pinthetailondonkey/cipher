@@ -5,7 +5,7 @@ import { atomicToCoins, checkPayment, isPublicExplorer, moneroRows, parseExactAm
 
 test('an empty watcher and a public explorer are refused before any request', async () => {
   let called = false;
-  const fetchImpl = async () => { called = true; return { ok: true, json: async () => ({}) }; };
+  const fetchImpl = async () => { called = true; return { ok: true, text: async () => JSON.stringify({}) }; };
   await assert.rejects(
     () => checkPayment({ watcherUrl: '', address: '8abc', currency: 'xmr', state: 'address_issued', fetchImpl }),
     /block explorer/,
@@ -30,7 +30,7 @@ test('a watcher you run can mark seen, then confirmed, and silence is not a succ
     address: '8abc',
     currency: 'xmr',
     state: 'address_issued',
-    fetchImpl: async () => ({ ok: true, json: async () => ({ pending: true }) }),
+    fetchImpl: async () => ({ ok: true, text: async () => JSON.stringify({ pending: true }) }),
   });
   assert.equal(pending.moved, false);
   const seen = await checkPayment({
@@ -38,7 +38,7 @@ test('a watcher you run can mark seen, then confirmed, and silence is not a succ
     address: '8abc',
     currency: 'xmr',
     state: 'address_issued',
-    fetchImpl: async () => ({ ok: true, json: async () => ({ txid: 'ab', confirmations: 0 }) }),
+    fetchImpl: async () => ({ ok: true, text: async () => JSON.stringify({ txid: 'ab', confirmations: 0 }) }),
   });
   assert.equal(seen.moved, true);
   assert.equal(seen.state, 'seen');
@@ -47,7 +47,7 @@ test('a watcher you run can mark seen, then confirmed, and silence is not a succ
     address: '8abc',
     currency: 'xmr',
     state: 'seen',
-    fetchImpl: async () => ({ ok: true, json: async () => ({ source: 'watcher', txid: 'ab', confirmations: 10 }) }),
+    fetchImpl: async () => ({ ok: true, text: async () => JSON.stringify({ source: 'watcher', txid: 'ab', confirmations: 10 }) }),
   });
   assert.equal(confirmed.state, 'confirmed');
   await assert.rejects(
@@ -70,7 +70,7 @@ test('a short payment does not move, and a covering payment does', async () => {
     currency: 'btc',
     state: 'address_issued',
     amount: '0.01',
-    fetchImpl: async () => ({ ok: true, json: async () => ({ txid: 'dust', confirmations: 3, amount: '0.00000001' }) }),
+    fetchImpl: async () => ({ ok: true, text: async () => JSON.stringify({ txid: 'dust', confirmations: 3, amount: '0.00000001' }) }),
   });
   assert.deepEqual(short, { moved: false, short: true, state: 'address_issued' });
   const paid = await checkPayment({
@@ -79,7 +79,7 @@ test('a short payment does not move, and a covering payment does', async () => {
     currency: 'btc',
     state: 'address_issued',
     amount: '0.01',
-    fetchImpl: async () => ({ ok: true, json: async () => ({ txid: 'paid', confirmations: 3, amount: '0.01' }) }),
+    fetchImpl: async () => ({ ok: true, text: async () => JSON.stringify({ txid: 'paid', confirmations: 3, amount: '0.01' }) }),
   });
   assert.equal(paid.moved, true);
   assert.equal(paid.state, 'confirmed');
@@ -91,10 +91,35 @@ test('a short payment does not move, and a covering payment does', async () => {
       currency: 'btc',
       state: 'address_issued',
       amount: '0.01',
-      fetchImpl: async () => ({ ok: true, json: async () => ({ txid: 'bare', confirmations: 3 }) }),
+      fetchImpl: async () => ({ ok: true, text: async () => JSON.stringify({ txid: 'bare', confirmations: 3 }) }),
     }),
     /did not report an amount/,
   );
+});
+
+test('a reply without a confirmations count moves nothing, and its digits are not rounded', async () => {
+  const watcherUrl = 'https://watch.example/payment?token=secret';
+  await assert.rejects(
+    () => checkPayment({
+      watcherUrl, address: '8abc', currency: 'xmr', state: 'address_issued',
+      fetchImpl: async () => ({ ok: true, text: async () => JSON.stringify({ txid: 'ab' }) }),
+    }),
+    /names no confirmations/,
+  );
+  await assert.rejects(
+    () => checkPayment({
+      watcherUrl, address: '8abc', currency: 'xmr', state: 'address_issued',
+      fetchImpl: async () => ({ ok: true, text: async () => JSON.stringify({ txid: 'ab', confirmations: -4 }) }),
+    }),
+    /names no confirmations/,
+  );
+  const kept = await checkPayment({
+    watcherUrl, address: '8abc', currency: 'xmr', state: 'seen', amount: '0.5',
+    fetchImpl: async () => ({ ok: true, text: async () => '{"txid":"ab","confirmations":10,"amount":9007199254740993}' }),
+  });
+  // The digits survive quoting: the value is a claim of 9 quadrillion whole
+  // coins, over the supply, so it reads short instead of rounding to 2^53.
+  assert.deepEqual(kept, { moved: false, short: true, state: 'seen' });
 });
 
 test('wallet transfers become a watcher report, and a miss stays pending', () => {
@@ -126,7 +151,7 @@ test('a stock-node scan of one address becomes a bitcoin report', () => {
 
 test('a Monero piconero amount is shifted to whole XMR before it is compared', async () => {
   const watcherUrl = 'https://watch.example/payment?token=secret';
-  const answer = (rows) => async () => ({ ok: true, json: async () => reportFromTransfers(moneroRows(rows), '8sub', 'xmr') });
+  const answer = (rows) => async () => ({ ok: true, text: async () => JSON.stringify(reportFromTransfers(moneroRows(rows), '8sub', 'xmr')) });
   const full = reportFromTransfers(moneroRows([{ address: '8sub', txid: 'full', confirmations: 10, amount: 500000000000 }]), '8sub', 'xmr');
   assert.equal(full.amount, '0.5');
   assert.equal(full.outputAmount, '0.5');
@@ -163,7 +188,7 @@ test('a payment split across two outputs is summed, and the receipt keeps the la
   assert.equal(report.txid, 'aa');
   const paid = await checkPayment({
     watcherUrl, address: 'bc1q', currency: 'btc', state: 'address_issued', amount: '0.01',
-    fetchImpl: async () => ({ ok: true, json: async () => report }),
+    fetchImpl: async () => ({ ok: true, text: async () => JSON.stringify(report) }),
   });
   assert.equal(paid.state, 'confirmed');
   assert.equal(paid.report.outputAmount, '0.006');
