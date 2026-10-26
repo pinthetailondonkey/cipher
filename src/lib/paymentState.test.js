@@ -98,3 +98,51 @@ test('confirmation depth is per currency, and a flag alone cannot confirm', () =
     'confirmed',
   );
 });
+
+test('an amount past the coin supply is a unit mix-up, and refuses rather than covers', () => {
+  for (const amount of ['500000000000', '5e23', '9e9e9']) {
+    assert.throws(
+      () => applyWatcherReport({
+        state: 'address_issued',
+        watcherUrl: 'http://watcher.example',
+        currency: 'xmr',
+        amount: '0.5',
+        report: { source: 'watcher', txid: 'atomic', confirmations: 10, amount },
+      }),
+      /(short of the order|is not a plain decimal coin amount)/,
+      amount,
+    );
+  }
+  assert.throws(
+    () => applyWatcherReport({
+      state: 'address_issued',
+      watcherUrl: 'http://watcher.example',
+      currency: 'btc',
+      amount: '0.01',
+      report: { source: 'watcher', txid: 'capped', confirmations: 3, amount: '21000000.1' },
+    }),
+    /short of the order/,
+  );
+  // A number from the wire is never a coin amount: it was rounded in JSON.
+  assert.throws(
+    () => applyWatcherReport({
+      state: 'address_issued',
+      watcherUrl: 'http://watcher.example',
+      currency: 'btc',
+      amount: '0.01',
+      report: { source: 'watcher', txid: 'num', confirmations: 3, amount: 0.01 },
+    }),
+    /short of the order/,
+  );
+  // Plain orders inside the supply keep working.
+  assert.equal(
+    applyWatcherReport({
+      state: 'address_issued',
+      watcherUrl: 'http://watcher.example',
+      currency: 'btc',
+      amount: '0.01',
+      report: { source: 'watcher', txid: 'ok', confirmations: 3, amount: '0.02' },
+    }),
+    'confirmed',
+  );
+});

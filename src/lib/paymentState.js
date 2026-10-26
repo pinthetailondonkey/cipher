@@ -56,6 +56,11 @@ export function nextPaymentState(current, event) {
 // There is no fetch here, and an empty watcher URL is a hard stop.
 // `confirmed: true` on the report is not enough. The count has to clear the threshold.
 const SCALE = { btc: 8, xmr: 12 };
+// A coin amount past the currency's total supply is a unit mix-up, not a
+// bigger payment: a value in atomic units read as whole coins would cover
+// any order. Bitcoin never exceeds its 21 million; Monero is capped here at
+// 20 million (its real cap is under 18.5 million).
+const MAX_UNITS = { 8: 21_000_000n * 100_000_000n, 12: 20_000_000n * 1_000_000_000_000n };
 
 function decimalUnits(value, scale) {
   const text = typeof value === 'number' && Number.isFinite(value)
@@ -64,7 +69,8 @@ function decimalUnits(value, scale) {
   if (!/^\d+(\.\d+)?$/.test(text)) return null;
   const [whole, frac = ''] = text.split('.');
   if (frac.length > scale) return null;
-  return BigInt(whole) * (10n ** BigInt(scale)) + BigInt((frac || '0').padEnd(scale, '0'));
+  const units = BigInt(whole) * (10n ** BigInt(scale)) + BigInt((frac || '0').padEnd(scale, '0'));
+  return units > MAX_UNITS[scale] ? null : units;
 }
 
 // Whole coins as exact integer units. Null when the value is not a plain
@@ -86,6 +92,10 @@ export function unitsToCoins(units, currency) {
 function amountCovers(reported, expected, currency) {
   const scale = SCALE[String(currency || '').toLowerCase()];
   if (scale == null) return false;
+  // What the watcher sent must be a plain decimal string. A number from JSON
+  // has already been rounded where the digits outrun 2^53, so it is never a
+  // coin amount here.
+  if (typeof reported !== 'string') return false;
   const got = decimalUnits(reported, scale);
   const need = decimalUnits(expected, scale);
   if (got == null || need == null) return false;
