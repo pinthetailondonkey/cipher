@@ -26,6 +26,8 @@ export function setTheme(id) {
   if (!KNOWN.includes(id)) return;
   try { globalThis.localStorage.setItem(KEY, id); } catch {}
   document.documentElement.dataset.theme = id;
+  // Lets theme-aware components (Logo) re-skin without a remount.
+  window.dispatchEvent(new CustomEvent('ciphertheme', { detail: id }));
 }
 
 // Runs once at boot, before the first paint of any themed surface.
