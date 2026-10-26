@@ -6,6 +6,7 @@ import { useReputation } from '../hooks/useReputation';
 import Avatar from './ui/Avatar';
 import Button, { pressable } from './ui/Button';
 import { copyText } from '../lib/copyText';
+import { readPublicViews } from '../lib/proofOfTrade';
 import { noHexName, shortNpub } from '../lib/npub';
 import { useChatStore } from '../store/chatStore';
 
@@ -36,7 +37,14 @@ export default function ProfileModal({ pubkey, identity, onClose, onMessage }) {
     setSending(true);
     setError('');
     setNotice('');
-    const result = await sendVouch(pubkey);
+    // S8: a vouch binds to the receipt hash of a trade with this vendor that
+    // this device holds a public view of. Never been traded, no vouch.
+    const traded = readPublicViews().some((view) => view?.hash && (
+      view.vendor === pubkey || view.buyer === pubkey
+    ));
+    const result = await sendVouch(pubkey, traded ? readPublicViews().find((view) => (
+      view?.hash && (view.vendor === pubkey || view.buyer === pubkey)
+    )).hash : '');
     setSending(false);
     if (!result.success) {
       setError(result.error || 'Could not publish your vouch.');
