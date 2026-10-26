@@ -12,11 +12,13 @@
 //   XMR_WALLET_RPC=http://127.0.0.1:18083 BTC_RPC_URL=http://user:pass@127.0.0.1:8332 node scripts/payment-watcher.mjs
 //
 // GET /payment?address=&currency=xmr|btc
-// 200 { txid, confirmations, amount, outputAmount } or { pending: true },
+// 200 { txid, confirmations, amount, outputAmount, time } or { pending: true },
 //     signed with `x-cipher-sig: v1=<hex hmac-sha256>` over the raw body bytes
 //     (the watch token is the key) and `x-cipher-ts` in unix seconds. The phone
 //     rejects an unsigned or stale answer, so only the watcher's own word
-//     moves an order.
+//     moves an order. `time` is the block or event time of the transfer, in
+//     unix seconds, and the oldest one in the covering set. The phone uses it
+//     to refuse a transfer recorded before the order's address was issued.
 // 503 { error } when that currency's node is not configured.
 //
 // Every amount leaves here in whole coins, as a decimal string. Monero wallet
@@ -107,6 +109,27 @@ function bitcoinDescriptor(address) {
   return `addr(${text})`;
 }
 
+// scantxoutset cannot date its unspents, so each mined block height is asked
+// for its time. A height the node cannot date stays undated, and the phone
+// then refuses to confirm an order from an undated transfer. (security S1)
+async function bitcoinBlockTimes(heights) {
+  const rows = await Promise.all([...new Set(heights.filter(Number.isInteger))].map(async (height) => {
+    try {
+      const stats = await rpc(btcRpc, {
+        jsonrpc: '1.0',
+        id: 'cipher',
+        method: 'getblockstats',
+        params: [height, ['time']],
+      });
+      const time = Number(stats?.time);
+      return Number.isFinite(time) && time > 0 ? [height, time] : null;
+    } catch {
+      return null;
+    }
+  }));
+  return new Map(rows.filter(Boolean));
+}
+
 async function bitcoinTransfers(address) {
   const scan = await rpc(btcRpc, {
     jsonrpc: '1.0',
@@ -114,7 +137,10 @@ async function bitcoinTransfers(address) {
     method: 'scantxoutset',
     params: ['start', [bitcoinDescriptor(address)]],
   });
-  return reportFromTransfers(rowsFromScan(scan, address), address, 'btc');
+  const rows = rowsFromScan(scan, address);
+  const times = await bitcoinBlockTimes(rows.map((row) => row.height));
+  for (const row of rows) if (times.has(row.height)) row.timestamp = times.get(row.height);
+  return reportFromTransfers(rows, address, 'btc');
 }
 
 const server = http.createServer(async (req, res) => {

@@ -1,7 +1,7 @@
 import { useChatStore } from '../../store/chatStore';
 import { db, patchMessage, saveMessage } from '../../db';
 import { scopedGet, scopedSet } from '../../lib/storage';
-import { getOrderPaymentMethods, readPaymentAddresses } from '../../lib/vendorPayments';
+import { addressSpokenFor, getOrderPaymentMethods, markConsumed, readPaymentAddresses, txidSpokenFor } from '../../lib/vendorPayments';
 import { ORDER_STATUS, RECEIPT_OUTCOME, acceptAmount, acceptanceDemand, amountCovers, nextPaymentState, orderCoinAmount } from '../../lib/paymentState';
 import { checkPayment } from '../../lib/paymentWatch';
 import { activeUrl, entryById } from '../../lib/egress';
@@ -113,6 +113,11 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
             setSelectedMessage(null);
             return;
           }
+          // When this order's address was issued. The chain check holds every
+          // transfer to it: one recorded earlier cannot pay this order, and
+          // the mark is written to the order record so it survives a reload.
+          // (security S1)
+          const issuedAt = Math.floor(Date.now() / 1000);
           const payload = {
             type: 'order_update', orderId: msg.id,
             productName: msg.data.product?.title || msg.data.productName,
@@ -135,6 +140,7 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
             paymentMethods: payload.paymentMethods,
             coinAmount,
             coinCurrency,
+            issuedAt,
           });
           const acceptedText = result.queued ? 'Acceptance queued; it will send when connected.' : 'Order accepted';
           setToast(saved ? { type: 'success', message: acceptedText } : { type: 'error', message: `${acceptedText} ${NOT_SAVED}` });
@@ -237,6 +243,16 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
           setSelectedMessage(null);
           return true;
         }
+        // An order issued the account's shared address can never be separated
+        // on chain: one transfer could pay many such orders. Orders from
+        // before per-order derivation was required may carry one, so the
+        // check refuses rather than guessing which payment it was. (security S1)
+        const shared = String(readPaymentAddresses()[currency] || '').trim();
+        if (shared && String(address || '').trim() === shared) {
+          setToast({ type: 'error', message: 'This order was issued the shared account address, so one transfer could pay many orders. Turn on address derivation in Profile, then accept the order again to give it its own address.' });
+          setSelectedMessage(null);
+          return true;
+        }
         try {
           const outcome = await checkPayment({
             watcherUrl: activeUrl(entryById('explorer')),
@@ -244,9 +260,15 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
             currency,
             amount,
             state: msg.data?.paymentState || 'address_issued',
+            issuedAt: msg.data?.issuedAt,
           });
           if (outcome.short) {
             setToast({ type: 'info', message: 'The payment is short of the order.' });
+            setSelectedMessage(null);
+            return true;
+          }
+          if (outcome.stale) {
+            setToast({ type: 'info', message: 'The transfer the watcher saw was recorded before this order\'s address was issued. It cannot pay this order.' });
             setSelectedMessage(null);
             return true;
           }
@@ -258,9 +280,30 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
           const confirmed = outcome.state === 'confirmed';
           if (confirmed) {
             if (!identity?.sk) throw new Error('Unlock the account before confirming. The receipt was not signed.');
-            // The receipt names one transaction, so it signs the largest output,
-            // not the sum that covered the order.
-            const paid = outcome.report?.outputAmount ?? outcome.report?.amount;
+            // One transfer speaks for one order. A txid already on a receipt,
+            // or an address already paid for another order, confirms nothing
+            // here. The ledger lives in this account's storage, so it
+            // survives a reload and a history fetch. (security S1)
+            const ledger = scopedGet('consumed_txids', {});
+            const taken = txidSpokenFor(ledger, { currency, txid: outcome.report.txid, orderId: msg.id })
+              || addressSpokenFor(ledger, { address, orderId: msg.id });
+            if (taken) {
+              throw new Error('That payment already confirmed another order. A transaction pays one order, and its receipt names it. Nothing was confirmed.');
+            }
+            // An order consumes only a transfer the chain dates at or after
+            // its address was issued. An older transfer on the same address
+            // was money that arrived for something else. (security S1)
+            const issuedAtSec = Number(msg.data?.issuedAt);
+            if (Number.isFinite(issuedAtSec) && issuedAtSec > 0) {
+              const transferTime = Number(outcome.report?.time);
+              if (!Number.isFinite(transferTime) || transferTime < issuedAtSec) {
+                throw new Error('The watcher could not date the transfer, or it was recorded before this order\'s address was issued. Nothing was confirmed. Update your watcher and check again.');
+              }
+            }
+            // The receipt binds the covering sum the watcher reported — every
+            // output owed to the payee in scope — not merely its largest
+            // output. (security S1)
+            const paid = outcome.report?.amount ?? outcome.report?.outputAmount;
             if (paid == null || paid === '') throw new Error('The watcher did not report an amount. The receipt was not signed.');
             const amount = typeof paid === 'number'
               ? paid.toFixed(12).replace(/0+$/, '').replace(/\.$/, '')
@@ -277,6 +320,13 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
               outcome: RECEIPT_OUTCOME.CONFIRMED,
             });
             scopedSet(`receipt_${msg.id}`, signed);
+            scopedSet('consumed_txids', markConsumed(ledger, {
+              currency,
+              txid: outcome.report.txid,
+              orderId: msg.id,
+              address,
+              at: Math.floor(Date.now() / 1000),
+            }));
             const payload = {
               type: 'order_update',
               orderId: msg.id,

@@ -1,7 +1,16 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { HDKey } from '@scure/bip32';
-import { deriveBitcoinAddress, readPaymentAddresses, savePaymentAddresses } from './vendorPayments.js';
+import {
+  addressSpokenFor,
+  deriveBitcoinAddress,
+  getOrderPaymentMethods,
+  markConsumed,
+  readPaymentAddresses,
+  savePaymentAddresses,
+  saveVendorPaymentConfig,
+  txidSpokenFor,
+} from './vendorPayments.js';
 
 test('a Bitcoin address uses bc on mainnet and bcrt on regtest', async () => {
   const xpub = HDKey.fromMasterSeed(new Uint8Array(32).fill(1)).derive("m/84'/0'/0'").publicExtendedKey;
@@ -56,4 +65,46 @@ test('a single-account device adopts its old device-wide address once', () => {
   assert.deepEqual(readPaymentAddresses(), { btc: '', xmr: '8legacy' });
   assert.equal(localStorage.getItem('cipher_xmr'), null);
   assert.equal(localStorage.getItem('cipher_cccccccc_xmr_address'), '"8legacy"');
+});
+
+const vendor = { pk: 'dddddddd' + '4'.repeat(56), sk: new Uint8Array(32).fill(7) };
+const SHARED = 'bc1qsharedaddress0000000000000000000000000000000000000000000000';
+
+test('an order is issued its own address, never the account\'s shared one', async () => {
+  globalThis.localStorage = memoryStorage({ cipher_active_pubkey: vendor.pk });
+  // Without derivation keys there is no address of its own to give, so the
+  // acceptance refuses instead of parking the order on the shared address.
+  await assert.rejects(
+    () => getOrderPaymentMethods(vendor, 'order-1', { btc: SHARED, xmr: '' }, 'btc'),
+    /own address/,
+  );
+  const xpub = HDKey.fromMasterSeed(new Uint8Array(32).fill(2)).derive("m/84'/0'/0'").publicExtendedKey;
+  await saveVendorPaymentConfig(vendor, { btcXpub: xpub, xmrPrivateViewKey: '', btcNetwork: 'bcrt' });
+  const methods = await getOrderPaymentMethods(vendor, 'order-1', { btc: SHARED, xmr: '' }, 'btc');
+  assert.notEqual(methods.btc, SHARED);
+  assert.ok(methods.btc.startsWith('bcrt1'));
+  // The same order asks again and gets the address it was issued, not a new one.
+  const again = await getOrderPaymentMethods(vendor, 'order-1', { btc: SHARED, xmr: '' }, 'btc');
+  assert.equal(again.btc, methods.btc);
+  // A second order gets a different fresh address, never the shared one.
+  const second = await getOrderPaymentMethods(vendor, 'order-2', { btc: SHARED, xmr: '' }, 'btc');
+  assert.notEqual(second.btc, methods.btc);
+  assert.notEqual(second.btc, SHARED);
+});
+
+test('one transfer speaks for one order', () => {
+  let ledger = markConsumed({}, { currency: 'btc', txid: 'AB', orderId: 'o1', address: 'bc1qa', at: 100 });
+  // The txid is key-lowercased, so a replay in any case is still spoken for.
+  assert.equal(txidSpokenFor(ledger, { currency: 'btc', txid: 'ab', orderId: 'o1' }), null);
+  assert.deepEqual(txidSpokenFor(ledger, { currency: 'btc', txid: 'ab', orderId: 'o2' }), { orderId: 'o1', address: 'bc1qa', at: 100 });
+  // The address it landed on is spoken for on other orders too.
+  assert.equal(addressSpokenFor(ledger, { address: 'bc1qa', orderId: 'o2' })?.orderId, 'o1');
+  assert.equal(addressSpokenFor(ledger, { address: 'bc1qa', orderId: 'o1' }), null);
+  // A different coin is a different ledger line.
+  assert.equal(txidSpokenFor(ledger, { currency: 'xmr', txid: 'ab', orderId: 'o2' }), null);
+  assert.equal(txidSpokenFor(null, { currency: 'btc', txid: 'ab', orderId: 'o2' }), null);
+  ledger = markConsumed(ledger, { currency: 'xmr', txid: 'x', orderId: 'o2', address: '8sub', at: 200 });
+  assert.equal(Object.keys(ledger).length, 2);
+  // A copy comes back; the caller's ledger is never mutated in place.
+  assert.deepEqual(Object.keys(markConsumed(ledger, { currency: 'btc', txid: 'cd', orderId: 'o3' })).length, 3);
 });
