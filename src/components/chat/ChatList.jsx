@@ -35,12 +35,12 @@ export default function ChatList({ onOpenChat }) {
   );
 
   if (allChats.length === 0) {
-    return <p className="mx-4 mt-6 rounded-2xl border border-white/10 bg-[#0A0A0A]/60 shadow-2xl backdrop-blur-2xl px-4 py-10 text-center text-[13px] text-white/40">No chats yet. Tap + to start.</p>;
+    return <p className="mx-4 mt-6 rounded-2xl border border-line bg-panel shadow-lg px-4 py-10 text-center text-[13px] text-white/40">No chats yet. Tap + to start.</p>;
   }
 
   return (
     <div className="px-4 pb-4">
-      <div className="overflow-hidden rounded-2xl border border-white/10 bg-[#0A0A0A]/60 shadow-2xl backdrop-blur-2xl">
+      <div className="overflow-hidden rounded-2xl border border-line bg-panel shadow-lg">
       {allChats.map((chat) => {
         const row = `flex w-full items-center justify-between border-b border-white/5 p-4 text-left last:border-0 active:bg-white/5 ${pressable}`;
 

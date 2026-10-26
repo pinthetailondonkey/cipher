@@ -59,7 +59,7 @@ export default function AuthenticatedApp({ identity }) {
                     <div className="absolute bottom-[-15%] right-[-20%] h-[50%] w-[70%] rounded-full bg-purple-500/25 blur-[110px]" />
                   </div>
                   <div className="relative z-10 px-4 pb-1 pt-3">
-                    <div className="grid grid-cols-2 rounded-2xl border border-white/15 bg-white/10 p-1 shadow-2xl backdrop-blur-2xl">
+                    <div className="grid grid-cols-2 rounded-2xl border border-white/15 bg-panelStrong p-1 shadow-lg">
                       <button type="button" onClick={() => setExploreMode('shop')} className={`min-h-[44px] rounded-xl py-2.5 text-[13px] font-bold ${exploreMode === 'shop' ? 'bg-blue-600 text-white shadow-lg' : 'text-white/60'}`}>Shop</button>
                       <button type="button" onClick={() => setExploreMode('groups')} className={`min-h-[44px] rounded-xl py-2.5 text-[13px] font-bold ${exploreMode === 'groups' ? 'bg-blue-600 text-white shadow-lg' : 'text-white/60'}`}>Groups</button>
                     </div>
@@ -79,7 +79,7 @@ export default function AuthenticatedApp({ identity }) {
 
       <motion.nav
         initial={{ y: 50 }} animate={{ y: 0 }} transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-        className="fixed left-4 right-4 z-20 mx-auto max-w-md rounded-3xl border border-white/10 bg-white/5 shadow-2xl backdrop-blur-xl"
+        className="fixed left-4 right-4 z-20 mx-auto max-w-md rounded-3xl border border-line bg-panelStrong shadow-lg"
         style={{ bottom: `calc(1rem + env(safe-area-inset-bottom))` }}
       >
         <div className="flex justify-around items-center min-h-[44px] max-w-md mx-auto px-6">

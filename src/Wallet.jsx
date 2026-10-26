@@ -272,7 +272,7 @@ export default function Wallet({ identity, onOpenChat }) {
         <ScreenHeader title="Start selling" onBack={() => setView('main')} />
         <form onSubmit={saveVendorSetup} className="space-y-4 p-4">
           <p className="text-[13px] text-white/40">Add at least one address. It stays on this device. Never enter a seed phrase or spending key.</p>
-          <div className="overflow-hidden rounded-2xl border border-white/10 bg-[#0A0A0A]/60 shadow-2xl backdrop-blur-2xl">
+          <div className="overflow-hidden rounded-2xl border border-line bg-panel shadow-lg">
             <input value={btcAddress} onChange={(event) => setBtcAddress(event.target.value)} autoComplete="off" spellCheck="false" placeholder="Bitcoin address" className="w-full border-b border-white/5 bg-transparent px-4 py-4 text-[15px] text-white outline-none placeholder:text-white/30" />
             <input value={xmrAddress} onChange={(event) => setXmrAddress(event.target.value)} autoComplete="off" spellCheck="false" placeholder="Monero address" className="w-full bg-transparent px-4 py-4 text-[15px] text-white outline-none placeholder:text-white/30" />
           </div>
@@ -298,7 +298,7 @@ export default function Wallet({ identity, onOpenChat }) {
         <ScreenHeader title="Payment settings" onBack={() => setView('main')} />
         <form onSubmit={saveAdvancedSettings} className="space-y-4 p-4">
           <p className="text-[13px] text-white/40">A view key and an xpub only let you watch payments. They stay on this device. Never enter a seed or a spend key.</p>
-          <div className="overflow-hidden rounded-2xl border border-white/10 bg-[#0A0A0A]/60 shadow-2xl backdrop-blur-2xl">
+          <div className="overflow-hidden rounded-2xl border border-line bg-panel shadow-lg">
             <input value={xmrAddress} onChange={(event) => setXmrAddress(event.target.value)} autoComplete="off" spellCheck="false" placeholder="Monero address" className="w-full border-b border-white/10 bg-white/5 px-4 py-4 text-[15px] text-white outline-none placeholder:text-white/30" />
             <input type="password" value={xmrPrivateViewKey} onChange={(event) => setXmrPrivateViewKey(event.target.value)} autoComplete="new-password" spellCheck="false" placeholder="Monero view key" className="w-full border-b border-white/10 bg-white/5 px-4 py-4 text-[15px] text-white outline-none placeholder:text-white/30" />
             <input type="password" value={btcXpub} onChange={(event) => setBtcXpub(event.target.value)} autoComplete="off" spellCheck="false" placeholder="Bitcoin xpub" className="w-full border-b border-white/10 bg-white/5 px-4 py-4 text-[15px] text-white outline-none placeholder:text-white/30" />
@@ -322,10 +322,10 @@ export default function Wallet({ identity, onOpenChat }) {
       <div className="h-full overflow-y-auto bg-transparent pb-8">
         <ScreenHeader title="New listing" onBack={() => setView('main')} />
         <div className="space-y-4 p-4">
-          <input placeholder="Product Title" value={title} onChange={e => setTitle(e.target.value)} className="w-full border border-white/10 bg-white/5 shadow-2xl backdrop-blur-md rounded-2xl p-4 text-sm focus:border-blue-500 outline-none" />
-          <textarea placeholder="Description" value={description} onChange={e => setDescription(e.target.value)} className="w-full border border-white/10 bg-white/5 shadow-2xl backdrop-blur-md rounded-2xl p-4 text-sm focus:border-blue-500 outline-none resize-none h-24" />
+          <input placeholder="Product Title" value={title} onChange={e => setTitle(e.target.value)} className="w-full border border-line bg-panelStrong shadow-lg rounded-2xl p-4 text-sm focus:border-blue-500 outline-none" />
+          <textarea placeholder="Description" value={description} onChange={e => setDescription(e.target.value)} className="w-full border border-line bg-panelStrong shadow-lg rounded-2xl p-4 text-sm focus:border-blue-500 outline-none resize-none h-24" />
           
-          <div className="flex items-center gap-4 p-4 border border-white/10 bg-white/5 shadow-2xl backdrop-blur-md rounded-2xl">
+          <div className="flex items-center gap-4 p-4 border border-line bg-panelStrong shadow-lg rounded-2xl">
             <Picture src={image} alt="product" className="w-16 h-16 rounded-xl object-cover" fallback={<div className="flex h-16 w-16 items-center justify-center rounded-xl border border-white/10 bg-white/5"><Camera size={24} className="text-white/20" /></div>} />
             <div className="flex-1">
               <input type="file" accept="image/*" onChange={(e) => handleImageUpload(e, 'product')} className="hidden" id="product-upload" />
@@ -336,8 +336,8 @@ export default function Wallet({ identity, onOpenChat }) {
           </div>
 
           <div className="flex gap-3">
-            <input placeholder="Price" type="number" value={price} onChange={e => setPrice(e.target.value)} className="flex-1 border border-white/10 bg-white/5 shadow-2xl backdrop-blur-md rounded-2xl p-4 text-sm focus:border-blue-500 outline-none" />
-            <select value={currency} onChange={e => setCurrency(e.target.value)} className="border border-white/10 bg-white/5 shadow-2xl backdrop-blur-md rounded-2xl px-4 text-sm focus:border-blue-500 outline-none">
+            <input placeholder="Price" type="number" value={price} onChange={e => setPrice(e.target.value)} className="flex-1 border border-line bg-panelStrong shadow-lg rounded-2xl p-4 text-sm focus:border-blue-500 outline-none" />
+            <select value={currency} onChange={e => setCurrency(e.target.value)} className="border border-line bg-panelStrong shadow-lg rounded-2xl px-4 text-sm focus:border-blue-500 outline-none">
               <option value="USD">USD</option><option value="BTC">BTC</option><option value="XMR">XMR</option>
             </select>
           </div>
@@ -366,14 +366,14 @@ export default function Wallet({ identity, onOpenChat }) {
         <h2 className="text-2xl font-bold tracking-tight text-white">{myProfile.displayName}</h2>
         <p className="mb-3 text-[13px] text-white/40">@{myProfile.name}</p>
         {myProfile.about && <p className="mb-3 px-6 text-center text-[13px] text-white/50">{myProfile.about}</p>}
-        <button onClick={copyNpub} className="flex min-h-[44px] items-center gap-2 rounded-full border border-white/10 bg-[#0A0A0A]/60 shadow-2xl backdrop-blur-2xl px-4 py-2 text-[12px] text-white/60">
+        <button onClick={copyNpub} className="flex min-h-[44px] items-center gap-2 rounded-full border border-line bg-panel shadow-lg px-4 py-2 text-[12px] text-white/60">
           {copied ? 'Copied!' : `${identity.npub?.slice(0, 12)}...${identity.npub?.slice(-4)}`}
           <Copy size={12} />
         </button>
       </div>
 
       <div className="space-y-4 p-4">
-        <div className="overflow-hidden rounded-2xl border border-white/10 bg-[#0A0A0A]/60 shadow-2xl backdrop-blur-2xl">
+        <div className="overflow-hidden rounded-2xl border border-line bg-panel shadow-lg">
           <button onClick={() => setView('orders')} className={`flex w-full items-center gap-3 border-b border-white/5 p-4 text-left ${pressable}`}>
             <Package size={18} className="text-white/40" />
             <span className="min-w-0 flex-1"><span className="block text-[15px] font-semibold text-white">My Orders</span><span className="block text-[13px] text-white/40">Purchases and shipping</span></span>
@@ -396,7 +396,7 @@ export default function Wallet({ identity, onOpenChat }) {
           </button>
         </div>
 
-        <div className="overflow-hidden rounded-2xl border border-white/10 bg-[#0A0A0A]/60 shadow-2xl backdrop-blur-2xl">
+        <div className="overflow-hidden rounded-2xl border border-line bg-panel shadow-lg">
           {!isVendor ? (
             <button type="button" onClick={() => { setStatus(''); setView('vendor_setup'); }} className="flex w-full items-center gap-3 p-4 text-left">
               <CreditCard size={18} className="text-white/40" />
@@ -419,7 +419,7 @@ export default function Wallet({ identity, onOpenChat }) {
           )}
         </div>
 
-        <div className="overflow-hidden rounded-2xl border border-white/10 bg-[#0A0A0A]/60 shadow-2xl backdrop-blur-2xl">
+        <div className="overflow-hidden rounded-2xl border border-line bg-panel shadow-lg">
           <button onClick={() => setView('message_requests')} className="flex w-full items-center gap-3 border-b border-white/5 p-4 text-left">
             <Users size={18} className="text-white/40" />
             <span className="min-w-0 flex-1"><span className="block text-[15px] font-semibold text-white">Message requests</span><span className="block text-[13px] text-white/40">People you have not answered</span></span>
@@ -446,7 +446,7 @@ export default function Wallet({ identity, onOpenChat }) {
           </button>
         </div>
 
-        <div className="overflow-hidden rounded-2xl border border-white/10 bg-[#0A0A0A]/60 shadow-2xl backdrop-blur-2xl">
+        <div className="overflow-hidden rounded-2xl border border-line bg-panel shadow-lg">
           {isVendor && (
             <button onClick={async () => {
               setIsVendor(false);
@@ -480,7 +480,7 @@ export default function Wallet({ identity, onOpenChat }) {
 
       {/* PANIC CONFIRM MODAL */}
       {showPanicConfirm && (
-        <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-fade-in">
+        <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/80 p-4 animate-fade-in">
           <div className="bg-white/5 border border-red-500/30 rounded-2xl w-full max-w-sm p-6 shadow-2xl">
             <h2 className="text-xl font-bold text-red-500 mb-2">Panic Wipe</h2>
             <p className="text-sm text-white/70 mb-6">This will instantly destroy all local data on this device. Make sure you have saved your 12-word recovery phrase!</p>

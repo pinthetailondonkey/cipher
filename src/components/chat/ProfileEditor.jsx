@@ -75,7 +75,7 @@ export default function ProfileEditor({ identity, onClose }) {
       <form onSubmit={publishProfile} className="space-y-4">
         <ScreenHeader title="Edit Profile" onBack={onClose} />
         <div className="space-y-4 px-4">
-          <div className="overflow-hidden rounded-2xl border border-white/10 bg-[#0A0A0A]/60 shadow-2xl backdrop-blur-2xl">
+          <div className="overflow-hidden rounded-2xl border border-line bg-panel shadow-lg">
             <label className="flex items-center gap-3 border-b border-white/5 p-4">
               <AtSign size={18} className="shrink-0 text-white/40" />
               <span className="min-w-0 flex-1">

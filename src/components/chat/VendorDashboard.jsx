@@ -7,7 +7,7 @@ import { rankVolumeByStanding, readPublicViews } from '../../lib/proofOfTrade';
 
 function VolumeList({ title, rows }) {
   return (
-    <div className="overflow-hidden rounded-2xl border border-white/10 bg-[#0A0A0A]/60 shadow-2xl backdrop-blur-2xl">
+    <div className="overflow-hidden rounded-2xl border border-line bg-panel shadow-lg">
       <p className="border-b border-white/5 p-4 text-[13px] text-white/40">{title}</p>
       {rows.length === 0 ? (
         <p className="p-4 text-[13px] text-white/40">None yet.</p>
@@ -32,17 +32,17 @@ export default function VendorDashboard({ identity, products = [], onBack, onCre
       <ScreenHeader title="Vendor" onBack={onBack} />
       <div className="space-y-4 p-4">
       <div className="grid grid-cols-2 gap-3">
-        <div className="rounded-2xl border border-white/10 bg-[#0A0A0A]/60 shadow-2xl backdrop-blur-2xl p-4">
+        <div className="rounded-2xl border border-line bg-panel shadow-lg p-4">
           <p className="text-[13px] text-white/40">Orders</p>
           <p className="mt-1 text-2xl font-bold text-white">{loading ? '—' : stats.sales}</p>
         </div>
-        <div className="rounded-2xl border border-white/10 bg-[#0A0A0A]/60 shadow-2xl backdrop-blur-2xl p-4">
+        <div className="rounded-2xl border border-line bg-panel shadow-lg p-4">
           <p className="text-[13px] text-white/40">USD</p>
           <p className="mt-1 text-2xl font-bold text-white">{loading ? '—' : `$${stats.revenueFiat.toFixed(2)}`}</p>
         </div>
       </div>
       {(stats.btc > 0 || stats.xmr > 0) && (
-        <div className="overflow-hidden rounded-2xl border border-white/10 bg-[#0A0A0A]/60 shadow-2xl backdrop-blur-2xl">
+        <div className="overflow-hidden rounded-2xl border border-line bg-panel shadow-lg">
           {stats.btc > 0 && <p className="border-b border-white/5 p-4 text-[15px] text-white">{stats.btc.toFixed(8)} BTC</p>}
           {stats.xmr > 0 && <p className="p-4 text-[15px] text-white">{stats.xmr.toFixed(6)} XMR</p>}
         </div>
@@ -50,7 +50,7 @@ export default function VendorDashboard({ identity, products = [], onBack, onCre
       <VolumeList title="Countersigned" rows={standing.countersigned} />
       <VolumeList title="Vendor signature only" rows={standing.vendor} />
       {onCreate && <button type="button" onClick={onCreate} className="flex w-full items-center justify-center gap-2 rounded-2xl bg-blue-600 py-3.5 font-bold text-white hover:bg-blue-500"><Plus size={16} /> List an item</button>}
-      <div className="overflow-hidden rounded-2xl border border-white/10 bg-[#0A0A0A]/60 shadow-2xl backdrop-blur-2xl">
+      <div className="overflow-hidden rounded-2xl border border-line bg-panel shadow-lg">
         {products.length === 0 ? (
           <p className="p-4 text-[13px] text-white/40">You haven’t published any products yet.</p>
         ) : products.map((product) => (

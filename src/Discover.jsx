@@ -140,7 +140,7 @@ export default function Discover({ identity, onJoined }) {
   return (
     <div className="relative flex h-full w-full flex-col bg-transparent">
       <div className="px-4 pb-3 pt-2">
-        <div className="flex items-center gap-2 rounded-2xl border border-white/15 bg-white/10 px-4 py-3 shadow-2xl backdrop-blur-2xl">
+        <div className="flex items-center gap-2 rounded-2xl border border-white/15 bg-panelStrong px-4 py-3 shadow-lg">
           <Search size={16} className="text-white/40" />
           <input
             type="text"
@@ -160,21 +160,21 @@ export default function Discover({ identity, onJoined }) {
             <p className="text-sm">Searching the network...</p>
           </div>
         ) : displayGroups.length === 0 ? (
-          <div className="mx-4 rounded-2xl border border-white/10 bg-[#0A0A0A]/60 px-4 py-16 text-center shadow-2xl backdrop-blur-2xl">
+          <div className="mx-4 rounded-2xl border border-line bg-panel px-4 py-16 text-center shadow-lg">
             <Users size={28} className="mx-auto mb-3 text-white/30" />
             <p className="text-[15px] font-semibold text-white">No menus or groups yet</p>
           </div>
         ) : (
           <>
             {menus.length > 0 && (
-              <div className="mx-4 mb-4 overflow-hidden rounded-3xl border border-white/15 bg-white/10 shadow-2xl backdrop-blur-2xl">
+              <div className="mx-4 mb-4 overflow-hidden rounded-3xl border border-white/15 bg-panelStrong shadow-lg">
                 <p className="px-4 pt-3 text-[11px] font-semibold uppercase tracking-wider text-white/40">Menus</p>
                 <p className="px-4 pb-1 text-[12px] text-white/25">Menus are for buying. Groups are for talking.</p>
                 {menus.map((group) => <DiscoverRow key={group.id} group={group} joined={joinedIds.has(group.id)} joining={joiningId === group.id} onOpen={join} />)}
               </div>
             )}
             {rooms.length > 0 && (
-              <div className="mx-4 overflow-hidden rounded-3xl border border-white/15 bg-white/10 shadow-2xl backdrop-blur-2xl">
+              <div className="mx-4 overflow-hidden rounded-3xl border border-white/15 bg-panelStrong shadow-lg">
                 <p className="px-4 pt-3 text-[11px] font-semibold uppercase tracking-wider text-white/40">Groups</p>
                 {rooms.map((group) => <DiscoverRow key={group.id} group={group} joined={joinedIds.has(group.id)} joining={joiningId === group.id} onOpen={join} />)}
               </div>

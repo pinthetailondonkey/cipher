@@ -46,7 +46,7 @@ function GroupStorefront({ items, pinnedId, canList, onBuy, onList, pendingLists
   );
   return (
     <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
-      <div className="overflow-hidden rounded-2xl border border-white/10 bg-[#0A0A0A]/60 shadow-2xl backdrop-blur-2xl">
+      <div className="overflow-hidden rounded-2xl border border-line bg-panel shadow-lg">
       {featured && card(featured, true)}
       {rest.map((item) => card(item, false))}
       {items.length === 0 && pendingLists.length === 0 && <p className="px-4 py-8 text-center text-[13px] text-white/40">No listings yet.</p>}
@@ -55,7 +55,7 @@ function GroupStorefront({ items, pinnedId, canList, onBuy, onList, pendingLists
         const stuck = securingPhase(item.since, now) === 'stuck';
         const name = item.payload?.title || item.payload?.name || 'Listing';
         return (
-          <div key={item.id} className="rounded-2xl border border-white/10 bg-[#0A0A0A]/60 px-4 py-3 shadow-2xl backdrop-blur-2xl">
+          <div key={item.id} className="rounded-2xl border border-line bg-panel px-4 py-3 shadow-lg">
             <p className="text-[15px] font-semibold text-white">{name}</p>
             {stuck ? (
               <button type="button" onClick={() => onRetrySecure?.()} className="mt-1 block min-h-11 text-left text-[15px] font-semibold text-blue-300 underline active:scale-95">
@@ -77,7 +77,7 @@ function GroupStorefront({ items, pinnedId, canList, onBuy, onList, pendingLists
           setFormError('');
           onList({ title: title.trim(), priceUsd: amount, description: note.trim(), currency: 'USD' });
           setTitle(''); setPrice(''); setNote(''); setOpen(false);
-        }} className="overflow-hidden rounded-2xl border border-white/10 bg-[#0A0A0A]/60 shadow-2xl backdrop-blur-2xl">
+        }} className="overflow-hidden rounded-2xl border border-line bg-panel shadow-lg">
           <input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Item" className="w-full border-b border-white/5 bg-transparent px-4 py-3 text-[15px] text-white outline-none placeholder:text-white/30" />
           <input value={price} onChange={(event) => setPrice(event.target.value)} placeholder="Price in USD" inputMode="decimal" className="w-full border-b border-white/5 bg-transparent px-4 py-3 text-[15px] text-white outline-none placeholder:text-white/30" />
           <input value={note} onChange={(event) => setNote(event.target.value)} placeholder="Note" className="w-full border-b border-white/5 bg-transparent px-4 py-3 text-[15px] text-white outline-none placeholder:text-white/30" />
@@ -321,7 +321,7 @@ export default function GroupView({
       <>
       <div ref={scrollRef} className="flex min-h-0 flex-1 flex-col overflow-y-auto py-3">
         {visibleMessages.length === 0 ? (
-          <div className="m-auto mx-4 max-w-sm rounded-2xl border border-white/10 bg-[#0A0A0A]/60 shadow-2xl backdrop-blur-2xl px-4 py-8 text-center">
+          <div className="m-auto mx-4 max-w-sm rounded-2xl border border-line bg-panel shadow-lg px-4 py-8 text-center">
             <p className="text-[15px] font-semibold text-white">You're in {activeGroup?.name || 'this group'}</p>
             <p className="mt-2 text-[13px] leading-relaxed text-white/40">Say hello. Messages stay in this chat, with a name and a time on every one.</p>
           </div>
@@ -344,7 +344,7 @@ export default function GroupView({
         })}
       </div>
       {replyingTo && (
-        <div className="mx-3 mb-2 flex items-center gap-3 rounded-2xl border border-white/10 bg-[#0A0A0A]/60 shadow-2xl backdrop-blur-2xl px-4 py-3">
+        <div className="mx-3 mb-2 flex items-center gap-3 rounded-2xl border border-line bg-panel shadow-lg px-4 py-3">
           <div className="min-w-0 flex-1 border-l-2 border-blue-500 pl-3">
             <p className="text-[11px] font-semibold text-blue-400">{replyingTo.isSender ? 'You' : 'Replying'}</p>
             <p className="truncate text-[13px] text-white/60">{replyingTo.data?.message || replyingTo.rawContent || 'Message'}</p>

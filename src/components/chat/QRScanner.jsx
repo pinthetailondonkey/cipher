@@ -120,7 +120,7 @@ export default function QRScanner({ onClose }) {
         <ScreenHeader title="Scan" onBack={onClose} />
         <div className="flex flex-1 flex-col items-center justify-center gap-5 overflow-y-auto p-4">
           {error ? (
-            <div className="w-full max-w-xs rounded-2xl border border-white/10 bg-[#0A0A0A]/60 px-4 py-10 text-center shadow-2xl backdrop-blur-2xl">
+            <div className="w-full max-w-xs rounded-2xl border border-line bg-panel px-4 py-10 text-center shadow-lg">
               <CameraOff size={48} className="mb-4 text-white/40" />
               <h3 className="text-[15px] font-semibold text-white">Scanner unavailable</h3>
               <p role="alert" className="mt-2 text-[13px] text-white/50">{error}</p>
@@ -135,7 +135,7 @@ export default function QRScanner({ onClose }) {
                 </div>
               </div>
               {decodedValue ? (
-                <section className="w-full max-w-sm rounded-2xl border border-white/10 bg-[#0A0A0A]/60 p-4 shadow-2xl backdrop-blur-2xl">
+                <section className="w-full max-w-sm rounded-2xl border border-line bg-panel p-4 shadow-lg">
                   <p className="mb-2 flex items-center gap-2 text-[15px] font-semibold text-white"><Check size={17} className="text-blue-500" /> Scanned</p>
                   <p className="break-all rounded-2xl border border-white/10 bg-white/5 p-3 font-mono text-[13px] text-white/80">{decodedValue}</p>
                   <button type="button" onClick={copyDecodedValue} className="mt-3 flex w-full items-center justify-center gap-2 rounded-2xl bg-blue-600 py-3.5 text-[15px] font-bold text-white">

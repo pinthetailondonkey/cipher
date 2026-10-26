@@ -50,13 +50,13 @@ export default function TutorialModal({ isOpen, onClose }) {
     <AnimatePresence>
       <motion.div 
         initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-        className="fixed inset-0 z-[999] flex items-center justify-center bg-black/80 backdrop-blur-md p-6"
+        className="fixed inset-0 z-[999] flex items-center justify-center bg-black/80 p-6"
       >
         <motion.div 
           key={currentStep}
           initial={{ x: 20, opacity: 0 }} animate={{ x: 0, opacity: 1 }} exit={{ x: -20, opacity: 0 }}
           transition={{ type: "spring", damping: 25, stiffness: 300 }}
-          className="relative bg-[#0A0A0A]/60 backdrop-blur-2xl border border-white/10 rounded-3xl w-full max-w-sm p-8 overflow-hidden shadow-2xl flex flex-col items-center text-center"
+          className="relative bg-panel border border-line rounded-3xl w-full max-w-sm p-8 overflow-hidden shadow-lg flex flex-col items-center text-center"
         >
           <button onClick={() => { localStorage.removeItem('cipher_new_account'); onClose(); }} className="absolute top-4 right-4 text-white/30 hover:text-white transition-colors">
             <X size={20} />

@@ -28,12 +28,12 @@ export default function Connections({ onBack }) {
     <div className="h-full overflow-y-auto bg-transparent pb-safe">
       <ScreenHeader title="Connections" subtitle="Every host this app can reach" onBack={onBack} />
       <div className="space-y-4 p-4">
-        <div className="rounded-2xl border border-white/10 bg-[#0A0A0A]/60 p-4 shadow-2xl backdrop-blur-2xl">
+        <div className="rounded-2xl border border-line bg-panel p-4 shadow-lg">
           <p className="text-[15px] font-semibold text-white">For IP privacy, use Tor Browser or a VPN. The app doesn’t manage this.</p>
           <p className="mt-2 text-[13px] leading-snug text-white/50">Android: Orbot VPN mode. iOS: Onion Browser or the mirror.</p>
           <p className="mt-2 text-[13px] leading-snug text-white/50">Calls reveal your IP unless you route everything. Calls use UDP, so Tor Browser alone won’t cover them. Orbot’s VPN mode will.</p>
         </div>
-        <div className="overflow-hidden rounded-2xl border border-white/10 bg-[#0A0A0A]/60 shadow-2xl backdrop-blur-2xl">
+        <div className="overflow-hidden rounded-2xl border border-line bg-panel shadow-lg">
           {rows.map((row) => (
             <div key={row.id} className="border-b border-white/5 p-4 last:border-0">
               <div className="flex items-start justify-between gap-3">
@@ -52,14 +52,14 @@ export default function Connections({ onBack }) {
             </div>
           ))}
         </div>
-        <button type="button" onClick={() => setAdvanced((open) => !open)} aria-expanded={advanced} className="w-full rounded-2xl border border-white/10 bg-[#0A0A0A]/60 px-4 py-3 text-left text-[15px] font-semibold text-white shadow-2xl backdrop-blur-2xl active:scale-95">
+        <button type="button" onClick={() => setAdvanced((open) => !open)} aria-expanded={advanced} className="w-full rounded-2xl border border-line bg-panel px-4 py-3 text-left text-[15px] font-semibold text-white shadow-lg active:scale-95">
           Advanced
           <span className="mt-0.5 block text-[13px] font-normal text-white/40">{advanced ? 'Hide relay changes' : 'Change a relay'}</span>
         </button>
         {advanced && (
           <div className="space-y-4">
             <p className="text-[13px] leading-snug text-white/50">An onion relay needs Tor Browser or Orbot. Paste it on a row, or point a row at a box you run. Type off to stop using that host. Defaults work if you change nothing. Restart after a change.</p>
-            <label className="block rounded-2xl border border-white/10 bg-[#0A0A0A]/60 p-4 shadow-2xl backdrop-blur-2xl">
+            <label className="block rounded-2xl border border-line bg-panel p-4 shadow-lg">
               <span className="block text-[15px] font-semibold text-white">Message relays</span>
               <span className="mt-0.5 block text-[13px] text-white/40">One extra relay per line. Each person is written to one of them, plus that person’s own inbox, so no single relay sees every conversation.</span>
               <textarea
@@ -72,7 +72,7 @@ export default function Connections({ onBack }) {
                 className="mt-3 w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-[13px] text-white outline-none placeholder:text-white/30 focus:border-blue-500"
               />
             </label>
-            <label className="block rounded-2xl border border-white/10 bg-[#0A0A0A]/60 p-4 shadow-2xl backdrop-blur-2xl">
+            <label className="block rounded-2xl border border-line bg-panel p-4 shadow-lg">
               <span className="block text-[15px] font-semibold text-white">Profile relays</span>
               <span className="mt-0.5 block text-[13px] text-white/40">Names and relay lists only. Not messages.</span>
               <textarea
@@ -85,7 +85,7 @@ export default function Connections({ onBack }) {
                 className="mt-3 w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-[13px] text-white outline-none placeholder:text-white/30 focus:border-blue-500"
               />
             </label>
-            <div className="overflow-hidden rounded-2xl border border-white/10 bg-[#0A0A0A]/60 shadow-2xl backdrop-blur-2xl">
+            <div className="overflow-hidden rounded-2xl border border-line bg-panel shadow-lg">
               {rows.map((row) => (
                 !row.dynamic && row.called !== false ? (
                   <label key={row.id} className="block border-b border-white/5 p-4 last:border-0">

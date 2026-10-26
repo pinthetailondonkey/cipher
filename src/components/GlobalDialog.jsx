@@ -44,8 +44,8 @@ export default function GlobalDialog() {
   };
 
   return (
-    <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm" role="presentation">
-      <form ref={panelRef} onSubmit={confirm} role="dialog" aria-modal="true" aria-labelledby="global-dialog-title" className="w-full max-w-sm rounded-3xl border border-white/10 bg-[#0A0A0A]/60 backdrop-blur-2xl p-6">
+    <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/80 p-4" role="presentation">
+      <form ref={panelRef} onSubmit={confirm} role="dialog" aria-modal="true" aria-labelledby="global-dialog-title" className="w-full max-w-sm rounded-3xl border border-line bg-panel p-6">
         <div className="flex items-start gap-3">
           {dialog.type === 'danger' && <AlertTriangle size={21} className="mt-1 shrink-0 text-red-400" />}
           <div className="min-w-0 flex-1">
@@ -61,7 +61,7 @@ export default function GlobalDialog() {
             onChange={(event) => setValue(event.target.value)}
             placeholder={dialog.placeholder || ''}
             rows={dialog.inputRows || 4}
-            className="mt-4 w-full resize-y rounded-xl border border-white/10 bg-[#0A0A0A]/60 shadow-2xl backdrop-blur-2xl p-3 text-sm text-white outline-none placeholder:text-white/35 focus:border-blue-500"
+            className="mt-4 w-full resize-y rounded-xl border border-line bg-panelStrong shadow-lg p-3 text-sm text-white outline-none placeholder:text-white/35 focus:border-blue-500"
           />
         )}
         {error && <p role="alert" className="mt-3 text-sm text-red-400">{error}</p>}

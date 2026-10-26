@@ -29,13 +29,13 @@ export default function BookmarksViewer({ onClose, onJump }) {
         <ScreenHeader title="Saved" onBack={onClose} />
         <div className="min-h-0 flex-1 overflow-y-auto p-4">
           {items.length === 0 ? (
-            <div className="rounded-2xl border border-white/10 bg-[#0A0A0A]/60 px-4 py-16 text-center shadow-2xl backdrop-blur-2xl">
+            <div className="rounded-2xl border border-line bg-panel px-4 py-16 text-center shadow-lg">
               <Bookmark size={28} className="mx-auto mb-3 text-white/30" />
               <p className="text-[15px] font-semibold text-white">Nothing saved</p>
               <p className="mt-1 text-[13px] text-white/40">Long-press a message and choose Save.</p>
             </div>
           ) : (
-            <div className="overflow-hidden rounded-2xl border border-white/10 bg-[#0A0A0A]/60 shadow-2xl backdrop-blur-2xl">
+            <div className="overflow-hidden rounded-2xl border border-line bg-panel shadow-lg">
               {items.map(({ chatId, messageId, isGroup, message }) => (
                 <button
                   key={`${chatId}:${messageId}`}

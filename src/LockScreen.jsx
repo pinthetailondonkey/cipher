@@ -219,13 +219,13 @@ export default function LockScreen({ identity }) {
           {mode === 'verify_key' ? 'Enter the words below to confirm you saved the phrase.' : mode === 'save_key' ? 'Write down these 12 words. You need them and your PIN to recover this account. Five wrong PINs delete the copy stored on this device.' : mode === 'setup_profile' ? 'Set up your profile and start messaging.' : mode === 'create' ? `Pick a handle and a PIN (${MIN_PIN_LENGTH}+ digits).` : mode === 'unlock' ? 'Enter your PIN, or use your saved device passkey. Five wrong PINs delete this account from the device, including the encrypted recovery phrase.' : mode === 'restore' ? 'Enter your handle and PIN.' : `Enter your 12-word phrase and a new PIN (${MIN_PIN_LENGTH}+ digits).`}
         </p>
 
-        <form onSubmit={mode === 'verify_key' ? handleVerifyKey : mode === 'save_key' ? handleSaveKeyContinue : mode === 'setup_profile' ? handleFinishSetup : handleSubmit} className="w-full flex flex-col gap-4 rounded-3xl border border-white/10 bg-[#0A0A0A]/60 backdrop-blur-2xl p-6 shadow-2xl">
+        <form onSubmit={mode === 'verify_key' ? handleVerifyKey : mode === 'save_key' ? handleSaveKeyContinue : mode === 'setup_profile' ? handleFinishSetup : handleSubmit} className="w-full flex flex-col gap-4 rounded-3xl border border-line bg-panel p-6 shadow-lg">
           
           {mode === 'save_key' ? (
             <div className="space-y-6 w-full">
               <div className="grid grid-cols-3 gap-2 w-full">
                 {(savedMnemonic || '').split(' ').map((word, i) => (
-                  <div key={i} className="border border-white/10 bg-white/5 shadow-2xl backdrop-blur-md rounded-xl p-3 text-center text-[13px] text-white font-mono">
+                  <div key={i} className="border border-line bg-panelStrong shadow-lg rounded-xl p-3 text-center text-[13px] text-white font-mono">
                     {word}
                   </div>
                 ))}
@@ -248,11 +248,11 @@ export default function LockScreen({ identity }) {
                 {uploadingAvatar && <div className="absolute inset-0 bg-black/60 flex items-center justify-center rounded-full"><RefreshCw size={20} className="animate-spin text-white" /></div>}
               </div>
 
-              <input type="text" placeholder="Display Name (optional)" value={displayName} onChange={(e) => setDisplayName(e.target.value)} className="w-full border border-white/10 bg-white/5 shadow-2xl backdrop-blur-md rounded-2xl px-5 py-4 text-[16px] text-white placeholder-gray-600 focus:outline-none focus:border-blue-500 transition-colors" />
+              <input type="text" placeholder="Display Name (optional)" value={displayName} onChange={(e) => setDisplayName(e.target.value)} className="w-full border border-line bg-panelStrong shadow-lg rounded-2xl px-5 py-4 text-[16px] text-white placeholder-gray-600 focus:outline-none focus:border-blue-500 transition-colors" />
 
               <div className="w-full relative">
                 <AtSign size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500" />
-                <input type="text" placeholder="username" value={username} onChange={(e) => setUsername(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ''))} className="w-full border border-white/10 bg-white/5 shadow-2xl backdrop-blur-md rounded-2xl pl-11 pr-5 py-4 text-[16px] text-white placeholder-gray-600 focus:outline-none focus:border-blue-500 transition-colors" />
+                <input type="text" placeholder="username" value={username} onChange={(e) => setUsername(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ''))} className="w-full border border-line bg-panelStrong shadow-lg rounded-2xl pl-11 pr-5 py-4 text-[16px] text-white placeholder-gray-600 focus:outline-none focus:border-blue-500 transition-colors" />
               </div>
             </>
           ) : (
@@ -265,7 +265,7 @@ export default function LockScreen({ identity }) {
                   {verifyIndices.map((idx, i) => (
                     <div key={idx} className="w-full relative">
                       <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500 font-mono text-sm pointer-events-none">Word #{idx + 1}</span>
-                      <input type="text" placeholder="..." value={verifyInputs[i] || ''} onChange={(e) => { const newInputs = [...verifyInputs]; newInputs[i] = e.target.value.toLowerCase().trim(); setVerifyInputs(newInputs); setVerifyError(''); }} className="w-full border border-white/10 bg-white/5 shadow-2xl backdrop-blur-md rounded-2xl pl-24 pr-5 py-4 text-[16px] text-white placeholder-gray-600 focus:outline-none focus:border-blue-500 transition-colors" autoCapitalize="none" autoCorrect="off" spellCheck="false" />
+                      <input type="text" placeholder="..." value={verifyInputs[i] || ''} onChange={(e) => { const newInputs = [...verifyInputs]; newInputs[i] = e.target.value.toLowerCase().trim(); setVerifyInputs(newInputs); setVerifyError(''); }} className="w-full border border-line bg-panelStrong shadow-lg rounded-2xl pl-24 pr-5 py-4 text-[16px] text-white placeholder-gray-600 focus:outline-none focus:border-blue-500 transition-colors" autoCapitalize="none" autoCorrect="off" spellCheck="false" />
                     </div>
                   ))}
                   {verifyError && <p className="text-red-500 text-xs text-center mt-2">{verifyError}</p>}
@@ -273,18 +273,18 @@ export default function LockScreen({ identity }) {
               )}
 
               {isMnemonicMode && (
-                <textarea placeholder="apple banana cherry ..." value={mnemonic} onChange={(e) => { setMnemonic(e.target.value); setError(''); }} className="w-full border border-white/10 bg-white/5 shadow-2xl backdrop-blur-md rounded-2xl p-5 text-[15px] text-white placeholder-gray-600 focus:outline-none focus:border-blue-500 transition-colors resize-none" autoCapitalize="none" autoCorrect="off" spellCheck="false" rows={4} />
+                <textarea placeholder="apple banana cherry ..." value={mnemonic} onChange={(e) => { setMnemonic(e.target.value); setError(''); }} className="w-full border border-line bg-panelStrong shadow-lg rounded-2xl p-5 text-[15px] text-white placeholder-gray-600 focus:outline-none focus:border-blue-500 transition-colors resize-none" autoCapitalize="none" autoCorrect="off" spellCheck="false" rows={4} />
               )}
 
               {(mode === 'create' || mode === 'restore') && (
                 <div className="w-full relative">
                   <AtSign size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500" />
-                  <input type="text" placeholder="yourhandle" value={handle} onChange={(e) => { setHandle(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, '')); setError(''); }} className="w-full border border-white/10 bg-white/5 shadow-2xl backdrop-blur-md rounded-2xl pl-11 pr-5 py-4 text-[16px] text-white placeholder-gray-600 focus:outline-none focus:border-blue-500 transition-colors" />
+                  <input type="text" placeholder="yourhandle" value={handle} onChange={(e) => { setHandle(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, '')); setError(''); }} className="w-full border border-line bg-panelStrong shadow-lg rounded-2xl pl-11 pr-5 py-4 text-[16px] text-white placeholder-gray-600 focus:outline-none focus:border-blue-500 transition-colors" />
                 </div>
               )}
 
               {mode !== 'verify_key' && (
-                <input type="password" placeholder={mode === 'restore_mnemonic' ? `New PIN (${MIN_PIN_LENGTH}+ digits)` : `PIN (${MIN_PIN_LENGTH}+ digits)`} value={pin} onChange={(e) => { setPin(e.target.value.replace(/\D/g, '').slice(0, 8)); setError(''); }} className="w-full border border-white/10 bg-white/5 shadow-2xl backdrop-blur-md rounded-2xl px-5 py-4 text-[16px] text-white placeholder-gray-600 focus:outline-none focus:border-blue-500 transition-colors" maxLength={8} />
+                <input type="password" placeholder={mode === 'restore_mnemonic' ? `New PIN (${MIN_PIN_LENGTH}+ digits)` : `PIN (${MIN_PIN_LENGTH}+ digits)`} value={pin} onChange={(e) => { setPin(e.target.value.replace(/\D/g, '').slice(0, 8)); setError(''); }} className="w-full border border-line bg-panelStrong shadow-lg rounded-2xl px-5 py-4 text-[16px] text-white placeholder-gray-600 focus:outline-none focus:border-blue-500 transition-colors" maxLength={8} />
               )}
 
               {mode === 'create' && (
@@ -314,7 +314,7 @@ export default function LockScreen({ identity }) {
           {mode === 'unlock' && (
             <>
               {identity?.hasBiometric && (
-                <button type="button" onClick={handleBiometricUnlock} disabled={biometricLoading || loading} className={`flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl border border-white/10 bg-[#0A0A0A]/60 shadow-2xl backdrop-blur-2xl px-4 text-[15px] font-semibold text-blue-500 active:bg-white/10 disabled:opacity-50 ${pressable}`}>
+                <button type="button" onClick={handleBiometricUnlock} disabled={biometricLoading || loading} className={`flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl border border-line bg-panelStrong shadow-lg px-4 text-[15px] font-semibold text-blue-500 active:bg-white/10 disabled:opacity-50 ${pressable}`}>
                   {biometricLoading ? <RefreshCw size={17} className="animate-spin" /> : <Fingerprint size={17} />}
                   Unlock or recover with Face ID / fingerprint
                 </button>

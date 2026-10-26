@@ -120,7 +120,7 @@ export default function Shop({ identity, setActiveTab }) {
   return (
     <div className="flex h-full w-full flex-col bg-transparent">
       <div className="px-4 pb-3 pt-2">
-        <div className="flex items-center gap-2 rounded-2xl border border-white/15 bg-white/10 px-4 py-3 shadow-2xl backdrop-blur-2xl">
+        <div className="flex items-center gap-2 rounded-2xl border border-white/15 bg-panelStrong px-4 py-3 shadow-lg">
           <Search size={16} className="text-white/40" />
           <input
             type="text"
@@ -139,19 +139,19 @@ export default function Shop({ identity, setActiveTab }) {
             <p className="text-sm">Fetching products from the network...</p>
           </div>
         ) : error ? (
-          <div className="mx-4 rounded-2xl border border-white/10 bg-[#0A0A0A]/60 px-4 py-16 text-center shadow-2xl backdrop-blur-2xl">
+          <div className="mx-4 rounded-2xl border border-line bg-panel px-4 py-16 text-center shadow-lg">
             <p className="text-[15px] font-semibold text-white">Shop unavailable</p>
             <p className="mt-1 text-[13px] text-white/40">{error}</p>
           </div>
         ) : displayProducts.length === 0 ? (
-          <div className="mx-4 rounded-2xl border border-white/10 bg-[#0A0A0A]/60 px-4 py-16 text-center shadow-2xl backdrop-blur-2xl">
+          <div className="mx-4 rounded-2xl border border-line bg-panel px-4 py-16 text-center shadow-lg">
             <ShoppingBag size={28} className="mx-auto mb-3 text-white/30" />
             <p className="text-[15px] font-semibold text-white">No products</p>
           </div>
         ) : (
           <div className="grid grid-cols-2 gap-3 px-4 pb-4">
             {displayProducts.map(p => (
-              <div key={p.id} className="rounded-3xl border border-white/15 bg-white/10 p-2 shadow-2xl backdrop-blur-2xl">
+              <div key={p.id} className="rounded-3xl border border-white/15 bg-panelStrong p-2 shadow-lg">
                 <div className="relative h-28 w-full overflow-hidden rounded-2xl bg-white/5">
                   <Picture
                     src={p.image}

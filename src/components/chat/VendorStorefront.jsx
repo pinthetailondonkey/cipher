@@ -66,10 +66,10 @@ export default function VendorStorefront({ isOpen, onClose, vendorPubkey, profil
   if (!isOpen || !vendorPubkey) return null;
 
   return (
-    <div className="fixed inset-0 z-[900] flex items-end justify-center bg-black/80 p-0 backdrop-blur-sm sm:items-center sm:p-4" role="presentation">
-      <section role="dialog" aria-modal="true" aria-label="Vendor storefront" className="max-h-[90dvh] w-full max-w-md overflow-y-auto rounded-t-3xl border border-white/10 bg-[#0A0A0A]/60 backdrop-blur-2xl pb-[env(safe-area-inset-bottom)] sm:rounded-3xl">
-        <header className="sticky top-0 z-10 flex items-center gap-3 border-b border-white/5 bg-[#0A0A0A]/60 backdrop-blur-2xl px-4 py-4 backdrop-blur-xl pt-[env(safe-area-inset-top)]">
-          <Picture src={profile.picture} alt="" className="h-12 w-12 rounded-full border border-white/10 object-cover" fallback={<div className="flex h-12 w-12 items-center justify-center rounded-full border border-white/10 bg-[#0A0A0A]/60 shadow-2xl backdrop-blur-2xl text-white/50"><Store size={20} /></div>} />
+    <div className="fixed inset-0 z-[900] flex items-end justify-center bg-black/80 p-0 sm:items-center sm:p-4" role="presentation">
+      <section role="dialog" aria-modal="true" aria-label="Vendor storefront" className="max-h-[90dvh] w-full max-w-md overflow-y-auto rounded-t-3xl border border-line bg-panel pb-[env(safe-area-inset-bottom)] sm:rounded-3xl">
+        <header className="sticky top-0 z-10 flex items-center gap-3 border-b border-white/5 bg-base px-4 py-4 pt-[env(safe-area-inset-top)]">
+          <Picture src={profile.picture} alt="" className="h-12 w-12 rounded-full border border-white/10 object-cover" fallback={<div className="flex h-12 w-12 items-center justify-center rounded-full border border-line bg-panelStrong shadow-lg text-white/50"><Store size={20} /></div>} />
           <div className="min-w-0 flex-1">
             <h2 className="truncate text-[15px] font-semibold text-white">{noHexName(profile, vendorPubkey)}</h2>
             <p className="flex items-center gap-1 text-[13px] text-white/45"><BadgeCheck size={14} className={vouchCount >= 3 ? 'text-blue-400' : ''} />{vouchesLoading ? 'Checking trust' : `${vouchCount} vouches${vouchCount >= 3 ? ' · Trusted Vendor' : ''}`}</p>
@@ -78,10 +78,10 @@ export default function VendorStorefront({ isOpen, onClose, vendorPubkey, profil
         </header>
         <div className="space-y-3 p-4">
         <button type="button" onClick={() => onOpenChat?.(vendorPubkey)} className="flex w-full items-center justify-center gap-2 rounded-2xl bg-blue-600 py-3.5 font-bold text-white hover:bg-blue-500"><MessageCircle size={17} /> Message vendor</button>
-        {loading && <p className="rounded-2xl border border-white/10 bg-[#0A0A0A]/60 shadow-2xl backdrop-blur-2xl px-4 py-8 text-center text-[13px] text-white/40">Loading listings…</p>}
-        {error && <p role="alert" className="rounded-2xl border border-white/10 bg-[#0A0A0A]/60 shadow-2xl backdrop-blur-2xl px-4 py-8 text-center text-[13px] text-red-400">{error}</p>}
-        {!loading && !error && products.length === 0 && <p className="rounded-2xl border border-white/10 bg-[#0A0A0A]/60 shadow-2xl backdrop-blur-2xl px-4 py-8 text-center text-[13px] text-white/40">No active listings.</p>}
-        {products.length > 0 && <div className="overflow-hidden rounded-2xl border border-white/10 bg-[#0A0A0A]/60 shadow-2xl backdrop-blur-2xl">
+        {loading && <p className="rounded-2xl border border-line bg-panelStrong shadow-lg px-4 py-8 text-center text-[13px] text-white/40">Loading listings…</p>}
+        {error && <p role="alert" className="rounded-2xl border border-line bg-panelStrong shadow-lg px-4 py-8 text-center text-[13px] text-red-400">{error}</p>}
+        {!loading && !error && products.length === 0 && <p className="rounded-2xl border border-line bg-panelStrong shadow-lg px-4 py-8 text-center text-[13px] text-white/40">No active listings.</p>}
+        {products.length > 0 && <div className="overflow-hidden rounded-2xl border border-line bg-panelStrong shadow-lg">
         {products.map((product) => (
           <article key={product.id} className="flex items-center gap-3 border-b border-white/5 p-4 last:border-0">
             <Picture src={product.image} alt="" loading="lazy" className="h-12 w-12 rounded-xl border border-white/10 object-cover" fallback={<div className="flex h-12 w-12 items-center justify-center rounded-xl border border-white/10 bg-black text-white/40"><Package size={18} /></div>} />
