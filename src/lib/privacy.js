@@ -54,3 +54,10 @@ export function allowsTyping() {
 export function allowsLinkPreviews() {
   return getPrivacy().linkPreviews === true;
 }
+
+// The Groups setting owns the door: 'nobody' refuses every new join request.
+// The 9021 handler reads this before it queues a sender, so the hint on the
+// setting describes an engine that really runs.
+export function allowsGroupJoins() {
+  return getPrivacy().groups !== 'nobody';
+}

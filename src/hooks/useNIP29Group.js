@@ -19,7 +19,8 @@ import { groupSocketUrl } from '../lib/egress';
 import { relaysForPeer } from '../lib/dmRelays';
 import { dropSecuringSend, forgetPendingKeyRequest, queueSecuringSend, resetKeyRequest, securingSendsFor } from '../lib/crypto/groupKeyRequest';
 import { sortMessages, stampArrival } from '../features/chat/media';
-import { isJoinDenied, loadPendingJoins, queuePendingJoin, withoutDenied } from '../lib/groupJoinQueue.js';
+import { isJoinDenied, denyPendingJoin, loadPendingJoins, queuePendingJoin, withoutDenied } from '../lib/groupJoinQueue.js';
+import { allowsGroupJoins } from '../lib/privacy.js';
 
 function currentGroupRelay() {
   return groupSocketUrl() || '';
@@ -44,7 +45,10 @@ async function fetchRelayMemberSnapshot(identity, groupId) {
   ]);
   const members = pickMemberSnapshot([...byDTag, ...byHTag], relayPubkey, groupId);
   if (!members) throw new Error('No membership snapshot');
-  return members;
+  // H1 fix (round-three re-hack): this read feeds the gkey grant re-read and
+  // the owner reconciler's distribution list — both must never see a denied
+  // peer, whatever the open-join relay writes into its roster.
+  return withoutDenied(groupId, members);
 }
 
 // Creator can no longer ride on the store record alone: the record is fed by
@@ -752,7 +756,10 @@ export function useNIP29Group({ identity }) {
       // member list — and that list is what key grants and admin checks
       // trust. Same gate the live subscription applies (authorizeMemberSnapshot).
       const relayPubkey = await groupRelayPubkey();
-      const members = pickMemberSnapshot([...byDTag, ...byHTag], relayPubkey, groupId);
+      // H1 fix (round-three re-hack): the stripped roster is the one the
+      // member list, the owner reconciler and every grant read from — the
+      // deny outvotes the relay wherever its snapshot names a denied peer.
+      const members = withoutDenied(groupId, pickMemberSnapshot([...byDTag, ...byHTag], relayPubkey, groupId));
       if (!members) {
         console.warn(`[NIP29] No relay-signed membership snapshot found for group ${groupId}`);
         return null;
@@ -851,6 +858,14 @@ export function useNIP29Group({ identity }) {
           // the sender, and it must not fall through to the patch below —
           // two replayed joins were enough to sit on the member snapshot and
           // pass F1's sender-standing check.
+          return;
+        } else if (!allowsGroupJoins()) {
+          // The Groups setting is Nobody: a first join request is refused,
+          // and durably so — denyPendingJoin survives the relay's replays the
+          // same way an owner deny does. Already-queued rows above keep
+          // waiting for the owner's own decision. (Joining is a trust edge:
+          // this is where the setting finally has an engine.)
+          denyPendingJoin(groupId, pk);
           return;
         } else if (!(Array.isArray(members) && members.some((member) => memberKey(member) === pk))) {
           // First join request from this sender: it goes to the pending queue
