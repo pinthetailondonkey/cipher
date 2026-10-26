@@ -6,7 +6,7 @@ import { ORDER_STATUS, RECEIPT_OUTCOME, acceptAmount, acceptanceDemand, amountCo
 import { checkPayment } from '../../lib/paymentWatch';
 import { activeUrl, entryById } from '../../lib/egress';
 import { publicReceipt, rememberPublicView, receiptBindsOrder, signPublicView, signReceipt } from '../../lib/proofOfTrade';
-import { orderRecordForReceipt, orderState } from '../../lib/orderActions';
+import { issuedPaymentMethods, orderRecordForReceipt, orderState } from '../../lib/orderActions';
 import { stampArrival } from './media';
 
 export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, openChat }) {
@@ -74,6 +74,12 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
     }
   
       if (action === 'accept_order') {
+        // Once an address is issued for an order it is frozen on the order
+        // card (security S5): acceptance reuses the card's own addresses and
+        // never derives a fresh pair, so a buyer who already paid the first
+        // issued address is never strafed by a newer one. A fresh derive
+        // would orphan the first address's confirmation.
+        const frozen = issuedPaymentMethods(msg.data);
         const sendAcceptance = async (rawAmount, coinCurrency) => {
           // An acceptance only locks in an amount the chain can express. A
           // string finer than the coin counts would sit 'short of the order'
@@ -87,20 +93,22 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
             setSelectedMessage(null);
             return;
           }
-          const { btc: baseBtc, xmr: baseXmr } = readPaymentAddresses();
-          let paymentMethods;
-          try {
-            paymentMethods = await getOrderPaymentMethods(
-              identity,
-              msg.data.orderId || msg.id,
-              { btc: baseBtc, xmr: baseXmr },
-              msg.data.paymentMethod || 'btc',
-            );
-          } catch (error) {
-            console.error('[orders] Could not prepare private payment addresses:', error);
-            setToast({ type: 'error', message: error?.message || 'Could not create order payment addresses.' });
-            setSelectedMessage(null);
-            return;
+          let paymentMethods = frozen;
+          if (!paymentMethods) {
+            const { btc: baseBtc, xmr: baseXmr } = readPaymentAddresses();
+            try {
+              paymentMethods = await getOrderPaymentMethods(
+                identity,
+                msg.data.orderId || msg.id,
+                { btc: baseBtc, xmr: baseXmr },
+                msg.data.paymentMethod || 'btc',
+              );
+            } catch (error) {
+              console.error('[orders] Could not prepare private payment addresses:', error);
+              setToast({ type: 'error', message: error?.message || 'Could not create order payment addresses.' });
+              setSelectedMessage(null);
+              return;
+            }
           }
           if (!paymentMethods.btc && !paymentMethods.xmr) {
             setToast({ type: 'error', message: 'Set payment addresses in Profile first' });
