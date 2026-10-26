@@ -212,6 +212,11 @@ if (process.argv[1] && process.argv[1].endsWith('payment-watcher.mjs')) {
   server.listen(port, watchHost, () => {
     console.log(`[watcher] http://127.0.0.1:${port}/payment?token=${watchToken}`);
     if (watchHost !== '127.0.0.1') console.log(`[watcher] Listening on ${watchHost}. Any device on this network can ask this watcher.`);
+    console.log('[watcher] To serve this box as an onion service instead, add to torrc:');
+    console.log('[watcher]   HiddenServiceDir /var/lib/tor/cipher-watcher/');
+    console.log(`[watcher]   HiddenServicePort 80 127.0.0.1:${port}`);
+    console.log('[watcher] then reload tor; the .onion name sits in that directory\'s hostname file.');
+    console.log('[watcher] An onion needs a TLS certificate before the phone will call it over https. Plain http is refused except on this same machine.');
     if (!xmrRpc) console.log('[watcher] XMR_WALLET_RPC is not set. Monero checks will fail loudly.');
     if (!btcRpc) console.log('[watcher] BTC_RPC_URL is not set. Bitcoin checks will fail loudly.');
     console.log('[watcher] The phone confirms Bitcoin at 3 and Monero at 10, unless cipher_confirmations overrides it.');
