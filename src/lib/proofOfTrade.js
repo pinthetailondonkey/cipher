@@ -346,10 +346,6 @@ function viewKey(event) {
   ].join('|');
 }
 
-export function publicViewChecks() {
-  return standingMisses;
-}
-
 function standingOf(event) {
   const key = viewKey(event);
   if (!key.replace(/\|/g, '')) return '';
