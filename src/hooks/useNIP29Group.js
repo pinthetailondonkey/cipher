@@ -1170,7 +1170,10 @@ export function useNIP29Group({ identity }) {
   const fetchPinnedMessage = useCallback(async (groupId) => {
     try {
       const pool = await getAuthenticatedPool(identity);
-      const events = await queryWithTimeout(pool, groupRelays, { kinds: [9005], '#h': [groupId], limit: 10 }, 3000);
+      // Wide enough that a member flooding pins cannot push the admin's out
+      // of the window: the standing check runs on everything, so a bigger
+      // fetch only reads more events, never trusts more of them. (security S9)
+      const events = await queryWithTimeout(pool, groupRelays, { kinds: [9005], '#h': [groupId], limit: 500 }, 3000);
       if (events.length === 0) {
         setPinnedMessages(prev => ({ ...prev, [groupId]: null }));
         return null;
