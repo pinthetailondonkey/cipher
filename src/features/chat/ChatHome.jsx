@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import { Bookmark, Bell, QrCode, RefreshCw, Search } from 'lucide-react';
+import { Bookmark, Bell, Menu, QrCode, RefreshCw, Search } from 'lucide-react';
 import Logo from '../../components/Logo';
 import ChatList from '../../components/chat/ChatList';
 import CreateGroupModal from '../../components/chat/CreateGroupModal';
@@ -25,6 +25,7 @@ export default function ChatHome({ identity, openChat, createGroup, fetchChats }
       <ToastBanner />
       <div className="mb-2 flex items-center justify-between px-4 pt-3 md:px-3">
         <div className="flex items-center gap-3 md:gap-2">
+          <button type="button" onClick={() => useChatStore.getState().setShowDrawer(true)} aria-label="Open menu" className="-ml-1 touch-target p-2 text-ink/50 hover:text-ink md:hidden"><Menu size={20} /></button>
           <Logo size={28} />
           <h2 className="text-2xl font-bold tracking-tight text-ink md:text-xl">Chats</h2>
         </div>

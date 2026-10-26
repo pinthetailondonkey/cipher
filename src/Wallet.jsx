@@ -2,7 +2,7 @@ import { lazy, Suspense, useState, useEffect } from 'react'
 import {
   User, Plus, AlertCircle, RefreshCw,
   Lock, ChevronRight, ArrowLeft, Copy, CreditCard, Camera,
-  BarChart3, Package, KeyRound, ShieldAlert, Users, SlidersHorizontal, Shield, BookOpen, Palette
+  BarChart3, Package, KeyRound, Menu, ShieldAlert, Users, SlidersHorizontal, Shield, BookOpen, Palette
 } from 'lucide-react'
 import { uploadToBlossom } from '@nostr-wot/blossom'
 import { useProfiles, updateProfileCache } from './useProfiles'
@@ -29,7 +29,7 @@ import { THEMES, currentTheme, setTheme } from './lib/theme';
 const VendorDashboard = lazy(() => import('./components/chat/VendorDashboard'));
 const ProfileEditor = lazy(() => import('./components/chat/ProfileEditor'));
 
-export default function Wallet({ identity, onOpenChat }) {
+export default function Wallet({ identity, onOpenChat, startView = 'main' }) {
   const isVendor = useChatStore((state) => state.isVendor);
   const setIsVendor = useChatStore((state) => state.setIsVendor);
   const dms = useChatStore((state) => state.dms);
@@ -40,7 +40,9 @@ export default function Wallet({ identity, onOpenChat }) {
   
   const myProfile = profiles[identity.pk] || { name: defaultName, displayName: defaultName, picture: null, about: '' }
 
-  const [view, setView] = useState('main')
+  // startView lets the phone drawer deep-link here (Orders, Connections);
+  // AuthenticatedApp remounts this component when it changes.
+  const [view, setView] = useState(startView)
 
   // Appearance: taps walk the theme list and apply immediately; the choice
   // is remembered per device.
@@ -362,7 +364,10 @@ export default function Wallet({ identity, onOpenChat }) {
       {status && <div className="fixed left-1/2 top-[calc(5rem+env(safe-area-inset-top))] -translate-x-1/2 md:left-auto md:right-6 md:top-6 md:translate-x-0 bg-accent text-accentInk px-4 py-2 rounded-xl text-xs font-bold shadow-lg z-50 animate-fade-in">{status}</div>}
 
       {/* HEADER PROFILE CARD */}
-      <div className="flex flex-col items-center px-4 pb-2 pt-8">
+      <div className="flex flex-col items-center px-4 pb-2 pt-3 md:pt-8">
+        <div className="mb-2 flex w-full items-center px-1 md:hidden">
+          <button type="button" onClick={() => useChatStore.getState().setShowDrawer(true)} aria-label="Open menu" className="-ml-1 touch-target p-2 text-ink/50 hover:text-ink"><Menu size={20} /></button>
+        </div>
         <div className="relative mb-4">
           <input type="file" accept="image/*" onChange={(e) => handleImageUpload(e, 'profile')} className="hidden" id="main-avatar-upload" />
           <label htmlFor="main-avatar-upload" className="relative block cursor-pointer">
