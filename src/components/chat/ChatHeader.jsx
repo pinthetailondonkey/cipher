@@ -42,7 +42,7 @@ export default function ChatHeader({ mode }) {
         </button>
         <button type="button" className="min-w-0 text-left" onClick={() => mode === 'dm' && setProfilePubkey(activeDm)}>
           <h2 className="truncate text-2xl font-bold tracking-tight text-white">{title}</h2>
-          <p className={`flex items-center gap-1 text-[13px] ${someoneTyping ? 'text-blue-400' : 'text-white/40'}`}>
+          <p className={`flex items-center gap-1 text-[13px] ${someoneTyping ? 'text-accent' : 'text-white/40'}`}>
             {someoneTyping ? (
               <>
                 typing

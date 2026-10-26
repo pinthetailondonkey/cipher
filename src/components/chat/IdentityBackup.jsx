@@ -138,7 +138,7 @@ export default function IdentityBackup({ identity, onClose }) {
               <p className="text-[12px] text-white/40">Public key</p>
               <p className="truncate font-mono text-[13px] text-white">{npub || 'Not loaded'}</p>
             </div>
-            <button type="button" onClick={() => copy('npub', npub)} disabled={!npub} className={`text-[13px] font-semibold text-blue-500 ${pressable}`}>{copied === 'npub' ? 'Copied' : 'Copy'}</button>
+            <button type="button" onClick={() => copy('npub', npub)} disabled={!npub} className={`text-[13px] font-semibold text-accent ${pressable}`}>{copied === 'npub' ? 'Copied' : 'Copy'}</button>
           </div>
           <div className="flex items-center gap-3 p-4">
             <KeyRound size={18} className="shrink-0 text-white/40" />
@@ -146,10 +146,10 @@ export default function IdentityBackup({ identity, onClose }) {
               <p className="text-[12px] text-white/40">Secret key</p>
               <p className="truncate font-mono text-[13px] text-white">{showSecret ? secretKey : '••••••••••••••••'}</p>
             </div>
-            <button type="button" onClick={toggleSecret} className={`text-[13px] font-semibold text-blue-500 ${pressable}`}>{showSecret ? 'Hide' : 'Show'}</button>
+            <button type="button" onClick={toggleSecret} className={`text-[13px] font-semibold text-accent ${pressable}`}>{showSecret ? 'Hide' : 'Show'}</button>
           </div>
         </div>
-        <button type="button" onClick={() => copy('nsec')} disabled={!identity?.sk} className={`flex w-full items-center justify-center gap-2 rounded-2xl bg-blue-600 py-3.5 font-bold text-white hover:bg-blue-500 disabled:opacity-40 ${pressable}`}>
+        <button type="button" onClick={() => copy('nsec')} disabled={!identity?.sk} className={`flex w-full items-center justify-center gap-2 rounded-2xl bg-accent py-3.5 font-bold text-accentInk hover:bg-accent disabled:opacity-40 ${pressable}`}>
           <Copy size={16} /> {copied === 'nsec' ? 'Copied' : 'Copy secret key'}
         </button>
         <button type="button" onClick={copyPhrase} disabled={!identity?.sk} className={`flex w-full items-center justify-center gap-2 rounded-2xl border border-line bg-panel shadow-lg py-3.5 font-bold text-white disabled:opacity-40 ${pressable}`}>
@@ -159,11 +159,11 @@ export default function IdentityBackup({ identity, onClose }) {
           <input type="checkbox" checked={exportReady} onChange={(event) => setExportReady(event.target.checked)} className="mt-0.5 h-5 w-5 accent-blue-600" />
           I understand this file contains my secret key and 12-word phrase.
         </label>
-        <button type="button" onClick={downloadRecoveryFile} disabled={!identity?.sk || exporting || !exportReady} className={`flex w-full items-center justify-center gap-2 rounded-2xl bg-blue-600 py-3.5 font-bold text-white hover:bg-blue-500 disabled:opacity-40 ${pressable}`}>
+        <button type="button" onClick={downloadRecoveryFile} disabled={!identity?.sk || exporting || !exportReady} className={`flex w-full items-center justify-center gap-2 rounded-2xl bg-accent py-3.5 font-bold text-accentInk hover:bg-accent disabled:opacity-40 ${pressable}`}>
           <Download size={16} /> {exporting ? 'Preparing…' : 'Download recovery backup'}
         </button>
         <p className="px-1 text-[13px] text-white/40">Store it privately. Never upload or share it.</p>
-        {copied && copied !== 'npub' && copied !== 'nsec' && copied !== 'phrase' && <p role="status" className="text-[13px] text-blue-500">{copied}</p>}
+        {copied && copied !== 'npub' && copied !== 'nsec' && copied !== 'phrase' && <p role="status" className="text-[13px] text-accent">{copied}</p>}
       </div>
     </div>
   );

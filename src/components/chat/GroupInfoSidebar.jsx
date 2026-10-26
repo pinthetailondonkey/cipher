@@ -231,7 +231,7 @@ export default function GroupInfoSidebar({
                           <span className="block truncate text-[13px] text-white/40">wants to join</span>
                         </span>
                         <button type="button" onClick={() => denyPending(row)} disabled={pending} className={`text-[13px] font-semibold text-white/60 disabled:opacity-50 ${pressable}`}>Deny</button>
-                        <button type="button" onClick={() => approvePending(row)} disabled={pending} aria-label={`Approve ${name}`} className={`text-[13px] font-semibold text-blue-500 disabled:opacity-50 ${pressable}`}>Approve</button>
+                        <button type="button" onClick={() => approvePending(row)} disabled={pending} aria-label={`Approve ${name}`} className={`text-[13px] font-semibold text-accent disabled:opacity-50 ${pressable}`}>Approve</button>
                       </div>
                     );
                   })}
@@ -249,7 +249,7 @@ export default function GroupInfoSidebar({
                       <Avatar src={profile.picture} name={name} />
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-[15px] font-semibold text-white">{name}</p>
-                        <p className="mt-0.5 text-[13px] text-blue-500">{role === 'admin' || role === 'owner' ? 'Admin' : 'Member'}</p>
+                        <p className="mt-0.5 text-[13px] text-accent">{role === 'admin' || role === 'owner' ? 'Admin' : 'Member'}</p>
                       </div>
                       {canManage && member.pubkey !== identity?.pk && (
                         <button type="button" onClick={() => kick(member.pubkey)} disabled={pending} aria-label={`Kick ${name}`} className={`text-[13px] font-semibold text-red-400 disabled:opacity-50 ${pressable}`}>Remove</button>
@@ -263,7 +263,7 @@ export default function GroupInfoSidebar({
                 {pinnedId && (
                   <div className="flex items-center gap-2 border-b border-white/5 px-4 py-3 text-[13px] text-amber-200">
                     <BadgeCheck size={16} /> Pinned
-                    {canManage && <button type="button" onClick={removePin} disabled={pending} className="ml-auto text-blue-500 disabled:opacity-50">Unpin</button>}
+                    {canManage && <button type="button" onClick={removePin} disabled={pending} className="ml-auto text-accent disabled:opacity-50">Unpin</button>}
                   </div>
                 )}
                 {error && <p role="alert" className="px-4 py-3 text-[13px] text-red-400">{error}</p>}
@@ -275,10 +275,10 @@ export default function GroupInfoSidebar({
                       <Picture src={product.image} alt="" loading="lazy" className="h-10 w-10 rounded-xl object-cover" fallback={<span className="flex h-10 w-10 items-center justify-center rounded-xl bg-black text-white/30"><Package size={16} /></span>} />
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-[15px] font-semibold text-white">{product.title || product.name || 'Product'}</p>
-                        <p className="truncate text-[13px] text-blue-500">{product.price || product.priceUsd || 'Ask'}</p>
+                        <p className="truncate text-[13px] text-accent">{product.price || product.priceUsd || 'Ask'}</p>
                       </div>
                       {canManage && (
-                        <button type="button" onClick={() => isPinned ? removePin() : setPin(message.id)} disabled={pending || isPinned} className="text-[13px] font-semibold text-blue-500 disabled:opacity-40">{isPinned ? 'Pinned' : 'Pin'}</button>
+                        <button type="button" onClick={() => isPinned ? removePin() : setPin(message.id)} disabled={pending || isPinned} className="text-[13px] font-semibold text-accent disabled:opacity-40">{isPinned ? 'Pinned' : 'Pin'}</button>
                       )}
                     </div>
                   );

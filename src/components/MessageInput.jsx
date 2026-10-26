@@ -52,14 +52,14 @@ export default function MessageInput({ sendMessage, handleImageUpload, startReco
         }}
         placeholder={uploading ? 'Uploading…' : 'Message'}
         aria-label="Message"
-        className="max-h-32 min-h-10 flex-1 resize-y rounded-2xl border border-line bg-panel shadow-lg px-4 py-2.5 text-[15px] text-white outline-none placeholder:text-white/35 focus:border-blue-500/50"
+        className="max-h-32 min-h-10 flex-1 resize-y rounded-2xl border border-line bg-panel shadow-lg px-4 py-2.5 text-[15px] text-white outline-none placeholder:text-white/35 focus:border-accentSoft"
       />
       {recording ? (
         <button type="button" onClick={stopRecording} aria-label="Stop recording" className="shrink-0 rounded-full bg-red-600 p-2.5 text-white hover:bg-red-500">
           <Square size={18} />
         </button>
       ) : input.trim() ? (
-        <button type="submit" disabled={uploading} aria-label="Send message" className="shrink-0 rounded-full bg-blue-600 p-2.5 text-white hover:bg-blue-500 disabled:opacity-40">
+        <button type="submit" disabled={uploading} aria-label="Send message" className="shrink-0 rounded-full bg-accent p-2.5 text-accentInk hover:bg-accent disabled:opacity-40">
           <Send size={18} />
         </button>
       ) : (

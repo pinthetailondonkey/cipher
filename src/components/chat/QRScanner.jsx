@@ -135,9 +135,9 @@ export default function QRScanner({ onClose }) {
               </div>
               {decodedValue ? (
                 <section className="w-full max-w-sm rounded-2xl border border-line bg-panel p-4 shadow-lg">
-                  <p className="mb-2 flex items-center gap-2 text-[15px] font-semibold text-white"><Check size={17} className="text-blue-500" /> Scanned</p>
+                  <p className="mb-2 flex items-center gap-2 text-[15px] font-semibold text-white"><Check size={17} className="text-accent" /> Scanned</p>
                   <p className="break-all rounded-2xl border border-white/10 bg-white/5 p-3 font-mono text-[13px] text-white/80">{decodedValue}</p>
-                  <button type="button" onClick={copyDecodedValue} className="mt-3 flex w-full items-center justify-center gap-2 rounded-2xl bg-blue-600 py-3.5 text-[15px] font-bold text-white">
+                  <button type="button" onClick={copyDecodedValue} className="mt-3 flex w-full items-center justify-center gap-2 rounded-2xl bg-accent py-3.5 text-[15px] font-bold text-accentInk">
                     <Copy size={16} /> {copied ? 'Copied' : 'Copy'}
                   </button>
                 </section>

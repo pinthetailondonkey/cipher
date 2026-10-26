@@ -37,7 +37,7 @@ export default function MyOrders({ dms = {}, profiles = {}, onBack, onOpenChat }
                   <span className="block truncate text-[15px] font-semibold text-white">{product.title || product.name || 'Order'}</span>
                   <span className="block truncate text-[13px] text-white/40">{profiles[vendorPubkey]?.displayName || profiles[vendorPubkey]?.name || 'Seller'}</span>
                 </span>
-                <span className="text-[13px] capitalize text-blue-500">{status.replaceAll('_', ' ')}</span>
+                <span className="text-[13px] capitalize text-accent">{status.replaceAll('_', ' ')}</span>
               </button>
             );
           })}

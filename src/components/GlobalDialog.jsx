@@ -61,13 +61,13 @@ export default function GlobalDialog() {
             onChange={(event) => setValue(event.target.value)}
             placeholder={dialog.placeholder || ''}
             rows={dialog.inputRows || 4}
-            className="mt-4 w-full resize-y rounded-xl border border-line bg-panelStrong shadow-lg p-3 text-sm text-white outline-none placeholder:text-white/35 focus:border-blue-500"
+            className="mt-4 w-full resize-y rounded-xl border border-line bg-panelStrong shadow-lg p-3 text-sm text-white outline-none placeholder:text-white/35 focus:border-accent"
           />
         )}
         {error && <p role="alert" className="mt-3 text-sm text-red-400">{error}</p>}
         <div className="mt-5 flex gap-3">
           <button type="button" onClick={closeDialog} disabled={busy} className="flex-1 rounded-xl border border-white/10 py-3 text-sm font-semibold text-white/70 hover:bg-white/5">Cancel</button>
-          <button type="submit" disabled={busy} className={`flex-1 rounded-xl py-3 text-sm font-semibold text-white disabled:opacity-50 ${dialog.type === 'danger' ? 'bg-red-600 hover:bg-red-500' : 'bg-blue-600 hover:bg-blue-500'}`}>
+          <button type="submit" disabled={busy} className={`flex-1 rounded-xl py-3 text-sm font-semibold text-white disabled:opacity-50 ${dialog.type === 'danger' ? 'bg-red-600 hover:bg-red-500' : 'bg-accent hover:bg-accent'}`}>
             {busy ? 'Working…' : <>{dialog.confirmText || 'Continue'} <Check className="ml-1 inline" size={15} /></>}
           </button>
         </div>

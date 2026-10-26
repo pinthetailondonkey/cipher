@@ -75,7 +75,7 @@ export default function OneTapCheckout({ product, onConfirmOrder, onClose }) {
           <div key={label} className="mb-3 rounded-xl border border-line bg-panelStrong shadow-lg p-3">
             <div className="mb-2 flex items-center justify-between">
               <p className="text-sm font-semibold text-white">{label}</p>
-              <button type="button" onClick={() => copyAddress(label, address)} className="flex items-center gap-1 text-[12px] font-semibold text-blue-500">
+              <button type="button" onClick={() => copyAddress(label, address)} className="flex items-center gap-1 text-[12px] font-semibold text-accent">
                 <Copy size={13} /> {copied === label ? 'Copied!' : 'Copy Address'}
               </button>
             </div>
@@ -86,7 +86,7 @@ export default function OneTapCheckout({ product, onConfirmOrder, onClose }) {
           </div>
         ))}
         {orderError && <p role="alert" className="mt-4 text-sm text-red-400">{orderError}</p>}
-        <button type="button" onClick={confirmOrder} disabled={confirmed || sending} className="mt-5 flex w-full items-center justify-center gap-2 rounded-2xl bg-blue-600 py-3.5 font-bold text-white hover:bg-blue-500 disabled:opacity-60">
+        <button type="button" onClick={confirmOrder} disabled={confirmed || sending} className="mt-5 flex w-full items-center justify-center gap-2 rounded-2xl bg-accent py-3.5 font-bold text-accentInk hover:bg-accent disabled:opacity-60">
           {sending ? <><Loader2 size={17} className="animate-spin" /> Sending order…</> : confirmed ? <><Check size={17} /> Order sent. Pay in the chat.</> : 'Send order'}
         </button>
       </div>

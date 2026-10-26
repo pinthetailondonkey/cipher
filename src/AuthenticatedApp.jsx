@@ -54,8 +54,8 @@ export default function AuthenticatedApp({ identity }) {
                 <div className="relative flex h-full flex-col">
                   <div className="relative z-10 px-4 pb-1 pt-3">
                     <div className="grid grid-cols-2 rounded-2xl border border-white/15 bg-panelStrong p-1 shadow-lg">
-                      <button type="button" onClick={() => setExploreMode('shop')} className={`min-h-[44px] rounded-xl py-2.5 text-[13px] font-bold ${exploreMode === 'shop' ? 'bg-blue-600 text-white shadow-lg' : 'text-white/60'}`}>Shop</button>
-                      <button type="button" onClick={() => setExploreMode('groups')} className={`min-h-[44px] rounded-xl py-2.5 text-[13px] font-bold ${exploreMode === 'groups' ? 'bg-blue-600 text-white shadow-lg' : 'text-white/60'}`}>Groups</button>
+                      <button type="button" onClick={() => setExploreMode('shop')} className={`min-h-[44px] rounded-xl py-2.5 text-[13px] font-bold ${exploreMode === 'shop' ? 'bg-accent text-accentInk shadow-lg' : 'text-white/60'}`}>Shop</button>
+                      <button type="button" onClick={() => setExploreMode('groups')} className={`min-h-[44px] rounded-xl py-2.5 text-[13px] font-bold ${exploreMode === 'groups' ? 'bg-accent text-accentInk shadow-lg' : 'text-white/60'}`}>Groups</button>
                     </div>
                   </div>
                   <div className="relative z-10 min-h-0 flex-1">
@@ -77,16 +77,16 @@ export default function AuthenticatedApp({ identity }) {
         style={{ bottom: `calc(1rem + env(safe-area-inset-bottom))` }}
       >
         <div className="flex justify-around items-center min-h-[44px] max-w-md mx-auto px-6">
-          <button onClick={() => setActiveTab('chat')} className={`relative flex flex-col items-center gap-1 w-16 min-h-[44px] active:scale-95 transition-transform duration-100 ${activeTab === 'chat' ? 'text-blue-500' : 'text-white/40'}`}>
+          <button onClick={() => setActiveTab('chat')} className={`relative flex flex-col items-center gap-1 w-16 min-h-[44px] active:scale-95 transition-transform duration-100 ${activeTab === 'chat' ? 'text-accent' : 'text-white/40'}`}>
             <MessageSquare size={22} strokeWidth={activeTab === 'chat' ? 2.5 : 2} />
-            {unreadTotal > 0 && <span className="absolute top-1 right-3 flex h-[16px] min-w-[16px] items-center justify-center rounded-full bg-blue-500 px-1.5 text-[10px] font-bold text-white">{unreadTotal > 99 ? '99+' : unreadTotal}</span>}
+            {unreadTotal > 0 && <span className="absolute top-1 right-3 flex h-[16px] min-w-[16px] items-center justify-center rounded-full bg-accent px-1.5 text-[10px] font-bold text-accentInk">{unreadTotal > 99 ? '99+' : unreadTotal}</span>}
             <span className="text-[10px] font-medium">Chats</span>
           </button>
-          <button onClick={() => setActiveTab('explore')} className={`flex flex-col items-center gap-1 w-16 min-h-[44px] transition-all active:scale-90 ${activeTab === 'explore' ? 'text-blue-500' : 'text-white/40 hover:text-white/60'}`}>
+          <button onClick={() => setActiveTab('explore')} className={`flex flex-col items-center gap-1 w-16 min-h-[44px] transition-all active:scale-90 ${activeTab === 'explore' ? 'text-accent' : 'text-white/40 hover:text-white/60'}`}>
             <Compass size={22} strokeWidth={activeTab === 'explore' ? 2.5 : 2} />
             <span className="text-[10px] font-medium">Shop</span>
           </button>
-          <button onClick={() => setActiveTab('profile')} className={`relative flex flex-col items-center gap-1 w-16 min-h-[44px] active:scale-95 transition-transform duration-100 ${activeTab === 'profile' ? 'text-blue-500' : 'text-white/40'}`}>
+          <button onClick={() => setActiveTab('profile')} className={`relative flex flex-col items-center gap-1 w-16 min-h-[44px] active:scale-95 transition-transform duration-100 ${activeTab === 'profile' ? 'text-accent' : 'text-white/40'}`}>
             <User size={22} strokeWidth={activeTab === 'profile' ? 2.5 : 2} />
             <span className="text-[10px] font-medium">Profile</span>
           </button>

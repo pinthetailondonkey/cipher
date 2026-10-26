@@ -38,7 +38,7 @@ export default function SearchView({ handleSearch, joinGroupById, openChat }) {
         <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-8">
           {isSearching ? (
             <div className="mt-10 flex justify-center">
-              <div className="h-6 w-6 animate-spin rounded-full border-2 border-blue-500 border-t-transparent" />
+              <div className="h-6 w-6 animate-spin rounded-full border-2 border-accent border-t-transparent" />
             </div>
           ) : searchResults.length === 0 ? (
             <div className="rounded-2xl border border-line bg-panel px-4 py-16 text-center shadow-lg">
@@ -62,7 +62,7 @@ export default function SearchView({ handleSearch, joinGroupById, openChat }) {
                   }}
                 >
                   <span className="flex min-w-0 items-center gap-3">
-                    <span className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-full border border-white/10 bg-white/5 text-blue-500">
+                    <span className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-full border border-white/10 bg-white/5 text-accent">
                       <Picture
                         src={result.picture}
                         alt=""
@@ -76,7 +76,7 @@ export default function SearchView({ handleSearch, joinGroupById, openChat }) {
                       <span className="block text-[13px] text-white/40">{result.type === 'group' ? 'Group' : 'Person'}</span>
                     </span>
                   </span>
-                  <span className="ml-3 shrink-0 rounded-2xl bg-blue-600 px-3 py-1.5 text-[13px] font-bold text-white">
+                  <span className="ml-3 shrink-0 rounded-2xl bg-accent px-3 py-1.5 text-[13px] font-bold text-accentInk">
                     {result.type === 'group' ? 'Join' : 'Message'}
                   </span>
                 </button>

@@ -105,8 +105,8 @@ export default function ProfileEditor({ identity, onClose }) {
               </span>
             </label>
           </div>
-          {message && <p role="status" className={`text-[13px] ${/could not|unlock|error|no relay/i.test(message) ? 'text-red-400' : 'text-blue-500'}`}>{message}</p>}
-          <button type="submit" disabled={saving} className="w-full rounded-2xl bg-blue-600 py-3.5 font-bold text-white hover:bg-blue-500 active:scale-95 disabled:opacity-50">
+          {message && <p role="status" className={`text-[13px] ${/could not|unlock|error|no relay/i.test(message) ? 'text-red-400' : 'text-accent'}`}>{message}</p>}
+          <button type="submit" disabled={saving} className="w-full rounded-2xl bg-accent py-3.5 font-bold text-accentInk hover:bg-accent active:scale-95 disabled:opacity-50">
             {saving ? 'Publishing…' : 'Publish profile'}
           </button>
         </div>

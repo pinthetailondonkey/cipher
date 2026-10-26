@@ -40,8 +40,8 @@ export default function DmView({ sendMessage, handleMessageAction, handleImageUp
       </div>
       {replyingTo && (
         <div className="mx-3 mb-2 flex items-center gap-3 rounded-2xl border border-line bg-panel shadow-lg px-4 py-3">
-          <div className="min-w-0 flex-1 border-l-2 border-blue-500 pl-3">
-            <p className="text-[11px] font-semibold text-blue-400">{replyingTo.isSender ? 'You' : 'Replying'}</p>
+          <div className="min-w-0 flex-1 border-l-2 border-accent pl-3">
+            <p className="text-[11px] font-semibold text-accent">{replyingTo.isSender ? 'You' : 'Replying'}</p>
             <p className="truncate text-[13px] text-white/60">{replyingTo.data?.message || replyingTo.rawContent || 'Message'}</p>
           </div>
           <button type="button" onClick={() => setReplyingTo(null)} aria-label="Cancel reply" className="p-2 text-white/45 hover:text-white"><X size={18} /></button>

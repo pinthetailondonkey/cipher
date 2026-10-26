@@ -17,7 +17,7 @@ function DiscoverRow({ group, joined, joining, onOpen }) {
       className="flex w-full items-center justify-between border-b border-white/5 p-4 text-left last:border-0 active:bg-white/5 disabled:opacity-50"
     >
       <div className="flex items-center gap-3">
-        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-white/15 bg-white/10 text-blue-400">
+        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-white/15 bg-white/10 text-accent">
           <Icon size={22} />
         </div>
         <div>
@@ -25,7 +25,7 @@ function DiscoverRow({ group, joined, joining, onOpen }) {
           <p className="text-[13px] text-white/40 line-clamp-1">{group.about}</p>
         </div>
       </div>
-      <span className={`rounded-2xl px-3 py-1.5 text-[13px] font-bold ${joined ? 'text-white/60' : 'bg-blue-600 text-white'}`}>{label}</span>
+      <span className={`rounded-2xl px-3 py-1.5 text-[13px] font-bold ${joined ? 'text-white/60' : 'bg-accent text-accentInk'}`}>{label}</span>
     </button>
   );
 }
@@ -156,7 +156,7 @@ export default function Discover({ identity, onJoined }) {
       <div className="flex-1 overflow-y-auto pb-4">
         {loading ? (
           <div className="flex flex-col items-center justify-center mt-20 text-white/40">
-            <Loader2 size={32} className="animate-spin mb-4 text-blue-500" />
+            <Loader2 size={32} className="animate-spin mb-4 text-accent" />
             <p className="text-sm">Searching the network...</p>
           </div>
         ) : displayGroups.length === 0 ? (

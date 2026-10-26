@@ -41,7 +41,7 @@ export default function Connections({ onBack }) {
                   <p className="text-[15px] font-semibold text-white">{row.role}</p>
                   <p className="mt-0.5 break-all text-[13px] text-white/70">{row.active || row.url || row.hint || 'Not set'}</p>
                 </div>
-                <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-bold ${row.transport === 'tor' ? 'bg-blue-600 text-white' : row.transport === 'blocked' ? 'bg-rose-500/20 text-rose-200' : 'bg-white/10 text-white/70'}`}>
+                <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-bold ${row.transport === 'tor' ? 'bg-accent text-accentInk' : row.transport === 'blocked' ? 'bg-rose-500/20 text-rose-200' : 'bg-white/10 text-white/70'}`}>
                   {LABEL[row.transport] || row.transport}
                 </span>
               </div>
@@ -69,7 +69,7 @@ export default function Connections({ onBack }) {
                 autoComplete="off"
                 rows={3}
                 placeholder="One host per line"
-                className="mt-3 w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-[13px] text-white outline-none placeholder:text-white/30 focus:border-blue-500"
+                className="mt-3 w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-[13px] text-white outline-none placeholder:text-white/30 focus:border-accent"
               />
             </label>
             <label className="block rounded-2xl border border-line bg-panel p-4 shadow-lg">
@@ -82,7 +82,7 @@ export default function Connections({ onBack }) {
                 autoComplete="off"
                 rows={3}
                 placeholder="One host per line"
-                className="mt-3 w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-[13px] text-white outline-none placeholder:text-white/30 focus:border-blue-500"
+                className="mt-3 w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-[13px] text-white outline-none placeholder:text-white/30 focus:border-accent"
               />
             </label>
             <div className="overflow-hidden rounded-2xl border border-line bg-panel shadow-lg">
@@ -97,7 +97,7 @@ export default function Connections({ onBack }) {
                       spellCheck="false"
                       autoComplete="off"
                       placeholder="Onion, your host, or off"
-                      className="mt-3 w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-[13px] text-white outline-none placeholder:text-white/30 focus:border-blue-500"
+                      className="mt-3 w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-[13px] text-white outline-none placeholder:text-white/30 focus:border-accent"
                     />
                   </label>
                 ) : null
