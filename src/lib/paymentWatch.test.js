@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
-import { atomicToCoins, checkPayment, isPublicExplorer, moneroRows, parseExactAmounts, paymentWatchUrl, reportFromTransfers, rowsFromScan, verifyWatcherResponse } from './paymentWatch.js';
+import { atomicToCoins, checkPayment, incomingMoneroTransfers, isPublicExplorer, moneroRows, parseExactAmounts, paymentWatchUrl, reportFromTransfers, rowsFromScan, verifyWatcherResponse } from './paymentWatch.js';
 
 const TOKEN = 'secret';
 const hexOf = (buffer) => [...new Uint8Array(buffer)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
@@ -253,8 +253,28 @@ test('a Monero piconero amount is shifted to whole XMR before it is compared', a
   assert.equal(atomicToCoins(0.5, 'xmr'), null);
   assert.equal(parseExactAmounts('{"result":{"in":[{"amount":9007199254740993,"txid":"a"}]}}').result.in[0].amount, '9007199254740993');
   const watcher = fs.readFileSync(new URL('../../scripts/payment-watcher.mjs', import.meta.url), 'utf8');
-  assert.match(watcher, /moneroRows\(\[/);
+  assert.match(watcher, /incomingMoneroTransfers\(/);
   assert.match(watcher, /exactAmounts: true/);
+});
+
+test('an outgoing Monero spend never reads as an incoming payment', () => {
+  const rows = incomingMoneroTransfers({
+    in: [{ txid: 'arrived', address: '8sub', confirmations: 10, amount: 500000000000, type: 'in' }],
+    out: [{ txid: 'selfsend', address: '8sub', confirmations: 1, amount: 900000000000, type: 'out' }],
+    pending: [{ txid: 'mypend', address: '8sub', amount: 900000000000, type: 'pending' }],
+    pool: [{ txid: 'pool1', address: '8sub', confirmations: 0, amount: 300000000000, type: 'pool' }],
+  });
+  assert.deepEqual(rows.map((row) => row.txid), ['arrived', 'pool1']);
+  // A send that the wallet filed in an arriving bucket is still dropped,
+  // because its own label says what it is.
+  assert.deepEqual(incomingMoneroTransfers({ in: [{ txid: 'x', address: '8sub', type: 'pending' }] }), []);
+  // The script asks only for the arriving buckets, so money leaving is never
+  // even fetched, and the row filter is what it leans on.
+  const watcher = fs.readFileSync(new URL('../../scripts/payment-watcher.mjs', import.meta.url), 'utf8');
+  assert.match(watcher, /in: true, pool: true/);
+  assert.match(watcher, /incomingMoneroTransfers\(result\)/);
+  const report = reportFromTransfers(rows, '8sub', 'xmr');
+  assert.equal(report.txid, 'arrived');
 });
 
 test('a payment split across two outputs is summed, and the receipt keeps the largest', async () => {

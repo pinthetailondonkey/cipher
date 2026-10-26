@@ -96,6 +96,27 @@ export function moneroRows(rows) {
   });
 }
 
+// The wallet's `get_transfers` buckets label what each row is: `in` is a
+// transfer that arrived and is mined, `pool` is one that arrived and is still
+// unconfirmed, and `pending`, `out` and `failed` are this wallet's own sends,
+// money leaving, not arriving. An order watches for money coming in, so only
+// the arriving buckets are ever read, and a row whose own label says it is a
+// send is dropped even if the wallet filed it in the wrong bucket. A
+// direction-blind answer would let the vendor's own outgoing spend satisfy an
+// inbound payment check. (security S3)
+export function incomingMoneroTransfers(result) {
+  const rows = [];
+  for (const bucket of [result?.in, result?.pool]) {
+    for (const row of (Array.isArray(bucket) ? bucket : [])) {
+      if (!row) continue;
+      const label = String(row.type ?? row.direction ?? '').toLowerCase();
+      if (!(label === '' || label === 'in' || label === 'pool')) continue;
+      rows.push(row);
+    }
+  }
+  return moneroRows(rows);
+}
+
 export function rowsFromScan(scan, address) {
   const tip = Number.isInteger(scan?.height) ? scan.height : null;
   return (Array.isArray(scan?.unspents) ? scan.unspents : [])
