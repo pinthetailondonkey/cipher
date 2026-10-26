@@ -2,7 +2,7 @@ import { lazy, Suspense, useState, useEffect } from 'react'
 import {
   User, Plus, AlertCircle, RefreshCw,
   Lock, ChevronRight, ArrowLeft, Copy, CreditCard, Camera,
-  BarChart3, Package, KeyRound, ShieldAlert, Users, SlidersHorizontal, Shield, BookOpen
+  BarChart3, Package, KeyRound, ShieldAlert, Users, SlidersHorizontal, Shield, BookOpen, Palette
 } from 'lucide-react'
 import { uploadToBlossom } from '@nostr-wot/blossom'
 import { useProfiles, updateProfileCache } from './useProfiles'
@@ -24,6 +24,7 @@ import { pressable } from './components/ui/Button';
 import { copyText } from './lib/copyText';
 import { productRelays } from './lib/relays';
 import { blossomServers } from './lib/egress';
+import { THEMES, currentTheme, setTheme } from './lib/theme';
 
 const VendorDashboard = lazy(() => import('./components/chat/VendorDashboard'));
 const ProfileEditor = lazy(() => import('./components/chat/ProfileEditor'));
@@ -39,7 +40,16 @@ export default function Wallet({ identity, onOpenChat }) {
   
   const myProfile = profiles[identity.pk] || { name: defaultName, displayName: defaultName, picture: null, about: '' }
 
-  const [view, setView] = useState('main') 
+  const [view, setView] = useState('main')
+
+  // Appearance: taps walk the theme list and apply immediately; the choice
+  // is remembered per device.
+  const [themeId, setThemeId] = useState(currentTheme);
+  const cycleAppTheme = () => {
+    const next = THEMES[(THEMES.findIndex((theme) => theme.id === themeId) + 1) % THEMES.length];
+    setThemeId(next.id);
+    setTheme(next.id);
+  };
 
   // Profile state
   const [username, setUsername] = useState('') 
@@ -423,6 +433,11 @@ export default function Wallet({ identity, onOpenChat }) {
           <button onClick={() => setView('account_switcher')} className="flex w-full items-center gap-3 border-b border-white/5 p-4 text-left">
             <RefreshCw size={18} className="text-white/40" />
             <span className="min-w-0 flex-1"><span className="block text-[15px] font-semibold text-white">Accounts</span><span className="block text-[13px] text-white/40">Switch on this device</span></span>
+            <ChevronRight size={18} className="text-white/30" />
+          </button>
+          <button onClick={cycleAppTheme} className="flex w-full items-center gap-3 border-b border-white/5 p-4 text-left">
+            <Palette size={18} className="text-white/40" />
+            <span className="min-w-0 flex-1"><span className="block text-[15px] font-semibold text-white">Appearance</span><span className="block text-[13px] text-white/40">Tap to switch: {themeBlurb}</span></span>
             <ChevronRight size={18} className="text-white/30" />
           </button>
           <button onClick={identity.lockApp} className="flex w-full items-center gap-3 p-4 text-left">
