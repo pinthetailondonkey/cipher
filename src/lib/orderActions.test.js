@@ -144,18 +144,40 @@ test('a receipt binds only an order this device tracks as accepted or later', ()
   assert.equal(record.coinAmount, acceptance.data.coinAmount);
   assert.equal(record.issuedAddress, 'bc1qorder');
   assert.equal(record.isBuyer, true);
-  // An amount either side set later wins over the one at acceptance.
+  // An amount this device set later wins over the one at acceptance.
   assert.equal(orderRecordForReceipt([pending, acceptance,
     update('u3', true, ORDER_STATUS.PAID, 40, { coinAmount: '0.5' }),
   ], 'order-1').coinAmount, '0.5');
-  // An order without its issued address gets none, and binds no address check.
-  const noAddress = orderRecordForReceipt([pending, update('u4', false, ORDER_STATUS.ACCEPTED, 20, { coinAmount: '0.01', coinCurrency: 'btc' })], 'order-1');
-  assert.equal(noAddress.coinAmount, '0.01');
-  assert.equal(noAddress.issuedAddress, '');
   // The vendor's view of the same order: the counterparty initiated it.
   assert.equal(orderRecordForReceipt([request(false, {}), acceptance, paid], 'order-1').isBuyer, false);
   // A chat with only non-order messages binds nothing.
   assert.equal(orderRecordForReceipt([{ id: 'u5', isSender: false, timestamp: 20, data: { type: 'text', message: 'hi' } }], 'order-1'), null);
+});
+
+// F4 re-attack: the record reads what this device wrote. A received update is
+// the peer's word, so its payment fields never shrink the amount or move the
+// issued address on the side that owns them.
+test('a fake later update cannot shrink the amount or steal the issued address', () => {
+  // Mirror role, the vendor as victim: the vendor accepted with its own
+  // methods, then a forged later update from the peer rewrites both.
+  const vendorCard = request(false, {});
+  const acceptance = update('u1', true, ORDER_STATUS.ACCEPTED, 20, {
+    coinAmount: '0.01', coinCurrency: 'btc', paymentMethods: { btc: 'bc1qv' },
+  });
+  const hijack = update('u2', false, ORDER_STATUS.ACCEPTED, 30, {
+    coinAmount: '0.000001', coinCurrency: 'btc', paymentMethods: { btc: 'bc1qattacker' },
+  });
+  const record = orderRecordForReceipt([vendorCard, acceptance, hijack], 'order-1');
+  assert.equal(record.coinAmount, '0.01');
+  assert.equal(record.issuedAddress, 'bc1qv');
+  // The buyer's own product price wins over a peer update claiming less.
+  const priced = request(true, { product: { title: 'Tee', price: '0.02', currency: 'btc' } });
+  const shrunk = orderRecordForReceipt([priced, update('u3', false, ORDER_STATUS.ACCEPTED, 21, { coinAmount: '0.01', coinCurrency: 'btc' })], 'order-1');
+  assert.equal(shrunk.coinAmount, '0.02');
+  // An order without its issued address gets none, and binds no address check.
+  const noAddress = orderRecordForReceipt([request(true, {}), update('u4', false, ORDER_STATUS.ACCEPTED, 20, { coinAmount: '0.01', coinCurrency: 'btc' })], 'order-1');
+  assert.equal(noAddress.coinAmount, '0.01');
+  assert.equal(noAddress.issuedAddress, '');
 });
 
 // F7: the payment facts on an order are earned on this device, never asserted

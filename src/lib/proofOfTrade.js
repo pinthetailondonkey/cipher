@@ -268,12 +268,10 @@ function amountUnits(amount, currency) {
   }
   const [whole, frac = ''] = text.split('.');
   const factor = 10n ** BigInt(scale);
-  if (frac.length <= scale) {
-    return BigInt(whole) * factor + BigInt((frac || '0').padEnd(scale, '0'));
-  }
-  let units = BigInt(whole) * factor + BigInt(frac.slice(0, scale) || '0');
-  if (Number(frac[scale]) >= 5) units += 1n;
-  return units;
+  // S7 re-attack: an amount finer than the coin counts is refused, not
+  // rounded. Half-up here let 0.9999999999999 XMR walk through a 1 XMR gate.
+  if (frac.length > scale) return null;
+  return BigInt(whole) * factor + BigInt((frac || '0').padEnd(scale, '0'));
 }
 
 function unitsToAmount(units, currency) {
