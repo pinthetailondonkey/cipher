@@ -18,11 +18,15 @@ const EXPLORERS = [
 export function isPublicExplorer(value) {
   let host = '';
   try {
-    host = new URL(String(value || '')).hostname.toLowerCase();
+    host = new URL(String(value || '')).hostname.toLowerCase().replace(/\.$/, '');
   } catch {
     return false;
   }
-  return EXPLORERS.some((name) => host === name || host.endsWith(`.${name}`));
+  // A lookalike trades on a seed's own name: xmrchain.net.evil.tld is no
+  // child of xmrchain.net, but the plain check read it as a watcher you run
+  // and handed it the token. Any host carrying a seed's name answers for it,
+  // so it is refused as one. (security re-attack)
+  return EXPLORERS.some((name) => host === name || host.endsWith(`.${name}`) || host.includes(name));
 }
 
 const LOCAL_WATCHER_HOSTS = new Set(['localhost', '127.0.0.1', '::1', '[::1]']);
@@ -271,7 +275,18 @@ export async function checkPayment({ watcherUrl, address, currency, state, amoun
   } catch {
     body = null;
   }
-  if (!body || body.pending || !body.txid) return { moved: false, state };
+  if (!body) return { moved: false, state };
+  // Every answer now names the payment it answers for. A signed reply for
+  // one order played onto another is the replay the signature cannot see:
+  // the bytes are honest, the ask is not. Only an echo of the exact address
+  // and currency this check asked for builds a report, and a watcher too
+  // old to echo fails closed — update it. (security re-attack)
+  const asked = String(address || '').trim();
+  const askedCurrency = String(currency || '').trim().toLowerCase();
+  if (body.address !== asked || String(body.currency || '').trim().toLowerCase() !== askedCurrency) {
+    throw new Error('This watcher\'s answer does not name the payment this check asked about. Update your watcher, then check again.');
+  }
+  if (body.pending || !body.txid) return { moved: false, state };
   const report = {
     source: 'watcher',
     txid: String(body.txid),
