@@ -46,6 +46,43 @@ export function orderCoinAmount(product, currency) {
   return text;
 }
 
+// The menu item an order names. The order's product carries the listing id
+// the buyer tapped, and the rows are this vendor's own published listings
+// cached on this device. Only an exact id match binds; no match invents
+// nothing. (security F5)
+export function listedItem(product, ownListings) {
+  const id = String(product?.id ?? '').trim().toLowerCase();
+  if (!id || !Array.isArray(ownListings)) return null;
+  return ownListings.find((row) => (
+    row != null && [row.id, row.d].some((key) => String(key ?? '').trim().toLowerCase() === id)
+  )) || null;
+}
+
+// What an acceptance may demand for an order, read against this vendor's own
+// menu. A buyer-written price is a claim, not a price: the only amount an
+// acceptance starts from is one this device sold.
+//   { kind: 'listing', currency, amount } — the menu prices the item in coin;
+//       the demanded amount has to cover `amount`.
+//   { kind: 'dollars' }  — the order (or its own menu row) prices in dollars;
+//       no chain-checked coin amount exists, so the acceptance refuses.
+//   { kind: 'unit' }     — the menu prices the item in the other coin.
+//   { kind: 'unbound' }  — nothing on this menu prices the item in coin, and
+//       the order itself is not priced in dollars; only here does the old
+//       free-amount path still run.
+export function acceptanceDemand(product, ownListings, coinCurrency) {
+  const listed = listedItem(product, ownListings);
+  if (listed) {
+    const currency = String(listed.currency || '').toLowerCase();
+    if (currency !== 'btc' && currency !== 'xmr') return { kind: 'dollars' };
+    const price = String(listed.price ?? '').trim();
+    if (!/^\d+(\.\d+)?$/.test(price) || !(Number(price) > 0)) return { kind: 'unbound' };
+    if (currency !== String(coinCurrency || '').toLowerCase()) return { kind: 'unit', currency };
+    return { kind: 'listing', currency, amount: price };
+  }
+  if (String(product?.currency || '').toLowerCase() === 'usd') return { kind: 'dollars' };
+  return { kind: 'unbound' };
+}
+
 export function nextPaymentState(current, event) {
   const next = NEXT[current]?.[event];
   if (!next) throw new Error(`A payment that is ${current || 'missing'} cannot ${event}.`);
@@ -83,7 +120,7 @@ export function unitsToCoins(units, currency) {
   return frac ? `${units / factor}.${frac}` : `${units / factor}`;
 }
 
-function amountCovers(reported, expected, currency) {
+export function amountCovers(reported, expected, currency) {
   const scale = SCALE[String(currency || '').toLowerCase()];
   if (scale == null) return false;
   const got = decimalUnits(reported, scale);

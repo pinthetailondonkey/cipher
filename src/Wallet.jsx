@@ -216,7 +216,9 @@ export default function Wallet({ identity, onOpenChat }) {
       const timeout = new Promise((resolve) => setTimeout(resolve, 3000))
       await Promise.race([Promise.allSettled(pool.publish(relays, ev)), timeout])
       
-      const newProduct = { id: ev.id, name: title, description, price, currency, image: image || '/app-icon-512.png', stock: '1', vendorPubkey: identity.pk, created_at: ev.created_at }
+      // `d` is kept beside the event id because store orders name the menus by
+      // the d tag, not by the event id. (security F5)
+      const newProduct = { id: ev.id, d: dTag, name: title, description, price, currency, image: image || '/app-icon-512.png', stock: '1', vendorPubkey: identity.pk, created_at: ev.created_at }
       const cached = JSON.parse(localStorage.getItem('cipher_cached_products') || '[]')
       localStorage.setItem('cipher_cached_products', JSON.stringify([newProduct, ...cached.filter(p => p.id !== ev.id)]))
 
