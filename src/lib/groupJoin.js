@@ -15,6 +15,8 @@ export async function joinGroup(identity, rawId, { name = null, channel = false,
   const index = local.findIndex((item) => item.id === group.id);
   setMyGroups(identity.pk, index === -1
     ? [...local, group]
-    : local.map((item, i) => (i === index ? { ...item, ...group } : item)));
+    // F3: a re-join must not rewrite the creator with a claim that came off
+    // metadata events; the creation record already on this device wins.
+    : local.map((item, i) => (i === index ? { ...item, ...group, creator: item.creator || group.creator } : item)));
   return group;
 }

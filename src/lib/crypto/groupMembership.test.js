@@ -17,6 +17,7 @@ import {
   refetchMembersCached,
   resetGroupRelayPubkeyCache,
   resetMemberRereadCache,
+  trustedGroupCreator,
 } from './groupMembership.js';
 import { GRANT_DECISION_TABLE, grantKeyRequest, keyRequestDecision, requesterMayReceiveKey, resolveKeyRequest } from './groupKeyRotation.js';
 import { keyRequestPlan } from './groupKeyRequest.js';
@@ -138,7 +139,7 @@ test('39002 is accepted only from the relay key, and only when the member list i
 test('key grants refetch a fresh list that omits the requester before refusing', () => {
   const now = 1_000_000;
   assert.equal(keyRequestDecision({
-    requester: creator, creator, snapshot: null, updatedAt: undefined, nowSec: now,
+    requester: creator, creator, snapshot: null, updatedAt: undefined, nowSec: now, selfCreated: true,
   }), 'allow');
   assert.equal(keyRequestDecision({
     requester: member, creator, snapshot: null, updatedAt: undefined, nowSec: now,
@@ -470,6 +471,69 @@ test('grant decision table rows 3 and 4 stay different', () => {
   assert.equal(results[2], 'allow');
   assert.equal(results[3], 'deny');
   assert.notEqual(results[2], results[3]);
+});
+
+// F3: a creator name off forgeable metadata buys no shortcut. The grant only
+// fires on self-attested creation or a non-member row in the snapshot.
+test('a creator claim without standing is refused a key, standing grants it', () => {
+  const now = 1_000_000;
+  // The exact takeover path: claimed creator, no snapshot, not self-created.
+  assert.equal(keyRequestDecision({
+    requester: creator, creator, snapshot: null, updatedAt: undefined, nowSec: now,
+  }), 'refetch');
+  assert.equal(keyRequestDecision({
+    requester: creator, creator, snapshot: null, updatedAt: undefined, nowSec: now, refetched: null,
+  }), 'deny');
+  // With a snapshot that names them but only as a plain member, the shortcut
+  // does not fire — a stale list forces the refetch path instead.
+  assert.equal(keyRequestDecision({
+    requester: creator, creator, snapshot: [{ pubkey: creator, role: 'member' }], updatedAt: now - 1000, nowSec: now,
+  }), 'refetch');
+  // Self-attested creation carries it even with no snapshot at all.
+  assert.equal(keyRequestDecision({
+    requester: creator, creator, snapshot: null, updatedAt: undefined, nowSec: now, selfCreated: true,
+  }), 'allow');
+  // A relay outage cannot take it away on this device's own group.
+  assert.equal(keyRequestDecision({
+    requester: creator, creator, snapshot: null, updatedAt: undefined, nowSec: now, selfCreated: true, refetched: null,
+  }), 'allow');
+  // An admin row for the claimed creator in the snapshot carries it too.
+  assert.equal(keyRequestDecision({
+    requester: creator, creator, snapshot: [{ pubkey: creator, role: 'admin' }], updatedAt: now - 10, nowSec: now,
+  }), 'allow');
+  // A non-creator requester never rides the shortcut, self-created or not.
+  assert.equal(keyRequestDecision({
+    requester: stranger, creator, snapshot: null, updatedAt: undefined, nowSec: now, selfCreated: true,
+  }), 'refetch');
+  // Case differences are not an escape hatch.
+  assert.equal(keyRequestDecision({
+    requester: creator.toUpperCase(), creator: creator.toUpperCase(), snapshot: null, updatedAt: undefined, nowSec: now,
+  }), 'refetch');
+  assert.equal(keyRequestDecision({
+    requester: creator, creator: creator.toUpperCase(), snapshot: [{ pubkey: creator.toUpperCase(), role: 'admin' }], updatedAt: now - 10, nowSec: now,
+  }), 'allow');
+});
+
+test('trustedGroupCreator honors only self-attested creation and snapshot standing', () => {
+  const claimed = 'c'.repeat(64);
+  const me = 'd'.repeat(64);
+  // Self-attested creation wins.
+  assert.equal(trustedGroupCreator({ creator: claimed, selfCreated: true, snapshot: null }), claimed);
+  // This device's own key matching the claim is equally self-attested.
+  assert.equal(trustedGroupCreator({ creator: me, identityPk: me, snapshot: null }), me);
+  // An admin row in the relay-signed snapshot backs the claim.
+  assert.equal(trustedGroupCreator({ creator: claimed, snapshot: [{ pubkey: claimed, role: 'admin' }] }), claimed);
+  // A plain member row does not.
+  assert.equal(trustedGroupCreator({ creator: claimed, snapshot: [{ pubkey: claimed, role: 'member' }] }), '');
+  // A string-only row does not either.
+  assert.equal(trustedGroupCreator({ creator: claimed, snapshot: [claimed] }), '');
+  // No snapshot, not self-created: no standing.
+  assert.equal(trustedGroupCreator({ creator: claimed, snapshot: null }), '');
+  assert.equal(trustedGroupCreator({ creator: claimed, snapshot: [] }), '');
+  // Case differences do not sneak a claim past the comparison.
+  assert.equal(trustedGroupCreator({ creator: claimed.toUpperCase(), snapshot: [{ pubkey: claimed, role: 'admin' }] }), claimed.toLowerCase());
+  // An empty claim is empty.
+  assert.equal(trustedGroupCreator({ creator: '', snapshot: [{ pubkey: claimed, role: 'admin' }] }), '');
 });
 
 test('a failed re-read inside the freshness window still refuses a list older than the key', () => {

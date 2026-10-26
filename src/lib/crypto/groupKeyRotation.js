@@ -1,5 +1,5 @@
 import { db } from '../../db';
-import { refetchMembersCached } from './groupMembership';
+import { refetchMembersCached, trustedGroupCreator } from './groupMembership';
 import { generateGroupKey } from './groupCipher';
 import { distributeGroupKey } from './groupKeyDistribution';
 import { getAllGroupKeys, getCurrentGroupKey, putGroupKey } from './groupKeyStore';
@@ -131,9 +131,15 @@ export function keyRequestDecision({
   nowSec = Math.floor(Date.now() / 1000),
   refetched,
   keyObtainedAt,
+  selfCreated = false,
 }) {
   if (!requester) return 'deny';
-  if (creator && requester === creator) return 'allow';
+  // F3: a self-claimed creator buys nothing. The shortcut fires only when the
+  // claim has standing — this device created the group, or the claimed
+  // creator holds a non-member role in the relay-signed snapshot — and the
+  // requester is that vetted name.
+  const vetted = trustedGroupCreator({ creator, selfCreated, snapshot });
+  if (vetted && requester === vetted) return 'allow';
   const named = requesterMayReceiveKey(snapshot, requester);
   const age = Number.isFinite(updatedAt) ? nowSec - updatedAt : Infinity;
   const clockOk = age >= -MEMBER_SNAPSHOT_FUTURE_SKEW_SEC;
@@ -163,10 +169,11 @@ export async function resolveKeyRequest({
   updatedAt,
   keyObtainedAt,
   nowSec,
+  selfCreated = false,
   refetch,
 }) {
   let decision = keyRequestDecision({
-    requester, creator, snapshot, updatedAt, keyObtainedAt, nowSec,
+    requester, creator, snapshot, updatedAt, keyObtainedAt, nowSec, selfCreated,
   });
   if (decision !== 'refetch') return decision;
   let refetched = null;
@@ -177,7 +184,7 @@ export async function resolveKeyRequest({
     refetched = null;
   }
   return keyRequestDecision({
-    requester, creator, snapshot, updatedAt, keyObtainedAt, nowSec, refetched,
+    requester, creator, snapshot, updatedAt, keyObtainedAt, nowSec, selfCreated, refetched,
   });
 }
 
@@ -193,6 +200,7 @@ export async function grantKeyRequest({
   updatedAt,
   keyObtainedAt,
   now = Date.now(),
+  selfCreated = false,
   fetchMembers,
 }) {
   return resolveKeyRequest({
@@ -201,6 +209,7 @@ export async function grantKeyRequest({
     snapshot,
     updatedAt,
     keyObtainedAt,
+    selfCreated,
     nowSec: Math.floor(now / 1000),
     refetch: async () => {
       const cached = await refetchMembersCached({
