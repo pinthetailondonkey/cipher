@@ -121,6 +121,12 @@ export function orderRecordForReceipt(messages, orderId) {
   if (!RECEIPT_STATUSES.has(status)) return null;
   const updates = (list.filter((m) => m?.data?.type === 'order_update' && m.data.orderId === orderId))
     .sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0) || String(a.id).localeCompare(String(b.id)));
+  // The lifecycle status is the newest claim, so on the vendor side the
+  // record exists only once this device agreed: an acceptance update of its
+  // own. A peer's fake 'paid' claim on a never-accepted order builds no
+  // record here, so nothing stores or cosigns a receipt for it. (security F4)
+  if (!request.isSender
+    && !updates.some((update) => update.isSender && RECEIPT_STATUSES.has(update.data?.status))) return null;
   const newestFirst = [...updates].reverse();
   // F4 re-attack: the amount of record and the issued address are what this
   // device wrote — its own acceptance update, its own request card, its local
@@ -142,7 +148,11 @@ export function orderRecordForReceipt(messages, orderId) {
     }
     return request.data?.[prop] ?? null;
   };
-  const peerValue = (prop) => {
+  // The peer's word fills the record only on the buyer side, where the
+  // acceptance — the vendor's announcement of where to pay — is the one
+  // announcement the buyer could never have written itself. On the vendor
+  // side the record is this device's own write or nothing. (security F4)
+  const peerValue = !request.isSender ? (() => null) : (prop) => {
     for (const update of newestFirst) {
       const value = update.data?.[prop];
       if (value != null && value !== '') return value;

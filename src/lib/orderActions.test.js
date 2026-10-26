@@ -164,6 +164,30 @@ test('acceptance freezes only the pair this device issued, never the buyer\'s wo
   assert.equal(frozenIssuedMethods(null, {}), null);
 });
 
+test('a never-accepted vendor order builds no receipt record, whatever the peer claims', () => {
+  // security F4 re-attack: the newest-wins lifecycle status is a claim. A
+  // peer's fake 'paid' update on an order the vendor never accepted, with
+  // attacker methods and an attacker amount, must not build the record a
+  // receipt could bind to — or this device's signature could be harvested
+  // against.
+  const victim = request(false, { product: { title: 'Tee', price: '20', currency: 'usd' } });
+  const claims = [
+    update('u1', false, ORDER_STATUS.ACCEPTED, 20, { coinAmount: '0.00000001', coinCurrency: 'btc', paymentMethods: { btc: 'bc1qattacker' } }),
+    update('u2', false, ORDER_STATUS.PAID, 30, { coinAmount: '0.00000001', coinCurrency: 'btc', paymentMethods: { btc: 'bc1qattacker' } }),
+  ];
+  assert.equal(orderRecordForReceipt([victim, ...claims], 'order-1'), null);
+  // One own-sent acceptance — and the record is this device's own write:
+  // the peer's later claims name neither the amount nor the address.
+  const acceptance = update('u3', true, ORDER_STATUS.ACCEPTED, 40, {
+    coinAmount: '0.01', coinCurrency: 'btc', paymentMethods: { btc: 'bc1qvendor' },
+  });
+  const record = orderRecordForReceipt([victim, ...claims, acceptance], 'order-1');
+  assert.deepEqual(
+    { coinAmount: record.coinAmount, coinCurrency: record.coinCurrency, issuedAddress: record.issuedAddress, isBuyer: record.isBuyer },
+    { coinAmount: '0.01', coinCurrency: 'btc', issuedAddress: 'bc1qvendor', isBuyer: false },
+  );
+});
+
 test('a receipt binds only an order this device tracks as accepted or later', () => {
   const acceptance = update('u1', false, ORDER_STATUS.ACCEPTED, 20, {
     paymentState: 'address_issued',
@@ -194,8 +218,9 @@ test('a receipt binds only an order this device tracks as accepted or later', ()
   assert.equal(orderRecordForReceipt([pending, acceptance,
     update('u3', true, ORDER_STATUS.PAID, 40, { coinAmount: '0.5' }),
   ], 'order-1').coinAmount, '0.5');
-  // The vendor's view of the same order: the counterparty initiated it.
-  assert.equal(orderRecordForReceipt([request(false, {}), acceptance, paid], 'order-1').isBuyer, false);
+  // The vendor's view of the same order: the counterparty initiated it, and
+  // the record rests on the vendor's own-sent acceptance.
+  assert.equal(orderRecordForReceipt([request(false, {}), { ...acceptance, isSender: true }, { ...paid, isSender: true }], 'order-1').isBuyer, false);
   // A chat with only non-order messages binds nothing.
   assert.equal(orderRecordForReceipt([{ id: 'u5', isSender: false, timestamp: 20, data: { type: 'text', message: 'hi' } }], 'order-1'), null);
 });
@@ -352,9 +377,12 @@ test('the payment details either side check come from the order updates (securit
   assert.equal(details.paymentState, 'created');
   assert.equal(details.paymentSeenBy, '');
   assert.equal(details.status, 'paid');
-  // The vendor's own view reads the same updates for their card.
-  const vendorRecord = orderRecordForReceipt([request(false, {}), acceptance, paid], 'order-1');
-  assert.equal(vendorRecord.issuedAddress, 'bc1qorder');
+  // The vendor's own view of the same order: the record rests on the
+  // vendor's own acceptance. A received acceptance alone is the vendor's
+  // word to the buyer — it builds no record on the vendor side to bind.
+  const vendorOwn = { ...acceptance, isSender: true };
+  assert.equal(orderRecordForReceipt([request(false, {}), vendorOwn, paid], 'order-1').issuedAddress, 'bc1qorder');
+  assert.equal(orderRecordForReceipt([request(false, {}), acceptance, paid], 'order-1'), null);
   // The vendor's card carries the same acceptance as its own patch fallback.
   const vendorCard = request(false, { paymentMethods: { btc: 'bc1qcard', xmr: '' }, coinAmount: '0.02', coinCurrency: 'btc' });
   assert.deepEqual(orderPaymentDetails([vendorCard, acceptance], 'order-1').paymentMethods, { btc: 'bc1qorder', xmr: '' });
