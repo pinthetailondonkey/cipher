@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
-import { ORDER_ACTIONS, allowedActionsFor, orderActionsFor, orderState } from './orderActions.js';
+import { ORDER_ACTIONS, allowedActionsFor, orderActionsFor, orderRecordForReceipt, orderState } from './orderActions.js';
 import { ORDER_STATUS, ORDER_STATUSES, RECEIPT_OUTCOMES } from './paymentState.js';
 
 const names = (actions) => actions.map((item) => item.action);
@@ -107,4 +107,44 @@ test('every message action has a way in from the UI, and every menu item has a h
   const overlays = read('../features/chat/ChatOverlays.jsx');
   assert.match(overlays, /<VendorStorefront\s+isOpen=\{!!vendorStorefrontPubkey\}/);
   assert.match(overlays, /<ProductEditModal editingProduct=\{editingProduct\}[^\n]*onSubmit=\{handleSaveEditedProduct\}/);
+});
+
+test('a receipt binds only an order this device tracks as accepted or later', () => {
+  const acceptance = update('u1', false, ORDER_STATUS.ACCEPTED, 20, {
+    paymentState: 'address_issued',
+    coinAmount: '0.01',
+    coinCurrency: 'btc',
+    paymentMethods: { btc: 'bc1qorder', xmr: '' },
+  });
+  const paid = update('u2', false, ORDER_STATUS.PAID, 30, { paymentState: 'seen' });
+  // Missing order: no request card, nothing binds.
+  assert.equal(orderRecordForReceipt([acceptance, paid], 'order-1'), null);
+  assert.equal(orderRecordForReceipt([], 'order-1'), null);
+  const pending = request(true, {});
+  // A pending order — no acceptance on record — never agreed to anything.
+  assert.equal(orderRecordForReceipt([pending], 'order-1'), null);
+  // Closed stays closed while it is the newest state on the order.
+  const cancelled = update('uc', true, ORDER_STATUS.CANCELLED, 50);
+  const disputed = update('ud', true, ORDER_STATUS.DISPUTED, 50);
+  assert.equal(orderRecordForReceipt([pending, acceptance, paid, cancelled], 'order-1'), null);
+  assert.equal(orderRecordForReceipt([pending, acceptance, paid, disputed], 'order-1'), null);
+  // The record adopts the order's amount and the address this device issued.
+  const record = orderRecordForReceipt([pending, acceptance, paid], 'order-1');
+  assert.equal(record.status, ORDER_STATUS.PAID);
+  assert.equal(record.coinCurrency, 'btc');
+  assert.equal(record.coinAmount, acceptance.data.coinAmount);
+  assert.equal(record.issuedAddress, 'bc1qorder');
+  assert.equal(record.isBuyer, true);
+  // An amount either side set later wins over the one at acceptance.
+  assert.equal(orderRecordForReceipt([pending, acceptance,
+    update('u3', true, ORDER_STATUS.PAID, 40, { coinAmount: '0.5' }),
+  ], 'order-1').coinAmount, '0.5');
+  // An order without its issued address gets none, and binds no address check.
+  const noAddress = orderRecordForReceipt([pending, update('u4', false, ORDER_STATUS.ACCEPTED, 20, { coinAmount: '0.01', coinCurrency: 'btc' })], 'order-1');
+  assert.equal(noAddress.coinAmount, '0.01');
+  assert.equal(noAddress.issuedAddress, '');
+  // The vendor's view of the same order: the counterparty initiated it.
+  assert.equal(orderRecordForReceipt([request(false, {}), acceptance, paid], 'order-1').isBuyer, false);
+  // A chat with only non-order messages binds nothing.
+  assert.equal(orderRecordForReceipt([{ id: 'u5', isSender: false, timestamp: 20, data: { type: 'text', message: 'hi' } }], 'order-1'), null);
 });

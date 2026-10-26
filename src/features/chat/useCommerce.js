@@ -5,7 +5,8 @@ import { getOrderPaymentMethods, readPaymentAddresses } from '../../lib/vendorPa
 import { ORDER_STATUS, RECEIPT_OUTCOME, nextPaymentState, orderCoinAmount } from '../../lib/paymentState';
 import { checkPayment } from '../../lib/paymentWatch';
 import { activeUrl, entryById } from '../../lib/egress';
-import { publicReceipt, rememberPublicView, signPublicView, signReceipt } from '../../lib/proofOfTrade';
+import { publicReceipt, rememberPublicView, receiptBindsOrder, signPublicView, signReceipt } from '../../lib/proofOfTrade';
+import { orderRecordForReceipt } from '../../lib/orderActions';
 import { stampArrival } from './media';
 
 export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, openChat }) {
@@ -283,13 +284,42 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
           type: 'danger', confirmText: 'Submit',
           onConfirm: async (reason) => {
             if (!reason || !reason.trim()) return;
-            let saved = scopedGet(`receipt_${msg.id}`, null);
-            if (saved?.body && identity?.sk) {
+            // Audit F4/S10: this device re-signs a stored receipt only when
+            // it countersigned it after the receipt passed the order binding
+            // on arrival, and the receipt still binds the live order record.
+            // A receipt planted by a fabricated update never qualifies, so
+            // the dispute sends without a signature rather than signing it.
+            let receipt = null;
+            const stored = scopedGet(`receipt_${msg.id}`, null);
+            if (stored?.body && identity?.sk) {
+              let binds = false;
               try {
-                saved = signReceipt(identity.sk, saved.body, saved);
-                scopedSet(`receipt_${msg.id}`, saved);
+                const messages = await db.messages.where('chatId').equals(msg.pubkey).toArray();
+                const record = orderRecordForReceipt(messages, msg.id);
+                binds = !!record
+                  && scopedGet(`bound_receipt_${msg.id}`, '') === stored.hash
+                  && receiptBindsOrder({
+                    receipt: stored,
+                    orderId: msg.id,
+                    orderCoinAmount: record.coinAmount,
+                    issuedAddress: record.issuedAddress,
+                    orderCurrency: record.coinCurrency,
+                    buyerPubkey: record.isBuyer ? identity.pk : msg.pubkey,
+                    vendorPubkey: record.isBuyer ? msg.pubkey : identity.pk,
+                  });
               } catch (error) {
-                console.error('[orders] Receipt was not co-signed:', error);
+                console.warn('[orders] The stored receipt could not be re-checked:', error);
+              }
+              if (binds) {
+                try {
+                  receipt = signReceipt(identity.sk, stored.body, stored);
+                  scopedSet(`receipt_${msg.id}`, receipt);
+                } catch (error) {
+                  console.error('[orders] Receipt was not co-signed:', error);
+                  receipt = stored;
+                }
+              } else {
+                console.warn('[orders] The stored receipt does not bind this order, so the dispute sends without it.');
               }
             }
             const payload = {
@@ -298,7 +328,7 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
               productName: msg.data.product?.title || msg.data.productName,
               status: ORDER_STATUS.DISPUTED,
               disputeReason: reason.trim(),
-              ...(saved ? { receipt: saved } : {}),
+              ...(receipt ? { receipt } : {}),
             };
             await deliverOrderUpdate(msg.pubkey, payload, { status: ORDER_STATUS.DISPUTED, disputeReason: reason.trim() }, 'Issue reported');
           },

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { schnorr } from '@noble/curves/secp256k1.js';
-import { acceptPayment, canonicalReceipt, coSignPayment, countersignToSend, normalizeAmount, publicReceipt, publicViewChecks, rankVolume, rankVolumeByStanding, sendCountersignOnce, signPublicView, signReceipt, verifyPublicView, verifyReceipt, verifyVendorView } from './proofOfTrade.js';
+import { acceptPayment, canonicalReceipt, coSignPayment, countersignToSend, normalizeAmount, publicReceipt, publicViewChecks, rankVolume, rankVolumeByStanding, receiptBindsOrder, sendCountersignOnce, signPublicView, signReceipt, verifyPublicView, verifyReceipt, verifyVendorView } from './proofOfTrade.js';
 
 function hex(bytes) {
   return [...bytes].map((byte) => byte.toString(16).padStart(2, '0')).join('');
@@ -138,6 +138,56 @@ test('a second ranking of the same views does not verify again', () => {
   assert.ok(mid > before);
   assert.equal(twice.countersigned[0].volume, once.countersigned[0].volume);
 });
+
+test('a receipt binds only the order it matches', () => {
+  const buyerKey = schnorr.utils.randomSecretKey();
+  const vendorKey = schnorr.utils.randomSecretKey();
+  const buyer = hex(schnorr.getPublicKey(buyerKey));
+  const vendor = hex(schnorr.getPublicKey(vendorKey));
+  const bindings = {
+    orderId: 'order-1',
+    orderCoinAmount: '0.01',
+    issuedAddress: 'bc1qorder',
+    orderCurrency: 'btc',
+    buyerPubkey: buyer,
+    vendorPubkey: vendor,
+    update: { orderId: 'order-1' },
+  };
+  const receipt = signReceipt(vendorKey, {
+    orderId: 'order-1', buyer, vendor, currency: 'btc',
+    address: 'bc1qorder', amount: '0.01', txid: 'aa', at: 1_700_000_000, outcome: 'confirmed',
+  });
+  assert.equal(receiptBindsOrder({ ...bindings, receipt }), true);
+  // A larger single output may cover the order; a smaller one never does.
+  const overpaid = signReceipt(vendorKey, {
+    ...receipt.body, amount: '0.02', txid: 'bb', at: 1_700_000_001, outcome: 'confirmed',
+  });
+  assert.equal(receiptBindsOrder({ ...bindings, receipt: overpaid, orderCoinAmount: '0.01' }), true);
+  const bind = (over = {}, overBody = {}) => receiptBindsOrder({
+    ...bindings, ...over,
+    receipt: { body: { ...receipt.body, ...overBody } },
+  });
+  // Wrong orderId on the receipt, or on the update that carried it.
+  assert.equal(bind({ orderId: 'order-2' }), false);
+  assert.equal(bind({ update: { orderId: 'order-9' } }), false);
+  // Amount short of the order, or an order this device has no amount for.
+  assert.equal(bind({ orderCoinAmount: '0.011' }), false);
+  assert.equal(bind({ orderCoinAmount: null }), false);
+  assert.equal(bind({ orderCoinAmount: '' }), false);
+  // A receipt in another coin never binds.
+  assert.equal(bind({}, { currency: 'xmr' }), false);
+  // Address mismatches on the receipt, or on the update.
+  assert.equal(bind({}, { address: 'bc1qother' }), false);
+  assert.equal(bind({ update: { orderId: 'order-1', address: 'bc1qother' } }), false);
+  assert.equal(bind({ issuedAddress: '' }), false);
+  // The receipt must name exactly the two parties of this chat.
+  assert.equal(bind({ buyerPubkey: 'ff' }), false);
+  assert.equal(bind({ vendorPubkey: 'ff' }), false);
+  // No receipt body, no binding.
+  assert.equal(receiptBindsOrder({ ...bindings, receipt: null }), false);
+  assert.equal(receiptBindsOrder({ ...bindings, receipt: { sigs: receipt.sigs } }), false);
+});
+
 function memoryStorage() {
   const memory = new Map();
   globalThis.localStorage = {
