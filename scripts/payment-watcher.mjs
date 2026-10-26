@@ -51,6 +51,10 @@ const port = Number(process.env.PORT || process.env.WATCH_PORT || 8788);
 const xmrRpc = String(process.env.XMR_WALLET_RPC || '').trim();
 const btcRpc = String(process.env.BTC_RPC_URL || '').trim();
 const watchToken = String(process.env.WATCH_TOKEN || '');
+// WATCH_HOST widens the listen address back on purpose: the default is the
+// machine itself, so a vendor box on Tails never serves the LAN. A phone on
+// the same network sets WATCH_HOST=0.0.0.0 and gets exactly what it got before.
+const watchHost = String(process.env.WATCH_HOST || '127.0.0.1');
 
 function tokenMatches(presented) {
   const a = Buffer.from(String(presented || ''));
@@ -205,8 +209,9 @@ if (process.argv[1] && process.argv[1].endsWith('payment-watcher.mjs')) {
     console.error('Paste http://THIS_MACHINE:8788/payment?token=a-long-secret into Connections. The phone never calls a block explorer.');
     process.exit(1);
   }
-  server.listen(port, '0.0.0.0', () => {
+  server.listen(port, watchHost, () => {
     console.log(`[watcher] http://127.0.0.1:${port}/payment?token=${watchToken}`);
+    if (watchHost !== '127.0.0.1') console.log(`[watcher] Listening on ${watchHost}. Any device on this network can ask this watcher.`);
     if (!xmrRpc) console.log('[watcher] XMR_WALLET_RPC is not set. Monero checks will fail loudly.');
     if (!btcRpc) console.log('[watcher] BTC_RPC_URL is not set. Bitcoin checks will fail loudly.');
     console.log('[watcher] The phone confirms Bitcoin at 3 and Monero at 10, unless cipher_confirmations overrides it.');
