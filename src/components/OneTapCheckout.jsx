@@ -1,8 +1,6 @@
 import { useState } from 'react';
 import { ORDER_STATUS } from '../lib/paymentState';
-import { Check, Copy, Loader2, X } from 'lucide-react';
-import { QRCodeSVG } from 'qrcode.react';
-import { copyText } from '../lib/copyText';
+import { Check, Loader2, X } from 'lucide-react';
 import { orderProduct, priceLabel } from '../lib/listing';
 
 function cipherOrder(product) {
@@ -18,23 +16,8 @@ export default function OneTapCheckout({ product, onConfirmOrder, onClose }) {
   const [confirmed, setConfirmed] = useState(false);
   const [sending, setSending] = useState(false);
   const [orderError, setOrderError] = useState('');
-  const [copied, setCopied] = useState('');
   const order = cipherOrder(product);
   const amount = priceLabel(order.product.price, order.product.currency);
-  const addresses = [
-    ['BTC', product?.btc],
-    ['XMR', product?.xmr],
-  ].filter(([, address]) => address);
-
-  const copyAddress = async (label, address) => {
-    try {
-      const ok = await copyText(address);
-      if (ok) setCopied(label);
-    } catch (error) {
-      console.error('[OneTapCheckout] Could not copy address:', error);
-      setOrderError('Could not copy that address.');
-    }
-  };
 
   const confirmOrder = async () => {
     if (confirmed || sending) return;
@@ -66,25 +49,13 @@ export default function OneTapCheckout({ product, onConfirmOrder, onClose }) {
           <p className="text-[12px] text-white/40">Amount due</p>
           <p className="text-[22px] font-bold text-white">{amount}</p>
         </div>
-        <p className="mb-3 text-[13px] text-white/40">{addresses.length ? 'These are the seller’s published addresses. They may send a fresh one in the chat after they accept.' : 'The seller sends a payment address in the chat after they accept.'}</p>
-        {addresses.length === 0 ? (
-          <p className="rounded-xl border border-line bg-panelStrong shadow-lg p-4 text-[13px] leading-relaxed text-white/55">
-            This seller has not published a public BTC or XMR address. Confirm sends the order in a private chat. Their payment address and QR code appear there after they accept.
-          </p>
-        ) : addresses.map(([label, address]) => (
-          <div key={label} className="mb-3 rounded-xl border border-line bg-panelStrong shadow-lg p-3">
-            <div className="mb-2 flex items-center justify-between">
-              <p className="text-sm font-semibold text-white">{label}</p>
-              <button type="button" onClick={() => copyAddress(label, address)} className="flex items-center gap-1 text-[12px] font-semibold text-accent">
-                <Copy size={13} /> {copied === label ? 'Copied!' : 'Copy Address'}
-              </button>
-            </div>
-            <div className="mb-2 flex justify-center rounded-xl bg-white p-3">
-              <QRCodeSVG value={address} size={148} level="M" />
-            </div>
-            <p className="break-all font-mono text-[11px] text-white/70">{address}</p>
-          </div>
-        ))}
+        {/* The order is the only way to pay. No menu card shows a payment
+            address or QR here: paying one directly skips the accept, the
+            address issue, the chain check and the receipt, and the seller
+            ships against their own accepted order only. (security S2) */}
+        <p className="mb-3 rounded-xl border border-line bg-panelStrong shadow-lg p-4 text-[13px] leading-relaxed text-white/55">
+          After the seller accepts, your payment address and QR code appear in the chat, on the accepted order. The order is the only way to pay — it is what ties the payment to a chain check.
+        </p>
         {orderError && <p role="alert" className="mt-4 text-sm text-red-400">{orderError}</p>}
         <button type="button" onClick={confirmOrder} disabled={confirmed || sending} className="mt-5 flex w-full items-center justify-center gap-2 rounded-2xl bg-accent py-3.5 font-bold text-accentInk hover:bg-accent disabled:opacity-60">
           {sending ? <><Loader2 size={17} className="animate-spin" /> Sending order…</> : confirmed ? <><Check size={17} /> Order sent. Pay in the chat.</> : 'Send order'}
