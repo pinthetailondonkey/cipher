@@ -52,8 +52,8 @@ export default function OneTapCheckout({ product, onConfirmOrder, onClose }) {
   };
 
   return (
-    <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-label="Checkout">
-      <div className="max-h-[90vh] w-full max-w-sm overflow-y-auto rounded-3xl border border-white/10 bg-[#0A0A0A]/60 backdrop-blur-2xl p-6">
+    <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/80 p-4" role="dialog" aria-modal="true" aria-label="Checkout">
+      <div className="max-h-[90vh] w-full max-w-sm overflow-y-auto rounded-3xl border border-line bg-panel p-6">
         <div className="mb-4 flex items-center justify-between">
           <div>
             <p className="text-[13px] text-white/40">Send this order in a private chat</p>
@@ -62,17 +62,17 @@ export default function OneTapCheckout({ product, onConfirmOrder, onClose }) {
           </div>
           <button type="button" onClick={onClose} className="p-2 text-white/50 hover:text-white" aria-label="Close checkout"><X size={20} /></button>
         </div>
-        <div className="mb-4 rounded-2xl border border-white/10 bg-[#0A0A0A]/60 shadow-2xl backdrop-blur-2xl p-4">
+        <div className="mb-4 rounded-2xl border border-line bg-panelStrong shadow-lg p-4">
           <p className="text-[12px] text-white/40">Amount due</p>
           <p className="text-[22px] font-bold text-white">{amount}</p>
         </div>
         <p className="mb-3 text-[13px] text-white/40">{addresses.length ? 'These are the seller’s published addresses. They may send a fresh one in the chat after they accept.' : 'The seller sends a payment address in the chat after they accept.'}</p>
         {addresses.length === 0 ? (
-          <p className="rounded-xl border border-white/10 bg-[#0A0A0A]/60 shadow-2xl backdrop-blur-2xl p-4 text-[13px] leading-relaxed text-white/55">
+          <p className="rounded-xl border border-line bg-panelStrong shadow-lg p-4 text-[13px] leading-relaxed text-white/55">
             This seller has not published a public BTC or XMR address. Confirm sends the order in a private chat. Their payment address and QR code appear there after they accept.
           </p>
         ) : addresses.map(([label, address]) => (
-          <div key={label} className="mb-3 rounded-xl border border-white/10 bg-[#0A0A0A]/60 shadow-2xl backdrop-blur-2xl p-3">
+          <div key={label} className="mb-3 rounded-xl border border-line bg-panelStrong shadow-lg p-3">
             <div className="mb-2 flex items-center justify-between">
               <p className="text-sm font-semibold text-white">{label}</p>
               <button type="button" onClick={() => copyAddress(label, address)} className="flex items-center gap-1 text-[12px] font-semibold text-blue-500">

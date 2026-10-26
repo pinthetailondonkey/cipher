@@ -23,7 +23,7 @@ export default function MessageRequests({ dms = {}, profiles = {}, onBack, onOpe
         </div>
       ) : (
         <div className="p-4">
-          <div className="overflow-hidden rounded-2xl border border-white/10 bg-[#0A0A0A]/60 shadow-2xl backdrop-blur-2xl">
+          <div className="overflow-hidden rounded-2xl border border-line bg-panel shadow-lg">
           {requests.map(({ pubkey, message }) => {
             const profile = profiles[pubkey] || {};
             const name = noHexName(profile, pubkey);

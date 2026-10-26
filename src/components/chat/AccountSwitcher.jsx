@@ -47,7 +47,7 @@ export default function AccountSwitcher({ identity, onClose }) {
       {accounts.map((account) => {
         const name = account.displayName || account.handle || 'Account';
         return (
-          <div key={account.pubkey} className="overflow-hidden rounded-2xl border border-white/10 bg-[#0A0A0A]/60 shadow-2xl backdrop-blur-2xl p-4">
+          <div key={account.pubkey} className="overflow-hidden rounded-2xl border border-line bg-panel shadow-lg p-4">
             <div className="flex items-center gap-3">
               <Avatar name={name} />
               <span className="min-w-0 flex-1">
@@ -58,7 +58,7 @@ export default function AccountSwitcher({ identity, onClose }) {
             </div>
             {!account.isActive && (
               <div className="mt-3 flex gap-2">
-                <label className="flex min-w-0 flex-1 items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-3 backdrop-blur-md">
+                <label className="flex min-w-0 flex-1 items-center gap-2 rounded-2xl border border-line bg-panelStrong px-3">
                   <KeyRound size={16} className="shrink-0 text-white/40" />
                   <input type="password" inputMode="numeric" autoComplete="current-password" value={pins[account.pubkey] || ''} onChange={(event) => setPins((current) => ({ ...current, [account.pubkey]: event.target.value }))} placeholder="PIN" className="min-w-0 flex-1 bg-transparent py-3 text-[15px] text-white outline-none placeholder:text-white/30" />
                 </label>
@@ -71,7 +71,7 @@ export default function AccountSwitcher({ identity, onClose }) {
           </div>
         );
       })}
-      {accounts.length === 0 && <p className="rounded-2xl border border-white/10 bg-[#0A0A0A]/60 shadow-2xl backdrop-blur-2xl px-4 py-10 text-center text-[13px] text-white/40">No saved accounts on this device.</p>}
+      {accounts.length === 0 && <p className="rounded-2xl border border-line bg-panel shadow-lg px-4 py-10 text-center text-[13px] text-white/40">No saved accounts on this device.</p>}
       <button type="button" onClick={identity?.addNewAccount} className={`flex w-full items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 font-semibold text-white active:bg-white/10 ${pressable}`}>
         <Plus size={18} className="text-blue-500" />
         Add account

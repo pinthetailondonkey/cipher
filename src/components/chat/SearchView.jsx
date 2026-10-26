@@ -21,7 +21,7 @@ export default function SearchView({ handleSearch, joinGroupById, openChat }) {
       <div className="relative z-10 flex min-h-0 flex-1 flex-col">
         <ScreenHeader title="Search" onBack={() => setView('list')} />
         <div className="px-4 pb-3">
-          <div className="flex items-center gap-2 rounded-2xl border border-white/10 bg-[#0A0A0A]/60 px-4 py-3 shadow-2xl backdrop-blur-2xl">
+          <div className="flex items-center gap-2 rounded-2xl border border-line bg-panel px-4 py-3 shadow-lg">
             <Search size={18} className="text-white/40" />
             <input
               autoFocus
@@ -42,12 +42,12 @@ export default function SearchView({ handleSearch, joinGroupById, openChat }) {
               <div className="h-6 w-6 animate-spin rounded-full border-2 border-blue-500 border-t-transparent" />
             </div>
           ) : searchResults.length === 0 ? (
-            <div className="rounded-2xl border border-white/10 bg-[#0A0A0A]/60 px-4 py-16 text-center shadow-2xl backdrop-blur-2xl">
+            <div className="rounded-2xl border border-line bg-panel px-4 py-16 text-center shadow-lg">
               <p className="text-[15px] font-semibold text-white">{searchQuery ? 'No results' : 'Find someone'}</p>
               <p className="mt-1 text-[13px] text-white/40">{searchQuery ? 'Try another name.' : 'Search a name or a group.'}</p>
             </div>
           ) : (
-            <div className="overflow-hidden rounded-2xl border border-white/10 bg-[#0A0A0A]/60 shadow-2xl backdrop-blur-2xl">
+            <div className="overflow-hidden rounded-2xl border border-line bg-panel shadow-lg">
               {searchResults.map((result, i) => (
                 <button
                   type="button"

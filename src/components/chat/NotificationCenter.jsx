@@ -68,14 +68,14 @@ export default function NotificationCenter({ onClose, onJump }) {
       <div className="relative z-10 flex min-h-0 flex-1 flex-col">
       <ScreenHeader title="Notifications" onBack={onClose} />
       {notifications.length === 0 ? (
-        <div className="m-4 rounded-2xl border border-white/10 bg-[#0A0A0A]/60 px-4 py-16 text-center shadow-2xl backdrop-blur-2xl">
+        <div className="m-4 rounded-2xl border border-line bg-panel px-4 py-16 text-center shadow-lg">
           <Bell size={28} className="mx-auto mb-3 text-blue-500" />
           <p className="text-[15px] font-semibold text-white">You're caught up</p>
           <p className="mt-1 text-[13px] text-white/40">New messages show up here.</p>
         </div>
       ) : (
         <div className="min-h-0 flex-1 overflow-y-auto p-4">
-          <div className="overflow-hidden rounded-2xl border border-white/10 bg-[#0A0A0A]/60 shadow-2xl backdrop-blur-2xl">
+          <div className="overflow-hidden rounded-2xl border border-line bg-panel shadow-lg">
           {notifications.map((item) => (
             <button key={item.id} type="button" onClick={() => openNotification(item)} className="flex w-full items-center gap-3 border-b border-white/5 p-4 text-left last:border-0 active:bg-white/5">
               <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/5 text-blue-500">

@@ -121,7 +121,7 @@ export default function IdentityBackup({ identity, onClose }) {
           <Shield size={18} className="mt-0.5 shrink-0" />
           Your secret key controls this account. Never share it.
         </div>
-        <div className="overflow-hidden rounded-2xl border border-white/10 bg-[#0A0A0A]/60 shadow-2xl backdrop-blur-2xl">
+        <div className="overflow-hidden rounded-2xl border border-line bg-panel shadow-lg">
           {identity?.hasBiometric ? (
             <p className="flex items-center gap-3 p-4 text-[15px] text-emerald-300"><Fingerprint size={18} /> Face ID is on</p>
           ) : (
@@ -131,7 +131,7 @@ export default function IdentityBackup({ identity, onClose }) {
           )}
           {biometricMessage && <p role="status" className="border-t border-white/5 px-4 py-3 text-[13px] text-white/40">{biometricMessage}</p>}
         </div>
-        <div className="overflow-hidden rounded-2xl border border-white/10 bg-[#0A0A0A]/60 shadow-2xl backdrop-blur-2xl">
+        <div className="overflow-hidden rounded-2xl border border-line bg-panel shadow-lg">
           <div className="flex items-center gap-3 border-b border-white/5 p-4">
             <KeyRound size={18} className="shrink-0 text-white/40" />
             <div className="min-w-0 flex-1">
@@ -152,10 +152,10 @@ export default function IdentityBackup({ identity, onClose }) {
         <button type="button" onClick={() => copy('nsec')} disabled={!identity?.sk} className={`flex w-full items-center justify-center gap-2 rounded-2xl bg-blue-600 py-3.5 font-bold text-white hover:bg-blue-500 disabled:opacity-40 ${pressable}`}>
           <Copy size={16} /> {copied === 'nsec' ? 'Copied' : 'Copy secret key'}
         </button>
-        <button type="button" onClick={copyPhrase} disabled={!identity?.sk} className={`flex w-full items-center justify-center gap-2 rounded-2xl border border-white/10 bg-[#0A0A0A]/60 shadow-2xl backdrop-blur-2xl py-3.5 font-bold text-white disabled:opacity-40 ${pressable}`}>
+        <button type="button" onClick={copyPhrase} disabled={!identity?.sk} className={`flex w-full items-center justify-center gap-2 rounded-2xl border border-line bg-panel shadow-lg py-3.5 font-bold text-white disabled:opacity-40 ${pressable}`}>
           <Copy size={16} /> {copied === 'phrase' ? 'Copied' : 'Copy 12-word phrase'}
         </button>
-        <label className="flex items-start gap-3 rounded-2xl border border-white/10 bg-[#0A0A0A]/60 shadow-2xl backdrop-blur-2xl p-4 text-[13px] text-white/70">
+        <label className="flex items-start gap-3 rounded-2xl border border-line bg-panel shadow-lg p-4 text-[13px] text-white/70">
           <input type="checkbox" checked={exportReady} onChange={(event) => setExportReady(event.target.checked)} className="mt-0.5 h-5 w-5 accent-blue-600" />
           I understand this file contains my secret key and 12-word phrase.
         </label>

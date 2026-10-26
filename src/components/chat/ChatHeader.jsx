@@ -35,7 +35,7 @@ export default function ChatHeader({ mode }) {
   };
 
   return (
-    <div className="sticky top-0 z-40 flex items-center justify-between border-b border-white/10 bg-[#0A0A0A]/60 px-2 py-3 shadow-2xl backdrop-blur-2xl pt-[env(safe-area-inset-top)]">
+    <div className="sticky top-0 z-40 flex items-center justify-between border-b border-line bg-base px-2 py-3 shadow-lg pt-[env(safe-area-inset-top)]">
       <div className="flex min-w-0 items-center gap-2">
         <button onClick={() => setView('list')} className="p-2 text-white" aria-label="Back">
           <ArrowLeft size={22} />

@@ -68,7 +68,7 @@ export default function CallOverlay() {
       <div className={`flex items-end justify-center gap-14 px-8 pb-16 ${call.status === 'ringing' && call.direction === 'in' ? '' : ''}`}>
         {call.status === 'active' && (
           <button type="button" onClick={toggleMute} className="flex flex-col items-center gap-2 text-white" aria-label={call.muted ? 'Unmute' : 'Mute'}>
-            <span className={`flex h-16 w-16 items-center justify-center rounded-full border border-white/10 bg-white/10 shadow-2xl backdrop-blur-xl active:bg-white/20 ${pressable}`}>{call.muted ? <MicOff size={24} /> : <Mic size={24} />}</span>
+            <span className={`flex h-16 w-16 items-center justify-center rounded-full border border-line bg-panelStrong shadow-lg active:bg-white/20 ${pressable}`}>{call.muted ? <MicOff size={24} /> : <Mic size={24} />}</span>
             <span className="text-[13px] text-white/70">{call.muted ? 'Unmute' : 'Mute'}</span>
           </button>
         )}
