@@ -7,6 +7,7 @@ import { shortNpub } from '../lib/npub';
 // Defense layer cache — profile timestamps keyed by pubkey
 // Prevents re-fetching the same profile on every modal open
 import { scopedGet, scopedSet } from '../lib/storage';
+import { averageRating, clampRating, receiptBindingOf } from '../lib/reputation';
 const PROFILE_CACHE_KEY = 'rep_profile_cache';
 const PROFILE_CACHE_TTL = 24 * 60 * 60 * 1000; // 24h
 const MIN_VOUCHER_AGE_DAYS = 7;
@@ -35,9 +36,12 @@ export function useReputation({ identity }) {
         queryWithTimeout(pool, generalRelays, { kinds: [10004], '#p': [targetPubkey] }, 3000),
         queryWithTimeout(pool, generalRelays, { kinds: [10005], '#p': [targetPubkey] }, 3000)
       ]);
+      // S8: a vouch counts only when it names the receipt hash of a trade.
+      // The hash is all the event carries; the receipt stays private.
       const rawVouches = vouchEvents.filter((event) => (
         event.tags.some((tag) => tag[0] === 'p' && tag[1] === targetPubkey) &&
-        event.tags.some((tag) => tag[0] === 'vouch' && tag[1] === 'true')
+        event.tags.some((tag) => tag[0] === 'vouch' && tag[1] === 'true') &&
+        !!receiptBindingOf(event)
       ));
 
       // 2. Defense Layer 1: reject self-vouches + duplicate vouches
@@ -112,15 +116,12 @@ export function useReputation({ identity }) {
       }
 
       // 5. Reviews (also self-review protected)
+      // S8: a review is only a rating about a trade, and an average cannot
+      // go below zero. A negative score pulls the vendor toward 0, no further.
       const validReviews = reviews.filter((ev) => ev.pubkey !== targetPubkey);
-      let avgRating = 0;
-      if (validReviews.length > 0) {
-        const sum = validReviews.reduce(
-          (acc, ev) => acc + parseInt(ev.tags.find((t) => t[0] === 'rating')?.[1] || '0'),
-          0
-        );
-        avgRating = (sum / validReviews.length).toFixed(1);
-      }
+      const avgRating = averageRating(validReviews.map(
+        (ev) => ev.tags.find((t) => t[0] === 'rating')?.[1]
+      ));
 
       const hasVouched = vouchesAfterSelf.some((ev) => ev.pubkey === identity.pk);
 
@@ -136,7 +137,7 @@ export function useReputation({ identity }) {
         hasVouched,
         recentReviews: validReviews.slice(0, 3).map((ev) => ({
           pubkey: ev.pubkey,
-          rating: parseInt(ev.tags.find((t) => t[0] === 'rating')?.[1] || '0'),
+          rating: clampRating(ev.tags.find((t) => t[0] === 'rating')?.[1]),
           text: ev.content,
         })),
       });
@@ -147,13 +148,21 @@ export function useReputation({ identity }) {
     }
   }, [identity]);
 
-  const sendVouch = useCallback(async (targetPubkey) => {
+  // S8: a vouch is signed by its author (the Nostr event carries the signature)
+  // and names the receipt hash of the trade it vouches for. No receipt hash,
+  // no vouch — anyone can claim trust for a stranger; only a completed trade
+  // earns it. The hash is all that is published; the receipt stays private.
+  const sendVouch = useCallback(async (targetPubkey, receiptHash) => {
     // Defense Layer 1: refuse to vouch yourself
     if (!targetPubkey || !identity?.pk || !identity?.sk) {
       return { success: false, error: 'Unlock your account before vouching.' };
     }
     if (targetPubkey === identity.pk) {
       return { success: false, error: 'Cannot vouch for yourself' };
+    }
+    const binding = receiptBindingOf({ tags: [['receipt', receiptHash]] });
+    if (!binding) {
+      return { success: false, error: 'A vouch needs the receipt of a completed trade.' };
     }
 
     let event;
@@ -162,7 +171,7 @@ export function useReputation({ identity }) {
       event = finalizeEvent({
         kind: 10004,
         created_at: Math.floor(Date.now() / 1000),
-        tags: [['p', targetPubkey], ['vouch', 'true']],
+        tags: [['p', targetPubkey], ['vouch', 'true'], ['receipt', binding]],
         content: 'Vouched via Cipher',
       }, identity.sk);
 
@@ -188,9 +197,15 @@ export function useReputation({ identity }) {
     }
   }, [identity, fetchReputation]);
 
-  const sendReview = useCallback(async (targetPubkey, rating, text) => {
+  // Same rule as a vouch: a review names the receipt hash of the trade, and
+  // the score it carries stays inside 0..5. (security S8)
+  const sendReview = useCallback(async (targetPubkey, rating, text, receiptHash) => {
     if (targetPubkey === identity.pk) {
       return { success: false, error: 'Cannot review yourself' };
+    }
+    const binding = receiptBindingOf({ tags: [['receipt', receiptHash]] });
+    if (!binding) {
+      return { success: false, error: 'A review needs the receipt of a completed trade.' };
     }
     try {
       const { finalizeEvent } = await import('nostr-tools');
@@ -198,7 +213,7 @@ export function useReputation({ identity }) {
       const ev = finalizeEvent({
         kind: 10005,
         created_at: Math.floor(Date.now() / 1000),
-        tags: [['p', targetPubkey], ['rating', rating.toString()]],
+        tags: [['p', targetPubkey], ['rating', String(clampRating(rating))], ['receipt', binding]],
         content: text,
       }, identity.sk);
       await Promise.allSettled(pool.publish(generalRelays, ev));
