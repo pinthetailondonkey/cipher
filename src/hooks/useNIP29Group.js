@@ -17,6 +17,7 @@ import { enqueueNostrEvent, startOutboxSync } from '../lib/outbox';
 import { groupSocketUrl } from '../lib/egress';
 import { relaysForPeer } from '../lib/dmRelays';
 import { dropSecuringSend, forgetPendingKeyRequest, queueSecuringSend, resetKeyRequest, securingSendsFor } from '../lib/crypto/groupKeyRequest';
+import { dropPendingJoin, loadPendingJoins, notifyJoinRequests, pendingJoinsFor, queuePendingJoin } from '../lib/groupJoinQueue.js';
 
 function currentGroupRelay() {
   return groupSocketUrl() || '';
@@ -809,6 +810,25 @@ export function useNIP29Group({ identity }) {
 
       if (event.kind === 9021) {
         const pk = event.pubkey;
+        const members = await loadMemberSnapshot(groupId);
+        if (pk === identity.pk) {
+          // Own join echo: the creator's bootstrap join lands on the snapshot
+          // unchanged. A rejoin case is kept here too — an already-member
+          // sender still auto-adds (a no-op on the snapshot row).
+        } else if (!(Array.isArray(members) && members.includes(pk))) {
+          // First join request from this sender: it goes to the pending queue
+          // for owner approval instead of onto the snapshot. Nothing auto-adds
+          // a stranger, so their key request reads a snapshot that does not
+          // name them and is denied. The requester keeps seeing ciphertext, as
+          // any keyless member does, until the owner approves them.
+          const queued = queuePendingJoin(groupId, { pubkey: pk, eventId: event.id, at: event.created_at });
+          if (queued) {
+            const owned = useChatStore.getState().groups.some((g) => g.id === groupId && g.creator === identity.pk);
+            if (owned) appendSystemMessage(groupId, `User ${pk.slice(0, 6)}... wants to join. Approve it in Join requests.`, event.id);
+            else console.log('[group] Join request queued for', groupId.slice(0, 6), 'from', pk.slice(0, 6));
+          }
+          return;
+        }
         await patchMemberSnapshot(groupId, (members) => (members.includes(pk) ? members : [...members, pk]));
         if (useChatStore.getState().activeGroup?.id === groupId) {
           setGroupMembers(prev => {
