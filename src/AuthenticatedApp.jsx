@@ -1,7 +1,7 @@
 import React, { lazy, Suspense, useCallback, useEffect, useState } from 'react';
-import { MessageSquare, Compass, User } from 'lucide-react';
-import { motion } from 'framer-motion';
+import { MessageSquare, Compass, Menu, User } from 'lucide-react';
 import TutorialModal from './components/TutorialModal';
+import Drawer from './components/chat/Drawer';
 import GlobalDialog from './components/GlobalDialog';
 import CallOverlay from './components/chat/CallOverlay';
 import DeadDropModal from './components/chat/DeadDropModal';
@@ -17,6 +17,20 @@ export default function AuthenticatedApp({ identity }) {
   const [activeTab, setActiveTab] = useState('chat');
   const unreadTotal = useChatStore(unreadTotalOf);
   const [exploreMode, setExploreMode] = useState('shop');
+  const showDrawer = useChatStore((state) => state.showDrawer);
+  // The drawer deep-links into Wallet views (Orders, Connections); the nonce
+  // remounts Wallet when one is tapped while it is already mounted.
+  const [profileStartView, setProfileStartView] = useState('main');
+  const [profileNavNonce, setProfileNavNonce] = useState(0);
+  const openDrawerSection = useCallback((tab, mode = null, startView = 'main') => {
+    useChatStore.getState().setShowDrawer(false);
+    if (mode) setExploreMode(mode);
+    if (tab === 'profile') {
+      setProfileStartView(startView);
+      setProfileNavNonce((n) => n + 1);
+    }
+    setActiveTab(tab);
+  }, []);
   const openChatFromProfile = useCallback((pubkey) => {
     useChatStore.getState().openChat('dm', pubkey);
     setActiveTab('chat');
@@ -53,7 +67,7 @@ export default function AuthenticatedApp({ identity }) {
       <GlobalDialog />
       <CallOverlay />
 
-      <main className="relative z-10 h-[calc(100dvh-6.5rem-env(safe-area-inset-bottom))] w-full max-w-md overflow-hidden md:h-[100dvh] md:w-auto md:max-w-none md:flex-1">
+      <main className="relative z-10 h-[100dvh] w-full max-w-md overflow-hidden md:w-auto md:max-w-none md:flex-1">
         <div className={`absolute inset-0 md:left-[72px] ${activeTab === 'chat' ? '' : 'invisible pointer-events-none'}`}>
           <Suspense fallback={tabFallback}>
             <Chat identity={identity} />
@@ -64,8 +78,9 @@ export default function AuthenticatedApp({ identity }) {
             <Suspense fallback={tabFallback}>
               {activeTab === 'explore' && (
                 <div className="relative mx-auto flex h-full w-full max-w-md flex-col md:border-x md:border-line">
-                  <div className="relative z-10 px-4 pb-1 pt-3">
-                    <div className="grid grid-cols-2 rounded-2xl border border-ink/15 bg-panelStrong p-1 shadow-lg">
+                  <div className="relative z-10 flex items-center px-4 pb-1 pt-3">
+                    <button type="button" onClick={() => useChatStore.getState().setShowDrawer(true)} aria-label="Open menu" className="-ml-1 touch-target p-2 text-ink/50 hover:text-ink md:hidden"><Menu size={20} /></button>
+                    <div className="grid flex-1 grid-cols-2 rounded-2xl border border-ink/15 bg-panelStrong p-1 shadow-lg">
                       <button type="button" onClick={() => setExploreMode('shop')} className={`min-h-[44px] rounded-xl py-2.5 text-[13px] font-bold ${exploreMode === 'shop' ? 'bg-accent text-accentInk shadow-lg' : 'text-ink/60'}`}>Shop</button>
                       <button type="button" onClick={() => setExploreMode('groups')} className={`min-h-[44px] rounded-xl py-2.5 text-[13px] font-bold ${exploreMode === 'groups' ? 'bg-accent text-accentInk shadow-lg' : 'text-ink/60'}`}>Groups</button>
                     </div>
@@ -79,13 +94,15 @@ export default function AuthenticatedApp({ identity }) {
               )}
               {activeTab === 'profile' && (
                 <div className="mx-auto h-full w-full max-w-md md:border-x md:border-line">
-                  <Wallet identity={identity} onOpenChat={openChatFromProfile} />
+                  <Wallet key={profileNavNonce} identity={identity} onOpenChat={openChatFromProfile} startView={profileStartView} />
                 </div>
               )}
             </Suspense>
           </div>
         )}
       </main>
+
+      <Drawer identity={identity} open={showDrawer} onClose={() => useChatStore.getState().setShowDrawer(false)} onNavigate={openDrawerSection} />
 
       <nav aria-label="Tabs" className="fixed bottom-0 left-0 top-0 z-20 hidden w-[72px] flex-col items-center gap-3 border-r border-line bg-panelStrong pt-4 md:flex">
         <button onClick={() => setActiveTab('chat')} className={`relative flex w-16 flex-col items-center gap-1 rounded-2xl p-2 min-h-[52px] ${activeTab === 'chat' ? 'text-accent' : 'text-ink/40 hover:text-ink/60'}`}>
@@ -102,28 +119,6 @@ export default function AuthenticatedApp({ identity }) {
           <span className="text-[10px] font-medium">Profile</span>
         </button>
       </nav>
-
-      <motion.nav
-        initial={{ y: 50 }} animate={{ y: 0 }} transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-        className="fixed left-4 right-4 z-20 mx-auto max-w-md rounded-3xl border border-line bg-panelStrong shadow-lg md:hidden"
-        style={{ bottom: `calc(1rem + env(safe-area-inset-bottom))` }}
-      >
-        <div className="flex justify-around items-center min-h-[44px] max-w-md mx-auto px-6">
-          <button onClick={() => setActiveTab('chat')} className={`relative flex flex-col items-center gap-1 w-16 min-h-[44px] active:scale-95 transition-transform duration-100 ${activeTab === 'chat' ? 'text-accent' : 'text-ink/40'}`}>
-            <MessageSquare size={22} strokeWidth={activeTab === 'chat' ? 2.5 : 2} />
-            {unreadTotal > 0 && <span className="absolute top-1 right-3 flex h-[16px] min-w-[16px] items-center justify-center rounded-full bg-accent px-1.5 text-[10px] font-bold text-accentInk">{unreadTotal > 99 ? '99+' : unreadTotal}</span>}
-            <span className="text-[10px] font-medium">Chats</span>
-          </button>
-          <button onClick={() => setActiveTab('explore')} className={`flex flex-col items-center gap-1 w-16 min-h-[44px] transition-all active:scale-90 ${activeTab === 'explore' ? 'text-accent' : 'text-ink/40 hover:text-ink/60'}`}>
-            <Compass size={22} strokeWidth={activeTab === 'explore' ? 2.5 : 2} />
-            <span className="text-[10px] font-medium">Shop</span>
-          </button>
-          <button onClick={() => setActiveTab('profile')} className={`relative flex flex-col items-center gap-1 w-16 min-h-[44px] active:scale-95 transition-transform duration-100 ${activeTab === 'profile' ? 'text-accent' : 'text-ink/40'}`}>
-            <User size={22} strokeWidth={activeTab === 'profile' ? 2.5 : 2} />
-            <span className="text-[10px] font-medium">Profile</span>
-          </button>
-        </div>
-      </motion.nav>
     </div>
   );
 }
