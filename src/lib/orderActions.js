@@ -1,4 +1,4 @@
-import { ORDER_STATUS as S, isOrderStatus } from './paymentState.js';
+import { ORDER_STATUS as S, isOrderStatus, orderCoinAmount } from './paymentState.js';
 import { verifyReceipt } from './proofOfTrade.js';
 
 const REQUEST_TYPES = new Set(['order_request', 'cipher_order']);
@@ -93,11 +93,47 @@ export function orderRecordForReceipt(messages, orderId) {
   if (!RECEIPT_STATUSES.has(status)) return null;
   const updates = (list.filter((m) => m?.data?.type === 'order_update' && m.data.orderId === orderId))
     .sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0) || String(a.id).localeCompare(String(b.id)));
-  const latest = (prop) => [...updates].reverse().find((update) => update.data?.[prop] != null && update.data?.[prop] !== '');
-  const coinCurrency = latest('coinCurrency')?.data.coinCurrency || request.data.coinCurrency || '';
-  const coinAmount = latest('coinAmount')?.data.coinAmount ?? request.data.coinAmount ?? '';
-  const methods = [...updates].reverse().find((update) => update.data?.paymentMethods)?.data.paymentMethods
-    || request.data.paymentMethods || null;
+  const newestFirst = [...updates].reverse();
+  // F4 re-attack: the amount of record and the issued address are what this
+  // device wrote — its own acceptance update, its own request card, its local
+  // patches. A received update's fields are the peer's word and never move
+  // them, so a fake later update cannot shrink the amount or steal the
+  // address slot. Only the buyer's record still reads the vendor's announced
+  // payment methods as a fallback: the acceptance is the one announcement of
+  // where to pay.
+  const ownValue = (prop) => {
+    for (const update of newestFirst) {
+      if (!update.isSender) continue;
+      const value = update.data?.[prop];
+      if (value != null && value !== '') return value;
+    }
+    if (!request.isSender) {
+      const value = request.localPatch?.[prop];
+      if (value != null && value !== '') return value;
+      return null;
+    }
+    return request.data?.[prop] ?? null;
+  };
+  const peerValue = (prop) => {
+    for (const update of newestFirst) {
+      const value = update.data?.[prop];
+      if (value != null && value !== '') return value;
+    }
+    return null;
+  };
+  const productCurrency = String(request.data.product?.currency || '').toLowerCase();
+  // The record's currency: what this device wrote, then the peer's choice,
+  // then a coin-priced listing. The currency swap is harmless in the binding
+  // arithmetic — the same currency prices both the got and the need — and a
+  // swap away from the announced methods only drops the address.
+  const coinCurrency = ownValue('coinCurrency')
+    || peerValue('coinCurrency')
+    || (['btc', 'xmr'].includes(productCurrency) ? productCurrency : '');
+  const productPrice = orderCoinAmount(request.data.product, coinCurrency);
+  const coinAmount = ownValue('coinAmount')
+    ?? (productPrice != null && productPrice !== '' ? productPrice
+      : peerValue('coinAmount') ?? request.data.coinAmount ?? '');
+  const methods = ownValue('paymentMethods') || peerValue('paymentMethods') || request.data.paymentMethods || null;
   return {
     status,
     coinAmount,
