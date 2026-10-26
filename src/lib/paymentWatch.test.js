@@ -38,6 +38,16 @@ test('an empty watcher, a public explorer, and a plain internet http watcher are
     /block explorer/,
   );
   assert.equal(isPublicExplorer('https://xmr.xmrchain.net/tx/ab'), true);
+  // A lookalike trades on an explorer's name. It is not the explorer's
+  // child, but it is no watcher you run, and the plain check handed the
+  // token to it as if it were one. (security re-attack)
+  assert.equal(isPublicExplorer('https://xmrchain.net.evil.tld/payment?token=secret'), true);
+  assert.equal(isPublicExplorer('https://mempool.space.'), true);
+  assert.equal(isPublicExplorer('https://watch.example/payment?token=secret'), false);
+  await assert.rejects(
+    () => checkPayment({ watcherUrl: 'https://xmrchain.net.evil.tld/payment?token=secret', address: '8abc', currency: 'xmr', state: 'address_issued', fetchImpl }),
+    /block explorer/,
+  );
   await assert.rejects(
     () => checkPayment({ watcherUrl: 'https://watch.example/payment', address: '8abc', currency: 'xmr', state: 'address_issued', fetchImpl }),
     /needs a token/,
@@ -63,7 +73,7 @@ test('a watcher you run can mark seen, then confirmed, and silence is not a succ
     address: '8abc',
     currency: 'xmr',
     state: 'address_issued',
-    fetchImpl: () => watcherAnswer({ pending: true }),
+    fetchImpl: () => watcherAnswer({ address: '8abc', currency: 'xmr', pending: true }),
   });
   assert.equal(pending.moved, false);
   const seen = await checkPayment({
@@ -71,7 +81,7 @@ test('a watcher you run can mark seen, then confirmed, and silence is not a succ
     address: '8abc',
     currency: 'xmr',
     state: 'address_issued',
-    fetchImpl: () => watcherAnswer({ txid: 'ab', confirmations: 0 }),
+    fetchImpl: () => watcherAnswer({ address: '8abc', currency: 'xmr', txid: 'ab', confirmations: 0 }),
   });
   assert.equal(seen.moved, true);
   assert.equal(seen.state, 'seen');
@@ -80,7 +90,7 @@ test('a watcher you run can mark seen, then confirmed, and silence is not a succ
     address: '8abc',
     currency: 'xmr',
     state: 'seen',
-    fetchImpl: () => watcherAnswer({ source: 'watcher', txid: 'ab', confirmations: 10 }),
+    fetchImpl: () => watcherAnswer({ address: '8abc', currency: 'xmr', source: 'watcher', txid: 'ab', confirmations: 10 }),
   });
   assert.equal(confirmed.state, 'confirmed');
   await assert.rejects(
@@ -146,6 +156,35 @@ test('an answer signed with the right key but an old or future time is refused',
   );
 });
 
+test('an answer that does not name the payment asked about answers nothing', async () => {
+  const watcherUrl = 'https://watch.example/payment?token=secret';
+  // An honestly signed report for one order, carried onto a second order on
+  // another device: the bytes are real, the ask is not. The signature
+  // cannot see this, so the answer must echo what was asked.
+  // (security re-attack)
+  await assert.rejects(
+    () => checkPayment({
+      watcherUrl,
+      address: '8other',
+      currency: 'xmr',
+      state: 'address_issued',
+      fetchImpl: () => watcherAnswer({ address: '8abc', currency: 'xmr', txid: 'ab', confirmations: 10 }),
+    }),
+    /does not name the payment/,
+  );
+  // The same address under another currency is refused the same way.
+  await assert.rejects(
+    () => checkPayment({
+      watcherUrl,
+      address: '8abc',
+      currency: 'btc',
+      state: 'address_issued',
+      fetchImpl: () => watcherAnswer({ address: '8abc', currency: 'xmr', txid: 'ab', confirmations: 10 }),
+    }),
+    /does not name the payment/,
+  );
+});
+
 test('verifyWatcherResponse takes valid, and refuses tampered, wrong key, stale, future, or unsigned', async () => {
   const raw = JSON.stringify({ txid: 'ab', confirmations: 3, amount: '0.01' });
   const ts = Math.floor(Date.now() / 1000);
@@ -181,7 +220,7 @@ test('a short payment does not move, and a covering payment does', async () => {
     currency: 'btc',
     state: 'address_issued',
     amount: '0.01',
-    fetchImpl: () => watcherAnswer({ txid: 'dust', confirmations: 3, amount: '0.00000001' }),
+    fetchImpl: () => watcherAnswer({ address: 'bcrt1q', currency: 'btc', txid: 'dust', confirmations: 3, amount: '0.00000001' }),
   });
   assert.deepEqual(short, { moved: false, short: true, state: 'address_issued' });
   const paid = await checkPayment({
@@ -190,7 +229,7 @@ test('a short payment does not move, and a covering payment does', async () => {
     currency: 'btc',
     state: 'address_issued',
     amount: '0.01',
-    fetchImpl: () => watcherAnswer({ txid: 'paid', confirmations: 3, amount: '0.01' }),
+    fetchImpl: () => watcherAnswer({ address: 'bcrt1q', currency: 'btc', txid: 'paid', confirmations: 3, amount: '0.01' }),
   });
   assert.equal(paid.moved, true);
   assert.equal(paid.state, 'confirmed');
@@ -202,7 +241,7 @@ test('a short payment does not move, and a covering payment does', async () => {
       currency: 'btc',
       state: 'address_issued',
       amount: '0.01',
-      fetchImpl: () => watcherAnswer({ txid: 'bare', confirmations: 3 }),
+      fetchImpl: () => watcherAnswer({ address: 'bcrt1q', currency: 'btc', txid: 'bare', confirmations: 3 }),
     }),
     /did not report an amount/,
   );
@@ -237,7 +276,7 @@ test('a stock-node scan of one address becomes a bitcoin report', () => {
 
 test('a Monero piconero amount is shifted to whole XMR before it is compared', async () => {
   const watcherUrl = 'https://watch.example/payment?token=secret';
-  const answer = (rows) => () => watcherAnswer(reportFromTransfers(moneroRows(rows), '8sub', 'xmr'));
+  const answer = (rows) => () => watcherAnswer({ address: '8sub', currency: 'xmr', ...reportFromTransfers(moneroRows(rows), '8sub', 'xmr') });
   const full = reportFromTransfers(moneroRows([{ address: '8sub', txid: 'full', confirmations: 10, amount: 500000000000 }]), '8sub', 'xmr');
   assert.equal(full.amount, '0.5');
   assert.equal(full.outputAmount, '0.5');
@@ -294,7 +333,7 @@ test('a payment split across two outputs is summed, and the receipt keeps the la
   assert.equal(report.txid, 'aa');
   const paid = await checkPayment({
     watcherUrl, address: 'bc1q', currency: 'btc', state: 'address_issued', amount: '0.01',
-    fetchImpl: () => watcherAnswer(report),
+    fetchImpl: () => watcherAnswer({ address: 'bc1q', currency: 'btc', ...report }),
   });
   assert.equal(paid.state, 'confirmed');
   assert.equal(paid.report.outputAmount, '0.006');
@@ -336,7 +375,7 @@ test('a transfer recorded before the order\'s address was issued cannot pay it',
     currency: 'xmr',
     state: 'address_issued',
     issuedAt,
-    fetchImpl: () => watcherAnswer({ txid: 'old', confirmations: 10, amount: '0.5', time: issuedAt - 3600 }),
+    fetchImpl: () => watcherAnswer({ address: '8sub', currency: 'xmr', txid: 'old', confirmations: 10, amount: '0.5', time: issuedAt - 3600 }),
   });
   assert.deepEqual(stale, { moved: false, stale: true, state: 'address_issued' });
   const fresh = await checkPayment({
@@ -345,7 +384,7 @@ test('a transfer recorded before the order\'s address was issued cannot pay it',
     currency: 'xmr',
     state: 'address_issued',
     issuedAt,
-    fetchImpl: () => watcherAnswer({ txid: 'new', confirmations: 10, amount: '0.5', time: issuedAt + 60 }),
+    fetchImpl: () => watcherAnswer({ address: '8sub', currency: 'xmr', txid: 'new', confirmations: 10, amount: '0.5', time: issuedAt + 60 }),
   });
   assert.equal(fresh.moved, true);
   assert.equal(fresh.state, 'confirmed');
@@ -357,7 +396,7 @@ test('a transfer recorded before the order\'s address was issued cannot pay it',
     currency: 'xmr',
     state: 'address_issued',
     issuedAt,
-    fetchImpl: () => watcherAnswer({ txid: 'ab', confirmations: 1, amount: '0.5' }),
+    fetchImpl: () => watcherAnswer({ address: '8sub', currency: 'xmr', txid: 'ab', confirmations: 1, amount: '0.5' }),
   });
   assert.equal(undated.moved, true);
   assert.equal(undated.state, 'seen');
@@ -374,6 +413,10 @@ test('the watcher signs every answer it gives, and the phone verifies the raw bo
   assert.match(watcher, /createHmac\('sha256', watchToken\)/);
   assert.match(watcher, /x-cipher-sig/);
   assert.match(watcher, /x-cipher-ts/);
+  // The answer names what it answers for, so a signed reply for one order
+  // cannot be replayed as another order's. (security re-attack)
+  assert.match(watcher, /signedAnswer\(res, address, currency, report\)/);
+  assert.match(watcher, /address, currency, \.\.\.report/);
   const app = fs.readFileSync(new URL('./paymentWatch.js', import.meta.url), 'utf8');
   assert.match(app, /x-cipher-sig/);
   assert.match(app, /x-cipher-ts/);
@@ -394,13 +437,13 @@ test('a transfer time that is not a sane unix second carries no weight', async (
     currency: 'xmr',
     state: 'address_issued',
     issuedAt: Math.floor(Date.now() / 1000),
-    fetchImpl: () => watcherAnswer({ txid: 'ms', confirmations: 10, amount: '0.5', time: Date.now() * 12 }),
+    fetchImpl: () => watcherAnswer({ address: '8sub', currency: 'xmr', txid: 'ms', confirmations: 10, amount: '0.5', time: Date.now() * 12 }),
   });
   // The date is dropped, so the report looks undated — the same one the
   // order refuses to consume at confirmation time.
   assert.equal(ms.state, 'confirmed');
   assert.equal(ms.report?.time, undefined);
-  const ago = () => watcherAnswer({ txid: 'old', confirmations: 10, amount: '0.5', time: 3141592653 });
+  const ago = () => watcherAnswer({ address: '8sub', currency: 'xmr', txid: 'old', confirmations: 10, amount: '0.5', time: 3141592653 });
   const future = await checkPayment({
     watcherUrl,
     address: '8sub',
