@@ -13,10 +13,11 @@
 //
 // GET /payment?address=&currency=xmr|btc
 // 200 { txid, confirmations, amount, outputAmount, time } or { pending: true },
-//     signed with `x-cipher-sig: v1=<hex hmac-sha256>` over the raw body bytes
-//     (the watch token is the key) and `x-cipher-ts` in unix seconds. The phone
-//     rejects an unsigned or stale answer, so only the watcher's own word
-//     moves an order. `time` is the block or event time of the transfer, in
+//     signed with `x-cipher-sig: v1=<hex hmac-sha256>` over the timestamp
+//     and the raw body bytes (`<ts>:<body>`, the watch token is the key),
+//     with `x-cipher-ts` in unix seconds. The phone rejects an unsigned,
+//     re-stamped or stale answer, so only the watcher's own word moves an
+//     order. `time` is the block or event time of the transfer, in
 //     unix seconds, and the oldest one in the covering set. The phone uses it
 //     to refuse a transfer recorded before the order's address was issued.
 // 503 { error } when that currency's node is not configured.
@@ -55,12 +56,14 @@ function tokenMatches(presented) {
 }
 
 // Every 200 answer is signed so the phone can tell a forged report from a real
-// one. The signature covers the exact body bytes; the watch token is the key.
-// The phone also checks `x-cipher-ts` is within two minutes of its own clock.
+// one. The signature covers the timestamp and the exact body bytes; the watch
+// token is the key. The phone also checks `x-cipher-ts` is within two minutes
+// of its own clock — which bites only because the timestamp itself is inside
+// the signature: a replay of a captured answer cannot re-stamp the date.
 function signedAnswer(res, report) {
   const body = JSON.stringify(report);
   const ts = Math.floor(Date.now() / 1000);
-  const sig = `v1=${createHmac('sha256', watchToken).update(body).digest('hex')}`;
+  const sig = `v1=${createHmac('sha256', watchToken).update(`${ts}:${body}`).digest('hex')}`;
   res.writeHead(200, { 'Content-Type': 'application/json', 'x-cipher-sig': sig, 'x-cipher-ts': String(ts) });
   res.end(body);
 }
