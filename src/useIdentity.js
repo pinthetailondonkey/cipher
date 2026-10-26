@@ -265,9 +265,23 @@ export function useIdentity() {
           const { getPublicKey, nip19 } = await import('nostr-tools')
           const sk = Uint8Array.from(JSON.parse(sessionSk))
           const pk = getPublicKey(sk)
-          setKeys({ sk, pk, npub: nip19.npubEncode(pk) })
-          setHasVault(true)
-          restoredSession = true;
+          // A stored session is one account's key, but the storage scope
+          // follows the device-wide active account, which a second tab can
+          // switch while this tab's credential is saved. A tab whose key and
+          // scope disagree would write its own receipts and orders into
+          // another account's drawers, so the session restores only when
+          // they match; a stale session is thrown out and the tab locks.
+          // An unset pointer claims the session's account.
+          // (security re-attack)
+          const pointer = getActivePubkey()
+          if (pointer && pointer !== 'guest' && pointer !== pk) {
+            sessionStorage.removeItem('cipher_session_sk')
+          } else {
+            if (!pointer || pointer === 'guest') localStorage.setItem('cipher_active_pubkey', pk)
+            setKeys({ sk, pk, npub: nip19.npubEncode(pk) })
+            setHasVault(true)
+            restoredSession = true;
+          }
         } catch (e) { sessionStorage.removeItem('cipher_session_sk') }
       }
 
@@ -474,6 +488,10 @@ export function useIdentity() {
         localStorage.setItem('cipher_biometric_pubkey', pubkey);
         localStorage.setItem('cipher_biometric_enabled', 'true');
       }
+      // A passkey-bound account that unlocks with no device pointer claims
+      // it — otherwise its writes land in the guest scope.
+      // (security re-attack)
+      if (!getActivePubkey()) setActivePubkey(pubkey)
       const { nip19 } = await import('nostr-tools')
       const sk = Uint8Array.from(secretKey)
       sessionStorage.setItem('cipher_session_sk', JSON.stringify(Array.from(sk)))
