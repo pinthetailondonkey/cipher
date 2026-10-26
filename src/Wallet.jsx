@@ -428,7 +428,19 @@ export default function Wallet({ identity, onOpenChat }) {
 
         <div className="overflow-hidden rounded-2xl border border-white/10 bg-[#0A0A0A]/60 shadow-2xl backdrop-blur-2xl">
           {isVendor && (
-            <button onClick={() => { setIsVendor(false); useChatStore.getState().setToast({ type: 'success', message: 'Switched to buyer mode.' }); }} className="flex w-full items-center gap-3 border-b border-white/5 p-4 text-left">
+            <button onClick={async () => {
+              setIsVendor(false);
+              // Leaving vendor mode clears what the mode saved: the leftover
+              // receiving addresses were the bug — they stuck around on this
+              // device and made the app bounce like a stuck error.
+              setBtcAddress('');
+              setXmrAddress('');
+              savePaymentAddresses({ btc: '', xmr: '' });
+              try {
+                await saveVendorPaymentConfig(identity, { btcXpub: '', xmrPrivateViewKey: '', btcNetwork: 'bc' });
+              } catch { /* locked device: the config is overwritten on the next save */ }
+              useChatStore.getState().setToast({ type: 'success', message: 'Switched to buyer mode. Payment details were cleared from this device.' });
+            }} className="flex w-full items-center gap-3 border-b border-white/5 p-4 text-left">
               <span className="text-[15px] font-semibold text-blue-500">Switch to buyer mode</span>
             </button>
           )}
