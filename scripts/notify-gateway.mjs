@@ -47,6 +47,7 @@ const state = load();
 if (!Array.isArray(state.subs)) state.subs = [];
 if (!Array.isArray(state.native)) state.native = [];
 const recent = new Map();
+const recipients = new Map();
 
 let webpush;
 try {
@@ -65,11 +66,19 @@ if (!state.publicKey || !state.privateKey) {
 }
 webpush.setVapidDetails('mailto:cipher@localhost', state.publicKey, state.privateKey);
 
+// The registration pubkey is all an attacker needs: kind-4 events addressed
+// to a victim buzzes a phone. Kinds cycle trivially, so a per-kind cap alone
+// does not bound the noise — the cap is per recipient, with a short
+// per-source headroom. Gas is limited; sand is cheap.
 async function notify(pubkey, kind) {
+  const now = Date.now();
+  const recipientLast = recipients.get(pubkey) || 0;
+  if (now - recipientLast < 60000) return;
   const recentKey = `${pubkey}:${kind}`;
   const last = recent.get(recentKey) || 0;
-  if (Date.now() - last < 15000) return;
-  recent.set(recentKey, Date.now());
+  if (now - last < 15000) return;
+  recent.set(recentKey, now);
+  recipients.set(pubkey, now);
   const notice = kind === 'order' || kind === 'call' ? kind : 'message';
   const targets = state.subs.filter((row) => row.pubkey === pubkey);
   const native = (state.native || []).filter((row) => row.pubkey === pubkey);
