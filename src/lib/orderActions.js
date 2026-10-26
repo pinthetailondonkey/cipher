@@ -130,6 +130,10 @@ export function orderPaymentDetails(messages, orderId, ownPubkey) {
     paymentMethods: latest('paymentMethods')?.data.paymentMethods || request.data.paymentMethods || null,
     coinCurrency: latest('coinCurrency')?.data.coinCurrency || request.data.coinCurrency || '',
     coinAmount: latest('coinAmount')?.data.coinAmount ?? request.data.coinAmount ?? '',
+    // When the address this order pays was issued — the acceptance's mark,
+    // written when the vendor derived it. The chain check refuses a
+    // transfer dated before it. (security S1)
+    issuedAt: latest('issuedAt')?.data.issuedAt ?? null,
   };
 }
 

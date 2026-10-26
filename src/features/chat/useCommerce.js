@@ -138,6 +138,11 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
             paymentMethods,
             coinAmount,
             coinCurrency,
+            // When this order's address was issued. It rides on the
+            // acceptance so every side — the buyer's chain check, a vendor
+            // on a second device — can refuse a transfer the chain dates
+            // before the address existed, on any device. (security S1)
+            issuedAt,
           };
           const result = await sendDM(msg.pubkey, payload);
           if (!result.success) {
@@ -319,7 +324,11 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
             currency,
             amount,
             state: chainedState,
-            issuedAt: msg.data?.issuedAt,
+            // When the order's address was issued: the acceptance carried
+            // it, the vendor's own patch carries it on their devices. The
+            // buyer's request card never dated the address and no longer
+            // feeds the gate. (security S1)
+            issuedAt: details?.issuedAt ?? vendorPair?.issuedAt,
           });
           if (outcome.short) {
             setToast({ type: 'info', message: 'The payment is short of the order.' });
@@ -363,8 +372,10 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
             }
             // An order consumes only a transfer the chain dates at or after
             // its address was issued. An older transfer on the same address
-            // was money that arrived for something else. (security S1)
-            const issuedAtSec = Number(msg.data?.issuedAt);
+            // was money that arrived for something else. The date is the one
+            // this device wrote at issuance — the card, then the acceptance
+            // — never a field the buyer could type. (security S1)
+            const issuedAtSec = Number(details?.issuedAt ?? vendorPair?.issuedAt);
             if (Number.isFinite(issuedAtSec) && issuedAtSec > 0) {
               const transferTime = Number(outcome.report?.time);
               if (!Number.isFinite(transferTime) || transferTime < issuedAtSec) {
