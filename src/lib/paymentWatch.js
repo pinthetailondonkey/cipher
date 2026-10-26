@@ -25,6 +25,13 @@ export function isPublicExplorer(value) {
   return EXPLORERS.some((name) => host === name || host.endsWith(`.${name}`));
 }
 
+const LOCAL_WATCHER_HOSTS = new Set(['localhost', '127.0.0.1', '::1', '[::1]']);
+
+export function isLocalWatcherHost(hostname) {
+  const host = String(hostname || '').trim().toLowerCase().replace(/\.$/, '');
+  return LOCAL_WATCHER_HOSTS.has(host);
+}
+
 export function paymentWatchUrl(watcherUrl, { address, currency } = {}) {
   const raw = String(watcherUrl || '').trim();
   if (!raw) throw new Error('No payment watcher is set. This device does not check a block explorer.');
@@ -37,6 +44,11 @@ export function paymentWatchUrl(watcherUrl, { address, currency } = {}) {
   }
   if (url.protocol !== 'https:' && url.protocol !== 'http:') {
     throw new Error('The payment watcher address is not a URL.');
+  }
+  // An http watcher on the open internet is exactly the seat the answer
+  // forger sits in. Only a localhost watcher may speak plain HTTP.
+  if (url.protocol === 'http:' && !isLocalWatcherHost(url.hostname)) {
+    throw new Error('A payment watcher on the open internet must use HTTPS. Paste an https watcher, or run this one on this device.');
   }
   const token = url.searchParams.get('token') || '';
   if (!token) throw new Error('The payment watcher URL needs a token.');
@@ -136,6 +148,41 @@ export function reportFromTransfers(transfers, address, currency) {
   return report;
 }
 
+// A watcher answer carries `x-cipher-sig: v1=<hex hmac-sha256>` over the exact
+// raw body bytes, with the watch token as the key, and `x-cipher-ts` in unix
+// seconds. An answer older or newer than 120 seconds is stale, so a captured
+// answer cannot be replayed later.
+const WATCHER_SIG_MAX_AGE = 120;
+
+function hexEqual(a, b) {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i += 1) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
+}
+
+async function watcherSignature(rawBody, token) {
+  const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(token), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  const mac = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(rawBody));
+  let hex = '';
+  for (const byte of new Uint8Array(mac)) hex += byte.toString(16).padStart(2, '0');
+  return hex;
+}
+
+export async function verifyWatcherResponse({ rawBody, sig, ts, token, nowSec } = {}) {
+  if (typeof rawBody !== 'string' || rawBody.length === 0) return false;
+  if (!/^\d+$/.test(String(ts ?? '').trim())) return false;
+  const sent = Number(ts);
+  const now = Number(nowSec);
+  if (!Number.isInteger(now)) return false;
+  if (Math.abs(now - sent) > WATCHER_SIG_MAX_AGE) return false;
+  const presented = String(sig ?? '').trim();
+  const match = presented.match(/^v1=([0-9a-f]{64})$/);
+  if (!match) return false;
+  const computed = await watcherSignature(rawBody, token);
+  return hexEqual(computed, match[1]);
+}
+
 export async function checkPayment({ watcherUrl, address, currency, state, amount, fetchImpl = globalThis.fetch } = {}) {
   const endpoint = paymentWatchUrl(watcherUrl, { address, currency });
   if (!String(address || '').trim()) throw new Error('This order has no payment address to check.');
@@ -147,14 +194,39 @@ export async function checkPayment({ watcherUrl, address, currency, state, amoun
     console.error('[payments] Watcher did not answer:', error);
     throw new Error('The payment watcher did not answer.');
   }
-  let body = null;
+  let raw = null;
   try {
-    body = await response.json();
+    raw = await response.text();
   } catch {
-    body = null;
+    raw = null;
   }
   if (!response.ok) {
-    throw new Error(body?.error || `The payment watcher refused the check (${response.status}).`);
+    let errorBody = null;
+    try {
+      errorBody = JSON.parse(raw);
+    } catch {
+      errorBody = null;
+    }
+    throw new Error(errorBody?.error || `The payment watcher refused the check (${response.status}).`);
+  }
+  // Every answer is signed and freshness-checked before it can speak about the
+  // chain. A missing signature or a wrong one fails closed: nothing moves.
+  const sig = response.headers?.get?.('x-cipher-sig') ?? null;
+  const ts = response.headers?.get?.('x-cipher-ts') ?? null;
+  const verified = raw != null && await verifyWatcherResponse({ rawBody: raw, sig, ts, token, nowSec: Math.floor(Date.now() / 1000) });
+  if (!verified) {
+    if (sig == null && ts == null) {
+      console.warn('[payments] This watcher does not sign its answers. Update your watcher, then check again.');
+    } else {
+      console.warn('[payments] A watcher answer failed its signature or freshness check. It was ignored.');
+    }
+    throw new Error('The payment watcher tried to answer, but its answer did not pass the signature check. Nothing was marked on the order.');
+  }
+  let body = null;
+  try {
+    body = parseExactAmounts(raw);
+  } catch {
+    body = null;
   }
   if (!body || body.pending || !body.txid) return { moved: false, state };
   const report = {
