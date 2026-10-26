@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { db, saveProfile } from './db'
+import { shortNpub } from './lib/npub'
 import { profileReadRelays } from './lib/relays'
 
 let listeners = new Set();
@@ -76,8 +77,8 @@ export function useProfiles(pubkeys) {
             const data = JSON.parse(ev.content)
             const profileData = {
               pubkey: ev.pubkey,
-              name: data.display_name || data.name || ev.pubkey.slice(0, 8),
-              displayName: data.display_name || data.name || ev.pubkey.slice(0, 8),
+              name: data.display_name || data.name || shortNpub(ev.pubkey),
+              displayName: data.display_name || data.name || shortNpub(ev.pubkey),
               picture: data.picture || null,
               about: data.about || ''
             }

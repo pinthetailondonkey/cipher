@@ -6,6 +6,7 @@ import { generalRelays, groupRelays, queryAllPages, queryWithTimeout } from '../
 import { getAuthenticatedPool } from '../../lib/pool';
 import { useChatStore } from '../../store/chatStore';
 import { scopedGet, scopedSet } from '../../lib/storage';
+import { shortNpub } from '../../lib/npub';
 import { getPrivacy, allowsTyping } from '../../lib/privacy';
 import { decodeGroupEvent } from '../../lib/crypto/groupMessageCodec';
 import { resumeKeyRequestIds } from '../../lib/crypto/groupKeyRequest';
@@ -250,8 +251,8 @@ export function useChatBootstrap({
           const meta = JSON.parse(ev.content);
           const profile = {
             pubkey: ev.pubkey,
-            name: meta.name || meta.display_name || ev.pubkey.slice(0, 8),
-            displayName: meta.display_name || meta.name || ev.pubkey.slice(0, 8),
+            name: meta.name || meta.display_name || shortNpub(ev.pubkey),
+            displayName: meta.display_name || meta.name || shortNpub(ev.pubkey),
             picture: meta.picture || null, about: meta.about || '',
           };
           fresh[ev.pubkey] = profile;

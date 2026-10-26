@@ -6,6 +6,7 @@ import { useChatStore } from '../store/chatStore';
 import { getAuthenticatedPool } from '../lib/pool';
 import { groupRelays, generalRelays, groupOnlyRelays, queryWithTimeout } from '../lib/relays';
 import { allowsTyping } from '../lib/privacy';
+import { shortNpub } from '../lib/npub';
 import { getMyGroups, setMyGroups } from '../lib/myGroups';
 import { encodeGroupPayload, decodeGroupEvent } from '../lib/crypto/groupMessageCodec';
 import { getAllGroupKeys, getCurrentGroupKey, putGroupKey } from '../lib/crypto/groupKeyStore';
@@ -666,7 +667,7 @@ export function useNIP29Group({ identity }) {
     }, identity.sk);
     await Promise.allSettled(pool.publish(groupRelays, ev));
     setGroupMembers(prev => prev.filter(m => m.pubkey !== memberPubkey));
-    appendSystemMessage(groupId, `User ${memberPubkey.slice(0, 6)}... was kicked from the group`, ev.id);
+    appendSystemMessage(groupId, `${shortNpub(memberPubkey)} was kicked from the group`, ev.id);
   }, [identity, setGroupMembers, appendSystemMessage]);
 
   const promoteMember = useCallback(async (groupId, memberPubkey, isAdmin) => {
@@ -678,7 +679,7 @@ export function useNIP29Group({ identity }) {
     }, identity.sk);
     await Promise.allSettled(pool.publish(groupRelays, ev));
     setGroupMembers(prev => prev.map(m => m.pubkey === memberPubkey ? { ...m, role: isAdmin ? 'member' : 'admin' } : m));
-    appendSystemMessage(groupId, `User ${memberPubkey.slice(0, 6)}... was ${isAdmin ? 'demoted to member' : 'promoted to admin'}`, ev.id);
+    appendSystemMessage(groupId, `${shortNpub(memberPubkey)} was ${isAdmin ? 'demoted to member' : 'promoted to admin'}`, ev.id);
   }, [identity, setGroupMembers, appendSystemMessage]);
 
   const addMember = useCallback(async (groupId, memberPubkey) => {
@@ -696,7 +697,7 @@ export function useNIP29Group({ identity }) {
     }
     const snapshot = await loadMemberSnapshot(groupId);
     await rememberMembers(groupId, [...new Set([...(snapshot || []), memberPubkey, identity.pk])]);
-    appendSystemMessage(groupId, `User ${memberPubkey.slice(0, 6)}... was added to the group`, ev.id);
+    appendSystemMessage(groupId, `${shortNpub(memberPubkey)} was added to the group`, ev.id);
     setGroupMembers(prev => {
       if (prev.findIndex(x => x.pubkey === memberPubkey) === -1) {
         return [...prev, { pubkey: memberPubkey, role: 'member' }];
@@ -842,7 +843,7 @@ export function useNIP29Group({ identity }) {
           const queued = queuePendingJoin(groupId, { pubkey: pk, eventId: event.id, at: event.created_at });
           if (queued) {
             const owned = useChatStore.getState().groups.some((g) => g.id === groupId && g.creator === identity.pk);
-            if (owned) appendSystemMessage(groupId, `User ${pk.slice(0, 6)}... wants to join. Approve it in Join requests.`, event.id);
+            if (owned) appendSystemMessage(groupId, `${shortNpub(pk)} wants to join. Approve it in Join requests.`, event.id);
             else console.log('[group] Join request queued for', groupId.slice(0, 6), 'from', pk.slice(0, 6));
           }
           return;
@@ -855,7 +856,7 @@ export function useNIP29Group({ identity }) {
             return updated;
           });
         }
-        if (pk !== identity.pk) appendSystemMessage(groupId, `User ${pk.slice(0, 6)}... joined the group`, event.id);
+        if (pk !== identity.pk) appendSystemMessage(groupId, `${shortNpub(pk)} joined the group`, event.id);
         return;
       }
       if (event.kind === 9022) {
@@ -864,7 +865,7 @@ export function useNIP29Group({ identity }) {
         if (useChatStore.getState().activeGroup?.id === groupId) {
           setGroupMembers(prev => Array.isArray(prev) ? prev.filter(m => m.pubkey !== pk) : []);
         }
-        appendSystemMessage(groupId, `User ${pk.slice(0, 6)}... left the group`, event.id);
+        appendSystemMessage(groupId, `${shortNpub(pk)} left the group`, event.id);
         return;
       }
       if (event.kind === 9000) {
@@ -880,7 +881,7 @@ export function useNIP29Group({ identity }) {
             return updated;
           });
         }
-        appendSystemMessage(groupId, `User ${pk.slice(0, 6)}... was ${role === 'admin' ? 'promoted to admin' : 'demoted to member'}`, event.id);
+        appendSystemMessage(groupId, `${shortNpub(pk)} was ${role === 'admin' ? 'promoted to admin' : 'demoted to member'}`, event.id);
         return;
       }
       if (event.kind === 9001) {
@@ -889,7 +890,7 @@ export function useNIP29Group({ identity }) {
         if (useChatStore.getState().activeGroup?.id === groupId) {
           setGroupMembers(prev => Array.isArray(prev) ? prev.filter(m => m.pubkey !== pk) : []);
         }
-        appendSystemMessage(groupId, `User ${pk.slice(0, 6)}... was kicked from the group`, event.id);
+        appendSystemMessage(groupId, `${shortNpub(pk)} was kicked from the group`, event.id);
         return;
       }
       if (event.kind === 9002) {
