@@ -4,6 +4,7 @@ import { generateGroupKey } from './groupCipher';
 import { distributeGroupKey } from './groupKeyDistribution';
 import { getAllGroupKeys, getCurrentGroupKey, putGroupKey } from './groupKeyStore';
 import { queueMemberBaseline } from './memberBaseline';
+import { isJoinDenied } from '../groupJoinQueue';
 
 // A snapshot older than this is not grounds to refuse a key. Re-fetch first.
 export const MEMBER_SNAPSHOT_MAX_AGE_SEC = 120;
@@ -203,6 +204,12 @@ export async function grantKeyRequest({
   selfCreated = false,
   fetchMembers,
 }) {
+  // H1 fix (round-three re-hack): the deny outvotes the relay on the GRANT
+  // path too, not only on the 9021 replay arm. The cached-snapshot fast
+  // path and a relay-widened re-read both used to grant a key to a peer
+  // the owner already denied. Key provision to a denied person is refused
+  // outright, whatever the roster happens to name right now.
+  if (isJoinDenied(groupId, requester)) return 'deny';
   return resolveKeyRequest({
     requester,
     creator,
