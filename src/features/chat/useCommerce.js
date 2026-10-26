@@ -468,7 +468,21 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
         // itself never moves here — a refund is a transaction a watcher
         // reports for itself, not a step this table takes.
         const refunding = action === 'mark_refunded';
-        const status = refunding ? ORDER_STATUS.REFUNDED : reopenedStatus(msg.data?.paymentState);
+        let reopenedFrom = '';
+        if (!refunding) {
+          // What the reopening returns to is the payment state this device
+          // earned, read the way every other gate reads it. The card's own
+          // field on a received request is the buyer's word: a claimed
+          // 'confirmed' would reopen an order the vendor never saw paid.
+          // (security S6)
+          try {
+            const history = await db.messages.where('chatId').equals(msg.pubkey).toArray();
+            reopenedFrom = orderState(history, msg.id, msg, identity.pk).paymentState;
+          } catch {
+            reopenedFrom = '';
+          }
+        }
+        const status = refunding ? ORDER_STATUS.REFUNDED : reopenedStatus(reopenedFrom);
         const payload = {
           type: 'order_update',
           orderId: msg.id,
