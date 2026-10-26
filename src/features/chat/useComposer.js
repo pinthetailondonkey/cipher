@@ -3,7 +3,7 @@ import { db, saveMessage } from '../../db';
 import { useChatStore } from '../../store/chatStore';
 import { scopedRemove } from '../../lib/storage';
 import { haptic } from '../../lib/haptics';
-import { sortMessages } from './media';
+import { sortMessages, stampArrival } from './media';
 import { sendPrivateImage, uploadPrivateMedia } from '../../lib/mediaCrypto';
 import { blossomServers } from '../../lib/egress';
 
@@ -57,11 +57,11 @@ export function useComposer({ identity, sendDM, sendGroupMessage }) {
     const replyId = replyingTo ? replyingTo.id : null;
     const isDmView = view === 'dm';
     const chatId = isDmView ? activeDm : activeGroup?.id;
-    const newMsg = {
+    const newMsg = stampArrival({
       id: tempId, clientId: tempId, isSender: true, pubkey: identity.pk,
       timestamp: Math.floor(Date.now() / 1000), local_timestamp: Date.now(), replyTo: replyId,
       deliveryStatus: 'sending',
-    };
+    });
     if (isDmView && activeDm) {
       newMsg.data = msgPayload;
       newMsg.isGroup = false;

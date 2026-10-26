@@ -10,6 +10,7 @@ import { copyText } from './lib/copyText';
 import { generalRelays } from './lib/relays';
 import Picture from './components/ui/Picture';
 import { listingFromEvent, orderProduct, priceLabel } from './lib/listing';
+import { stampArrival } from './features/chat/media';
 
 export default function Shop({ identity, setActiveTab }) {
   const [query, setQuery] = useState('');
@@ -74,7 +75,7 @@ export default function Shop({ identity, setActiveTab }) {
     if (!identity?.sk || !vendorPubkey) throw new Error('Unlock your account to contact the seller.');
     if (vendorPubkey === identity.pk) throw new Error('You cannot place an order with yourself.');
     const tempId = `temp-${Date.now()}`;
-    const optimistic = {
+    const optimistic = stampArrival({
       id: tempId,
       clientId: tempId,
       isSender: true,
@@ -84,7 +85,7 @@ export default function Shop({ identity, setActiveTab }) {
       local_timestamp: Date.now(),
       deliveryStatus: 'sending',
       data: payload,
-    };
+    });
     useChatStore.getState().setDms((current) => ({
       ...current,
       [vendorPubkey]: [...(current[vendorPubkey] || []), optimistic],

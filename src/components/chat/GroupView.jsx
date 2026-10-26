@@ -11,6 +11,7 @@ import { useNIP29Group, loadGroupProfile, retrySecuringGroup } from '../../hooks
 import { securingPhase, securingSendsFor } from '../../lib/crypto/groupKeyRequest';
 import { haptic } from '../../lib/haptics';
 import { noHexName } from '../../lib/npub';
+import { stampArrival } from '../../features/chat/media';
 import Picture from '../ui/Picture';
 
 function GroupStorefront({ items, pinnedId, canList, onBuy, onList, pendingLists = [], now = 0, onRetrySecure }) {
@@ -220,7 +221,7 @@ export default function GroupView({
     const seconds = disappearingSeconds(useChatStore.getState().disappearingTimers?.[groupId]);
     if (seconds > 0) payload.expires_at = Math.floor(Date.now() / 1000) + seconds;
     const tempId = `temp-${Date.now()}`;
-    const optimistic = {
+    const optimistic = stampArrival({
       id: tempId,
       clientId: tempId,
       isSender: true,
@@ -231,7 +232,7 @@ export default function GroupView({
       deliveryStatus: 'sending',
       rawContent: JSON.stringify(payload),
       isGroup: true,
-    };
+    });
     useChatStore.getState().setGroupMessages((prev) => ({
       ...prev,
       [groupId]: [...(prev[groupId] || []), optimistic],

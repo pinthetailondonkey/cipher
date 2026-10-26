@@ -13,6 +13,7 @@ import { resumeKeyRequestIds } from '../../lib/crypto/groupKeyRequest';
 import { useGroupKeyReconciler } from '../../hooks/useGroupKeyReconciler';
 import { flushSecuringGroupSends } from '../../hooks/useNIP29Group';
 import { bindMemberBaselinePublisher, sealMemberBaseline } from '../../lib/crypto/memberBaseline';
+import { sortMessages } from './media';
 import { activeUrl, entryById } from '../../lib/egress';
 import { isNativeShell, registerWithGateway, subscribeBrowser, subscribeNative } from '../../lib/pushGateway';
 
@@ -225,13 +226,6 @@ export function useChatBootstrap({
     };
     fetchMyUsername();
   }, [identity?.pk]);
-
-  const sortMessages = (a, b) => {
-    const timeA = a.local_timestamp || (a.timestamp * 1000);
-    const timeB = b.local_timestamp || (b.timestamp * 1000);
-    if (timeA !== timeB) return timeA - timeB;
-    return (a.id || '').localeCompare(b.id || '');
-  };
 
   const fetchProfilesForPubkeys = async (pubkeys) => {
     if (!pubkeys || pubkeys.length === 0) return;

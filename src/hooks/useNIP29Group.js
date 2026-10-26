@@ -18,6 +18,7 @@ import { enqueueNostrEvent, startOutboxSync } from '../lib/outbox';
 import { groupSocketUrl } from '../lib/egress';
 import { relaysForPeer } from '../lib/dmRelays';
 import { dropSecuringSend, forgetPendingKeyRequest, queueSecuringSend, resetKeyRequest, securingSendsFor } from '../lib/crypto/groupKeyRequest';
+import { sortMessages, stampArrival } from '../features/chat/media';
 import { isJoinDenied, loadPendingJoins, queuePendingJoin, withoutDenied } from '../lib/groupJoinQueue.js';
 
 function currentGroupRelay() {
@@ -110,12 +111,16 @@ function sameOutgoingMessage(message, event, identity, clientId) {
   );
 }
 
+// The first arrival stamp wins: a relay echo of an optimistic send carries a
+// later counter than the moment the message was made, and the made-here
+// order is the truthful one.
 function mergeGroupMessage(existing, incoming) {
   if (!existing) return incoming;
   const rawContent = incoming.rawContent || existing.rawContent || null;
   return {
     ...existing,
     ...incoming,
+    arrival: existing.arrival ?? incoming.arrival,
     clientId: incoming.clientId || existing.clientId,
     rawContent,
     pending: !rawContent && !!incoming.pending,
@@ -434,13 +439,6 @@ export function useNIP29Group({ identity }) {
     return startOutboxSync(identity);
   }, [identity?.pk, identity?.sk]);
 
-  const sortMessages = (a, b) => {
-    const tA = a.local_timestamp || (a.timestamp * 1000);
-    const tB = b.local_timestamp || (b.timestamp * 1000);
-    if (tA !== tB) return tA - tB;
-    return (a.id || '').localeCompare(b.id || '');
-  };
-
   const appendSystemMessage = useCallback((groupId, text, eventId = null) => {
     const id = eventId ? 'sys-' + eventId : 'sys-' + Date.now() + Math.random().toString(36).substr(2, 9);
     setGroupMessages(prev => {
@@ -450,12 +448,11 @@ export function useNIP29Group({ identity }) {
         ...prev,
         [groupId]: [
           ...msgs,
-          {
+          stampArrival({
             id, isSender: false, isGroup: true, type: 'system',
             timestamp: Math.floor(Date.now() / 1000),
             rawContent: JSON.stringify({ type: 'system', message: text })
-          }
-        ].sort(sortMessages)
+          })        ].sort(sortMessages)
       };
     });
   }, [setGroupMessages]);
@@ -1005,7 +1002,7 @@ export function useNIP29Group({ identity }) {
         const groupMsgs = prev[groupId] || [];
         const existingIndex = groupMsgs.findIndex((m) => sameOutgoingMessage(m, event, identity, clientId));
 
-        const baseMsg = {
+        const baseMsg = stampArrival({
           id: event.id, clientId, isSender: event.pubkey === identity.pk,
           pubkey: event.pubkey, timestamp: event.created_at,
           deliveryStatus: event.pubkey === identity.pk ? 'sent' : undefined,
@@ -1014,7 +1011,7 @@ export function useNIP29Group({ identity }) {
           ciphertext: isPending ? event.content : null,
           epoch: decEpoch, pending: isPending,
           replyTo: replyTag ? replyTag[1] : null, isGroup: true
-        };
+        });
 
         if (existingIndex >= 0) {
           const newMsgs = [...groupMsgs];
@@ -1067,14 +1064,14 @@ export function useNIP29Group({ identity }) {
           setGroupMessages(prev => {
             const groupMsgs = prev[gid] || [];
             const idx = groupMsgs.findIndex((m) => sameOutgoingMessage(m, event, identity, clientId));
-            const newMsg = {
+            const newMsg = stampArrival({
               id: event.id, clientId, isSender: event.pubkey === identity.pk,
               pubkey: event.pubkey, timestamp: event.created_at,
               deliveryStatus: event.pubkey === identity.pk ? 'sent' : undefined,
               local_timestamp: Date.now(), rawContent: decoded.plaintext,
               epoch: decoded.epoch, pending: false,
               replyTo: replyTag ? replyTag[1] : null, isGroup: true,
-            };
+            });
             if (idx >= 0) {
               const updated = [...groupMsgs];
               updated[idx] = mergeGroupMessage(updated[idx], newMsg);
