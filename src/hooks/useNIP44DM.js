@@ -11,6 +11,7 @@ import { publishOwnRelayList, relaysForPeer } from '../lib/dmRelays';
 import { sortMessages, stampArrival } from '../features/chat/media';
 import { withBuzzTag } from '../lib/pushGateway';
 import { conversationKey } from '../lib/dmKeys';
+import { noteFirstSeen } from '../lib/safetyNumber';
 import { acceptPayment, rememberPublicView, sendCountersignOnce } from '../lib/proofOfTrade';
 import { scopedSet } from '../lib/storage';
 
@@ -141,6 +142,9 @@ export function useNIP44DM({ identity }) {
               const isSender = event.pubkey === identity.pk;
               const counterparty = isSender ? event.tags.find(t => t[0] === 'p')?.[1] : event.pubkey;
               if (!counterparty) return;
+              // Safety numbers: first time this key speaks to us, freeze where
+              // we saw it. Fire-and-forget — never blocks ingestion.
+              noteFirstSeen(counterparty).catch(() => {});
               // Audit H8: drop messages from blocked users at ingestion
               const blocked = useChatStore.getState().blockedUsers || [];
               if (blocked.includes(counterparty)) return;
@@ -258,6 +262,8 @@ export function useNIP44DM({ identity }) {
         const isSender = ev.pubkey === identity.pk;
         const counterparty = isSender ? ev.tags.find(t => t[0] === 'p')?.[1] : ev.pubkey;
         if (!counterparty) continue;
+        // Safety numbers: same first-seen freeze on the history path.
+        noteFirstSeen(counterparty).catch(() => {});
         const blocked = useChatStore.getState().blockedUsers || [];
         if (blocked.includes(counterparty)) continue;
         const shared = conversationKey(identity.sk, counterparty);
