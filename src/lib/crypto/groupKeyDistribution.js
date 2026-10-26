@@ -1,6 +1,7 @@
 import { toHex, fromHex } from './groupCipher';
-import { recordGrant, getGrantedEpochsFor, putGroupKey } from './groupKeyStore';
+import { recordGrant, getGrantedEpochsFor, getCurrentGroupKey, putGroupKey } from './groupKeyStore';
 import { currentOwner } from '../../db';
+import { loadMemberSnapshot } from './groupKeyRotation';
 
 const KEY_HEX = /^[0-9a-f]{64}$/i;
 
@@ -18,9 +19,53 @@ export function parseGroupKeyBundle(payload) {
   return out;
 }
 
-export async function installReceivedGroupKey(payload) {
+// F1 fix (audit finding 1): a kind-4 t:'gkey' bundle re-keys a group on
+// install, so any key could re-key any group. The sender must now prove
+// standing in the group: the creator, an admin in the stored member snapshot,
+// or an ordinary member of record — and only for epochs at or above what this
+// device already holds (a stale bundle cannot roll the group back).
+//
+// The stored snapshot is the relay-signed 39002 list (rememberMembers only
+// stores authorized frames). No snapshot, no install: an unknown gid or a
+// group this device never synced is refused, which is the takeover path.
+// Pure decision, unit-tested directly: the sender must be IN the snapshot,
+// and a non-admin of record may not roll the epoch back. (Snapshot shape and
+// its relay-signature gate are covered in groupMembership.test.js.)
+export function senderAuthorizedForGroupKey({ snapshot, sender, maxEpoch, currentEpoch }) {
+  if (!sender || !Array.isArray(snapshot)) return false;
+  const row = snapshot.find((member) => {
+    const pubkey = typeof member === 'string' ? member : member?.pubkey;
+    return String(pubkey || '').toLowerCase() === String(sender).toLowerCase();
+  });
+  if (!row) return false;
+  if (typeof row === 'object' && row.role && row.role !== 'member') return true;
+  return !(Number.isInteger(currentEpoch) && Number.isInteger(maxEpoch) && maxEpoch < currentEpoch);
+}
+
+export async function senderMayInstallGroupKey({ sender, groupId, maxEpoch }) {
+  if (!sender || !groupId) return false;
+  const snapshot = await loadMemberSnapshot(groupId);
+  if (!Array.isArray(snapshot)) return false;
+  const current = await getCurrentGroupKey(groupId);
+  return senderAuthorizedForGroupKey({ snapshot, sender, maxEpoch, currentEpoch: current?.epoch });
+}
+
+export async function installReceivedGroupKey(payload, sender = null) {
   const rows = parseGroupKeyBundle(payload);
   if (!rows.length || !currentOwner()) return false;
+  const { groupId } = rows[0];
+  if (rows.some((row) => row.groupId !== groupId)) return false;
+  const maxEpoch = Math.max(...rows.map((row) => row.epoch));
+  const current = await getCurrentGroupKey(groupId);
+  const authorized = await senderMayInstallGroupKey({ sender, groupId, maxEpoch });
+  if (!authorized) {
+    console.warn('[group-key] A key bundle was not installed: sender is not authorized for this group.', { groupId, epoch: maxEpoch });
+    return false;
+  }
+  if (current && Number.isInteger(current.epoch) && maxEpoch < current.epoch) {
+    console.warn('[group-key] A key bundle was not installed: it would roll the group back an epoch.', { groupId, have: current.epoch, offered: maxEpoch });
+    return false;
+  }
   for (const row of rows) await putGroupKey(row.groupId, row.epoch, fromHex(row.hex));
   return true;
 }

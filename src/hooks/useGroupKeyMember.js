@@ -18,7 +18,7 @@ export function dmControlAction(data) {
   return null;
 }
 
-export async function installMemberGroupKey(payload) {
+export async function installMemberGroupKey(payload, sender = null) {
   if (!isGroupKeyPayload(payload)) return false;
-  return installReceivedGroupKey(payload);
+  return installReceivedGroupKey(payload, sender);
 }
