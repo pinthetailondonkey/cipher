@@ -2,6 +2,9 @@ const STORAGE_KEY = 'cipher_network';
 
 // Every host the app can contact. A new outbound host belongs here, not inline.
 // `called: false` is a host the old page policy allowed and the app does not use.
+// The no-IP-leak law: a new CLEARNET row (an ordinary address, not .onion)
+// must carry gate: 'founder' on the row, or the build fails. The founder names
+// the host before it ships.
 export const EGRESS = [
   { id: 'group-relay', role: 'Group relay', url: 'wss://groups.aegispayhq.com', sees: 'Your IP, and every group you open', required: true },
   { id: 'dm-relay', role: 'Message relay', url: 'wss://relay.primal.net', sees: 'Your IP, who you message, and whether each one is a message, an order, or a call. That label is on every message in plain text, so anyone who reads this relay sees it too. The push gateway needs it, because it cannot read the message. The text itself stays encrypted.', required: true },

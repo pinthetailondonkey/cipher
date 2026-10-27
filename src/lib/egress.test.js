@@ -14,6 +14,51 @@ function walk(dir, out = []) {
   return out;
 }
 
+// The no-IP-leak law, half in the row and half here: a clearnet row the founder
+// never named does not ship. The rows below were on the wall before the law and
+// are frozen by id AND address; anything else clearnet needs gate: 'founder',
+// which only lands after the founder names the host. Overriding the address
+// behind a grandfathered id counts as a new row and fails the gate.
+const GRANDFATHERED_CLEARNET = new Map([
+  ['group-relay', 'wss://groups.aegispayhq.com'],
+  ['dm-relay', 'wss://relay.primal.net'],
+  ['profile-nos', 'wss://nos.lol'],
+  ['profile-damus', 'wss://relay.damus.io'],
+  ['profile-purple', 'wss://purplepag.es'],
+  ['search-vertex', 'wss://relay.vertexlab.io'],
+  ['search-noswhere', 'wss://relay.noswhere.com'],
+  ['blossom-primal', 'https://blossom.primal.net'],
+  ['blossom-nostr-build', 'https://nostr.build'],
+  ['blossom-band', 'https://blossom.band'],
+  ['link-preview', 'https://api.microlink.io'],
+  ['dead-drop', 'https://cipherlinkhere.com'],
+  ['stun-google', 'stun:stun.l.google.com:19302'],
+  ['stun-google-1', 'stun:stun1.l.google.com:19302'],
+  ['stun-twilio', 'stun:global.stun.twilio.com:3478'],
+  ['turn', 'turn:openrelayproject:openrelayproject@openrelay.metered.ca:80?transport=tcp'],
+  ['app-host', 'https://sonic-cobalt-4m6q5vj.vercel.app'],
+]);
+
+test('a clearnet row the founder never named does not ship', () => {
+  for (const entry of EGRESS) {
+    if (entry.called === false) continue;
+    const url = String(entry.url || '').trim();
+    const host = (() => {
+      try { return new URL(url).hostname; } catch { return url; }
+    })();
+    if (!url || entry.dynamic) continue;
+    if (isOnionUrl(url)) continue;
+    const grandfathered = GRANDFATHERED_CLEARNET.get(entry.id);
+    if (grandfathered) {
+      assert.equal(url, grandfathered,
+        `row ${entry.id} changed the address the founder reviewed (${grandfathered} -> ${url})`);
+      continue;
+    }
+    assert.equal(entry.gate, 'founder',
+      `${entry.id} reaches the clear internet without gate: 'founder'`);
+  }
+});
+
 test('every outbound host is listed, and nowhere else', () => {
   const hostOf = (url) => {
     if (/^stuns?:/i.test(url)) return url.replace(/^stuns?:/i, '').split(':')[0];
