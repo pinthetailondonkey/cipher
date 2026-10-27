@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { BadgeCheck, Ban, Copy, Heart, MessageCircle, X } from 'lucide-react';
+import { BadgeCheck, Ban, Copy, Heart, MessageCircle, Store, X } from 'lucide-react';
 import { useProfiles } from '../useProfiles';
 import { useVouchCount } from '../hooks/useVouchCount';
 import { useReputation } from '../hooks/useReputation';
@@ -20,6 +20,17 @@ export default function ProfileModal({ pubkey, identity, onClose, onMessage }) {
   const [notice, setNotice] = useState('');
   const blocked = useChatStore((state) => (pubkey ? state.blockedUsers.includes(pubkey) : false));
   const toggleBlockUser = useChatStore((state) => state.toggleBlockUser);
+  const setVendorStorefrontPubkey = useChatStore((state) => state.setVendorStorefrontPubkey);
+  // How the app signals that someone sells: product cards this device has
+  // received from them, a menu space they own (a menu is a vendor's shop),
+  // or the vouch mark the profile already reads as Trusted Vendor.
+  const sellsFromCards = useChatStore((state) => (pubkey ? (state.dms[pubkey] || []).some((m) => m?.data?.type === 'product' && !m.isSender) : false));
+  const sellsFromMenu = useChatStore((state) => (pubkey ? (state.groups || []).some((g) => g.isChannel && g.creator === pubkey) : false));
+  const isVendor = sellsFromCards || sellsFromMenu || vouchCount >= 3;
+  const openShop = () => {
+    onClose?.();
+    setVendorStorefrontPubkey(pubkey);
+  };
   if (!pubkey) return null;
   const isSelf = identity?.pk === pubkey;
 
@@ -91,6 +102,11 @@ export default function ProfileModal({ pubkey, identity, onClose, onMessage }) {
         {!isSelf && identity?.sk && onMessage && (
           <Button onClick={() => onMessage(pubkey)} className="mt-3 flex w-full items-center justify-center gap-2">
             <MessageCircle size={17} /> Message
+          </Button>
+        )}
+        {!isSelf && isVendor && (
+          <Button variant="secondary" onClick={openShop} className="mt-3 flex w-full items-center justify-center gap-2">
+            <Store size={16} /> View shop
           </Button>
         )}
         <div className="mt-5 flex items-center gap-2 rounded-xl border border-line bg-panelStrong shadow-lg px-4 py-3">

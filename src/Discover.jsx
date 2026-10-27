@@ -5,28 +5,40 @@ import { joinGroup } from './lib/groupJoin';
 import { groupOnlyRelays } from './lib/relays';
 
 // One row of the public directory. A space this account is already in opens
-// on tap; anything else offers Join and shows the join in flight.
+// on tap; anything else offers Join and shows the join in flight. A menu row
+// is a vendor's shop (backlog item 8: menus are vendor shops), so a menu row
+// also carries a "View shop" affordance that opens that vendor's storefront.
 function DiscoverRow({ group, joined, joining, onOpen }) {
   const Icon = group.isChannel ? Store : Users;
   const label = joining ? '…' : joined ? 'Open' : 'Join';
+  const openShop = () => {
+    useChatStore.getState().setVendorStorefrontPubkey(group.creator);
+  };
   return (
-    <button
-      type="button"
-      onClick={() => onOpen(group)}
-      disabled={joining}
-      className="flex w-full items-center justify-between border-b border-ink/5 p-4 text-left last:border-0 active:bg-ink/5 disabled:opacity-50"
-    >
-      <div className="flex items-center gap-3">
-        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-ink/15 bg-ink/10 text-accent">
-          <Icon size={22} />
+    <div className="flex items-stretch border-b border-ink/5 last:border-0">
+      <button
+        type="button"
+        onClick={() => onOpen(group)}
+        disabled={joining}
+        className="flex min-w-0 flex-1 items-center justify-between gap-3 p-4 text-left active:bg-ink/5 disabled:opacity-50"
+      >
+        <div className="flex min-w-0 items-center gap-3">
+          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-ink/15 bg-ink/10 text-accent">
+            <Icon size={22} />
+          </div>
+          <div className="min-w-0">
+            <h3 className="text-[15px] font-semibold text-ink">{group.name}</h3>
+            <p className="text-[13px] text-ink/40 line-clamp-1">{group.about}</p>
+          </div>
         </div>
-        <div>
-          <h3 className="text-[15px] font-semibold text-ink">{group.name}</h3>
-          <p className="text-[13px] text-ink/40 line-clamp-1">{group.about}</p>
-        </div>
-      </div>
-      <span className={`rounded-2xl px-3 py-1.5 text-[13px] font-bold ${joined ? 'text-ink/60' : 'bg-accent text-accentInk'}`}>{label}</span>
-    </button>
+        <span className={`shrink-0 rounded-2xl px-3 py-1.5 text-[13px] font-bold ${joined ? 'text-ink/60' : 'bg-accent text-accentInk'}`}>{label}</span>
+      </button>
+      {group.isChannel && group.creator && (
+        <button type="button" onClick={openShop} className="touch-target flex shrink-0 items-center border-l border-ink/5 px-3 text-[13px] font-bold text-accent active:bg-ink/5">
+          View shop
+        </button>
+      )}
+    </div>
   );
 }
 
@@ -73,6 +85,9 @@ export default function Discover({ identity, onJoined }) {
             // Spaces created inside this app carry [cipher]; the wider
             // network's groups stay out of this screen.
             isCipher: ev.tags.some(t => t[0] === 'cipher'),
+            // A menu is the vendor's shop, so the row's signer is the pubkey
+            // whose storefront the "View shop" door opens. (backlog item 16.10)
+            creator: ev.pubkey,
           };
         });
 
@@ -90,6 +105,7 @@ export default function Discover({ identity, onJoined }) {
             about: group.about || 'No description',
             isChannel: group.isChannel === true,
             isCipher: true,
+            creator: group.creator,
           }));
         setRealGroups([...cipherGroups, ...mine]);
       } catch (err) {
