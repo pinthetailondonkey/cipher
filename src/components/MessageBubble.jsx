@@ -7,6 +7,7 @@ import { haptic } from '../lib/haptics';
 import { securingPhase } from '../lib/crypto/groupKeyRequest';
 import { useChatStore } from '../store/chatStore';
 import LinkPreview, { firstUrl } from './chat/LinkPreview';
+import ReceiptSheet from './chat/ReceiptSheet';
 import Picture from './ui/Picture';
 import { MediaAudio, MediaImage } from './ui/PrivateMedia';
 import { attachmentsFor } from '../lib/mediaCrypto';
@@ -70,7 +71,7 @@ function orderLabel(content) {
   return { text: 'Awaiting payment', className: outline };
 }
 
-function OrderReceipt({ content }) {
+function OrderReceipt({ content, onViewReceipt }) {
   const product = content.product || {};
   const title = product.title || product.name || content.productName || 'Order';
   const price = orderPriceLabel(content);
@@ -89,6 +90,15 @@ function OrderReceipt({ content }) {
           <p className="mt-1 text-[13px] text-ink/50">Not checked on-chain.</p>
         )}
         {address && <p className="mt-1 text-[13px] text-ink/40">Ship to {address}</p>}
+        {onViewReceipt && (
+          <button
+            type="button"
+            onClick={(event) => { event.stopPropagation(); onViewReceipt(); }}
+            className="touch-target -mb-1 mt-1 flex w-full items-center justify-between border-t border-ink/5 pt-1 text-[13px] font-semibold text-accentText active:scale-[0.98]"
+          >
+            View receipt
+          </button>
+        )}
       </div>
     </div>
   );
@@ -104,6 +114,7 @@ export default function MessageBubble({ message, data, onAction, senderName, isP
   const timestamp = Number(message?.timestamp);
   const validTimestamp = Number.isFinite(timestamp) ? timestamp : null;
   const [open, setOpen] = useState(false);
+  const [showReceipt, setShowReceipt] = useState(false);
   const [showReactors, setShowReactors] = useState(false);
   const [clock, setClock] = useState(() => Date.now());
   const mountedAt = useRef(Date.now() / 1000);
@@ -116,6 +127,9 @@ export default function MessageBubble({ message, data, onAction, senderName, isP
   const pressTimer = useRef(null);
   const pressPoint = useRef(null);
   const paymentRows = paymentRowsFor(content);
+  // The receipt lives under the order request's id; an update carries it as
+  // content.orderId. Receipt inspection door (backlog item 16.2).
+  const orderId = content.orderId || message?.id || '';
   const attachments = attachmentsFor(content);
   const qrSignature = `${message?.id || ''}:${paymentRows.map((row) => row.currency).join(',')}`;
   const lastQrSignature = useRef('');
@@ -237,7 +251,10 @@ export default function MessageBubble({ message, data, onAction, senderName, isP
           // F7: the badge reads derived payment facts, not what the update
           // itself claims — a received "confirmed" with no receipt behind it
           // reads back as its real state.
-          <OrderReceipt content={{ ...content, ...orderState(chatMessages, message?.id, { data: content }, '', activeDm) }} />
+          <OrderReceipt
+            content={{ ...content, ...orderState(chatMessages, message?.id, { data: content }, '', activeDm) }}
+            onViewReceipt={orderId ? () => setShowReceipt(true) : null}
+          />
         )}
         {orderActionsFor({ ...message, data: content }, chatMessages, '', activeDm).map(({ action, label, target }) => {
           // Vendor actions send to the buyer, msg.pubkey; buyer actions to the chat peer.
@@ -330,6 +347,7 @@ export default function MessageBubble({ message, data, onAction, senderName, isP
         )}
       </div>
     </motion.article>
+    {showReceipt && <ReceiptSheet orderId={orderId} onClose={() => setShowReceipt(false)} />}
     {open && (
       <div className="fixed inset-0 z-[75] flex items-end justify-center bg-scrim/70 p-3" onPointerDown={(event) => { if (event.target === event.currentTarget) setOpen(false); }}>
         <div className="mb-safe w-full max-w-sm rounded-3xl border border-line bg-panel p-3" onPointerDown={(event) => event.stopPropagation()}>
