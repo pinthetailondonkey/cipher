@@ -1,9 +1,10 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { X } from 'lucide-react';
 import MessageBubble from '../MessageBubble';
 import MessageInput from '../MessageInput';
 import ChatHeader from './ChatHeader';
 import { useChatStore } from '../../store/chatStore';
+import { markSafetyVerified, safetyNumberFor } from '../../lib/safetyNumber';
 
 const EMPTY_MESSAGES = [];
 
@@ -15,6 +16,10 @@ export default function DmView({ sendMessage, handleMessageAction, handleImageUp
   const replyingTo = useChatStore((state) => state.replyingTo);
   const setReplyingTo = useChatStore((state) => state.setReplyingTo);
   const scrollRef = useRef(null);
+  // The safety record lives in scoped storage, not the store; re-reading it
+  // on a verified tick is what retires the banner the moment it is marked.
+  const [, setSafetyTick] = useState(0);
+  const keyChanged = Boolean(activeDm && safetyNumberFor(activeDm)?.changed);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
@@ -26,6 +31,29 @@ export default function DmView({ sendMessage, handleMessageAction, handleImageUp
     <section className="relative flex h-full min-h-0 flex-col bg-transparent">
       <div className="mx-auto flex min-h-0 w-full max-w-3xl flex-1 flex-col">
       <ChatHeader mode="dm" />
+      {keyChanged && (
+        <div className="mx-3 mt-2 rounded-xl border border-lineStrong bg-panel px-3 py-2.5" data-testid="key-change-banner">
+          <div className="flex items-center gap-3">
+            <div className="min-w-0 flex-1">
+              <p className="text-[13px] font-semibold text-ink">Their key changed</p>
+              <p className="mt-0.5 text-[12px] text-inkSubtle">Compare the safety number with them before you trust anything new.</p>
+            </div>
+            <div className="flex shrink-0 flex-col items-end gap-0.5">
+              <span className="text-[10px] font-semibold uppercase tracking-wide text-danger">re-verify</span>
+              <button
+                type="button"
+                onClick={() => {
+                  markSafetyVerified(activeDm);
+                  setSafetyTick((tick) => tick + 1);
+                }}
+                className="touch-target rounded-lg border border-line px-3 py-2 text-[12px] font-semibold text-ink"
+              >
+                Mark verified
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       <div ref={scrollRef} className="flex min-h-0 flex-1 flex-col overflow-y-auto py-2">
         {visibleMessages.length === 0 ? (
           <p className="m-auto mx-4 rounded-2xl border border-line bg-panel px-4 py-8 text-center text-[13px] text-ink/40">Your messages stay private between you and this person.</p>

@@ -1,4 +1,6 @@
-import { installReceivedGroupKey } from '../lib/crypto/groupKeyDistribution';
+import { installReceivedGroupKey, parseGroupKeyBundle } from '../lib/crypto/groupKeyDistribution';
+import { getCurrentGroupKey } from '../lib/crypto/groupKeyStore';
+import { markSafetyChange } from '../lib/safetyNumber';
 
 // Member side of a group key. The owner sends a kind-4 bundle with `t: 'gkey'`.
 // This module installs it into groupKeys. It is not a chat message.
@@ -20,5 +22,22 @@ export function dmControlAction(data) {
 
 export async function installMemberGroupKey(payload, sender = null) {
   if (!isGroupKeyPayload(payload)) return false;
-  return installReceivedGroupKey(payload, sender);
+  // Safety numbers: a bundle from a sender that turns over key material is
+  // the change the engine's flag waits for. Both the live and history DM
+  // ingest paths run through here, so the hook holds without them being
+  // rewritten. A first key for a group is not a change — only an epoch
+  // advance past what this device already held marks it.
+  const bundle = parseGroupKeyBundle(payload);
+  const groupId = bundle[0]?.groupId;
+  const heldEpoch = groupId ? (await getCurrentGroupKey(groupId))?.epoch : undefined;
+  const installed = await installReceivedGroupKey(payload, sender);
+  if (installed && sender && Number.isInteger(heldEpoch)) {
+    for (const row of bundle) {
+      if (row.groupId === groupId && row.epoch > heldEpoch) {
+        markSafetyChange(sender);
+        break;
+      }
+    }
+  }
+  return installed;
 }

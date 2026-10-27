@@ -119,6 +119,19 @@ export function markSafetyChange(contactPubkey) {
   return existing;
 }
 
+// The banner's own action: the person compared the code out-of-band and it
+// still matches, so the change flag drops and the warning strip goes away.
+// The pinned number itself never moves — first-seen is frozen.
+export function markSafetyVerified(contactPubkey) {
+  const all = loadAll();
+  const existing = all[contactPubkey];
+  if (!existing) return null;
+  if (!existing.changed) return existing;
+  existing.changed = false;
+  saveAll(all);
+  return existing;
+}
+
 // The single readable surface a future one-line UI row reads:
 //   safetyNumberFor(pk) -> { number, changed, firstSeenAt } | null
 export function safetyNumberFor(contactPubkey) {

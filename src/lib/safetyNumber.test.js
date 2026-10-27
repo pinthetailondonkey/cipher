@@ -16,6 +16,7 @@ import {
   deriveSafetyNumber,
   noteFirstSeen,
   markSafetyChange,
+  markSafetyVerified,
   safetyNumberFor,
   safetyRecord,
   _safetyInternals,
@@ -82,4 +83,18 @@ test('markSafetyChange flips the changed flag, number stays pinned', async () =>
 test('markSafetyChange on an unknown contact is a no-op null', () => {
   localStorage.clear();
   assert.equal(markSafetyChange(PK_B), null);
+});
+
+test('markSafetyVerified clears the changed flag and the number stays pinned', async () => {
+  localStorage.clear();
+  await noteFirstSeen(PK_A, RELAYS, NOW);
+  const pinned = safetyNumberFor(PK_A).number;
+  markSafetyChange(PK_A);
+  const marked = markSafetyVerified(PK_A);
+  assert.equal(marked.changed, false);
+  assert.equal(safetyNumberFor(PK_A).number, pinned);
+  assert.equal(safetyRecord(PK_A).firstSeenAt, NOW);
+  // Clearing an already-clear flag is a no-op; unknown contact stays null.
+  assert.equal(markSafetyVerified(PK_A).changed, false);
+  assert.equal(markSafetyVerified(PK_B), null);
 });

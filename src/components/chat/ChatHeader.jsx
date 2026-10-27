@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react';
-import { ChevronLeft, MoreVertical, Phone } from 'lucide-react';
+import { ChevronLeft, Copy, Fingerprint, MoreVertical, Phone } from 'lucide-react';
 import { useChatStore } from '../../store/chatStore';
 import { startCall } from '../../lib/voiceCall';
+import { safetyNumberFor } from '../../lib/safetyNumber';
+import { copyText } from '../../lib/copyText';
 import { shortNpub } from '../../lib/npub';
 import Picture from '../ui/Picture';
 
@@ -27,6 +29,52 @@ function TimerPicker({ timer, onPick }) {
           {choice.label}
         </button>
       ))}
+    </div>
+  );
+}
+
+// The safety number the engine pins at first contact, shown as it derives:
+// five groups of three digits. Comparing it out-of-band is the whole check.
+function SafetySheet({ dm, onClose }) {
+  const record = dm ? safetyNumberFor(dm) : null;
+  return (
+    <div
+      className="fixed inset-0 z-[60] flex items-end justify-center bg-scrim/60"
+      onClick={onClose}
+      data-testid="safety-sheet"
+    >
+      <div
+        className="mb-[env(safe-area-inset-bottom)] w-full max-w-md rounded-t-2xl border border-line bg-panel p-4 pb-6 sm:mb-0 sm:rounded-2xl"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-[15px] font-semibold text-ink">Safety number</p>
+            <p className="mt-1 text-[12px] text-inkSubtle">Check it in person or over another channel. Both people seeing the same number means no one swapped a key.</p>
+          </div>
+          <button type="button" onClick={onClose} aria-label="Close" className="touch-target -mt-2 -mr-2 flex items-center justify-center text-inkSubtle">
+            <span className="text-[18px]">&times;</span>
+          </button>
+        </div>
+        {record ? (
+          <>
+            <p className="mt-5 text-center text-[22px] font-bold leading-none tracking-[0.08em] text-ink">{record.number}</p>
+            {record.changed && (
+              <p className="mt-3 text-center text-[12px] text-ink">The key changed since you first saw this person. Compare carefully before trusting anything new.</p>
+            )}
+            <button
+              type="button"
+              onClick={() => copyText(record.number)}
+              className="mt-4 flex min-h-[44px] w-full items-center justify-center gap-2 rounded-xl border border-line bg-panelAlt py-2 text-[14px] font-semibold text-ink"
+            >
+              <Copy size={16} />
+              Copy number
+            </button>
+          </>
+        ) : (
+          <p className="mt-5 text-center text-[13px] text-inkSubtle">No safety number yet. It appears here after you chat with this person.</p>
+        )}
+      </div>
     </div>
   );
 }
@@ -75,9 +123,14 @@ export default function ChatHeader({ mode }) {
   // voice call stays a direct tap in DMs — it is not buried in the menu.
   // Timer and group info ride in the kebab so the row never crowds.
   const [menuOpen, setMenuOpen] = useState(false);
+  const [showSafety, setShowSafety] = useState(false);
   const openTimer = () => {
     setMenuOpen(false);
     setShowTimer(true);
+  };
+  const openSafety = () => {
+    setMenuOpen(false);
+    setShowSafety(true);
   };
 
   return (
@@ -138,6 +191,16 @@ export default function ChatHeader({ mode }) {
             Message timer
             <span className="text-[12px] text-inkSubtle">{timer && timer !== 'off' ? timer : 'Off'}</span>
           </button>
+          {mode === 'dm' && (
+            <button
+              type="button"
+              onClick={openSafety}
+              className="flex w-full items-center gap-2.5 rounded-xl px-3 py-3 text-left text-[14px] text-ink"
+            >
+              <Fingerprint size={16} className="text-inkSubtle" />
+              Verify safety number
+            </button>
+          )}
           {mode === 'group' && (
             <button
               type="button"
@@ -157,6 +220,9 @@ export default function ChatHeader({ mode }) {
             setShowTimer(false);
           }}
         />
+      )}
+      {showSafety && (
+        <SafetySheet dm={activeDm} onClose={() => setShowSafety(false)} />
       )}
     </div>
   );
