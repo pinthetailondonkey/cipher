@@ -24,6 +24,8 @@ import {
   applyWatcherReport,
   acceptAmount,
 } from './paymentState.js';
+import { quoteEscrow, canEscrow } from './escrowFsm.js';
+import { decodeOrderScript, hexToScript } from './escrowScript.js';
 
 const SCHEMA_VERSION = 1;
 
@@ -35,11 +37,12 @@ const AUTHORITY = {
   vendor: new Set([
     'accept_order', 'decline_order', 'confirm_payment', 'watcher_report',
     'mark_shipped', 'cancel_order', 'mark_refunded', 'resume_order', 'confirm_delivery',
+    'escrow_open',
   ]),
   buyer: new Set([
     'cancel_order', 'confirm_delivery', 'report_issue', 'watcher_report',
   ]),
-  watcher: new Set(['watcher_report']),
+  watcher: new Set(['watcher_report', 'escrow_fund', 'escrow_release', 'escrow_refund']),
 };
 
 // Operation ids accepted from the wire. Length-bounded like the lab.
@@ -100,7 +103,28 @@ function emptyOrder(orderId, currency) {
     paid: false,
     processed: {},
     pendingPay: null,
+    escrow: null,
   };
+}
+
+// Satoshis ride the wire as decimal STRINGS (JSON has no BigInt; a number
+// is never a coin amount) and live in state as BigInt at this layer.
+export function satsFromString(value) {
+  const text = typeof value === 'number' && Number.isSafeInteger(value) && value >= 0
+    ? String(value)
+    : String(value ?? '').trim();
+  if (!/^\d+$/.test(text) || text.length > 20) return null;
+  return BigInt(text);
+}
+
+// The deposit as a coin decimal the payment walk understands (BTC 8
+// decimals, zeros trimmed) — so the existing amount-coverage guard on a
+// watcher_report covers the full escrow deposit, price plus buyer share.
+export function satsToCoins(sats) {
+  if (typeof sats !== 'bigint' || sats < 0n) return null;
+  const whole = sats / 100_000_000n;
+  let frac = (sats % 100_000_000n).toString().padStart(8, '0').replace(/0+$/, '');
+  return frac ? `${whole}.${frac}` : `${whole}`;
 }
 
 // The status walk an order may take, mirroring the vendor table in
@@ -150,6 +174,59 @@ function decodeOp(payload) {
       if (!isPlainObject(payload.report)) return { ok: false, reason: 'malformed' };
       if (payload.report.source !== 'watcher' || !payload.report.txid) return { ok: false, reason: 'malformed' };
       return { ok: true, op: { type: 'watcher_report', expectedRevision: payload.expectedRevision, report: { source: 'watcher', txid: String(payload.report.txid), confirmations: Number(payload.report.confirmations) || 0, amount: payload.report.amount ?? null } } };
+    }
+    case 'escrow_open': {
+      // The vendor opens the box: fixes the price, the script, the timer
+      // and the date. BTC only (docs: XMR cannot escrow soundly), the
+      // script must decode as the exact 2-of-2 shape, the timer in the
+      // payload must match the timer in the script, and sats arrive as
+      // decimal strings.
+      if (typeof payload.expectedRevision !== 'number') return { ok: false, reason: 'malformed' };
+      if (payload.currency !== 'btc') return { ok: false, reason: 'malformed' };
+      const priceSats = satsFromString(payload.priceSats);
+      if (priceSats === null || !canEscrow(priceSats)) return { ok: false, reason: 'malformed' };
+      if (typeof payload.scriptHex !== 'string') return { ok: false, reason: 'malformed' };
+      let script;
+      try {
+        script = decodeOrderScript(hexToScript(payload.scriptHex));
+      } catch {
+        return { ok: false, reason: 'malformed' };
+      }
+      if (!script) return { ok: false, reason: 'malformed' };
+      if (!Number.isInteger(payload.delayBlocks) || payload.delayBlocks !== script.delayBlocks) {
+        return { ok: false, reason: 'malformed' };
+      }
+      if (!Number.isFinite(payload.issuedAt) || payload.issuedAt <= 0) return { ok: false, reason: 'malformed' };
+      // Sats stay a decimal string inside op: the journal record must be
+      // JSON-stable (BigInt stringifies to a throw) and digest-stable
+      // across a recovery replay. checkOp converts through satsFromString.
+      return { ok: true, op: { type: 'escrow_open', expectedRevision: payload.expectedRevision, currency: payload.currency, publicKeysHex: payload.publicKeysHex ?? null, scriptHex: payload.scriptHex, priceSats: payload.priceSats, delayBlocks: payload.delayBlocks, issuedAt: payload.issuedAt } };
+    }
+    case 'escrow_fund': {
+      // The funding landed on chain. Confirmations below 1 never mark a
+      // payment seen: the no-0-conf rule holds for escrow money too.
+      if (typeof payload.expectedRevision !== 'number') return { ok: false, reason: 'malformed' };
+      if (typeof payload.txid !== 'string' || payload.txid.length < 32) return { ok: false, reason: 'malformed' };
+      const sats = satsFromString(payload.sats);
+      if (sats === null) return { ok: false, reason: 'malformed' };
+      const confirmations = Number(payload.confirmations);
+      if (!Number.isFinite(confirmations) || confirmations < 1) return { ok: false, reason: 'malformed' };
+      const height = Number(payload.height);
+      if (!Number.isFinite(height) || height <= 0) return { ok: false, reason: 'malformed' };
+      return { ok: true, op: { type: 'escrow_fund', expectedRevision: payload.expectedRevision, txid: payload.txid, sats: payload.sats, confirmations, height } };
+    }
+    case 'escrow_release': {
+      if (typeof payload.expectedRevision !== 'number') return { ok: false, reason: 'malformed' };
+      if (typeof payload.txid !== 'string' || payload.txid.length < 32) return { ok: false, reason: 'malformed' };
+      return { ok: true, op: { type: 'escrow_release', expectedRevision: payload.expectedRevision, txid: payload.txid } };
+    }
+    case 'escrow_refund': {
+      if (typeof payload.expectedRevision !== 'number') return { ok: false, reason: 'malformed' };
+      if (typeof payload.txid !== 'string' || payload.txid.length < 32) return { ok: false, reason: 'malformed' };
+      if (payload.kind !== 'admitted' && payload.kind !== 'timed') return { ok: false, reason: 'malformed' };
+      const height = Number(payload.height);
+      if (!Number.isFinite(height) || height <= 0) return { ok: false, reason: 'malformed' };
+      return { ok: true, op: { type: 'escrow_refund', expectedRevision: payload.expectedRevision, txid: payload.txid, kind: payload.kind, height } };
     }
     default:
       return { ok: false, reason: 'unknown_op' };
@@ -202,6 +279,91 @@ function checkOp(st, principal, op) {
         // not fatal. The gate itself stays up.
         return { ok: false, reason: 'watcher_refused' };
       }
+    }
+    case 'escrow_open': {
+      // Opening the box IS the vendor's acceptance: the order leaves
+      // PENDING with the quote fixed by the FSM and the coin amount set
+      // to the full deposit, and the escrow sits in draft until the
+      // chain says the money landed. One escrow per order, ever.
+      if (st.status !== ORDER_STATUS.PENDING) return { ok: false, reason: 'invalid_transition' };
+      if (st.escrow) return { ok: false, reason: 'invalid_transition' };
+      const priceSats = satsFromString(op.priceSats);
+      if (priceSats === null || !canEscrow(priceSats)) return { ok: false, reason: 'invalid_transition' };
+      const quote = quoteEscrow(priceSats);
+      return { ok: true, changed: true, apply: (state) => {
+        state.status = ORDER_STATUS.ACCEPTED;
+        state.accepted = true;
+        state.issuedAt = op.issuedAt;
+        state.coinAmount = satsToCoins(quote.depositSats);
+        state.paymentState = 'address_issued';
+        state.paymentSeenBy = 'vendor';
+        // All sats are stored as decimal strings: escrow state must
+        // survive summary()'s JSON copy exactly like the rest of it.
+        state.escrow = {
+          state: 'draft',
+          scriptHex: op.scriptHex,
+          publicKeysHex: op.publicKeysHex,
+          priceSats: quote.priceSats.toString(),
+          buyerFeeSats: quote.buyerFeeSats.toString(),
+          vendorFeeSats: quote.vendorFeeSats.toString(),
+          delayBlocks: op.delayBlocks,
+          fundedSats: null,
+          fundingTxid: null,
+          fundingHeight: null,
+          settleTxid: null,
+          refundKind: null,
+        };
+      } };
+    }
+    case 'escrow_fund': {
+      // The deposit landed. A short pay is refused outright, the FSM's
+      // rule; an overpay goes in whole and rides back as buyer change at
+      // release. One or more confirmations means mined, and mined is
+      // seen -- the no-0-conf rule, applied to escrow money too.
+      if (!st.escrow || st.escrow.state !== 'draft') return { ok: false, reason: 'invalid_transition' };
+      if (st.paymentState !== 'address_issued') return { ok: false, reason: 'invalid_transition' };
+      const sats = satsFromString(op.sats);
+      if (sats === null) return { ok: false, reason: 'invalid_transition' };
+      const deposit = BigInt(st.escrow.priceSats) + BigInt(st.escrow.buyerFeeSats);
+      if (sats < deposit) return { ok: false, reason: 'escrow_refused' };
+      return { ok: true, changed: true, apply: (state) => {
+        const esc = state.escrow;
+        esc.state = 'funded';
+        esc.fundedSats = sats.toString();
+        esc.fundingTxid = op.txid;
+        esc.fundingHeight = op.height;
+        state.coinAmount = satsToCoins(sats); // the deposit note, so confirms cover what landed
+        state.paymentState = 'seen';
+        state.paymentSeenBy = 'watcher';
+      } };
+    }
+    case 'escrow_release': {
+      // Both keys signed and the watcher saw the deal confirmed: vendor
+      // paid, fee paid, order done -- and the escrow can never reopen.
+      if (!st.escrow || st.escrow.state !== 'funded') return { ok: false, reason: 'invalid_transition' };
+      if (st.paymentState !== 'confirmed') return { ok: false, reason: 'invalid_transition' };
+      return { ok: true, changed: true, apply: (state) => {
+        state.escrow.state = 'released';
+        state.escrow.settleTxid = op.txid;
+        state.paid = true;
+        state.status = ORDER_STATUS.COMPLETED;
+      } };
+    }
+    case 'escrow_refund': {
+      // An admitted refund any time after funding; a timed one only
+      // past the script's OWN timer, counted in blocks from the funding
+      // height -- the chain reads the script, not the phone. Either way
+      // the fee is zero, which lives in the PSBT path, not here.
+      if (!st.escrow || st.escrow.state !== 'funded') return { ok: false, reason: 'invalid_transition' };
+      if (op.kind === 'timed' && op.height < st.escrow.fundingHeight + st.escrow.delayBlocks) {
+        return { ok: false, reason: 'escrow_refused' };
+      }
+      return { ok: true, changed: true, apply: (state) => {
+        state.escrow.state = 'refunded';
+        state.escrow.refundKind = op.kind;
+        state.escrow.settleTxid = op.txid;
+        state.status = ORDER_STATUS.REFUNDED;
+      } };
     }
     case 'mark_shipped':
       if (st.status !== ORDER_STATUS.PAID) return { ok: false, reason: 'invalid_transition' };
