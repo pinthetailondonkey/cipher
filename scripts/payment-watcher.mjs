@@ -83,7 +83,10 @@ async function tokenMatches(presented, address, currency) {
 // signed reply for one order replayed as another order's check answers
 // nothing. (security re-attack)
 async function signedAnswer(res, address, currency, report) {
-  const token = childWatcherToken(watchToken, address, currency);
+  // Awaited: the child token is an async derivation, and an un-awaited
+  // promise turned every successful check into a 502 at the signature line
+  // (caught by the executed probe, never by the unit tests).
+  const token = await childWatcherToken(watchToken, address, currency);
   const body = JSON.stringify({ address, currency, ...report });
   const ts = Math.floor(Date.now() / 1000);
   const sig = `v1=${createHmac('sha256', token).update(`${ts}:${body}`).digest('hex')}`;
