@@ -22,8 +22,9 @@
 //   order's slot before it renders at all.
 
 import { quoteEscrow, canEscrow, MIN_ORDER_SATS, BLOCKS_PER_DAY, DEFAULT_DELAY_BLOCKS } from './escrowFsm.js';
-import { assembleOrderScript, decodeOrderScript, hexToScript, scriptToHex } from './escrowScript.js';
+import { assembleOvertOrderScript, decodeOrderScript, hexToScript, scriptToHex } from './escrowScript.js';
 import { escrowAddress } from './escrowPsbt.js';
+import { sha256 } from '@noble/hashes/sha2.js';
 import { satsFromString, satsToCoins } from './orderMembrane.js';
 import { ORDER_STATUS, coinUnits, orderCoinAmount, unitsToCoins } from './paymentState.js';
 import { orderState } from './orderActions.js';
@@ -32,6 +33,7 @@ import { secp256k1 } from '@noble/curves/secp256k1.js';
 
 const SALT_PATTERN = /^[0-9a-f]{64}$/; // 32 bytes, hex
 const PUBKEY_PATTERN = /^[0-9a-f]{66}$/; // compressed secp256k1 point, hex
+const NONCE_PATTERN = /^[0-9a-f]{64}$/; // the delivery nonce: 32 bytes, hex
 
 // The escrow action table — the account of everything escrow adds to
 // the order action vocabulary. Listed side by side with ORDER_ACTIONS
@@ -50,6 +52,31 @@ export function newEscrowSalt() {
 export function escrowSaltOf(data) {
   const salt = String(data?.escrowSalt ?? '').trim().toLowerCase();
   return SALT_PATTERN.test(salt) ? salt : null;
+}
+
+// The Dead Drop's delivery nonce (founder-approved wiring): one crypto-
+// random 32-byte value per order, made by the VENDOR at acceptance. Its
+// sha256 rides the acceptance (the commitment the script embeds); the
+// nonce itself is a local-only fact — it goes to the order's local
+// patch, which patchMessage writes to the device database and survives
+// the next history fetch — and never rides the wire (re-attack vector
+// 9: reusing one nonce across orders is dead by construction here).
+export function newDeliveryNonce() {
+  return bytesToHex(crypto.getRandomValues(new Uint8Array(32)));
+}
+
+export function deliveryNonceOf(data) {
+  const nonce = String(data?.deliveryNonceHex ?? '').trim().toLowerCase();
+  return NONCE_PATTERN.test(nonce) ? nonce : null;
+}
+
+// The spoken commitment: sha256 of the delivery nonce, hex. This is the
+// only part of the nonce that is ever public before the vendor chooses
+// to fire the dead drop.
+export function overtHashHexOf(deliveryNonceHex) {
+  const nonce = String(deliveryNonceHex ?? '').trim().toLowerCase();
+  if (!NONCE_PATTERN.test(nonce)) throw new Error('The delivery nonce is not a 32-byte hex string.');
+  return bytesToHex(sha256(hexToScript(nonce))); // hexToScript reads hex to bytes
 }
 
 const ESCROW_HKDF_INFO = new TextEncoder().encode('cipher-escrow-order-key-v1');
@@ -95,17 +122,27 @@ export function escrowDelayDays(delayBlocks) {
 // journal and the order card both read. The numbers are computed HERE
 // from priceSats; the caller passes keys and a timer, and no fee of its
 // own ever, so both sides can decode the same card to the same quote.
-export function buildEscrowAcceptance({ priceSats, delayBlocks = DEFAULT_DELAY_BLOCKS, vendorPubHex, buyerPubHex, issuedAt }) {
+export function buildEscrowAcceptance({ priceSats, delayBlocks = DEFAULT_DELAY_BLOCKS, vendorPubHex, buyerPubHex, issuedAt, overtHashHex }) {
   if (typeof priceSats !== 'bigint' || !canEscrow(priceSats)) {
     throw new Error(`Escrow orders run ${satsToCoins(MIN_ORDER_SATS)} BTC or more, so the fee is not dust.`);
   }
   if (!Number.isInteger(issuedAt) || issuedAt <= 0) {
     throw new Error('An escrow acceptance is dated when its address was issued.');
   }
-  const scriptHex = scriptToHex(assembleOrderScript({
+  // Every escrow order is a Dead Drop box: the acceptance REQUIRES the
+  // vendor's delivery commitment (overtHashHexOf the local nonce), so
+  // the script carries the overt branch from funding onward. An order
+  // without a spoken commitment would leave the vendor no unilateral
+  // exit and the buyer no chain-grade delivery word.
+  const commitment = String(overtHashHex ?? '').trim().toLowerCase();
+  if (!/^[0-9a-f]{64}$/.test(commitment)) {
+    throw new Error('An escrow acceptance needs the delivery commitment — sha256 of the vendor’s own delivery nonce.');
+  }
+  const scriptHex = scriptToHex(assembleOvertOrderScript({
     vendorPubKey: hexToScript(vendorPubHex),
     buyerPubKey: hexToScript(buyerPubHex),
     delayBlocks,
+    overtHash: hexToScript(commitment),
   }));
   const q = quoteEscrow(priceSats);
   const escrow = {
@@ -118,6 +155,7 @@ export function buildEscrowAcceptance({ priceSats, delayBlocks = DEFAULT_DELAY_B
     depositSats: q.depositSats.toString(),
     delayBlocks,
     issuedAt,
+    overtHashHex: commitment,
   };
   // The acceptance rides the same order_update rail a direct-deal
   // acceptance rides. No paymentMethods line is issued: the deposit
@@ -160,6 +198,17 @@ export function escrowForCard(data) {
   if (!address || escrowAddress(script) !== address) return null;
   if (escrow.delayBlocks !== decoded.delayBlocks) return null;
   if (!Number.isInteger(escrow.issuedAt) || escrow.issuedAt <= 0) return null;
+  // The commitment the card SPEAKS must be the one the script EMBEDS
+  // (same law the membrane holds at the escrow_open door). A card whose
+  // spoken overt hash disagrees with its own script reads back as no
+  // escrow. Old plain boxes speak nothing; their quote says so.
+  let overtHashHex = null;
+  if (decoded.overtHash !== null) {
+    const spoken = String(escrow.overtHashHex ?? '').trim().toLowerCase();
+    const embedded = scriptToHex(decoded.overtHash);
+    if (spoken !== embedded) return null;
+    overtHashHex = embedded;
+  }
   return {
     scriptHex: scriptToHex(script),
     address,
@@ -172,6 +221,7 @@ export function escrowForCard(data) {
     feeOutSats: q.feeOutSats,
     depositSats: q.depositSats,
     issuedAt: escrow.issuedAt,
+    overtHashHex,
   };
 }
 

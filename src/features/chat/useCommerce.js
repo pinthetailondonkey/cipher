@@ -3,7 +3,7 @@ import { db, patchMessage, saveMessage } from '../../db';
 import { scopedGet, scopedSet } from '../../lib/storage';
 import { addressSpokenFor, getOrderPaymentMethods, markConsumed, readConsumedLedger, readPaymentAddresses, txidSpokenFor } from '../../lib/vendorPayments';
 import { ORDER_STATUS, RECEIPT_OUTCOME, acceptAmount, acceptanceDemand, amountCovers, coinUnits, nextPaymentState, orderCoinAmount } from '../../lib/paymentState';
-import { buildEscrowAcceptance, escrowRequestSlot, escrowSaltOf, orderEscrowKey } from '../../lib/escrowActions';
+import { buildEscrowAcceptance, escrowRequestSlot, escrowSaltOf, newDeliveryNonce, orderEscrowKey, overtHashHexOf } from '../../lib/escrowActions';
 import { checkPayment } from '../../lib/paymentWatch';
 import { activeUrl, entryById } from '../../lib/egress';
 import { publicReceipt, rememberPublicView, receiptBindsOrder, signPublicView, signReceipt } from '../../lib/proofOfTrade';
@@ -127,11 +127,19 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
         }
         try {
           const { publicKeyHex } = await orderEscrowKey(identity.sk, slot);
+          // The Dead Drop commitment: this vendor's own crypto-random
+          // delivery nonce, made fresh for this order. Its sha256 rides
+          // the acceptance; the nonce itself stays on this device — it
+          // is written into the order's local patch (which the database
+          // stores and a history fetch cannot wipe — CLAUDE.md reload
+          // rule) and NEVER into the wire payload.
+          const deliveryNonceHex = newDeliveryNonce();
           const acceptance = buildEscrowAcceptance({
             priceSats,
             vendorPubHex: publicKeyHex,
             buyerPubHex: msg.data.escrowPubKey,
             issuedAt: Math.floor(Date.now() / 1000),
+            overtHashHex: overtHashHexOf(deliveryNonceHex),
           });
           const payload = {
             type: 'order_update',
@@ -152,7 +160,9 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
           }
           // The derived private key lives nowhere: not storage, not state.
           // Only the quote the acceptance already carries is patched locally.
-          const saved = await updateLocalOrder(msg.pubkey, msg.id, acceptance.patch);
+          // The delivery nonce joins it — local patch, device database,
+          // never the wire.
+          const saved = await updateLocalOrder(msg.pubkey, msg.id, { ...acceptance.patch, deliveryNonceHex });
           const acceptedText = result.queued ? 'Escrow acceptance queued; it will send when connected.' : 'Accepted with escrow';
           setToast(saved ? { type: 'success', message: acceptedText } : { type: 'error', message: `${acceptedText} ${NOT_SAVED}` });
           setSelectedMessage(null);

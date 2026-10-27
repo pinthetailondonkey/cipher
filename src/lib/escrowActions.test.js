@@ -3,17 +3,21 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import {
   buildEscrowAcceptance,
+  deliveryNonceOf,
   escrowActionsFor,
   escrowForCard,
   escrowPaymentRow,
   escrowRequestSlot,
   escrowRowsFor,
+  newDeliveryNonce,
   newEscrowSalt,
   orderEscrowKey,
+  overtHashHexOf,
   OVERT_REFUND_LINE,
   OVERT_REFUND_TITLE,
 } from './escrowActions.js';
 import { assembleOrderScript, decodeOrderScript, hexToScript, scriptToHex } from './escrowScript.js';
+import { sha256 } from '@noble/hashes/sha2.js';
 import { quoteEscrow, MIN_ORDER_SATS } from './escrowFsm.js';
 import { escrowAddress } from './escrowPsbt.js';
 import { secp256k1 } from '@noble/curves/secp256k1.js';
@@ -33,8 +37,8 @@ const PUB_B_HEX = scriptToHex(PUB_B);
 const PUB_V_HEX = scriptToHex(secp256k1.getPublicKey(secp256k1.utils.randomSecretKey(), true));
 const PUB_STRANGER_HEX = scriptToHex(secp256k1.getPublicKey(secp256k1.utils.randomSecretKey(), true));
 
-function acceptance({ priceSats = PRICE, vendorPubHex = PUB_V_HEX, buyerPubHex = PUB_B_HEX, delayBlocks } = {}) {
-  return buildEscrowAcceptance({ priceSats, vendorPubHex, buyerPubHex, issuedAt: ISSUED_AT, ...(delayBlocks ? { delayBlocks } : {}) });
+function acceptance({ priceSats = PRICE, vendorPubHex = PUB_V_HEX, buyerPubHex = PUB_B_HEX, delayBlocks, overtHashHex = overtHashHexOf(newDeliveryNonce()) } = {}) {
+  return buildEscrowAcceptance({ priceSats, vendorPubHex, buyerPubHex, issuedAt: ISSUED_AT, overtHashHex, ...(delayBlocks ? { delayBlocks } : {}) });
 }
 
 const fakeMessages = () => [];
@@ -100,6 +104,73 @@ test('a dust order never accepts with escrow, at the FSM floor', () => {
   assert.throws(() => acceptance({ priceSats: MIN_ORDER_SATS - 1n }), /dust|BTC or more/);
   // and the reader refuses the same card
   assert.equal(escrowForCard({ escrow: { ...acceptance({ priceSats: MIN_ORDER_SATS }).escrow, priceSats: '39999' } }), null);
+});
+
+// Round-2 card, vector 9: the Dead Drop commitment is per-order by
+// construction — a fresh crypto-random nonce at acceptance, its sha256
+// in the script, the nonce itself never crossing the wire.
+test('the delivery nonce is per-order crypto-random and stays off the wire', () => {
+  const a = newDeliveryNonce();
+  const b = newDeliveryNonce();
+  assert.match(a, /^[0-9a-f]{64}$/);
+  assert.notEqual(a, b);
+  // the spoken commitment is sha256 of the nonce, and it round-trips
+  const spoken = overtHashHexOf(a);
+  assert.equal(spoken, scriptToHex(sha256(hexToScript(a))));
+  assert.throws(() => overtHashHexOf('zz'), /32-byte/);
+  assert.equal(deliveryNonceOf({ deliveryNonceHex: a }), a);
+  assert.equal(deliveryNonceOf({ deliveryNonceHex: 'short' }), null);
+  assert.equal(deliveryNonceOf({}), null);
+});
+
+test('every escrow acceptance is a Dead Drop box: the script embeds the spoken commitment', () => {
+  const nonce = newDeliveryNonce();
+  const accepted = acceptance({ overtHashHex: overtHashHexOf(nonce) });
+  const escrow = accepted.escrow;
+  assert.equal(escrow.overtHashHex, overtHashHexOf(nonce));
+  const decoded = decodeOrderScript(hexToScript(escrow.scriptHex));
+  assert.equal(scriptToHex(decoded.overtHash), escrow.overtHashHex);
+  // no commitment, no acceptance — a silent open would strand the dead drop
+  assert.throws(() => buildEscrowAcceptance({
+    priceSats: PRICE, vendorPubHex: PUB_V_HEX, buyerPubHex: PUB_B_HEX, issuedAt: ISSUED_AT,
+  }), /delivery commitment/);
+  assert.throws(() => acceptance({ overtHashHex: 'zz'.repeat(32) }), /delivery commitment/);
+});
+
+test('the card binds the spoken commitment to the script’s own bytes', () => {
+  const quote = escrowForCard({ escrow: acceptance().escrow });
+  assert.match(quote.overtHashHex, /^[0-9a-f]{64}$/);
+  // a card whose spoken hash disagrees with its embedded hash is not escrow
+  assert.equal(escrowForCard({ escrow: { ...acceptance().escrow, overtHashHex: 'f'.repeat(64) } }), null);
+  assert.equal(escrowForCard({ escrow: { ...acceptance().escrow, overtHashHex: undefined } }), null);
+  // an old plain box speaks nothing and reads back with overtHashHex null
+  const plain = assembleOrderScript({
+    vendorPubKey: hexToScript(PUB_V_HEX), buyerPubKey: hexToScript(PUB_B_HEX), delayBlocks: 2880,
+  });
+  const plainQuote = escrowForCard({ escrow: {
+    ...acceptance().escrow,
+    scriptHex: scriptToHex(plain),
+    address: escrowAddress(plain),
+  } });
+  assert.equal(plainQuote.overtHashHex, null);
+});
+
+test('the vendor’s delivery nonce is written to the local patch, never the wire payload', () => {
+  // Source law (CLAUDE.md reload rule): the nonce must survive a history
+  // fetch, so it is written into the order's local patch via the same
+  // updateLocalOrder the acceptance patch already rides. The wire payload
+  // is built from acceptance.escrow alone, which never carries it (pinned
+  // by the acceptance test above).
+  const src = fs.readFileSync(new URL('../features/chat/useCommerce.js', import.meta.url), 'utf8');
+  assert.match(src, /const deliveryNonceHex = newDeliveryNonce\(\)/);
+  assert.match(src, /overtHashHex: overtHashHexOf\(deliveryNonceHex\)/);
+  assert.match(src, /\.\.\.acceptance\.patch,\s*deliveryNonceHex/);
+  // the payload that rides sendDM never names the nonce
+  const payloadBlock = src.slice(
+    src.indexOf("type: 'order_update',\n            orderId: msg.id,"),
+    src.indexOf("const result = await sendDM(msg.pubkey, payload);"),
+  );
+  assert.equal(payloadBlock.includes('deliveryNonceHex'), false, 'the wire payload carries the nonce');
 });
 
 test('the accept-with-escrow button: only the vendor, only pending, only a slotted BTC order', () => {
