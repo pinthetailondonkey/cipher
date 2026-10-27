@@ -27,7 +27,7 @@ import {
 import { ORDER_STATUS } from './paymentState';
 import { orderState } from './orderActions';
 import { clampRating, receiptBindingOf } from './reputation';
-import { RIDER_WORDS, ridersForReview } from './disputes';
+import { RIDER_WORDS, ownRiderTaken, ridersForReview } from './disputes';
 
 const HEX64 = /^[0-9a-f]{64}$/;
 
@@ -527,6 +527,37 @@ export function ridersOfRow(row, disputeEvents) {
   return RIDER_WORDS
     .filter((word) => words[word])
     .map((word) => ({ rider: word, text: words[word].text, author: words[word].author, id: words[word].id }));
+}
+
+// The rider words ONE viewer may still compose on one review row — the
+// compose-side gate, reading the same two checks riders read:
+// ridersForReview (the wire's rider of record) AND ownRiderTaken (the
+// local ledger covering a word this device already signed before its
+// rider event fetched back). Authorship is the law: only the vendor
+// flags or rebuts on their own thread; the buyer supplements their own
+// review; the vendor never co-signs a supplement; anyone else gets
+// nothing — null, no affordance at all. Each word list entry carries
+// taken (the word is spent for this pair, so the compose refuses it),
+// and free words ride. A row without a wire event id has nothing to
+// ride on — a rider is posted against a review event, and a local-only
+// row's event has not fetched back.
+export function riderComposeOf(row, { authorPubkey = null, disputeEvents = [] } = {}) {
+  const vendor = lower(row?.vendorPubkey);
+  const author = lower(authorPubkey);
+  if (!vendor || !row?.id || !row.receiptHash || !author) return null;
+  let words;
+  if (author === vendor) {
+    words = ['vendor-flag', 'vendor-rebuttal'];
+  } else if (author === lower(row.buyerPubkey)) {
+    words = ['buyer-supplement'];
+  } else {
+    return null;
+  }
+  const ofRecord = ridersForReview({ vendor, receipt: row.receiptHash, review: row.id }, disputeEvents);
+  return words.map((rider) => ({
+    rider,
+    taken: Boolean(ofRecord[rider]) || ownRiderTaken(vendor, row.receiptHash, row.id, rider),
+  }));
 }
 
 // The summary band: count and average on the displayed rows. The average

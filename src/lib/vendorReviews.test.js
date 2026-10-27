@@ -21,11 +21,12 @@ import {
   reviewSummaryOf,
   reviewsForVendor,
   ridersOfRow,
+  riderComposeOf,
   saveReview,
   wholeMonthsBetween,
 } from './vendorReviews.js';
 import { publicReceipt, rememberPublicView, signPublicView, signReceipt, verifyPublicView } from './proofOfTrade.js';
-import { RIDER_WORDS } from './disputes.js';
+import { RIDER_WORDS, markOwnRider } from './disputes.js';
 
 
 function hex(bytes) {
@@ -438,4 +439,39 @@ test('riders of record ride a wire row through its own pair', () => {
   // RIDER_WORDS stays the founder three: vendor riders are the vendor's, a
   // supplement is never the vendor's, and each word lands once per pair.
   assert.deepEqual([...RIDER_WORDS].sort(), ['buyer-supplement', 'vendor-flag', 'vendor-rebuttal']);
+});
+
+test('the rider compose gate: authorship first, one shot per word per pair, ledger and wire both checked', () => {
+  memoryStorage();
+  const wireRow = { source: 'wire', id: REVIEW_EVENT_ID, vendorPubkey: WIRE_VENDOR, receiptHash: WIRE_HASH, buyerPubkey: WIRE_BUYER };
+  // The vendor gets exactly the two vendor words, both free.
+  const vendorWords = riderComposeOf(wireRow, { authorPubkey: WIRE_VENDOR, disputeEvents: [] });
+  assert.deepEqual(vendorWords, [{ rider: 'vendor-flag', taken: false }, { rider: 'vendor-rebuttal', taken: false }]);
+  // The buyer gets exactly the supplement.
+  assert.deepEqual(riderComposeOf(wireRow, { authorPubkey: WIRE_BUYER, disputeEvents: [] }), [{ rider: 'buyer-supplement', taken: false }]);
+  // A stranger gets nothing — no affordance at all.
+  assert.equal(riderComposeOf(wireRow, { authorPubkey: '9'.repeat(64), disputeEvents: [] }), null);
+  assert.equal(riderComposeOf(wireRow, { authorPubkey: null, disputeEvents: [] }), null);
+  assert.equal(riderComposeOf(null, { authorPubkey: WIRE_VENDOR, disputeEvents: [] }), null);
+  // The vendor never co-signs a supplement, whoever asks.
+  const { vendor } = boundDeal({ orderId: 'order-r1' });
+  const vendorRow = { source: 'wire', id: REVIEW_EVENT_ID, vendorPubkey: vendor, receiptHash: WIRE_HASH, buyerPubkey: vendor };
+  assert.deepEqual(riderComposeOf(vendorRow, { authorPubkey: vendor, disputeEvents: [] }),
+    [{ rider: 'vendor-flag', taken: false }, { rider: 'vendor-rebuttal', taken: false }]);
+  // A rider of record on the wire has spent its word: the gate refuses it.
+  const flagEvent = {
+    kind: 10006, id: 'ff9', pubkey: WIRE_VENDOR, created_at: 2000,
+    tags: [['p', WIRE_VENDOR], ['receipt', WIRE_HASH], ['review', REVIEW_EVENT_ID], ['rider', 'vendor-flag']],
+    content: 'This deal never happened.',
+  };
+  const spent = riderComposeOf(wireRow, { authorPubkey: WIRE_VENDOR, disputeEvents: [flagEvent] });
+  assert.deepEqual(spent, [{ rider: 'vendor-flag', taken: true }, { rider: 'vendor-rebuttal', taken: false }]);
+  // A word this device already signed — the refetch may not have seen it —
+  // is taken just the same, out of the local ledger.
+  const vehicle = { ...wireRow, receiptHash: 'e1'.repeat(32), buyerPubkey: WIRE_BUYER };
+  markOwnRider(WIRE_VENDOR, 'e1'.repeat(32), REVIEW_EVENT_ID, 'vendor-rebuttal', 'rr9');
+  const ledgerSpent = riderComposeOf(vehicle, { authorPubkey: WIRE_VENDOR, disputeEvents: [] });
+  assert.deepEqual(ledgerSpent, [{ rider: 'vendor-flag', taken: false }, { rider: 'vendor-rebuttal', taken: true }]);
+  // A row with no wire event id rides nothing.
+  assert.equal(riderComposeOf({ vendorPubkey: WIRE_VENDOR, receiptHash: WIRE_HASH }, { authorPubkey: WIRE_VENDOR, disputeEvents: [] }), null);
 });

@@ -32,12 +32,15 @@ import {
 //
 // One load per vendor; nothing listens to the database, so surfaces that
 // change a review re-run the loader. Without an identity no pool exists, so
-// the read degrades to the device's own rows — nothing is invented.
+// the read degrades to the device's own rows — nothing is invented. The
+// fetched dispute set rides along in `disputes` (the raw kind-10006 events)
+// so the compose-side rider gate can read ridersForReview against it.
 export function useVendorReviews({ vendorPubkey, identity = null, refreshKey = 0, dealsProvenOf }) {
   const [state, setState] = useState({
     proven: {},
     monthsActive: 0,
     reviews: [],
+    disputes: [],
     summary: { count: 0, average: '0.0' },
     loading: Boolean(vendorPubkey),
   });
@@ -50,6 +53,7 @@ export function useVendorReviews({ vendorPubkey, identity = null, refreshKey = 0
         const localRows = await reviewsForVendor(vendorPubkey);
         let proven = dealsProvenOf ? dealsProvenOf(vendorPubkey) : provenDealsForVendor(vendorPubkey);
         let rows = localRows;
+        let disputeEvents = [];
         if (REVIEW_WIRING_LANDED && identity?.pk) {
           try {
             const pool = await getAuthenticatedPool(identity);
@@ -58,6 +62,7 @@ export function useVendorReviews({ vendorPubkey, identity = null, refreshKey = 0
               // The published count is the txids; this replaces, never sums.
               proven = dealsProvenFor(vendorPubkey, thread.bulletins);
             }
+            disputeEvents = thread.disputes;
             rows = reviewsFromWire({
               vendorPubkey,
               wireEvents: thread.reviews,
@@ -76,6 +81,7 @@ export function useVendorReviews({ vendorPubkey, identity = null, refreshKey = 0
           proven,
           monthsActive: monthsActiveForVendor(vendorPubkey),
           reviews: rows,
+          disputes: disputeEvents,
           summary: reviewSummaryOf(rows, averageRating),
           loading: false,
         });
