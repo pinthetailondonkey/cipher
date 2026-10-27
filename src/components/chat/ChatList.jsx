@@ -87,7 +87,7 @@ export default function ChatList({ onOpenChat }) {
   };
 
   if (allChats.length === 0) {
-    return <p className="mx-4 mt-6 rounded-2xl border border-line bg-panel shadow-lg px-4 py-10 text-center text-[13px] text-ink/40">No chats yet. Tap + to start.</p>;
+    return <p className="mx-4 mt-6 rounded-2xl border border-line bg-panel px-4 py-10 text-center text-[13px] text-inkMuted">No chats yet. Tap + to start.</p>;
   }
 
   const active = allChats.filter(c => !archivedChats.includes(c.id));
@@ -104,7 +104,7 @@ export default function ChatList({ onOpenChat }) {
     const Icon = chat.group?.isChannel ? Megaphone : Users;
 
     return (
-      <div key={chat.id} className="relative flex items-stretch border-b border-ink/5 last:border-0">
+      <div key={chat.id} className="relative flex items-stretch border-b border-line last:border-0">
         <button
           type="button"
           onClick={() => {
@@ -116,12 +116,12 @@ export default function ChatList({ onOpenChat }) {
           onPointerLeave={cancelPress}
           onPointerCancel={cancelPress}
           onContextMenu={(e) => e.preventDefault()}
-          className={`flex min-w-0 flex-1 items-center gap-3 px-3 py-2.5 text-left active:bg-ink/5 ${pressable}`}
+          className={`flex min-h-[56px] min-w-0 flex-1 items-center gap-3 px-4 py-2 text-left active:bg-ink/5 ${pressable}`}
         >
           {isDm ? (
             <Avatar src={chat.profile.picture} name={name} className="!h-10 !w-10 !text-[13px]" />
           ) : (
-            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-ink/10 bg-scrim text-accent">
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-line bg-panelAlt text-accentText">
               <Icon size={18} />
             </span>
           )}
@@ -129,14 +129,14 @@ export default function ChatList({ onOpenChat }) {
             <span className="flex items-baseline justify-between gap-2">
               <span className="truncate text-[15px] font-semibold text-ink">{name}</span>
               {chat.lastMsg?.timestamp && (
-                <span className="shrink-0 text-[11px] font-medium text-ink/30">
+                <span className="shrink-0 text-[11px] font-medium text-inkSubtle">
                   {new Date(chat.lastMsg.timestamp * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                 </span>
               )}
             </span>
             <span className="mt-0.5 flex items-center justify-between gap-2">
               <span
-                className={`block truncate text-[13px] text-ink/40 transition-all duration-200 select-none ${previewText && !isRevealed ? 'blur-[5px]' : ''}`}
+                className={`block truncate text-[13px] text-inkMuted transition-all duration-200 select-none ${previewText && !isRevealed ? 'blur-[5px]' : ''}`}
               >
                 {previewText || (isDm ? 'Tap to chat' : (chat.group.isChannel ? 'Channel' : 'Public group'))}
               </span>
@@ -144,7 +144,7 @@ export default function ChatList({ onOpenChat }) {
                 <span className="flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-accent px-1 text-[10px] font-bold text-accentInk">
                   {unread}
                 </span>
-              ) : (isMuted(chat.id) && <BellOff size={13} className="shrink-0 text-ink/30" />)}
+              ) : (isMuted(chat.id) && <BellOff size={13} className="shrink-0 text-inkSubtle" />)}
             </span>
           </span>
         </button>
@@ -152,20 +152,20 @@ export default function ChatList({ onOpenChat }) {
           type="button"
           aria-label="Chat options"
           onClick={() => setMenuFor(menuFor === chat.id ? null : chat.id)}
-          className="flex w-10 shrink-0 items-center justify-center text-ink/25 hover:text-ink/60 active:bg-ink/5"
+          className="flex w-11 shrink-0 items-center justify-center text-inkMuted hover:text-ink active:bg-ink/5"
         >
           <MoreVertical size={16} />
         </button>
         {menuFor === chat.id && (
           <>
             <button type="button" aria-label="Close options" onClick={() => setMenuFor(null)} className="fixed inset-0 z-10 cursor-default" />
-            <div className="absolute right-2 top-2 z-20 w-40 overflow-hidden rounded-xl border border-line bg-panel shadow-lg">
+            <div className="absolute right-2 top-2 z-20 w-40 overflow-hidden rounded-xl border border-lineStrong bg-panelStrong">
               <button
                 type="button"
                 onClick={() => { useChatStore.getState().toggleMuteChat(chat.id); setMenuFor(null); }}
                 className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-[14px] font-medium text-ink active:bg-ink/5"
               >
-                {isMuted(chat.id) ? <BellOff size={14} className="text-ink/45" /> : <Bell size={14} className="text-ink/45" />}
+                {isMuted(chat.id) ? <BellOff size={14} className="text-inkMuted" /> : <Bell size={14} className="text-inkMuted" />}
                 {isMuted(chat.id) ? 'Unmute' : 'Mute'}
               </button>
               <button
@@ -173,7 +173,7 @@ export default function ChatList({ onOpenChat }) {
                 onClick={() => { useChatStore.getState().toggleArchiveChat(chat.id); setMenuFor(null); }}
                 className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-[14px] font-medium text-ink active:bg-ink/5"
               >
-                {archivedChats.includes(chat.id) ? <ArchiveRestore size={14} className="text-ink/45" /> : <Archive size={14} className="text-ink/45" />}
+                {archivedChats.includes(chat.id) ? <ArchiveRestore size={14} className="text-inkMuted" /> : <Archive size={14} className="text-inkMuted" />}
                 {archivedChats.includes(chat.id) ? 'Unarchive' : 'Archive'}
               </button>
             </div>
@@ -184,16 +184,16 @@ export default function ChatList({ onOpenChat }) {
   };
 
   return (
-    <div className="px-3 pb-4">
+    <div className="px-4 pb-4">
       {active.length > 0 && (
-        <div className="overflow-hidden rounded-2xl border border-line bg-panel shadow-lg">
+        <div className="overflow-hidden">
           {active.map(renderRow)}
         </div>
       )}
       {archived.length > 0 && (
         <>
-          <p className="px-1 pb-1 pt-4 text-[11px] font-semibold uppercase tracking-wide text-ink/30">Archived</p>
-          <div className="overflow-hidden rounded-2xl border border-line bg-panel shadow-lg">
+          <p className="px-1 pb-1 pt-4 text-[11px] font-semibold uppercase tracking-wide text-inkSubtle">Archived</p>
+          <div className="overflow-hidden">
             {archived.map(renderRow)}
           </div>
         </>

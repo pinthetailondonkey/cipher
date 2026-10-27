@@ -68,27 +68,27 @@ export default function VendorStorefront({ isOpen, onClose, vendorPubkey, profil
   return (
     <div className="fixed inset-0 z-[900] flex items-end justify-center bg-scrim/80 p-0 sm:items-center sm:p-4" role="presentation">
       <section role="dialog" aria-modal="true" aria-label="Vendor storefront" className="max-h-[90dvh] w-full max-w-md overflow-y-auto rounded-t-3xl border border-line bg-panel pb-[env(safe-area-inset-bottom)] sm:rounded-3xl">
-        <header className="sticky top-0 z-10 flex items-center gap-3 border-b border-ink/5 bg-base px-4 py-4 pt-[env(safe-area-inset-top)]">
-          <Picture src={profile.picture} alt="" className="h-12 w-12 rounded-full border border-ink/10 object-cover" fallback={<div className="flex h-12 w-12 items-center justify-center rounded-full border border-line bg-panelStrong shadow-lg text-ink/50"><Store size={20} /></div>} />
+        <header className="sticky top-0 z-10 flex items-center gap-3 border-b border-line bg-base px-4 py-4 pt-[env(safe-area-inset-top)]">
+          <Picture src={profile.picture} alt="" className="h-12 w-12 rounded-full border border-line object-cover" fallback={<div className="flex h-12 w-12 items-center justify-center rounded-full border border-line bg-panelAlt text-inkMuted"><Store size={20} /></div>} />
           <div className="min-w-0 flex-1">
             <h2 className="truncate text-[15px] font-semibold text-ink">{noHexName(profile, vendorPubkey)}</h2>
-            <p className="flex items-center gap-1 text-[13px] text-ink/45"><BadgeCheck size={14} className={vouchCount >= 3 ? 'text-accent' : ''} />{vouchesLoading ? 'Checking trust' : `${vouchCount} vouches${vouchCount >= 3 ? ' · Trusted Vendor' : ''}`}</p>
+            <p className="flex items-center gap-1 text-[13px] text-inkMuted"><BadgeCheck size={14} className={vouchCount >= 3 ? 'text-accentText' : ''} />{vouchesLoading ? 'Checking trust' : `${vouchCount} vouches${vouchCount >= 3 ? ' · Trusted Vendor' : ''}`}</p>
           </div>
-          <button type="button" onClick={onClose} aria-label="Close storefront" className="p-2 text-ink/45 hover:text-ink"><X size={20} /></button>
+          <button type="button" onClick={onClose} aria-label="Close storefront" className="p-2 text-inkMuted hover:text-ink"><X size={20} /></button>
         </header>
         <div className="space-y-3 p-4">
         <button type="button" onClick={() => onOpenChat?.(vendorPubkey)} className="flex w-full items-center justify-center gap-2 rounded-2xl bg-accent py-3.5 font-bold text-accentInk hover:bg-accent"><MessageCircle size={17} /> Message vendor</button>
-        {loading && <p className="rounded-2xl border border-line bg-panelStrong shadow-lg px-4 py-8 text-center text-[13px] text-ink/40">Loading listings…</p>}
-        {error && <p role="alert" className="rounded-2xl border border-line bg-panelStrong shadow-lg px-4 py-8 text-center text-[13px] text-red-400">{error}</p>}
-        {!loading && !error && products.length === 0 && <p className="rounded-2xl border border-line bg-panelStrong shadow-lg px-4 py-8 text-center text-[13px] text-ink/40">No active listings.</p>}
-        {products.length > 0 && <div className="overflow-hidden rounded-2xl border border-line bg-panelStrong shadow-lg">
+        {loading && <p className="rounded-2xl border border-line bg-panelStrong px-4 py-8 text-center text-[13px] text-inkMuted">Loading listings…</p>}
+        {error && <p role="alert" className="rounded-2xl border border-line bg-panelStrong px-4 py-8 text-center text-[13px] text-danger">{error}</p>}
+        {!loading && !error && products.length === 0 && <p className="rounded-2xl border border-line bg-panelStrong px-4 py-8 text-center text-[13px] text-inkMuted">No active listings.</p>}
+        {products.length > 0 && <div className="overflow-hidden rounded-2xl border border-line bg-panelStrong">
         {products.map((product) => (
-          <article key={product.id} className="flex items-center gap-3 border-b border-ink/5 p-4 last:border-0">
-            <Picture src={product.image} alt="" loading="lazy" className="h-12 w-12 rounded-xl border border-ink/10 object-cover" fallback={<div className="flex h-12 w-12 items-center justify-center rounded-xl border border-ink/10 bg-scrim text-ink/40"><Package size={18} /></div>} />
+          <article key={product.id} className="flex items-center gap-3 border-b border-line p-4 last:border-0">
+            <Picture src={product.image} alt="" loading="lazy" className="h-12 w-12 rounded-xl border border-line object-cover" fallback={<div className="flex h-12 w-12 items-center justify-center rounded-xl border border-line bg-panelAlt text-inkMuted"><Package size={18} /></div>} />
             <div className="min-w-0 flex-1">
               <h3 className="truncate text-[15px] font-semibold text-ink">{product.name}</h3>
-              <p className="text-[13px] font-semibold text-accent">{product.price ? `${product.price} ${product.currency || ''}`.trim() : 'Ask'}</p>
-              {product.description && <p className="truncate text-[13px] text-ink/40">{product.description}</p>}
+              <p className="text-[13px] font-semibold text-accentText">{product.price ? `${product.price} ${product.currency || ''}`.trim() : 'Ask'}</p>
+              {product.description && <p className="truncate text-[13px] text-inkMuted">{product.description}</p>}
             </div>
             <button type="button" onClick={() => onBuy?.(product, vendorPubkey)} className="rounded-2xl bg-accent px-4 py-2 text-[13px] font-bold text-accentInk hover:bg-accent">Buy</button>
           </article>

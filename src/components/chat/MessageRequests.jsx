@@ -17,22 +17,22 @@ export default function MessageRequests({ dms = {}, profiles = {}, onBack, onOpe
       <ScreenHeader title="Message Requests" onBack={onBack} />
       {requests.length === 0 ? (
         <div className="px-6 py-16 text-center">
-          <MessageCircle size={28} className="mx-auto text-ink/30" />
+          <MessageCircle size={28} className="mx-auto text-inkSubtle" />
           <h2 className="mt-3 text-[15px] font-semibold text-ink">No message requests</h2>
-          <p className="mt-1 text-[13px] text-ink/40">New conversations you have not answered show up here.</p>
+          <p className="mt-1 text-[13px] text-inkMuted">New conversations you have not answered show up here.</p>
         </div>
       ) : (
         <div className="p-4">
-          <div className="overflow-hidden rounded-2xl border border-line bg-panel shadow-lg">
+          <div className="overflow-hidden">
           {requests.map(({ pubkey, message }) => {
             const profile = profiles[pubkey] || {};
             const name = noHexName(profile, pubkey);
             return (
-              <button type="button" key={pubkey} onClick={() => onOpenChat?.(pubkey)} className="flex w-full items-center gap-3 border-b border-ink/5 p-4 text-left last:border-0 active:bg-ink/5">
-                <Avatar src={profile.picture} name={name} />
+              <button type="button" key={pubkey} onClick={() => onOpenChat?.(pubkey)} className="flex min-h-[56px] w-full items-center gap-3 border-b border-line px-4 py-2 text-left last:border-0 active:bg-ink/5">
+                <Avatar src={profile.picture} name={name} className="!h-10 !w-10 !text-[13px]" />
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-[15px] font-semibold text-ink">{name}</span>
-                  <span className="block truncate text-[13px] text-ink/40">{message.data?.message || 'New message'}</span>
+                  <span className="block truncate text-[13px] text-inkMuted">{message.data?.message || 'New message'}</span>
                 </span>
               </button>
             );
