@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
-import { BadgeCheck, Bookmark, Copy, Pencil, Pin, Radio, Reply, ShoppingBag, Store, Trash2 } from 'lucide-react';
+import { BadgeCheck, Bookmark, Copy, History, Pencil, Pin, Radio, Reply, ShoppingBag, Store, Trash2 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { paymentRowsFor } from '../lib/paymentUri';
 import { haptic } from '../lib/haptics';
@@ -124,6 +124,7 @@ export default function MessageBubble({ message, data, onAction, senderName, isP
   const inGroup = useChatStore((state) => !!state.activeGroup);
   const activeDm = useChatStore((state) => state.activeDm);
   const chatMessages = useChatStore((state) => (state.view === 'dm' ? state.dms[state.activeDm] : undefined));
+  const editVersions = useChatStore((state) => (message?.id ? state.messageEdits[message.id] : undefined));
   const pressTimer = useRef(null);
   const pressPoint = useRef(null);
   const paymentRows = paymentRowsFor(content);
@@ -215,6 +216,9 @@ export default function MessageBubble({ message, data, onAction, senderName, isP
     ...(content.type === 'product' && !isSender ? [['buy_product', ShoppingBag, 'Buy'], ['view_vendor', Store, 'Seller shop']] : []),
     ...(content.type === 'product' && isSender ? [['broadcast_product', Radio, 'Share'], ['edit_product', Pencil, 'Edit listing']] : []),
     ...(isSender && text && content.type !== 'product' ? [['edit', Pencil, 'Edit']] : []),
+    // The edit ledger the store already writes under msg_edits gets its
+    // reading door: the entry shows only when versions actually exist.
+    ...(isSender && Array.isArray(editVersions) && editVersions.length > 0 ? [['edit_history', History, 'Edit history']] : []),
     ['delete', Trash2, 'Delete'],
   ];
 

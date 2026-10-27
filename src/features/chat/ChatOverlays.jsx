@@ -3,6 +3,7 @@ import { useChatStore } from '../../store/chatStore';
 import BookmarksViewer from '../../components/chat/BookmarksViewer';
 import NotificationCenter from '../../components/chat/NotificationCenter';
 import QRScanner from '../../components/chat/QRScanner';
+import EditHistorySheet from '../../components/chat/EditHistorySheet';
 import BroadcastModal from '../../components/chat/BroadcastModal';
 import ProductEditModal from '../../components/chat/ProductEditModal';
 
@@ -27,6 +28,9 @@ export default function ChatOverlays({
   const setShowNotifCenter = useChatStore((state) => state.setShowNotifCenter);
   const showQRScanner = useChatStore((state) => state.showQRScanner);
   const setShowQRScanner = useChatStore((state) => state.setShowQRScanner);
+  const editHistoryMsg = useChatStore((state) => state.editHistoryMsg);
+  const setEditHistoryMsg = useChatStore((state) => state.setEditHistoryMsg);
+  const editVersions = useChatStore((state) => (editHistoryMsg ? state.messageEdits[editHistoryMsg] : undefined));
   const broadcastProduct = useChatStore((state) => state.broadcastProduct);
   const setBroadcastProduct = useChatStore((state) => state.setBroadcastProduct);
   const editingProduct = useChatStore((state) => state.editingProduct);
@@ -72,6 +76,7 @@ export default function ChatOverlays({
         />
       )}
       {showQRScanner && <QRScanner onClose={() => setShowQRScanner(false)} openChat={openChat} joinGroupById={joinGroupById} />}
+      {editHistoryMsg && <EditHistorySheet versions={editVersions} onClose={() => setEditHistoryMsg(null)} />}
       <BroadcastModal isOpen={!!broadcastProduct} onClose={() => setBroadcastProduct(null)} product={broadcastProduct} groups={groups} onBroadcast={handleBroadcastSubmit} />
       <ProductEditModal editingProduct={editingProduct} onClose={() => setEditingProduct(null)} onSubmit={handleSaveEditedProduct} identity={identity} />
       <VendorStorefront

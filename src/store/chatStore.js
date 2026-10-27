@@ -275,6 +275,9 @@ export const useChatStore = create((set) => ({
   setShowMyProfile: (v) => set({ showMyProfile: v }),
   setShowTutorial: (v) => set({ showTutorial: v }),
   setSelectedMessage: (v) => set({ selectedMessage: v }),
+  // The message whose stored edit ledger a sheet is reading (msg_edits key).
+  editHistoryMsg: null,
+  setEditHistoryMsg: (v) => set({ editHistoryMsg: v }),
   setProfilePubkey: (v) => set({ profilePubkey: v }),
   setCheckoutProduct: (v) => set({ checkoutProduct: v }),
   vendorStorefrontPubkey: null,

@@ -125,6 +125,11 @@ export function useMessageCommands({
       });
       setSelectedMessage(null); return;
     }
+    if (action === 'edit_history') {
+      useChatStore.getState().setEditHistoryMsg(msg?.id || null);
+      setSelectedMessage(null);
+      return;
+    }
     if (action === 'delete') {
       const id = msg.id;
       try {
