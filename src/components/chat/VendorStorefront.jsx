@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react';
-import { BadgeCheck, MessageCircle, Package, Store, X } from 'lucide-react';
+import { MessageCircle, Package, ShieldCheck } from 'lucide-react';
+import Sheet from '../ui/Sheet';
 import { useVouchCount } from '../../hooks/useVouchCount';
 import { generalRelays } from '../../lib/relays';
 import Picture from '../ui/Picture';
+import Avatar from '../ui/Avatar';
 import { noHexName } from '../../lib/npub';
 
 function parseListing(event) {
@@ -23,6 +25,9 @@ function parseListing(event) {
   };
 }
 
+// The vendor surface, §7: a Sheet — avatar 44, name, vouch count with
+// ShieldCheck, a 2-column grid of products, and a sticky full-width
+// message-vendor action. All handlers stay external.
 export default function VendorStorefront({ isOpen, onClose, vendorPubkey, profiles = {}, identity, onOpenChat, onBuy }) {
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -63,39 +68,73 @@ export default function VendorStorefront({ isOpen, onClose, vendorPubkey, profil
     };
   }, [isOpen, vendorPubkey]);
 
-  if (!isOpen || !vendorPubkey) return null;
-
   return (
-    <div className="fixed inset-0 z-[900] flex items-end justify-center bg-scrim/80 p-0 sm:items-center sm:p-4" role="presentation">
-      <section role="dialog" aria-modal="true" aria-label="Vendor storefront" className="max-h-[90dvh] w-full max-w-md overflow-y-auto rounded-t-3xl border border-line bg-panel pb-[env(safe-area-inset-bottom)] sm:rounded-3xl">
-        <header className="sticky top-0 z-10 flex items-center gap-3 border-b border-line bg-base px-4 py-4 pt-[env(safe-area-inset-top)]">
-          <Picture src={profile.picture} alt="" className="h-12 w-12 rounded-full border border-line object-cover" fallback={<div className="flex h-12 w-12 items-center justify-center rounded-full border border-line bg-panelAlt text-inkMuted"><Store size={20} /></div>} />
-          <div className="min-w-0 flex-1">
-            <h2 className="truncate text-[15px] font-semibold text-ink">{noHexName(profile, vendorPubkey)}</h2>
-            <p className="flex items-center gap-1 text-[13px] text-inkMuted"><BadgeCheck size={14} className={vouchCount >= 3 ? 'text-accentText' : ''} />{vouchesLoading ? 'Checking trust' : `${vouchCount} vouches${vouchCount >= 3 ? ' · Trusted Vendor' : ''}`}</p>
-          </div>
-          <button type="button" onClick={onClose} aria-label="Close storefront" className="p-2 text-inkMuted hover:text-ink"><X size={20} /></button>
-        </header>
-        <div className="space-y-3 p-4">
-        <button type="button" onClick={() => onOpenChat?.(vendorPubkey)} className="flex w-full items-center justify-center gap-2 rounded-2xl bg-accent py-3.5 font-bold text-accentInk hover:bg-accent"><MessageCircle size={17} /> Message vendor</button>
-        {loading && <p className="rounded-2xl border border-line bg-panelStrong px-4 py-8 text-center text-[13px] text-inkMuted">Loading listings…</p>}
-        {error && <p role="alert" className="rounded-2xl border border-line bg-panelStrong px-4 py-8 text-center text-[13px] text-danger">{error}</p>}
-        {!loading && !error && products.length === 0 && <p className="rounded-2xl border border-line bg-panelStrong px-4 py-8 text-center text-[13px] text-inkMuted">No active listings.</p>}
-        {products.length > 0 && <div className="overflow-hidden rounded-2xl border border-line bg-panelStrong">
-        {products.map((product) => (
-          <article key={product.id} className="flex items-center gap-3 border-b border-line p-4 last:border-0">
-            <Picture src={product.image} alt="" loading="lazy" className="h-12 w-12 rounded-xl border border-line object-cover" fallback={<div className="flex h-12 w-12 items-center justify-center rounded-xl border border-line bg-panelAlt text-inkMuted"><Package size={18} /></div>} />
-            <div className="min-w-0 flex-1">
-              <h3 className="truncate text-[15px] font-semibold text-ink">{product.name}</h3>
-              <p className="text-[13px] font-semibold text-accentText">{product.price ? `${product.price} ${product.currency || ''}`.trim() : 'Ask'}</p>
-              {product.description && <p className="truncate text-[13px] text-inkMuted">{product.description}</p>}
-            </div>
-            <button type="button" onClick={() => onBuy?.(product, vendorPubkey)} className="rounded-2xl bg-accent px-4 py-2 text-[13px] font-bold text-accentInk hover:bg-accent">Buy</button>
-          </article>
-        ))}
-        </div>}
+    <Sheet
+      open={isOpen && !!vendorPubkey}
+      onClose={onClose}
+      label="Vendor menu"
+      className="mx-auto max-w-md md:max-w-lg"
+    >
+      <header className="flex items-center gap-3 px-5 pb-4 pt-2">
+        <div className="h-11 w-11 shrink-0">
+          <Avatar src={profile.picture} name={noHexName(profile, vendorPubkey)} className="!h-11 !w-11 text-sm" />
         </div>
-      </section>
-    </div>
+        <div className="min-w-0 flex-1">
+          <h2 className="truncate text-[17px] font-semibold text-ink">
+            {noHexName(profile, vendorPubkey)}
+          </h2>
+          <p className="flex items-center gap-1 text-[13px] text-inkMuted">
+            <ShieldCheck size={14} className={vouchCount >= 3 ? 'text-accentText' : 'text-ink/35'} />
+            {vouchesLoading ? 'Checking trust' : `${vouchCount} vouches${vouchCount >= 3 ? ' · Trusted Vendor' : ''}`}
+          </p>
+        </div>
+      </header>
+
+      <div className="min-h-0 flex-1 space-y-3 px-5">
+        {loading && <p className="rounded-2xl border border-line bg-panelStrong px-4 py-8 text-center text-[13px] text-inkMuted">Loading menu…</p>}
+        {error && <p role="alert" className="rounded-2xl border border-line bg-panelStrong px-4 py-8 text-center text-[13px] text-danger">{error}</p>}
+        {!loading && !error && products.length === 0 && <p className="rounded-2xl border border-line bg-panelStrong px-4 py-8 text-center text-[13px] text-inkMuted">Nothing on this menu yet.</p>}
+        {!loading && !error && products.length > 0 && (
+          <div className="grid grid-cols-2 gap-3">
+            {products.map((product) => (
+              <article key={product.id} className="flex flex-col overflow-hidden rounded-2xl border border-line bg-panelStrong">
+                <div className="aspect-square w-full overflow-hidden bg-ink/5">
+                  <Picture
+                    src={product.image}
+                    alt=""
+                    loading="lazy"
+                    className="h-full w-full object-cover"
+                    fallback={<div className="flex h-full w-full items-center justify-center text-ink/30"><Package size={28} /></div>}
+                  />
+                </div>
+                <div className="flex flex-1 flex-col gap-1 p-2.5">
+                  <h3 className="line-clamp-2 text-[14px] font-semibold text-ink">{product.name}</h3>
+                  <p className="font-mono text-[13px] font-bold text-accentText">{product.price ? `${product.price} ${product.currency || ''}`.trim() : 'Ask'}</p>
+                  {product.description && <p className="line-clamp-2 text-[12px] text-inkMuted">{product.description}</p>}
+                  <button
+                    type="button"
+                    onClick={() => onBuy?.(product, vendorPubkey)}
+                    className="mt-auto flex min-h-[44px] items-center justify-center rounded-full border border-line font-semibold text-ink active:bg-ink/10"
+                  >
+                    Buy
+                  </button>
+                </div>
+              </article>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Sticky bottom action: Message vendor, accent, full-width. */}
+      <div className="sticky bottom-0 mt-4 border-t border-line bg-panel/95 px-5 pb-sheet pt-3 backdrop-blur">
+        <button
+          type="button"
+          onClick={() => onOpenChat?.(vendorPubkey)}
+          className="flex min-h-[52px] w-full items-center justify-center gap-2 rounded-full bg-accent text-[15px] font-bold text-accentInk active:bg-accent"
+        >
+          <MessageCircle size={17} /> Message vendor
+        </button>
+      </div>
+    </Sheet>
   );
 }
