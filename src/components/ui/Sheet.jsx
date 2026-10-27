@@ -7,6 +7,12 @@ import { useEffect, useRef } from 'react';
 
 const FOCUSABLE = 'a[href], button:not([disabled]), textarea, input, select, [tabindex]:not([tabindex="-1"])';
 
+// Open Sheet registry: Escape (and Tab trapping) applies to the topmost
+// open Sheet only, so a Sheet opened on top of a Sheet does not take both
+// down with one key press.
+let sheetUid = 0;
+const openSheets = [];
+
 export default function Sheet({
   open,
   onClose,
@@ -24,13 +30,32 @@ export default function Sheet({
   const restoreRef = useRef(null);
   const dragControls = useDragControls();
 
+  const uid = useRef(null);
+
+  const dropFromStack = () => {
+    const at = openSheets.indexOf(uid.current);
+    if (at !== -1) openSheets.splice(at, 1);
+  };
+
   useEffect(() => {
-    if (!open) return undefined;
+    if (!open) {
+      if (uid.current) {
+        dropFromStack();
+        uid.current = null;
+      }
+      return undefined;
+    }
+    if (!uid.current) {
+      sheetUid += 1;
+      uid.current = sheetUid;
+      openSheets.push(uid.current);
+    }
     const wasFocused = document.activeElement;
     restoreRef.current = wasFocused instanceof HTMLElement ? wasFocused : null;
     const id = requestAnimationFrame(() => panelRef.current?.focus({ preventScroll: true }));
     const onKey = (event) => {
       if (event.key === 'Escape') {
+        if (openSheets[openSheets.length - 1] !== uid.current) return;
         event.stopPropagation();
         onClose?.();
         return;
@@ -64,6 +89,14 @@ export default function Sheet({
       restoreRef.current = null;
     };
   }, [open, onClose]);
+
+  // If the whole component unmounts while open, leave the stack clean.
+  useEffect(() => () => {
+    if (uid.current) {
+      dropFromStack();
+      uid.current = null;
+    }
+  }, []);
 
   const dismissByDrag = (_event, info) => {
     if (info.offset.y > 120) onClose?.();
