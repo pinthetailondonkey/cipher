@@ -129,7 +129,7 @@ test('every message action has a way in from the UI, and every menu item has a h
   for (const action of menu) assert.ok(handled.has(action) || threadHandled.has(action), `${action} is offered but not handled`);
   assert.ok(menu.has('view_vendor') && menu.has('edit_product'));
   const overlays = read('../features/chat/ChatOverlays.jsx');
-  assert.match(overlays, /<VendorStorefront\s+isOpen=\{!!vendorStorefrontPubkey\}/);
+  assert.match(overlays, /<VendorMenuHome\s+open=\{!!vendorStorefrontPubkey\}/);
   assert.match(overlays, /<ProductEditModal editingProduct=\{editingProduct\}[^\n]*onSubmit=\{handleSaveEditedProduct\}/);
 });
 
