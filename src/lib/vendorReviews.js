@@ -8,15 +8,17 @@
 // rewrites their rules: eligibility, display and the menu counters all
 // re-derive from the receipt this device holds, so a review is never a
 // claim a stranger could invent — and never a per-order number a menu
-// could publish. Reviews themselves stay local to the reviewer's account
-// database (db.js, the vendorReviews table); nothing here sends.
+// could publish. Reviews stay local to the reviewer's account database
+// (db.js, the vendorReviews table) AND publish to the vendor's live thread
+// — the publisher is useReputation's sendReview on main, handed to
+// createReviewPublisher; the local record stays so the one-per-receipt
+// door and offline history hold.
 //
-// This file is strictly screen-side. The vendor data layer — review
-// events, the txid bulletin, dispute records — is owned by the Deal lane
-// on main. Nothing here names kinds on the wire, publishes, or structures
-// bulletin records; the display consumes those contracts by swapping the
-// proven-count provider and the review reader in useVendorReviews, never
-// by widening this file.
+// The vendor data layer — review events (10005), the txid bulletin (10007),
+// dispute records (10006) — is owned by the Deal lane on main. This file
+// never publishes or structures those records; the display reads them
+// through Deal's reader contract (vendorShopReaders) and merges them with
+// the device's own rows, keyed by receipt hash.
 import { scopedGet, getActivePubkey } from './storage';
 import {
   readPublicViews,
@@ -35,7 +37,8 @@ const HEX64 = /^[0-9a-f]{64}$/;
 // useReputation on main (8a36b9a) — has folded under the stack, so the fuse
 // is true: a compose is sign-and-publish, and the local record stays beside
 // the publication so the one-per-receipt door and the offline history keep
-// working.
+// working. The display side reads the same contract's fetch
+// (vendorShopReaders.fetchVendorThread) and the same rider ledger.
 export const REVIEW_WIRING_LANDED = true;
 
 // The publisher IS useReputation's sendReview; the stub is gone. sendReview
