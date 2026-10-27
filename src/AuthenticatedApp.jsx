@@ -8,6 +8,7 @@ import CallOverlay from './components/chat/CallOverlay';
 import DeadDropModal from './components/chat/DeadDropModal';
 import Toast from './components/ui/Toast';
 import Segmented from './components/ui/Segmented';
+import CommandPalette from './components/ui/CommandPalette';
 import { requestNotificationPermission } from './lib/notifications';
 import { unreadTotalOf, useChatStore } from './store/chatStore';
 
@@ -37,6 +38,23 @@ export default function AuthenticatedApp({ identity }) {
   const openChatFromProfile = useCallback((pubkey) => {
     useChatStore.getState().openChat('dm', pubkey);
     setActiveTab('chat');
+  }, []);
+  const openChatFromPalette = useCallback((type, id, group) => {
+    useChatStore.getState().openChat(type, id, group || null);
+    setActiveTab('chat');
+  }, []);
+  // ⌘K opens the command palette at md+ (master §2): the same command key a
+  // desktop keyboard expects, and no phone surface changes.
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  useEffect(() => {
+    const onKeyDown = (event) => {
+      if ((event.metaKey || event.ctrlKey) && !event.altKey && !event.shiftKey && String(event.key).toLowerCase() === 'k') {
+        event.preventDefault();
+        if (window.matchMedia('(min-width: 768px)').matches) setPaletteOpen((open) => !open);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
   }, []);
   const showTutorial = useChatStore((state) => state.showTutorial);
   useEffect(() => {
@@ -75,6 +93,13 @@ export default function AuthenticatedApp({ identity }) {
       <DeadDropModal identity={identity} />
       <GlobalDialog />
       <CallOverlay />
+      <CommandPalette
+        open={paletteOpen}
+        onClose={() => setPaletteOpen(false)}
+        onOpenChat={openChatFromPalette}
+        onNavigateTab={setActiveTab}
+        activeTab={activeTab}
+      />
 
       <main className="relative z-fab h-[100dvh] w-full max-w-md overflow-hidden md:w-auto md:max-w-none md:flex-1">
         <div className={`absolute inset-0 md:left-[72px] ${activeTab === 'chat' ? '' : 'invisible pointer-events-none'}`}>
