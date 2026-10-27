@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { X, Copy, Check } from 'lucide-react';
+import { Copy, Check } from 'lucide-react';
+import Sheet from '../ui/Sheet';
 import { useChatStore } from '../../store/chatStore';
 import { createDeadDropNote } from '../../lib/deadDrop';
 import { getAuthenticatedPool } from '../../lib/pool';
@@ -55,15 +56,8 @@ export default function DeadDropModal({ identity }) {
   };
 
   return (
-    <div className="fixed inset-0 z-sheet flex items-end justify-center bg-scrim/70 p-4 pb-[calc(1.5rem+env(safe-area-inset-bottom))]" onClick={close}>
-      <div
-        className="w-full max-w-md rounded-3xl border border-line bg-panelStrong p-5 shadow-2xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-lg font-bold text-ink">Burn note</h2>
-          <button type="button" onClick={close} aria-label="Close" className="p-1.5 text-ink/50 hover:text-ink"><X size={18} /></button>
-        </div>
+    <Sheet open={show} onClose={close} label="Burn note" heading="Burn note">
+      <div className="px-5 pb-5 pt-2">
         <p className="mb-3 text-[13px] leading-relaxed text-ink/50">
           Write it, get one link, send it however you want. The note opens once — after that it is gone. Whoever has the link can read it, so send it to the right chat.
         </p>
@@ -105,6 +99,6 @@ export default function DeadDropModal({ identity }) {
           </div>
         )}
       </div>
-    </div>
+    </Sheet>
   );
 }
