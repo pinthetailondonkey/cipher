@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ChevronLeft, MoreVertical, Phone } from 'lucide-react';
 import { useChatStore } from '../../store/chatStore';
 import { startCall } from '../../lib/voiceCall';
+import { haptic } from '../../lib/haptics';
 import { shortNpub } from '../../lib/npub';
 import Picture from '../ui/Picture';
 
@@ -47,6 +48,25 @@ export default function ChatHeader({ mode }) {
   });
   const [showTimer, setShowTimer] = useState(false);
   const [now, setNow] = useState(() => Date.now());
+  // Long avatar hold in a group opens the group information Sheet without
+  // fishing in the kebab. A plain tap keeps its existing behavior.
+  const holdRef = useRef(null);
+  const cancelHold = () => {
+    if (holdRef.current) {
+      clearTimeout(holdRef.current);
+      holdRef.current = null;
+    }
+  };
+  const startGroupInfoHold = () => {
+    if (mode !== 'group') return;
+    cancelHold();
+    holdRef.current = setTimeout(() => {
+      holdRef.current = null;
+      haptic('medium');
+      setMenuOpen(false);
+      setShowGroupInfo(true);
+    }, 450);
+  };
 
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 400);
@@ -90,6 +110,17 @@ export default function ChatHeader({ mode }) {
           type="button"
           className="absolute left-1/2 flex min-w-0 -translate-x-1/2 flex-col items-center gap-0.5"
           onClick={() => mode === 'dm' && setProfilePubkey(activeDm)}
+          onPointerDown={startGroupInfoHold}
+          onPointerUp={cancelHold}
+          onPointerLeave={cancelHold}
+          onPointerCancel={cancelHold}
+          onContextMenu={(event) => {
+            if (mode === 'group') {
+              event.preventDefault();
+              setMenuOpen(false);
+              setShowGroupInfo(true);
+            }
+          }}
         >
           <Picture
             src={picture}
