@@ -4,6 +4,7 @@ import ScreenHeader from '../ui/ScreenHeader';
 import ListRow from '../ui/ListRow';
 import Badge from '../ui/Badge';
 import EmptyState from '../ui/EmptyState';
+import useDialogA11y from '../ui/dialogA11y';
 import { useChatStore } from '../../store/chatStore';
 import { db } from '../../db';
 
@@ -26,6 +27,7 @@ function previewText(message) {
 
 export default function NotificationCenter({ onClose, onJump }) {
   const unreadCounts = useChatStore((state) => state.unreadCounts);
+  useDialogA11y(true, () => onClose?.());
   const dms = useChatStore((state) => state.dms);
   const groupMessages = useChatStore((state) => state.groupMessages);
   const groups = useChatStore((state) => state.groups);
@@ -67,7 +69,7 @@ export default function NotificationCenter({ onClose, onJump }) {
       <div className="pointer-events-none absolute inset-0" style={{
         background: 'radial-gradient(ellipse 55% 38% at 12% 0%, var(--glow-a), transparent 65%), radial-gradient(ellipse 50% 30% at 92% 100%, var(--glow-b), transparent 70%)',
       }} />
-      <div className="relative z-10 mx-auto flex min-h-0 w-full max-w-md flex-1 flex-col">
+      <div className="relative mx-auto flex min-h-0 w-full max-w-md flex-1 flex-col">
       <ScreenHeader title="Notifications" onBack={onClose} />
       {notifications.length === 0 ? (
         <div className="m-4">

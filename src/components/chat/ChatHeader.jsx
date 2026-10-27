@@ -101,7 +101,7 @@ export default function ChatHeader({ mode }) {
   };
 
   return (
-    <div className="sticky top-0 z-40 border-b border-line bg-base pt-[env(safe-area-inset-top)]">
+    <div className="sticky top-0 z-fab border-b border-line bg-base pt-[env(safe-area-inset-top)]">
       <div className="relative flex h-14 items-center px-3">
         <button onClick={() => setView('list')} className="touch-target -ml-2 flex items-center justify-center text-ink" aria-label="Back">
           <ChevronLeft size={24} />
@@ -160,7 +160,7 @@ export default function ChatHeader({ mode }) {
         ) : subtitle}
       </p>
       {menuOpen && activeChatId && (
-        <div className="absolute right-2 top-full z-50 mt-1 w-56 rounded-2xl border border-line bg-panel p-1">
+        <div className="absolute right-2 top-full z-fab mt-1 w-56 rounded-2xl border border-line bg-panel p-1">
           <button
             type="button"
             onClick={openTimer}
