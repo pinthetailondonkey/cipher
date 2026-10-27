@@ -4,7 +4,7 @@ import { getMyGroups } from '../../lib/myGroups';
 import { groupRelays, queryWithTimeout } from '../../lib/relays';
 import { getAuthenticatedPool } from '../../lib/pool';
 import { useChatStore } from '../../store/chatStore';
-import { joinGroup } from '../../lib/groupJoin';
+import { heldGroupRow, joinGroup } from '../../lib/groupJoin';
 
 export function useMyGroups(pubkey) {
   const setGroupsStore = useChatStore((s) => s.setGroups);
@@ -51,7 +51,12 @@ export function useGroupDirectory({ identity, createGroupHook, setGroups }) {
     setLoading(true);
     try {
       const newGroupObj = await joinGroup(identity, groupId, { name: passedName, channel });
-      setGroups(prev => [newGroupObj, ...(prev || []).filter(g => g.id !== newGroupObj.id)]);
+      // The store row obeys the same law as the saved one: a held row keeps
+      // its name (drill residual).
+      setGroups(prev => [
+        heldGroupRow((prev || []).find((g) => g.id === newGroupObj.id), newGroupObj),
+        ...((prev || []).filter((g) => g.id !== newGroupObj.id)),
+      ]);
       openChat('group', newGroupObj.id, newGroupObj);
       setToast({ type: 'success', message: 'Joined group' });
     } catch (err) {
@@ -81,9 +86,12 @@ export function useGroupDirectory({ identity, createGroupHook, setGroups }) {
       });
       const uniqueGroups = Array.from(new Map(parsed.map(g => [g.id, g])).values());
       const localGroups = getMyGroups(identity.pk);
-      const allGroups = [...uniqueGroups];
-      localGroups.forEach(lg => {
-        if (!allGroups.find(g => g.id === lg.id)) allGroups.push(lg);
+      // A row the device holds is named by the device's records; a
+      // directory rebuild restating relay metadata must not rename it.
+      const held = new Map(localGroups.map((lg) => [lg.id, lg]));
+      const allGroups = uniqueGroups.map((g) => heldGroupRow(held.get(g.id), g));
+      localGroups.forEach((lg) => {
+        if (!allGroups.find((g) => g.id === lg.id)) allGroups.push(lg);
       });
       setGroups(allGroups);
       return allGroups;

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
-import { joinGroup } from './groupJoin.js';
+import { heldGroupRow, joinGroup } from './groupJoin.js';
 import { getMyGroups } from './myGroups.js';
 
 function memoryStorage() {
@@ -58,4 +58,27 @@ test('invite links, search, and Discover all join the same way, and nobody sends
     assert.equal(source.includes('join_request'), false);
     assert.equal(source.includes('requestToJoinGroup'), false);
   }
+});
+
+// Drill residual: the newest signed metadata event can call a held group
+// anything. A directory rebuild or a re-join must not splat that claim
+// over a row the device already holds — a legitimate rename arrives
+// through the admin-authorized kind-9002 announcement path, which is the
+// same standing the row's own writes always needed.
+test('a held row keeps the words it holds; a new row takes the incoming ones', () => {
+  const held = { id: 'g1', name: 'Thursday', about: 'moved to Fridays', isChannel: false, creator: 'ff'.repeat(32) };
+  const incoming = { id: 'g1', name: 'REAL-NAME-ATTACKER', about: 'forged meta', isChannel: true, creator: 'aa'.repeat(32) };
+  const merged = heldGroupRow(held, incoming);
+  assert.equal(merged.name, 'Thursday', 'the held name survives the refresh');
+  assert.equal(merged.about, 'moved to Fridays', 'the held about survives too');
+  assert.equal(merged.isChannel, false, 'the held shape survives');
+  assert.equal(merged.creator, 'aa'.repeat(32), 'creator keeps the F3 hold at the caller, not here');
+  // A row with empty held words adopts the incoming ones rather than
+  // blanking a group into a nameless row.
+  const halfHeld = heldGroupRow({ id: 'g2', name: '' }, { id: 'g2', name: 'Relay Room', about: '', isChannel: null });
+  assert.equal(halfHeld.name, 'Relay Room');
+  assert.equal(halfHeld.about, '');
+  assert.equal(halfHeld.isChannel, null, 'isChannel falls through when the held row says nothing');
+  // No held row: the incoming one passes through untouched.
+  assert.deepEqual(heldGroupRow(null, incoming), incoming);
 });
