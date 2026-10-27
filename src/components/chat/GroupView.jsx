@@ -1,9 +1,12 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { X } from 'lucide-react';
 import MessageBubble from '../MessageBubble';
 import MessageInput from '../MessageInput';
 import ChatHeader from './ChatHeader';
 import GroupInfoSidebar from './GroupInfoSidebar';
+import ThreadScroll, { SelectBar } from './ThreadScroll';
+import ForwardPicker from './ForwardPicker';
+import { useThreadActions } from './useThreadActions';
 import { useChatStore } from '../../store/chatStore';
 import { db, saveMessage } from '../../db';
 import { scopedRemove } from '../../lib/storage';
@@ -121,6 +124,7 @@ function disappearingSeconds(timer) {
 export default function GroupView({
   identity,
   sendMessage,
+  sendDM,
   handleMessageAction,
   handleImageUpload,
   startRecording,
@@ -142,21 +146,24 @@ export default function GroupView({
       member.pubkey === identity?.pk && ['admin', 'owner'].includes(member.role)
     ));
   const deletedMsgs = useChatStore((state) => state.deletedMsgs);
+  const {
+    selectMode, selectedIds, isSelected, toggleSelect, cancelSelect,
+    deleteSelected, forwardOpen, closeForward, openForward, forwardTo,
+    wrapAction, msgKey,
+  } = useThreadActions({ handleMessageAction, sendDM });
+  const selectedMessages = () => new Map(
+    (messages || []).flatMap((m) => (msgKey(m) ? [[msgKey(m), m]] : []))
+  );
   const pinnedMessageId = useChatStore((state) => state.pinnedMessages[state.activeGroup?.id]);
   const showGroupInfo = useChatStore((state) => state.showGroupInfo);
   const setShowGroupInfo = useChatStore((state) => state.setShowGroupInfo);
   const replyingTo = useChatStore((state) => state.replyingTo);
   const setReplyingTo = useChatStore((state) => state.setReplyingTo);
-  const scrollRef = useRef(null);
   const [pane, setPane] = useState('chat');
   const isVendor = useChatStore((state) => state.isVendor);
   const setToast = useChatStore((state) => state.setToast);
   const [pendingLists, setPendingLists] = useState([]);
   const [now, setNow] = useState(() => Date.now());
-
-  useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
-  }, [messages.length, activeGroup?.id]);
 
   useEffect(() => {
     if (!identity?.pk || !activeGroup?.id) return undefined;
@@ -328,19 +335,25 @@ export default function GroupView({
         />
       ) : (
       <>
-      <div ref={scrollRef} className="flex min-h-0 flex-1 flex-col overflow-y-auto py-2">
-        {visibleMessages.length === 0 ? (
+      {selectMode && (
+        <SelectBar
+          count={selectedIds.length}
+          onForward={() => { const map = selectedMessages(); openForward(null, selectedIds.map((id) => map.get(id)).filter(Boolean)); }}
+          onDelete={() => deleteSelected(selectedMessages())}
+          onCancel={cancelSelect}
+        />
+      )}
+      <ThreadScroll
+        messages={visibleMessages}
+        emptyState={(
           <div className="m-auto mx-4 max-w-sm rounded-2xl border border-line bg-panel px-4 py-8 text-center">
             <p className="text-[15px] font-semibold text-ink">You're in {activeGroup?.name || 'this group'}</p>
             <p className="mt-2 text-[13px] leading-relaxed text-ink/40">Say hello. Messages stay in this chat, with a name and a time on every one.</p>
           </div>
-        ) : visibleMessages.map((message, index) => {
+        )}
+        renderMessage={(message, { runStart, runEnd }) => {
           const data = message.pending ? null : readPayload(message);
           const senderProfile = profiles[message.pubkey];
-          // Run boundaries sit at a change of author, so the squared tail
-          // corner and the avatar land once per run, not per bubble.
-          const runStart = index === 0 || visibleMessages[index - 1].isSender !== message.isSender;
-          const runEnd = index === visibleMessages.length - 1 || visibleMessages[index + 1].isSender !== message.isSender;
           return (
             <MessageBubble
               key={message.clientId || message.id}
@@ -354,23 +367,28 @@ export default function GroupView({
               canPin={canManage}
               runStart={runStart}
               runEnd={runEnd}
-              onAction={handleMessageAction}
+              selectMode={selectMode}
+              selected={isSelected(message)}
+              onToggleSelect={toggleSelect}
+              onAction={wrapAction}
             />
           );
-        })}
-      </div>
+        }}
+      />
       {replyingTo && (
         <div className="mx-3 mb-2 flex items-center gap-3 rounded-2xl border border-line bg-panel px-4 py-3">
-          <div className="min-w-0 flex-1 border-l-2 border-accent pl-3">
+          <span aria-hidden="true" className="w-[2px] shrink-0 self-stretch rounded-full bg-accent" />
+          <div className="min-w-0 flex-1">
             <p className="text-[11px] font-semibold text-accentText">{replyingTo.isSender ? 'You' : 'Replying'}</p>
-            <p className="truncate text-[13px] text-ink/60">{replyingTo.data?.message || replyingTo.rawContent || 'Message'}</p>
+            <p className="truncate text-[13px] text-inkMuted">{replyingTo.data?.message || replyingTo.rawContent || 'Message unavailable'}</p>
           </div>
-          <button type="button" onClick={() => setReplyingTo(null)} aria-label="Cancel reply" className="p-2 text-ink/45 hover:text-ink"><X size={18} /></button>
+          <button type="button" onClick={() => setReplyingTo(null)} aria-label="Cancel reply" className="touch-target flex items-center justify-center text-ink/45 hover:text-ink"><X size={18} /></button>
         </div>
       )}
       <div className="pb-safe">
         <MessageInput sendMessage={sendGroupText || sendMessage} handleImageUpload={handleImageUpload} startRecording={startRecording} stopRecording={stopRecording} />
       </div>
+      <ForwardPicker open={forwardOpen} onClose={closeForward} onPick={forwardTo} selectedCount={selectedIds.length} />
       </>
       )}
       </div>
