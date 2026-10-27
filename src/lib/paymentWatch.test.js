@@ -1,23 +1,32 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
-import { atomicToCoins, checkPayment, incomingMoneroTransfers, isPublicExplorer, issuePrecedes, moneroRows, parseExactAmounts, paymentWatchUrl, reportFromTransfers, rowsFromScan, verifyWatcherResponse } from './paymentWatch.js';
+import { atomicToCoins, checkPayment, childWatcherToken, incomingMoneroTransfers, isPublicExplorer, issuePrecedes, moneroRows, parseExactAmounts, paymentWatchUrl, reportFromTransfers, rowsFromScan, verifyWatcherResponse } from './paymentWatch.js';
 
 const TOKEN = 'secret';
 const hexOf = (buffer) => [...new Uint8Array(buffer)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
-const signBody = async (raw, token = TOKEN, tsSec) => {
-  const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(token), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+// The wire token is the order's child: HMAC of the base secret over the
+// payment asked about. A check signs and verifies under that child, never
+// the base token.
+const signBody = async (raw, token = TOKEN, tsSec, address = '', currency = '') => {
+  const wire = address ? await childWatcherToken(token, address, currency) : token;
+  const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(wire), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
   const ts = String(tsSec ?? Math.floor(Date.now() / 1000));
   return `v1=${hexOf(await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(`${ts}:${raw}`)))}`;
 };
 
 // A stand-in for a signed watcher answer. Every 200 answer carries the two
-// signature headers over the exact raw text it returns.
-const watcherAnswer = async (body, { token = TOKEN, tsSec, sig } = {}) => {
+// signature headers over the exact raw text it returns, keyed by the child
+// token of the payment the body names — what a real watcher now derives.
+// signFor signs under a different payment's child, which is how a mismatch
+// between the ask and the answer still reaches the echo gate.
+const watcherAnswer = async (body, { token = TOKEN, tsSec, sig, signFor } = {}) => {
   const raw = typeof body === 'string' ? body : JSON.stringify(body);
   const ts = String(tsSec ?? Math.floor(Date.now() / 1000));
   const headers = { 'content-type': 'application/json', 'x-cipher-ts': ts };
-  headers['x-cipher-sig'] = sig ?? (await signBody(raw, token, ts));
+  const signAddress = signFor?.address ?? body.address;
+  const signCurrency = signFor?.currency ?? body.currency;
+  headers['x-cipher-sig'] = sig ?? (await signBody(raw, token, ts, signAddress, signCurrency));
   return {
     ok: true,
     status: 200,
@@ -160,15 +169,16 @@ test('an answer that does not name the payment asked about answers nothing', asy
   const watcherUrl = 'https://watch.example/payment?token=secret';
   // An honestly signed report for one order, carried onto a second order on
   // another device: the bytes are real, the ask is not. The signature
-  // cannot see this, so the answer must echo what was asked.
-  // (security re-attack)
+  // cannot see this — the child token healthy-client check is passed by
+  // signing under the ASKED payment's child — so the echo gate is what
+  // meets it. (security re-attack)
   await assert.rejects(
     () => checkPayment({
       watcherUrl,
       address: '8other',
       currency: 'xmr',
       state: 'address_issued',
-      fetchImpl: () => watcherAnswer({ address: '8abc', currency: 'xmr', txid: 'ab', confirmations: 10 }),
+      fetchImpl: () => watcherAnswer({ address: '8abc', currency: 'xmr', txid: 'ab', confirmations: 10 }, { signFor: { address: '8other', currency: 'xmr' } }),
     }),
     /does not name the payment/,
   );
@@ -179,7 +189,7 @@ test('an answer that does not name the payment asked about answers nothing', asy
       address: '8abc',
       currency: 'btc',
       state: 'address_issued',
-      fetchImpl: () => watcherAnswer({ address: '8abc', currency: 'xmr', txid: 'ab', confirmations: 10 }),
+      fetchImpl: () => watcherAnswer({ address: '8abc', currency: 'xmr', txid: 'ab', confirmations: 10 }, { signFor: { address: '8abc', currency: 'btc' } }),
     }),
     /does not name the payment/,
   );
@@ -410,7 +420,12 @@ test('a transfer recorded before the order\'s address was issued cannot pay it',
 
 test('the watcher signs every answer it gives, and the phone verifies the raw body', () => {
   const watcher = fs.readFileSync(new URL('../../scripts/payment-watcher.mjs', import.meta.url), 'utf8');
-  assert.match(watcher, /createHmac\('sha256', watchToken\)/);
+  // The wire credential is the order's child token, derived on both sides
+  // from the base secret over the payment asked about. The base token
+  // authenticates nothing. (drill round three)
+  assert.match(watcher, /await childWatcherToken\(watchToken, address, currency\)/);
+  assert.match(watcher, /await tokenMatches\(presented, address, currency\)/);
+  assert.match(watcher, /createHmac\('sha256', token\)/);
   assert.match(watcher, /x-cipher-sig/);
   assert.match(watcher, /x-cipher-ts/);
   // The answer names what it answers for, so a signed reply for one order
@@ -423,6 +438,45 @@ test('the watcher signs every answer it gives, and the phone verifies the raw bo
   // The body is verified before it is parsed, so JSON round-tripping cannot
   // sneak a byte past the check.
   assert.match(app, /parseExactAmounts\(raw\)/);
+  // The check never walks out with the pasted base token.
+  assert.match(app, /childWatcherToken\(baseToken, address, currency\)/);
+});
+
+test('a child token is bound to the payment asked about', async () => {
+  const child = await childWatcherToken(TOKEN, '8abc', 'xmr');
+  assert.equal(typeof child, 'string');
+  assert.match(child, /^[0-9a-f]{64}$/);
+  assert.equal(child, await childWatcherToken(TOKEN, '8abc', 'xmr')); // deterministic
+  assert.notEqual(child, await childWatcherToken(TOKEN, '8other', 'xmr')); // another order
+  assert.notEqual(child, await childWatcherToken(TOKEN, '8abc', 'btc')); // another currency
+  assert.notEqual(child, await childWatcherToken('other', '8abc', 'xmr')); // another watcher
+  assert.notEqual(child, TOKEN); // the base secret never doubles as its own child
+  // The request URL walks out with the child, never the pasted base token.
+  const url = new URL(paymentWatchUrl(`https://watch.example/payment?token=${TOKEN}`, { address: '8abc', currency: 'xmr', token: child }));
+  assert.equal(url.searchParams.get('token'), child);
+});
+
+test('the base token authenticates nothing on the wire — only the order\'s child does', async () => {
+  process.env.WATCH_TOKEN = TOKEN;
+  const { server } = await import('../../scripts/payment-watcher.mjs');
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  try {
+    const port = server.address().port;
+    const ask = async (token) => fetch(
+      `http://127.0.0.1:${port}/payment?address=8abc&currency=xmr`,
+      { headers: { Authorization: `Bearer ${token}` } },
+    ).then((response) => response.status);
+    // The pasted base secret answers nothing: dead on the wire, whatever it
+    // could have unlocked before. (drill round three)
+    assert.equal(await ask(TOKEN), 401);
+    // The child passes the lock; the next honest wall is the missing node.
+    const child = await childWatcherToken(TOKEN, '8abc', 'xmr');
+    assert.equal(await ask(child), 503);
+    // A child captured for another order's address opens nothing here.
+    assert.equal(await ask(await childWatcherToken(TOKEN, '8other', 'xmr')), 401);
+  } finally {
+    server.close();
+  }
 });
 
 test('a transfer time that is not a sane unix second carries no weight', async () => {
