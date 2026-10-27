@@ -214,7 +214,7 @@ export default function GroupInfoSidebar({
               <Avatar src={group.picture} name={group.name || 'Group'} />
               <div className="min-w-0 flex-1">
                 <h2 className="truncate text-2xl font-bold tracking-tight text-ink">{group.name || 'Group'}</h2>
-                <p className="truncate text-[13px] text-ink/40">{memberList.length || 1} members</p>
+                <p className="truncate text-[13px] text-ink/40">{memberList.length || 1} {memberList.length === 1 ? 'member' : 'members'}</p>
               </div>
               <button type="button" onClick={onClose} aria-label="Close group information" className={`p-2 text-ink/45 hover:text-ink ${pressable}`}><X size={20} /></button>
             </header>
