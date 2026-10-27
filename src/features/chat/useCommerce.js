@@ -6,6 +6,7 @@ import { getAuthenticatedPool } from '../../lib/pool';
 import { generalRelays } from '../../lib/relays';
 import { ORDER_STATUS, RECEIPT_OUTCOME, acceptAmount, acceptanceDemand, amountCovers, nextPaymentState, orderCoinAmount } from '../../lib/paymentState';
 import { checkPayment } from '../../lib/paymentWatch';
+import { readCachedProducts } from '../../lib/listing';
 import { activeUrl, entryById } from '../../lib/egress';
 import { publicReceipt, rememberPublicView, receiptBindsOrder, signPublicView, signReceipt } from '../../lib/proofOfTrade';
 import { frozenIssuedMethods, issuedPaymentMethods, newestOwnIssuedMethods, orderPaymentDetails, orderRecordForReceipt, orderState, reopenedStatus } from '../../lib/orderActions';
@@ -40,15 +41,11 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
   // Wallet keeps them under a plain, account-wide key, so the order's listing
   // id is only ever matched against rows this account itself published —
   // another account's menu prices nothing on this device. (security F5)
-  const readOwnMenu = () => {
-    try {
-      const rows = JSON.parse(localStorage.getItem('cipher_cached_products') || '[]');
-      if (!Array.isArray(rows)) return [];
-      return rows.filter((row) => row && row.vendorPubkey === identity.pk);
-    } catch {
-      return [];
-    }
-  };
+  // One reader helper for the key: two JSON.parse sites were how the
+  // duplicate-state mess started.
+  const readOwnMenu = () => (
+    readCachedProducts().filter((row) => row && row.vendorPubkey === identity.pk)
+  );
 
   const deliverOrderUpdate = async (peer, payload, localPatch, okText) => {
     let result;

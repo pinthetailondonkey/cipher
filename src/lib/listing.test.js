@@ -1,7 +1,18 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { listingFromEvent, orderPriceLabel, orderProduct, priceLabel } from './listing.js';
+import { listingFromEvent, orderPriceLabel, orderProduct, priceLabel, readCachedProducts, markCachedProductDelivery, PRODUCT_DELIVERY_WORDS } from './listing.js';
 import { orderCoinAmount } from './paymentState.js';
+
+// Node has no localStorage; the store helpers persist to it lazily.
+if (!globalThis.localStorage) {
+  let backing = {};
+  globalThis.localStorage = {
+    getItem: (k) => (k in backing ? backing[k] : null),
+    setItem: (k, v) => { backing[k] = String(v); },
+    removeItem: (k) => { delete backing[k]; },
+    clear: () => { backing = {}; },
+  };
+}
 
 const event = (amount, currency) => ({
   id: `ev-${currency}`,
@@ -44,4 +55,31 @@ test('older orders that only carried priceUsd still show dollars', () => {
   assert.equal(orderPriceLabel({ product: { priceUsd: '12', price: '12' } }), '$12');
   assert.equal(orderPriceLabel({ product: { price: '0.5', currency: 'xmr' } }), '0.5 XMR');
   assert.equal(orderPriceLabel({ product: {} }), '');
+});
+
+test('the one product store reads, marks delivery, and survives its own neighbours', () => {
+  localStorage.clear();
+  const rowA = { id: 'ev-a', vendorPubkey: 'f'.repeat(64), name: 'Tee' };
+  const rowB = { id: 'ev-b', vendorPubkey: 'f'.repeat(64), name: 'Pack' };
+  localStorage.setItem('cipher_cached_products', JSON.stringify([rowA, rowB]));
+
+  const marked = markCachedProductDelivery('ev-a', 'queued');
+  assert.equal(marked.delivery, 'queued');
+  const rows = readCachedProducts();
+  assert.equal(rows.length, 2);
+  assert.equal(rows.find((row) => row.id === 'ev-a').delivery, 'queued');
+  assert.equal(rows.find((row) => row.id === 'ev-b').delivery, undefined);
+
+  // A published word never rides the writer's say-so: only the doors set it.
+  assert.deepEqual(Object.keys(PRODUCT_DELIVERY_WORDS), ['queued', 'unconfirmed']);
+});
+
+test('the product store answers corrupted or absent JSON with an empty list', () => {
+  localStorage.clear();
+  assert.deepEqual(readCachedProducts(), []);
+  localStorage.setItem('cipher_cached_products', '{not an array');
+  assert.deepEqual(readCachedProducts(), []);
+  localStorage.setItem('cipher_cached_products', JSON.stringify({ id: 'object' }));
+  assert.deepEqual(readCachedProducts(), []);
+  localStorage.clear();
 });

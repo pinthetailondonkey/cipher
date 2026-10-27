@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Package, Plus, Stamp } from 'lucide-react';
+import { Package, Plus, Send, Stamp } from 'lucide-react';
 import ScreenHeader from '../ui/ScreenHeader';
 import Picture from '../ui/Picture';
 import Badge from '../ui/Badge';
@@ -15,6 +15,9 @@ import { useVendorStats } from '../../hooks/useVendorStats';
 import { useVendorReviews } from '../../hooks/useVendorReviews';
 import { rankVolumeByStanding, readPublicViews } from '../../lib/proofOfTrade';
 import { haptic } from '../../lib/haptics';
+import { queryWithTimeout, productRelays } from '../../lib/relays';
+import { vendorListingFilter, readCachedProducts, markCachedProductDelivery, PRODUCT_DELIVERY_WORDS } from '../../lib/listing';
+import { flushNostrOutbox } from '../../lib/outbox';
 
 // The rails the bulletin composer offers, with the plain words their
 // banners speak (src/lib/vendorStats.js owns the sentence law; the chip
@@ -102,6 +105,76 @@ export default function VendorDashboard({ identity, products = [], onBack, onCre
     setStanding(rankVolumeByStanding(readPublicViews()));
   }, [fetchStats, identity?.pk]);
 
+  // The publish-outbox open side, dashboard half. Reconciliation: ask the
+  // product relays whether the fetched listing ids still speak for the
+  // cached rows. Only rows cached from an older build without a delivery
+  // state get asked about — a row the writer already marked 'queued' or
+  // 'published' holds the newer word, and the outbox may have landed it
+  // since. A fetch that comes back empty proves nothing and marks nothing.
+  const [deliveryOverlays, setDeliveryOverlays] = useState({});
+  useEffect(() => {
+    if (!identity?.pk) return undefined;
+    let cancelled = false;
+    (async () => {
+      try {
+        const { getAuthenticatedPool } = await import('../../lib/pool');
+        const pool = await getAuthenticatedPool(identity);
+        const events = await queryWithTimeout(pool, productRelays, vendorListingFilter(identity.pk));
+        if (cancelled || events.length === 0) return;
+        const seen = new Set(events.map((event) => event.id));
+        for (const row of readCachedProducts()) {
+          if (row == null || row.vendorPubkey !== identity.pk) continue;
+          if (row.delivery === 'queued' || row.delivery === 'unconfirmed' || row.delivery === 'published') {
+            if (seen.has(row.id) && row.delivery !== 'published') {
+              markCachedProductDelivery(row.id, 'published');
+              setDeliveryOverlays((prev) => ({ ...prev, [row.id]: 'published' }));
+            } else if (!seen.has(row.id) && row.delivery === 'published') {
+              // The writer said a relay accepted, but the ask could not
+              // find the listing where it said it was. The ask wins until
+              // the next publish or the reconciliation that finds it.
+              markCachedProductDelivery(row.id, 'unconfirmed');
+              setDeliveryOverlays((prev) => ({ ...prev, [row.id]: 'unconfirmed' }));
+            }
+            continue;
+          }
+          const mark = seen.has(row.id) ? null : 'unconfirmed';
+          markCachedProductDelivery(row.id, mark);
+          if (mark) setDeliveryOverlays((prev) => ({ ...prev, [row.id]: mark }));
+        }
+      } catch {
+        // The relays are unreachable: mark nothing, claim nothing.
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [identity?.pk]);
+
+  // The outbox already retries on its own clock; this row button is the
+  // vendor's offer to force the whole queue now, and the sent notice
+  // clears the words when a listing finally lands.
+  useEffect(() => {
+    const onSent = (event) => {
+      const id = event?.detail;
+      if (id) setDeliveryOverlays((prev) => ({ ...prev, [id]: 'published' }));
+    };
+    window.addEventListener('cipher:outbox-sent', onSent);
+    return () => window.removeEventListener('cipher:outbox-sent', onSent);
+  }, [identity?.pk]);
+  const [republishing, setRepublishing] = useState(false);
+  const tryAgain = async () => {
+    if (republishing) return;
+    haptic('light');
+    setRepublishing(true);
+    try {
+      await flushNostrOutbox(identity, { force: true });
+      // No toast for success: the row's own words carry the state, and
+      // they change when a relay takes the listing (or stay when none
+      // did).
+    } catch (flushError) {
+      pushToast({ type: 'error', message: flushError.message || 'The send did not go. It stays queued.' });
+    }
+    setRepublishing(false);
+  };
+
   return (
     <div className="h-full overflow-y-auto bg-transparent pb-24 md:pb-4">
       <ScreenHeader title="Vendor" onBack={onBack} />
@@ -160,16 +233,33 @@ export default function VendorDashboard({ identity, products = [], onBack, onCre
               title="Your menu is empty"
               line="Tap List an item above and your first one lands here."
             />
-          ) : products.map((product) => (
-            <div key={product.id || product.dTag || product.name} className="flex items-center gap-3 border-b border-line p-4 last:border-0">
-              <Picture src={product.image} alt="" className="h-12 w-12 rounded-xl object-cover" fallback={<div className="flex h-12 w-12 items-center justify-center rounded-xl bg-panelAlt"><Package size={18} className="text-inkMuted" /></div>} />
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-[15px] font-semibold text-ink">{product.name || product.title || 'Item'}</p>
-                <p className="mono truncate text-[13px] text-accentText">{product.price || product.priceUsd || ''} {product.currency || (product.priceUsd ? 'USD' : '')}</p>
+          ) : products.map((product) => {
+            const delivery = deliveryOverlays[product.id] || product.delivery || null;
+            const words = delivery && PRODUCT_DELIVERY_WORDS[delivery];
+            return (
+              <div key={product.id || product.dTag || product.name} className="border-b border-line p-4 last:border-0">
+                <div className="flex items-center gap-3">
+                  <Picture src={product.image} alt="" className="h-12 w-12 rounded-xl object-cover" fallback={<div className="flex h-12 w-12 items-center justify-center rounded-xl bg-panelAlt"><Package size={18} className="text-inkMuted" /></div>} />
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-[15px] font-semibold text-ink">{product.name || product.title || 'Item'}</p>
+                    <p className="mono truncate text-[13px] text-accentText">{product.price || product.priceUsd || ''} {product.currency || (product.priceUsd ? 'USD' : '')}</p>
+                    {words && <p className="mt-0.5 text-[12px] text-inkSubtle">{words}</p>}
+                  </div>
+                  {product.stock != null && <Badge tone="outline">Stock {product.stock}</Badge>}
+                </div>
+                {(delivery === 'queued' || delivery === 'unconfirmed') && product.event && (
+                  <button
+                    type="button"
+                    onClick={tryAgain}
+                    disabled={republishing}
+                    className="mt-1 flex min-h-[32px] items-center gap-1.5 text-[13px] font-semibold text-accentText disabled:opacity-50"
+                  >
+                    <Send size={13} /> Try again now
+                  </button>
+                )}
               </div>
-              {product.stock != null && <Badge tone="outline">Stock {product.stock}</Badge>}
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
       <Sheet

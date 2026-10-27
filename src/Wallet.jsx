@@ -29,6 +29,7 @@ import { copyText } from './lib/copyText';
 import { scopedGet, scopedSet } from './lib/storage';
 import { pushToast } from './components/ui/toast';
 import { productRelays } from './lib/relays';
+import { readCachedProducts } from './lib/listing';
 import { blossomServers } from './lib/egress';
 
 const VendorDashboard = lazy(() => import('./components/chat/VendorDashboard'));
@@ -248,17 +249,35 @@ export default function Wallet({ identity, onOpenChat, startView = 'main' }) {
       
       const content = JSON.stringify({ name: title, description, price, currency, image })
       const ev = finalizeEvent({ kind: 30402, created_at: Math.floor(Date.now() / 1000), tags, content }, identity.sk)
-      
-      const timeout = new Promise((resolve) => setTimeout(resolve, 3000))
-      await Promise.race([Promise.allSettled(pool.publish(relays, ev)), timeout])
-      
+
+      // The outbox door, block 31–'s shape: wait for what the relays
+      // actually said. The old 3-second race then wrote
+      // "Product Published!" with no relay's word behind it — a dead-door
+      // cache row that read as live to the vendor and existed on no relay.
+      const results = await Promise.race([
+        Promise.allSettled(pool.publish(relays, ev)),
+        new Promise((resolve) => setTimeout(() => resolve(null), 3000)),
+      ])
+      const accepted = Boolean(Array.isArray(results)
+        && results.some((result) => result.status === 'fulfilled'))
+      if (!accepted) {
+        // The event is queued, not lost: the outbox retries it with the
+        // product relays it was born for. The words say queued.
+        try {
+          const { enqueueNostrEvent } = await import('./lib/outbox')
+          await enqueueNostrEvent(ev, relays)
+        } catch (queueError) {
+          console.warn('[product] Could not queue the listing for retry:', queueError)
+        }
+      }
+
       // `d` is kept beside the event id because store orders name the menus by
       // the d tag, not by the event id. (security F5)
-      const newProduct = { id: ev.id, d: dTag, name: title, description, price, currency, image: image || '/app-icon-512.png', stock: '1', vendorPubkey: identity.pk, created_at: ev.created_at }
-      const cached = JSON.parse(localStorage.getItem('cipher_cached_products') || '[]')
+      const newProduct = { id: ev.id, d: dTag, name: title, description, price, currency, image: image || '/app-icon-512.png', stock: '1', vendorPubkey: identity.pk, created_at: ev.created_at, delivery: accepted ? 'published' : 'queued', event: { kind: ev.kind, created_at: ev.created_at, tags: ev.tags, content: ev.content, pubkey: ev.pubkey } }
+      const cached = readCachedProducts()
       localStorage.setItem('cipher_cached_products', JSON.stringify([newProduct, ...cached.filter(p => p.id !== ev.id)]))
 
-      setStatus('Product Published!')
+      setStatus(accepted ? 'Published.' : 'Saved and will send.')
       setTitle(''); setDescription(''); setPrice(''); setImage('')
       setView('main')
     } catch (err) { setStatus('Error: ' + err.message) } 
@@ -342,7 +361,7 @@ export default function Wallet({ identity, onOpenChat, startView = 'main' }) {
   if (view === 'connections') return <Connections onBack={() => setView('main')} />;
 
   if (view === 'vendor') {
-    return <Suspense fallback={<div className="flex h-full items-center justify-center bg-scrim"><div className="h-7 w-7 animate-spin rounded-full border-2 border-ink/20 border-t-accentText" /></div>}><VendorDashboard identity={identity} products={JSON.parse(localStorage.getItem('cipher_cached_products') || '[]').filter((product) => product.vendorPubkey === identity.pk)} onBack={() => setView('main')} onCreate={() => setView('product')} /></Suspense>;
+    return <Suspense fallback={<div className="flex h-full items-center justify-center bg-scrim"><div className="h-7 w-7 animate-spin rounded-full border-2 border-ink/20 border-t-accentText" /></div>}><VendorDashboard identity={identity} products={readCachedProducts().filter((product) => product.vendorPubkey === identity.pk)} onBack={() => setView('main')} onCreate={() => setView('product')} /></Suspense>;
   }
 
   if (view === 'vendor_setup') {

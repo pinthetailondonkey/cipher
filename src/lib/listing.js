@@ -52,6 +52,35 @@ export function orderProduct(listing) {
   };
 }
 
+// The one product store: what this account published, cached at publish
+// time and read back filtered to own pubkey. One key, one reader helper —
+// a second JSON.parse of the same key is how the duplicate-key mess the
+// audit flagged started.
+export function readCachedProducts() {
+  try {
+    const rows = JSON.parse(localStorage.getItem('cipher_cached_products') || '[]');
+    return Array.isArray(rows) ? rows : [];
+  } catch {
+    return [];
+  }
+}
+
+// The delivery state a product publish can honestly claim: 'published'
+// when a relay took the event, 'queued' when the outbox owns it, and
+// 'unconfirmed' after an ask to the relays came back without this
+// listing. A row is never 'published' on the writer's say-so alone.
+export const PRODUCT_DELIVERY_WORDS = {
+  queued: 'Saved and will send.',
+  unconfirmed: 'Not found on the relays we just asked.',
+};
+
+export function markCachedProductDelivery(productId, delivery) {
+  const rows = readCachedProducts();
+  const next = rows.map((row) => (row && row.id === productId ? { ...row, delivery } : row));
+  try { localStorage.setItem('cipher_cached_products', JSON.stringify(next)); } catch { /* the row keeps the state in memory only */ }
+  return next.find((row) => row == null ? false : row.id === productId) || null;
+}
+
 // What the order card shows for an order's price.
 export function orderPriceLabel(content) {
   const product = content?.product || {};
