@@ -19,7 +19,6 @@ import {
   assembleOvertOrderScript,
   scriptToHex,
   hexToScript,
-  MAX_CSV_BLOCK_DELAY,
 } from './escrowScript.js';
 import { quoteEscrow } from './escrowFsm.js';
 import { sha256 } from '@noble/hashes/sha2.js';
