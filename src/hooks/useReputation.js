@@ -8,6 +8,7 @@ import { shortNpub } from '../lib/npub';
 // Prevents re-fetching the same profile on every modal open
 import { scopedGet, scopedSet } from '../lib/storage';
 import { averageRating, clampRating, receiptBindingOf, vouchCoversTrade } from '../lib/reputation';
+import { DISPUTE_KIND, markOwnRider, riderRefusal } from '../lib/disputes';
 const PROFILE_CACHE_KEY = 'rep_profile_cache';
 const PROFILE_CACHE_TTL = 24 * 60 * 60 * 1000; // 24h
 const MIN_VOUCHER_AGE_DAYS = 7;
@@ -239,5 +240,44 @@ export function useReputation({ identity }) {
     }
   }, [identity, fetchReputation]);
 
-  return { reputation, loading, fetchReputation, sendVouch, sendReview };
+  // A dispute rider: the vendor's flag or rebuttal, the buyer's supplement —
+  // one word each per (receipt, review), and the refusal lives in
+  // disputes.js so the compose screen refuses the same words the publisher
+  // does. The event is signed only after the refusal passes; the moment it
+  // is signed, its word is spent on the local record, publish hiccup or not.
+  const sendRider = useCallback(async ({ vendor, receiptHash, review, rider, text }) => {
+    const refusal = riderRefusal({ author: identity?.pk, vendor, receiptHash, review, rider, text });
+    if (refusal) return { success: false, error: refusal };
+    let event;
+    try {
+      const { finalizeEvent } = await import('nostr-tools');
+      const binding = receiptBindingOf({ tags: [['receipt', receiptHash]] });
+      event = finalizeEvent({
+        kind: DISPUTE_KIND,
+        created_at: Math.floor(Date.now() / 1000),
+        tags: [['p', String(vendor).toLowerCase()], ['receipt', binding], ['review', String(review).toLowerCase()], ['rider', rider]],
+        content: String(text).trim(),
+      }, identity.sk);
+      markOwnRider(vendor, binding, review, rider, event.id);
+      const pool = await getAuthenticatedPool(identity);
+      const results = await Promise.allSettled(pool.publish(generalRelays, event));
+      if (!results.some((result) => result.status === 'fulfilled')) {
+        await enqueueNostrEvent(event);
+        return { success: true, queued: true };
+      }
+      return { success: true };
+    } catch (e) {
+      if (event) {
+        try {
+          await enqueueNostrEvent(event);
+          return { success: true, queued: true };
+        } catch (queueError) {
+          console.error('[useReputation] Could not queue dispute rider:', queueError);
+        }
+      }
+      return { success: false, error: e.message };
+    }
+  }, [identity]);
+
+  return { reputation, loading, fetchReputation, sendVouch, sendReview, sendRider };
 }
