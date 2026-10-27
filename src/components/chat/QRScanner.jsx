@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { CameraOff, Check, Copy, Scan } from 'lucide-react';
 import ScreenHeader from '../ui/ScreenHeader';
+import Sheet from '../ui/Sheet';
 import { writeClipboard } from '../../lib/copyText';
 
 export default function QRScanner({ onClose }) {
@@ -111,6 +112,7 @@ export default function QRScanner({ onClose }) {
   };
 
   return (
+    <>
     <div className="fixed inset-0 z-call flex flex-col bg-scrim pt-safe pb-safe md:items-center md:justify-center md:bg-scrim/70" role="dialog" aria-modal="true" aria-label="Scan QR code">
       <div className="pointer-events-none absolute inset-0" style={{
         background: 'radial-gradient(ellipse 55% 38% at 12% 0%, var(--glow-a), transparent 65%), radial-gradient(ellipse 50% 30% at 92% 100%, var(--glow-b), transparent 70%)',
@@ -126,7 +128,7 @@ export default function QRScanner({ onClose }) {
             </div>
           ) : (
             <>
-              <div className="relative aspect-square w-full max-w-xs overflow-hidden rounded-3xl border border-line bg-[#0A0A0A]/60">
+              <div className="relative aspect-square w-full max-w-xs overflow-hidden rounded-3xl border border-line bg-scrim/70">
                 <video ref={videoRef} className="h-full w-full object-cover" muted playsInline />
                 <canvas ref={canvasRef} className="hidden" />
                 <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
@@ -134,13 +136,7 @@ export default function QRScanner({ onClose }) {
                 </div>
               </div>
               {decodedValue ? (
-                <section className="w-full max-w-sm rounded-2xl border border-line bg-panel p-4">
-                  <p className="mb-2 flex items-center gap-2 text-[15px] font-semibold text-ink"><Check size={17} className="text-accentText" /> Scanned</p>
-                  <p className="break-all rounded-2xl border border-ink/10 bg-ink/5 p-3 font-mono text-[13px] text-ink/80">{decodedValue}</p>
-                  <button type="button" onClick={copyDecodedValue} className="mt-3 flex w-full items-center justify-center gap-2 rounded-2xl bg-accent py-3.5 text-[15px] font-bold text-accentInk">
-                    <Copy size={16} /> {copied ? 'Copied' : 'Copy'}
-                  </button>
-                </section>
+                <p aria-live="polite" className="flex items-center gap-2 text-[15px] font-semibold text-ink"><Check size={17} className="text-accentText" /> Scanned</p>
               ) : (
                 <p className="text-center text-[13px] text-inkSubtle">Hold a QR code inside the frame to scan it.</p>
               )}
@@ -149,5 +145,16 @@ export default function QRScanner({ onClose }) {
         </div>
       </div>
     </div>
+      {/* The decoded result opens on the Sheet — the camera has already
+          stopped by then, the copy action rides with it. */}
+      <Sheet open={!!decodedValue} onClose={onClose} label="Scanned code" heading="Scanned">
+        <div className="px-5 pb-5 pt-4">
+          <p className="break-all rounded-2xl border border-ink/10 bg-ink/5 p-3 font-mono text-[13px] text-ink/80">{decodedValue}</p>
+          <button type="button" onClick={copyDecodedValue} className="mt-4 flex min-h-[52px] w-full items-center justify-center gap-2 rounded-full bg-accent text-[15px] font-bold text-accentInk">
+            <Copy size={16} /> {copied ? 'Copied' : 'Copy'}
+          </button>
+        </div>
+      </Sheet>
+    </>
   );
 }

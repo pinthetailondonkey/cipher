@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { ORDER_STATUS } from '../lib/paymentState';
-import { Check, Loader2, X } from 'lucide-react';
+import { Check, Loader2, ShoppingBag } from 'lucide-react';
+import Sheet from './ui/Sheet';
+import Picture from './ui/Picture';
 import { orderProduct, priceLabel } from '../lib/listing';
 
 function cipherOrder(product) {
@@ -12,12 +14,17 @@ function cipherOrder(product) {
   };
 }
 
-export default function OneTapCheckout({ product, onConfirmOrder, onClose }) {
+// One tap from the menu. Every surface that hands over a product opens
+// checkout as the Sheet; §4 anatomy: image, title, price, payment block,
+// actions.
+export default function OneTapCheckout({ product, open = true, onConfirmOrder, onClose }) {
   const [confirmed, setConfirmed] = useState(false);
   const [sending, setSending] = useState(false);
   const [orderError, setOrderError] = useState('');
   const order = cipherOrder(product);
   const amount = priceLabel(order.product.price, order.product.currency);
+  const title = order.product.title;
+  const image = product?.image || '';
 
   const confirmOrder = async () => {
     if (confirmed || sending) return;
@@ -35,17 +42,29 @@ export default function OneTapCheckout({ product, onConfirmOrder, onClose }) {
   };
 
   return (
-    <div className="fixed inset-0 z-sheet flex items-center justify-center bg-scrim/80 p-4" role="dialog" aria-modal="true" aria-label="Checkout">
-      <div className="max-h-[90vh] w-full max-w-sm overflow-y-auto rounded-3xl border border-line bg-panel p-6">
-        <div className="mb-4 flex items-center justify-between">
-          <div>
-            <p className="text-[13px] text-inkSubtle">Send this order in a private chat</p>
-            <h2 className="text-2xl font-bold tracking-tight text-ink">Checkout</h2>
-            <p className="mt-1 text-[13px] text-inkSubtle">{product?.name || product?.title || 'Product'}</p>
+    <Sheet
+      open={open !== false && !!product}
+      onClose={onClose}
+      heading="Checkout"
+      label={title ? `Checkout — ${title}` : 'Checkout'}
+    >
+      <div className="space-y-4 px-5 pt-4">
+        <div className="flex items-start gap-3">
+          <div className="h-20 w-20 shrink-0 overflow-hidden rounded-2xl border border-line bg-panelStrong">
+            <Picture
+              src={image}
+              alt={title}
+              className="h-full w-full object-cover"
+              fallback={<div className="flex h-full w-full items-center justify-center text-ink/30"><ShoppingBag size={26} /></div>}
+            />
           </div>
-          <button type="button" onClick={onClose} className="p-2 text-ink/50 hover:text-ink" aria-label="Close checkout"><X size={20} /></button>
+          <div className="min-w-0">
+            <p className="text-[13px] text-inkSubtle">Send this order in a private chat</p>
+            <h3 className="mt-0.5 text-[15px] font-semibold text-ink">{title}</h3>
+            <p className="mt-1 font-mono text-[13px] font-bold text-accentText">{amount}</p>
+          </div>
         </div>
-        <div className="mb-4 rounded-2xl border border-line bg-panelStrong p-4">
+        <div className="rounded-2xl border border-line bg-panelStrong p-4">
           <p className="text-[12px] text-inkSubtle">Amount due</p>
           <p className="font-mono text-[22px] font-bold text-ink">{amount}</p>
         </div>
@@ -53,14 +72,21 @@ export default function OneTapCheckout({ product, onConfirmOrder, onClose }) {
             address or QR here: paying one directly skips the accept, the
             address issue, the chain check and the receipt, and the seller
             ships against their own accepted order only. (security S2) */}
-        <p className="mb-3 rounded-xl border border-line bg-panelStrong p-4 text-[13px] leading-relaxed text-inkMuted">
+        <p className="rounded-xl border border-line bg-panelStrong p-4 text-[13px] leading-relaxed text-inkMuted">
           After the seller accepts, your payment address and QR code appear in the chat, on the accepted order. The order is the only way to pay — it is what ties the payment to a chain check.
         </p>
-        {orderError && <p role="alert" className="mt-4 text-sm text-danger">{orderError}</p>}
-        <button type="button" onClick={confirmOrder} disabled={confirmed || sending} className="mt-5 flex w-full items-center justify-center gap-2 rounded-2xl bg-accent py-3.5 font-bold text-accentInk hover:bg-accent disabled:opacity-60">
+        {orderError && <p role="alert" className="text-sm text-danger">{orderError}</p>}
+      </div>
+      <div className="px-5 pt-5">
+        <button
+          type="button"
+          onClick={confirmOrder}
+          disabled={confirmed || sending}
+          className="flex min-h-[52px] w-full items-center justify-center gap-2 rounded-full bg-accent font-bold text-accentInk active:bg-accent disabled:opacity-60"
+        >
           {sending ? <><Loader2 size={17} className="animate-spin" /> Sending order…</> : confirmed ? <><Check size={17} /> Order sent. Pay in the chat.</> : 'Send order'}
         </button>
       </div>
-    </div>
+    </Sheet>
   );
 }

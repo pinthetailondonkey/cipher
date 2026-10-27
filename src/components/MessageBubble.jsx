@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import { BadgeCheck, Bookmark, Copy, Pencil, Pin, Radio, Reply, ShoppingBag, Store, Trash2 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
+import Sheet from './ui/Sheet';
 import { paymentRowsFor } from '../lib/paymentUri';
 import { haptic } from '../lib/haptics';
 import { securingPhase } from '../lib/crypto/groupKeyRequest';
@@ -215,7 +216,7 @@ export default function MessageBubble({ message, data, onAction, senderName, isP
     >
       {!isSender && showAvatar && (
         runEnd
-          ? <Picture src={avatarUrl} alt="" className="h-7 w-7 shrink-0 rounded-full object-cover" fallback={<span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#161616] text-[11px] font-semibold ${avatarColor}`}>{avatarInitial}</span>} />
+          ? <Picture src={avatarUrl} alt="" className="h-7 w-7 shrink-0 rounded-full object-cover" fallback={<span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-panel-strong text-[11px] font-semibold ${avatarColor}`}>{avatarInitial}</span>} />
           : <span className="h-7 w-7 shrink-0" aria-hidden="true" />
       )}
       <div
@@ -330,38 +331,33 @@ export default function MessageBubble({ message, data, onAction, senderName, isP
         )}
       </div>
     </motion.article>
-    {open && (
-      <div className="fixed inset-0 z-sheet flex items-end justify-center bg-scrim/70 p-3" onPointerDown={(event) => { if (event.target === event.currentTarget) setOpen(false); }}>
-        <div className="mb-safe w-full max-w-sm rounded-3xl border border-line bg-panel p-3" onPointerDown={(event) => event.stopPropagation()}>
-          <div className="mb-2 flex justify-between rounded-2xl bg-ink/5 px-2 py-2">
-            {REACTION_CHOICES.map((emoji) => (
-              <button key={emoji} type="button" aria-label={`React ${emoji}`} onClick={() => { haptic('light'); act('react', { emoji }); }} className="text-[22px] active:scale-95">{emoji}</button>
-            ))}
-          </div>
-          <div className="grid grid-cols-4 gap-1">
-            {menuActions.map(([action, Icon, label]) => (
-              <button key={action} type="button" onClick={() => { haptic('light'); act(action); }} className={`flex flex-col items-center gap-1 rounded-2xl px-2 py-3 text-[12px] font-semibold active:bg-ink/10 ${action === 'delete' ? 'text-red-400' : 'text-ink'}`}>
-                <Icon size={18} />
-                {label}
-              </button>
-            ))}
-          </div>
+    <Sheet open={open} onClose={() => setOpen(false)} label="Message actions">
+      <div className="px-3 pb-4 pt-3">
+        <div className="mb-2 flex justify-between rounded-2xl bg-ink/5 px-2 py-2">
+          {REACTION_CHOICES.map((emoji) => (
+            <button key={emoji} type="button" aria-label={`React ${emoji}`} onClick={() => { haptic('light'); act('react', { emoji }); }} className="flex min-h-[44px] min-w-[44px] items-center justify-center text-[22px] active:scale-95">{emoji}</button>
+          ))}
+        </div>
+        <div className="grid grid-cols-4 gap-1">
+          {menuActions.map(([action, Icon, label]) => (
+            <button key={action} type="button" onClick={() => { haptic('light'); act(action); }} className={`flex flex-col items-center gap-1 rounded-2xl px-2 py-3 text-[12px] font-semibold active:bg-ink/10 ${action === 'delete' ? 'text-danger' : 'text-ink'}`}>
+              <Icon size={18} />
+              {label}
+            </button>
+          ))}
         </div>
       </div>
-    )}
-      {showReactors && (
-        <div className="fixed inset-0 z-sheet flex items-end justify-center bg-scrim/60 p-4" onClick={() => setShowReactors(false)}>
-          <div className="w-full max-w-sm rounded-2xl border border-line bg-panel p-4" onClick={(event) => event.stopPropagation()}>
-            <p className="mb-3 text-[15px] font-semibold text-ink">{showReactors}</p>
-            {(grouped.get(showReactors) || []).map((person) => (
-              <p key={person.pubkey} className="border-b border-ink/5 py-2 text-[13px] text-ink/80">
-                {noHexName(profiles[person.pubkey], person.pubkey)}
-              </p>
-            ))}
-            <button type="button" onClick={() => setShowReactors(false)} className="mt-3 text-[13px] font-semibold text-accentText">Close</button>
-          </div>
-        </div>
-      )}
+    </Sheet>
+    <Sheet open={!!showReactors} onClose={() => setShowReactors(false)} label="Reactions">
+      <div className="px-4 pb-5 pt-3">
+        <p className="mb-3 text-[15px] font-semibold text-ink">{showReactors}</p>
+        {(grouped.get(showReactors) || []).map((person) => (
+          <p key={person.pubkey} className="border-b border-ink/5 py-2 text-[13px] text-ink/80">
+            {noHexName(profiles[person.pubkey], person.pubkey)}
+          </p>
+        ))}
+      </div>
+    </Sheet>
     </>
   );
 }
