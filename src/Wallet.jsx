@@ -29,6 +29,19 @@ import { blossomServers } from './lib/egress';
 const VendorDashboard = lazy(() => import('./components/chat/VendorDashboard'));
 const ProfileEditor = lazy(() => import('./components/chat/ProfileEditor'));
 
+// The dashboard reads the key the publish path actually writes. The vendor's
+// listings are cached with the others under cipher_cached_products
+// (publishProduct), so the read filters to this account's own rows the same
+// way the acceptance demand reads its menu (useCommerce readOwnMenu).
+const readOwnProducts = (vendorPubkey) => {
+  try {
+    const cached = JSON.parse(localStorage.getItem('cipher_cached_products') || '[]');
+    return Array.isArray(cached) ? cached.filter((p) => p && p.vendorPubkey === vendorPubkey) : [];
+  } catch {
+    return [];
+  }
+};
+
 export default function Wallet({ identity, onOpenChat, startView = 'main' }) {
   const isVendor = useChatStore((state) => state.isVendor);
   const setIsVendor = useChatStore((state) => state.setIsVendor);
@@ -335,7 +348,7 @@ export default function Wallet({ identity, onOpenChat, startView = 'main' }) {
   }
 
   if (view === 'vendor') {
-    return <Suspense fallback={<div className="flex h-full items-center justify-center bg-scrim"><div className="h-7 w-7 animate-spin rounded-full border-2 border-ink/20 border-t-blue-500" /></div>}><VendorDashboard identity={identity} products={JSON.parse(localStorage.getItem('cipher_my_products') || '[]')} onBack={() => setView('main')} onCreate={() => setView('product')} /></Suspense>;
+    return <Suspense fallback={<div className="flex h-full items-center justify-center bg-scrim"><div className="h-7 w-7 animate-spin rounded-full border-2 border-ink/20 border-t-blue-500" /></div>}><VendorDashboard identity={identity} products={readOwnProducts(identity.pk)} onBack={() => setView('main')} onCreate={() => setView('product')} /></Suspense>;
   }
 
   if (view === 'vendor_setup') {
