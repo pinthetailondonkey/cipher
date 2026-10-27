@@ -41,7 +41,7 @@ export function useVendorStats({ identity, targetPubkey = null }) {
       });
 
       const badges = [];
-      if (sales >= 1) badges.push({ id: 'first_sale', name: 'First Sale', icon: '🏆', color: 'text-yellow-400' });
+      if (sales >= 1) badges.push({ id: 'first_sale', name: 'First Sale', icon: '🏆', color: 'text-accent' });
       if (sales >= 100) badges.push({ id: 'diamond_hands', name: 'Diamond Hands', icon: '💎', color: 'text-accent' });
       if (revenueFiat >= 1000) badges.push({ id: 'high_roller', name: '$1K Volume', icon: '💰', color: 'text-green-400' });
       if (revenueFiat >= 10000) badges.push({ id: 'whale', name: '$10K Volume', icon: '🐋', color: 'text-purple-400' });

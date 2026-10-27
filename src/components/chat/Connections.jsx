@@ -48,7 +48,7 @@ export default function Connections({ onBack }) {
               </div>
               <p className="mt-2 text-[13px] text-ink/40">{row.sees}</p>
               {pageBlocksPlainOnion(row.active) && (
-                <p className="mt-2 text-[13px] text-amber-300">This page is HTTPS, so a plain onion socket is blocked. Open it in Tor Browser, or use a TLS socket.</p>
+                <p className="mt-2 text-[13px] text-ink/70">This page is HTTPS, so a plain onion socket is blocked. Open it in Tor Browser, or use a TLS socket.</p>
               )}
             </div>
           ))}
