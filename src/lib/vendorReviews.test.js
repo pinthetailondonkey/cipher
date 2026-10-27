@@ -23,6 +23,7 @@ import {
   ridersOfRow,
   riderComposeOf,
   saveReview,
+  provenEntriesOf,
   wholeMonthsBetween,
 } from './vendorReviews.js';
 import { publicReceipt, rememberPublicView, signPublicView, signReceipt, verifyPublicView } from './proofOfTrade.js';
@@ -474,4 +475,22 @@ test('the rider compose gate: authorship first, one shot per word per pair, ledg
   assert.deepEqual(ledgerSpent, [{ rider: 'vendor-flag', taken: false }, { rider: 'vendor-rebuttal', taken: true }]);
   // A row with no wire event id rides nothing.
   assert.equal(riderComposeOf({ vendorPubkey: WIRE_VENDOR, receiptHash: WIRE_HASH }, { authorPubkey: WIRE_VENDOR, disputeEvents: [] }), null);
+});
+
+test('the tap-through reads the contract entries: the txids ride, rails stay apart', () => {
+  // The entries the banner taps come out in the contract's own shape and
+  // order, one per rail, never summed.
+  const entries = provenEntriesOf({
+    xmr: { count: 2, txids: ['cc'.repeat(32)], phrasing: 'recorded' },
+    btc: { count: 1, txids: ['aa'.repeat(32)], phrasing: 'proven' },
+  });
+  assert.deepEqual(entries, [
+    { count: 1, rail: 'btc', txids: ['aa'.repeat(32)], phrasing: 'proven' },
+    { count: 2, rail: 'xmr', txids: ['cc'.repeat(32)], phrasing: 'recorded' },
+  ]);
+  assert.deepEqual(provenEntriesOf({}), []);
+  assert.deepEqual(provenEntriesOf(null), []);
+  // The BTC banner words are still the founder's, unchanged by the tap.
+  assert.equal(provenBannerOf(entries[0]), '1 deal proven. One tap shows the txids.');
+  assert.equal(provenBannerOf(entries[1]), '2 deals recorded on chain.');
 });
