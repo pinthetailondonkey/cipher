@@ -68,6 +68,29 @@ export function markOwnRider(vendor, receipt, review, rider, eventId) {
   return true;
 }
 
+// The words a compose screen and the publisher both enforce before a
+// rider leaves this device, in one place. One-shot lives beside it: a
+// parseable pair this device has already ridden refuses the same word
+// before anything is signed.
+export function riderRefusal({ author, vendor, receiptHash, review, rider, text }) {
+  const body = String(text || '').trim();
+  if (!RIDER_WORDS.includes(rider)) return 'That is not a rider word this thread knows.';
+  const binding = receiptBindingOf({ tags: [['receipt', receiptHash]] });
+  if (!binding) return 'A rider needs the receipt of the completed trade the review names.';
+  const vendorKey = String(vendor || '').toLowerCase();
+  if (!HEX64.test(vendorKey)) return 'The vendor this thread runs under is not readable.';
+  if (!HEX64.test(String(review || '').toLowerCase().trim())) return 'A rider is posted against a review — name the review event.';
+  if (!body) return 'A rider says something, or it says nothing.';
+  const authorKey = String(author || '').toLowerCase();
+  if (rider === 'vendor-flag' || rider === 'vendor-rebuttal') {
+    if (authorKey !== vendorKey) return 'Only the vendor flags or rebuts on their own thread.';
+  } else if (authorKey === vendorKey) {
+    return 'The vendor does not co-sign a buyer supplement.';
+  }
+  if (ownRiderTaken(vendorKey, binding, String(review).toLowerCase().trim(), rider)) return 'This device already spent its one word of that kind on this review.';
+  return null;
+}
+
 // Three one-shot riders per (receipt, review). The pick is deterministic
 // when duplicates arrive: the earliest one landed wins, and same-second
 // arrivals break the tie on the event id. A duplicate is never consumed —
