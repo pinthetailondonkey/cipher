@@ -4,6 +4,7 @@ import { currentOwner } from '../../db';
 import { loadMemberSnapshot } from './groupKeyRotation';
 import { isJoinDenied } from '../groupJoinQueue';
 import { keyRequestRecord } from './groupKeyRequest';
+import { markSafetyChange } from '../safetyNumber.js';
 
 const KEY_HEX = /^[0-9a-f]{64}$/i;
 
@@ -118,12 +119,29 @@ export async function installReceivedGroupKey(payload, sender = null) {
     console.warn('[group-key] A key bundle was not installed: it re-states the held epoch with different bytes.', { groupId, epoch: current.epoch });
     return false;
   }
+  // The safety flag rides the install that changed key material, after
+  // the guards all passed — never on a refused bundle.
+  const keyMaterialMoved = safetyChangeFromInstall({ currentEpoch: current?.epoch, maxEpoch });
   for (const row of rows) await putGroupKey(row.groupId, row.epoch, fromHex(row.hex));
+  if (keyMaterialMoved) markSafetyChange(sender);
   return true;
 }
 
-export function epochsToBackfill(allEpochs, currentEpoch) {
-  return (allEpochs || []).filter((item) => item && item.epoch !== currentEpoch && item.bytes);
+// The dead detector, wired (drill residual): markSafetyChange needed a
+// caller. A bundle that moves this device's key forward — the device's
+// first key for the group, or a roll past the held epoch — is the
+// contact changing the key material this device trusts. The safety
+// number itself stays pinned to first-seen; the flag is what a screen
+// read of it leads with ("key changed — re-verify"). A re-delivery, a
+// backfill of a prior epoch, or a stale bundle moves nothing and flags
+// nothing. Pure decision, the same shape as the guard above it.
+export function safetyChangeFromInstall({ currentEpoch, maxEpoch }) {
+  if (!Number.isInteger(maxEpoch)) return false;
+  if (!Number.isInteger(currentEpoch)) return true; // the first key this device holds
+  return maxEpoch > currentEpoch;
+}
+
+export function epochsToBackfill(allEpochs, currentEpoch) {  return (allEpochs || []).filter((item) => item && item.epoch !== currentEpoch && item.bytes);
 }
 
 export function missingEpochs(granted, epoch, extraEpochs = []) {
