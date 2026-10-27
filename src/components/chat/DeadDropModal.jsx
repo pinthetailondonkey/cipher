@@ -1,10 +1,5 @@
 import { useState } from 'react';
-<<<<<<< HEAD
-import { Copy, Check } from 'lucide-react';
-import Sheet from '../ui/Sheet';
-=======
 import { Check, Copy } from 'lucide-react';
->>>>>>> origin/feat/rebuild-pr2
 import { useChatStore } from '../../store/chatStore';
 import { createDeadDropNote } from '../../lib/deadDrop';
 import { getAuthenticatedPool } from '../../lib/pool';
@@ -60,18 +55,10 @@ export default function DeadDropModal({ identity }) {
   };
 
   return (
-<<<<<<< HEAD
-    <Sheet open={show} onClose={close} label="Burn note" heading="Burn note">
-      <div className="px-5 pb-5 pt-2">
-        <p className="mb-3 text-[13px] leading-relaxed text-ink/50">
-          Write it, get one link, send it however you want. The note opens once — after that it is gone. Whoever has the link can read it, so send it to the right chat.
-        </p>
-=======
     <Sheet open={show} onClose={close} title="Burn note">
       <p className="mb-3 text-[13px] leading-relaxed text-inkMuted">
         Write it, get one link, send it however you want. The note opens once — after that it is gone. Whoever has the link can read it, so send it to the right chat.
       </p>
->>>>>>> origin/feat/rebuild-pr2
 
       {link ? (
         <div className="pb-2">
@@ -98,36 +85,8 @@ export default function DeadDropModal({ identity }) {
               {busy ? 'Sealing…' : 'Make the link'}
             </Button>
           </div>
-<<<<<<< HEAD
-        ) : (
-          <div>
-            <textarea
-              value={text}
-              onChange={(e) => setText(e.target.value)}
-              maxLength={8000}
-              rows={5}
-              placeholder="Say it once."
-              className="w-full resize-none rounded-2xl border border-line bg-panel p-3 text-[14px] text-ink placeholder-ink/30 outline-none focus:border-lineStrong"
-              autoFocus
-            />
-            <div className="mt-1 flex items-center justify-between">
-              <span className="text-[11px] text-inkSubtle">{text.length}/8000</span>
-              <button
-                type="button"
-                onClick={make}
-                disabled={!text.trim() || busy}
-                className="min-h-[44px] rounded-2xl bg-accent px-6 font-bold text-accentInk disabled:opacity-40"
-              >
-                {busy ? 'Sealing…' : 'Make the link'}
-              </button>
-            </div>
-          </div>
-        )}
-      </div>
-=======
         </div>
       )}
->>>>>>> origin/feat/rebuild-pr2
     </Sheet>
   );
 }

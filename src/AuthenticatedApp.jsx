@@ -64,15 +64,12 @@ export default function AuthenticatedApp({ identity }) {
     <div className="relative flex h-[100dvh] w-full justify-center overflow-hidden bg-base text-ink md:justify-start">
       {/* The shell glow is drawn once by App.jsx; screens add no own copies
           — a 120px live blur re-rasterizes per frame and stung Safari. */}
-<<<<<<< HEAD
       {/* Drawer first so the shaded sheets later in the DOM keep painting
           above it — all of them share the z-sheet token now. */}
       <Drawer identity={identity} open={showDrawer} onClose={() => useChatStore.getState().setShowDrawer(false)} onNavigate={openDrawerSection} />
-=======
       {/* The one toast queue for the whole app: setToast, pushToast and every
           old status pill route through this render. */}
       <Toast />
->>>>>>> origin/feat/rebuild-pr2
       <TutorialModal isOpen={showTutorial} onClose={() => { useChatStore.getState().setShowTutorial(false); localStorage.removeItem('cipher_new_account'); }} />
       <DeadDropModal identity={identity} />
       <GlobalDialog />

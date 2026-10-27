@@ -31,7 +31,9 @@
   --accent-soft: rgba(37, 99, 235, 0.14);
   --accent-ink: #ffffff;
   --success: #10b981;
+  --success-rgb: 16 185 129;
   --danger: #ef4444;
+  --danger-rgb: 239 68 68;
   --glow-a: rgba(37, 99, 235, 0.13);
   --glow-b: rgba(37, 99, 235, 0.06);
   --glass-panel: rgba(28, 28, 30, 0.7);

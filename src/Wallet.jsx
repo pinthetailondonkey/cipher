@@ -440,11 +440,7 @@ export default function Wallet({ identity, onOpenChat, startView = 'main' }) {
   // --- MAIN PROFILE TAB ---
   return (
     <div className="animate-fade-in overflow-y-auto h-full pb-4 pb-[env(safe-area-inset-bottom)]">
-<<<<<<< HEAD
-      {status && <div className="fixed left-1/2 top-[calc(5rem+env(safe-area-inset-top))] -translate-x-1/2 md:left-auto md:right-6 md:top-6 md:translate-x-0 bg-panelStrong border border-line text-ink px-4 py-2 rounded-xl text-xs font-bold z-toast animate-fade-in">{status}</div>}
-=======
       {/* status renders through the shared ui/Toast queue; no local pill */}
->>>>>>> origin/feat/rebuild-pr2
 
       {/* HEADER PROFILE CARD */}
       <div className="flex flex-col items-center px-4 pb-2 pt-3 md:pt-8">
