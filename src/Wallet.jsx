@@ -1,8 +1,8 @@
-import { lazy, Suspense, useState, useEffect } from 'react'
+import { lazy, Suspense, useState, useEffect, useLayoutEffect } from 'react'
 import {
   User, Plus, AlertCircle, RefreshCw,
   Lock, ChevronRight, ArrowLeft, Copy, CreditCard, Camera,
-  BarChart3, Package, KeyRound, Menu, ShieldAlert, Users, SlidersHorizontal, Shield, BookOpen
+  BarChart3, Package, KeyRound, Menu, ShieldAlert, Users, SlidersHorizontal, Shield, BookOpen, Moon
 } from 'lucide-react'
 import { uploadToBlossom } from '@nostr-wot/blossom'
 import { useProfiles, updateProfileCache } from './useProfiles'
@@ -28,6 +28,35 @@ import { blossomServers } from './lib/egress';
 
 const VendorDashboard = lazy(() => import('./components/chat/VendorDashboard'));
 const ProfileEditor = lazy(() => import('./components/chat/ProfileEditor'));
+
+// Two modes, one switch. The key is cipher_theme — the same key the old
+// theme registry wrote — but with exactly two values now: 'dark' (default)
+// and 'light'. Old registry values still saved on existing installs are
+// orphaned and coerced here: 'paper' meant the light skin, everything else
+// ('vault', 'lobby', 'chromerooms') meant dark.
+const THEME_KEY = 'cipher_theme';
+
+function readTheme() {
+  try {
+    const saved = globalThis.localStorage?.getItem(THEME_KEY);
+    if (saved === 'paper') return 'light';
+    return 'dark';
+  } catch {
+    return 'dark';
+  }
+}
+
+function writeTheme(mode) {
+  try {
+    globalThis.localStorage?.setItem(THEME_KEY, mode);
+  } catch { /* private mode */ }
+  return mode;
+}
+
+function applyTheme(mode) {
+  document.documentElement.dataset.theme = mode === 'light' ? 'light' : '';
+  return mode;
+}
 
 export default function Wallet({ identity, onOpenChat, startView = 'main' }) {
   const isVendor = useChatStore((state) => state.isVendor);
@@ -95,6 +124,13 @@ export default function Wallet({ identity, onOpenChat, startView = 'main' }) {
   const [uploadingImage, setUploadingImage] = useState(false)
   const [copied, setCopied] = useState(false)
   const [savingAdvanced, setSavingAdvanced] = useState(false)
+
+  // The look starts before first paint of this screen: read the persisted
+  // mode and pin the attribute in a layout effect so no themed surface
+  // flashes. Old registry values coerce on read (paper -> light, rest dark).
+  const [theme, setTheme] = useState(readTheme)
+  useLayoutEffect(() => { applyTheme(theme) }, [theme])
+  const toggleTheme = () => setTheme((current) => writeTheme(current === 'light' ? 'dark' : 'light'))
 
   useEffect(() => {
     if (myProfile.name) setUsername(myProfile.name)
@@ -499,6 +535,16 @@ export default function Wallet({ identity, onOpenChat, startView = 'main' }) {
             <Package size={24} className="shrink-0 text-inkSubtle" />
             <span className="min-w-0 flex-1"><span className="block text-[15px] font-semibold text-ink">Order settings</span><span className="block text-[13px] text-inkMuted">Preferred coin, confirmation count, auto-vouch</span></span>
             <ChevronRight size={18} className="shrink-0 text-inkSubtle" />
+          </button>
+        </div>
+
+        <div className="overflow-hidden rounded-2xl border border-line bg-panel">
+          <button type="button" role="switch" aria-checked={theme === 'light'} aria-label="Light mode" onClick={toggleTheme} className={`flex w-full items-center gap-3 p-4 text-left ${pressable}`}>
+            <Moon size={24} className="shrink-0 text-inkSubtle" />
+            <span className="min-w-0 flex-1"><span className="block text-[15px] font-semibold text-ink">Light mode</span><span className="block text-[13px] text-inkMuted">Warm paper instead of dark. Remembered on this device.</span></span>
+            <span aria-hidden="true" className={`relative h-6 w-11 shrink-0 rounded-full transition-colors ${theme === 'light' ? 'bg-accent' : 'bg-ink/15'}`}>
+              <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-ink transition-transform ${theme === 'light' ? 'translate-x-5' : 'translate-x-0.5'}`} />
+            </span>
           </button>
         </div>
 
