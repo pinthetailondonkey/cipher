@@ -197,6 +197,14 @@ export function escrowActionsFor(message, messages, ownPubkey) {
   return [{ action: 'accept_with_escrow', label: 'Accept with escrow', target: 'request' }];
 }
 
+// The Dead Drop receipt words (round-2 card, vectors 7 and 8). An overt
+// refund moves money on the vendor's own claim of delivery — the chain
+// proves the assertion was made, never that atoms moved, so these words
+// upgrade nothing. Whatever renders an overt refund takes them
+// verbatim: never "verified", never "confirmed", never "proof".
+export const OVERT_REFUND_TITLE = 'Returned in full';
+export const OVERT_REFUND_LINE = 'The vendor said they delivered. The money went home on their word, not an inspection.';
+
 // The one payment row an accepted escrow card shows: the deposit, to the
 // 2-of-2 address, through the same bitcoin: URI rail a direct deal pays.
 export function escrowPaymentRow(quote) {

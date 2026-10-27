@@ -10,6 +10,8 @@ import {
   escrowRowsFor,
   newEscrowSalt,
   orderEscrowKey,
+  OVERT_REFUND_LINE,
+  OVERT_REFUND_TITLE,
 } from './escrowActions.js';
 import { assembleOrderScript, decodeOrderScript, hexToScript, scriptToHex } from './escrowScript.js';
 import { quoteEscrow, MIN_ORDER_SATS } from './escrowFsm.js';
@@ -199,4 +201,23 @@ test('the receipts speak the approved honesty lines, verbatim', () => {
   const bubble = fs.readFileSync(new URL('../components/MessageBubble.jsx', import.meta.url), 'utf8');
   assert.match(bubble, /Money comes back if the deal can't be proven — it can't inspect the goods\./);
   assert.match(bubble, /No escrow on this order\. If it goes wrong, the money is gone\./);
+});
+
+// Round-2 card, vectors 7 and 8. The overt refund is the vendor's own
+// delivery claim; the words that ride it may never upgrade the claim to
+// proof, promise a loss is "safe", or imply the app examined anything.
+test('the dead drop receipt words are staged, honest as an assertion only', () => {
+  assert.equal(OVERT_REFUND_TITLE, 'Returned in full');
+  assert.equal(OVERT_REFUND_LINE, 'The vendor said they delivered. The money went home on their word, not an inspection.');
+  const action = fs.readFileSync(new URL('./escrowActions.js', import.meta.url), 'utf8');
+  const bubble = fs.readFileSync(new URL('../components/MessageBubble.jsx', import.meta.url), 'utf8');
+  const literals = (src) => src.match(/'[^'\n]*'/g) ?? [];
+  const escrowCopy = [...literals(action), ...literals(bubble)].filter((s) =>
+    /escrow|Escrow|Dead Drop|dead drop|delivered|refund|Refund/.test(s)
+    && !s.startsWith("'../") && !s.startsWith("'./") && !s.startsWith("'@noble"));
+  assert.equal(literals(action).includes(`'${OVERT_REFUND_TITLE}'`), true, 'predicates: the staged words are in the source');
+  assert.equal(escrowCopy.includes(`'${OVERT_REFUND_LINE}'`), true, 'predicates: the staged line is in the scanned copy');
+  for (const s of escrowCopy) {
+    assert.doesNotMatch(s, /verif|confirm|guarantee|\bproof\b/, `escrow copy claimed too much: ${s}`);
+  }
 });
