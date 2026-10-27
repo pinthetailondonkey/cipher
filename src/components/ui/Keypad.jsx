@@ -1,79 +1,85 @@
 import { motion } from 'framer-motion';
-import { Delete } from 'lucide-react';
+import { Delete, Fingerprint } from 'lucide-react';
 import { haptic } from '../../lib/haptics';
+import { pressable } from './Button';
 
-// The numeric keypad — 3x4, 64px keys, light haptic per press. Bottom-left is
-// the biometric slot, bottom-right is erase, and a wrong turn shakes the
-// whole block instead of flashing a separate error sign.
-const KEYS = [1, 2, 3, 4, 5, 6, 7, 8, 9];
+// Keypad — 3x4 numeric, 64px keys, haptic('light') per press, shake row on
+// error, biometric circle bottom-left, erase bottom-right (§1, §10). Renders
+// the PIN dots row itself: one dot per slot, filled by the current value.
+//
+// API: <Keypad value maxLength=8 onChange shake=0 showBiometric onBiometric
+//               biometricDisabled disabled>
+//   value       current PIN string
+//   maxLength   dot slots (Cipher PINs are 8)
+//   onChange    (next) => void — appended digit or erased char
+//   shake       number — bump on every wrong attempt to replay the shake
+//   showBiometric/onBiometric — the bottom-left passkey circle
+const KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9'];
 
 export default function Keypad({
-  onDigit,
-  onErase,
+  value,
+  maxLength = 8,
+  onChange,
+  shake = 0,
+  showBiometric = false,
   onBiometric,
-  biometricIcon = null,
-  biometricLabel = 'Unlock with biometrics',
+  biometricDisabled = false,
   disabled = false,
-  error = false,
-  shakeNonce = 0,
-  className = '',
 }) {
+  const press = (digit) => {
+    if (disabled) return;
+    haptic('light');
+    if (value.length < maxLength) onChange(value + digit);
+  };
+  const erase = () => {
+    if (disabled) return;
+    haptic('light');
+    onChange(value.slice(0, -1));
+  };
+
+  const keyClass = `flex h-16 w-16 items-center justify-center rounded-full text-[24px] font-semibold text-ink active:bg-ink/10 ${pressable}`;
+
   return (
-    <motion.div
-      key={`${shakeNonce}-${error ? 'err' : 'ok'}`}
-      animate={{ x: error || shakeNonce ? [0, -8, 8, -6, 6, -3, 0] : 0 }}
-      transition={{ duration: 0.4 }}
-      className={`mx-auto grid max-w-[280px] grid-cols-3 gap-2 ${className}`}
-    >
-      {KEYS.map((digit) => (
-        <button
-          key={digit}
-          type="button"
-          disabled={disabled}
-          onClick={() => {
-            haptic('light');
-            onDigit?.(digit);
-          }}
-          className="flex h-16 w-full items-center justify-center rounded-2xl border border-line bg-panelStrong text-[22px] font-semibold text-ink transition-colors active:bg-ink/10"
-        >
-          {digit}
+    <div className="flex w-full flex-col items-center gap-6">
+      <motion.div
+        aria-label={`PIN entry, ${value.length} of ${maxLength} digits`}
+        animate={shake ? { x: [0, -12, 12, -8, 8, -3, 0] } : { x: 0 }}
+        transition={{ duration: 0.45 }}
+        key={shake}
+        className="flex items-center gap-3"
+      >
+        {Array.from({ length: maxLength }, (_, i) => (
+          <span
+            key={i}
+            aria-hidden="true"
+            className={`h-3 w-3 rounded-full transition-colors ${i < value.length ? 'bg-accent' : 'bg-ink/15'}`}
+          />
+        ))}
+      </motion.div>
+      <div className="grid grid-cols-3 gap-x-5 gap-y-3">
+        {KEYS.map((digit) => (
+          <button key={digit} type="button" onClick={() => press(digit)} disabled={disabled} className={keyClass}>
+            {digit}
+          </button>
+        ))}
+        {showBiometric ? (
+          <button
+            type="button"
+            onClick={onBiometric}
+            disabled={disabled || biometricDisabled}
+            aria-label="Unlock with Face ID / fingerprint"
+            className={`flex h-16 w-16 items-center justify-center rounded-full text-accentText active:bg-ink/10 disabled:opacity-40 ${pressable}`}
+          >
+            <Fingerprint size={26} aria-hidden="true" />
+          </button>
+        ) : (
+          <span aria-hidden="true" className="h-16 w-16" />
+        )}
+        <button type="button" onClick={() => press('0')} disabled={disabled} className={keyClass}>0</button>
+        <button type="button" onClick={erase} disabled={disabled || value.length === 0} aria-label="Erase" className={`flex h-16 w-16 items-center justify-center rounded-full text-inkMuted active:bg-ink/10 disabled:opacity-40 ${pressable}`}>
+          <Delete size={22} aria-hidden="true" />
         </button>
-      ))}
-      <button
-        type="button"
-        aria-label={biometricLabel}
-        disabled={disabled || !onBiometric}
-        onClick={() => {
-          haptic('light');
-          onBiometric?.();
-        }}
-        className={`flex h-16 w-full items-center justify-center rounded-2xl text-accentText transition-colors active:bg-ink/10 ${onBiometric ? 'bg-ink/5' : 'bg-transparent'}`}
-      >
-        {biometricIcon}
-      </button>
-      <button
-        type="button"
-        disabled={disabled}
-        onClick={() => {
-          haptic('light');
-          onDigit?.(0);
-        }}
-        className="flex h-16 w-full items-center justify-center rounded-2xl border border-line bg-panelStrong text-[22px] font-semibold text-ink transition-colors active:bg-ink/10"
-      >
-        0
-      </button>
-      <button
-        type="button"
-        aria-label="Erase"
-        disabled={disabled}
-        onClick={() => {
-          haptic('light');
-          onErase?.();
-        }}
-        className="flex h-16 w-full items-center justify-center rounded-2xl text-inkMuted transition-colors hover:text-ink active:bg-ink/10"
-      >
-        <Delete size={22} />
-      </button>
-    </motion.div>
+      </div>
+    </div>
   );
 }
