@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { Globe, Shield } from 'lucide-react';
+import { Globe, Shield, Users } from 'lucide-react';
 import ScreenHeader from '../ui/ScreenHeader';
 import { pressable } from '../ui/Button';
+import { readNetworkConfig, setRelayOverride } from '../../lib/egress.js';
 
 // The screen's own settings live in one plain key, in the same shape the
 // network config used here before: JSON in localStorage, read and written
@@ -32,9 +33,16 @@ function writeSettings(next) {
 
 export default function Connections({ onBack }) {
   const [settings, setSettings] = useState(() => readSettings());
+  const [relayUrl, setRelayUrl] = useState(
+    () => String(readNetworkConfig().overrides?.['group-relay'] || ''),
+  );
 
   const setTor = (tor) => setSettings(writeSettings({ ...settings, tor }));
   const setProxy = (proxy) => setSettings(writeSettings({ ...settings, proxy }));
+  const setRelay = (url) => {
+    setRelayOverride('group-relay', url);
+    setRelayUrl(String(readNetworkConfig().overrides?.['group-relay'] || ''));
+  };
 
   return (
     <div className="h-full overflow-y-auto bg-transparent pb-safe">
@@ -85,8 +93,29 @@ export default function Connections({ onBack }) {
             A browser tab cannot set its own proxy — the browser decides. The installed app sets its proxy before any page loads. On Tails, tor already runs on 127.0.0.1:9050; leave this empty and it is used.
           </p>
         </label>
+        <label className="block rounded-2xl border border-line bg-panel p-4">
+          <span className="flex items-center gap-3">
+            <Users size={24} className="shrink-0 text-inkSubtle" />
+            <span className="block text-[15px] font-semibold text-ink">Group relay</span>
+          </span>
+          <span className="mt-0.5 block text-[13px] text-inkMuted">Your own address for groups, remembered on this device.</span>
+          <input
+            value={relayUrl}
+            onChange={(event) => setRelay(event.target.value)}
+            spellCheck="false"
+            autoComplete="off"
+            inputMode="url"
+            placeholder="wss://…onion — empty for the default"
+            className="mt-3 w-full rounded-2xl border border-line bg-panelStrong px-4 py-3 text-[13px] text-ink outline-none placeholder:text-inkSubtle focus:border-lineStrong"
+          />
+          <p className="mt-2 text-[13px] leading-snug text-inkMuted">
+            {relayUrl
+              ? 'Using your own address. Clear this box to go back to the default.'
+              : 'Using the app’s default address. Paste an onion address here to reach groups through Tor on this device.'}
+          </p>
+        </label>
         <div className="rounded-2xl border border-line bg-panel p-4">
-          <p className="text-[13px] leading-snug text-inkMuted">The relay rows that used to live here are gone. The app talks to its own hosts, and the defaults hold.</p>
+          <p className="text-[13px] leading-snug text-inkMuted">The other relay rows stay gone. The app talks to its own hosts; the group relay is the one address you can name yourself.</p>
         </div>
       </div>
     </div>
