@@ -59,8 +59,12 @@ test("an explicit process-env override wins over the file", () => {
   assert.equal(merged.PATH, "/usr/bin");
 });
 
-test("the template ships auth off", () => {
-  assert.deepEqual(readAppEnv(projectRoot()), { VITE_AUTH_ENABLED: "false" });
+test("the workspace ships no app-env file: absence is no overrides", () => {
+  // The template's .grok/ is deliberately uncommitted (gitignored), and
+  // the auth flag it once carried has no reader left in this product —
+  // the shipped workspace opens with no build-flag file, which is the
+  // wrapper's own contract: absence behaves like today, no overrides.
+  assert.deepEqual(readAppEnv(projectRoot()), {});
 });
 
 test("vite loadEnv resolves the wrapped value", () => {
@@ -73,14 +77,16 @@ test("vite loadEnv resolves the wrapped value", () => {
   assert.equal(merged.VITE_AUTH_ENABLED, "false");
 });
 
-test("the wrapped command runs with the app env applied", async () => {
+test("the wrapped command runs with no file present: process.env passes through", async () => {
+  // No file to merge, so the merge adds nothing — the child runs with
+  // exactly its inherited environment, per the absence contract.
   const { stdout } = await execFileAsync(process.execPath, [
     WRAPPER,
     process.execPath,
     "-e",
-    PRINT_FLAG,
-  ]);
-  assert.equal(stdout, "false");
+    "process.stdout.write(String(process.env.VITE_PROBE));",
+  ], { env: { ...process.env, VITE_PROBE: "hello" } });
+  assert.equal(stdout, "hello");
 });
 
 test("the wrapped command sees an explicit override, not the file value", async () => {
@@ -113,6 +119,8 @@ test("a signal-killed command is never reported as success", async () => {
   );
 });
 
+const PRINT_PROBE = "process.stdout.write(String(process.env.VITE_PROBE));";
+
 test("the CLI still runs when invoked through a symlinked path", async () => {
   // node realpaths import.meta.url but not process.argv[1], so a raw comparison
   // turns the wrapper into a no-op that exits 0 without starting anything.
@@ -122,7 +130,7 @@ test("the CLI still runs when invoked through a symlinked path", async () => {
     join(link, "with-app-env.mjs"),
     process.execPath,
     "-e",
-    PRINT_FLAG,
-  ]);
-  assert.equal(stdout, "false");
+    PRINT_PROBE,
+  ], { env: { ...process.env, VITE_PROBE: "hello" } });
+  assert.equal(stdout, "hello");
 });
