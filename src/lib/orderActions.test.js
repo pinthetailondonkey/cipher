@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import test from 'node:test';
 import { schnorr } from '@noble/curves/secp256k1.js';
 import { ORDER_ACTIONS, allowedActionsFor, frozenIssuedMethods, issuedPaymentMethods, orderActionsFor, orderPaymentDetails, orderRecordForReceipt, orderState, reopenedStatus } from './orderActions.js';
+import { paymentRowsFor } from './paymentUri.js';
 import { ORDER_STATUS, ORDER_STATUSES, RECEIPT_OUTCOMES } from './paymentState.js';
 import { ESCROW_ORDER_ACTIONS } from './escrowActions.js';
 import { signReceipt, verifyReceipt as verifyReceipt2 } from './proofOfTrade.js';
@@ -88,6 +89,45 @@ test('a buyer cancel removes Accept from the vendor card, and buyer actions sit 
   assert.deepEqual(orderActionsFor(mine, [mine, shipped]).map(({ action, target }) => `${action}:${target}`), ['confirm_delivery:peer', 'report_issue:peer']);
   assert.deepEqual(orderActionsFor(shipped, [mine, shipped]), []);
   assert.deepEqual(orderActionsFor(theirs, [theirs, update('u3', true, 'accepted', 11)]).map(({ target }) => target), ['request', 'request']);
+});
+
+// The founder's pre-acceptance cancel is absolute (founder card,
+// 2026-10-27): a cancel lands where the vendor has not engaged, so the
+// only thing that can arrive after it is the resurrection lie — offer
+// tree race, a late acceptance riding through. It changes nothing.
+test('a cancelled order stays cancelled: a late acceptance cannot resurrect it', () => {
+  const mine = request(true); // the buyer's own card
+  // cancel first, acceptance after: the race the founder closed
+  const cancelled = update('u1', true, 'cancelled', 11);
+  const lateAcceptance = update('u2', false, 'accepted', 12, {
+    paymentMethods: { btc: 'bc1qlate' }, coinAmount: '0.1', coinCurrency: 'btc',
+  });
+  assert.equal(orderState([mine, cancelled, lateAcceptance], 'order-1', mine).status, 'cancelled');
+  // and the action table agrees: no payment row, no actions
+  assert.deepEqual(orderActionsFor(mine, [mine, cancelled, lateAcceptance]), []);
+  assert.equal(paymentRowsFor(lateAcceptance.data).length, 1, 'predicates: the acceptance alone renders rows — the lie is real');
+  // the vendor's card, same law — the cancel lands on them too
+  const theirs = request(false);
+  const buyerCancel = update('u1', true, 'cancelled', 11);
+  const vendorLateAcceptance = update('u2', false, 'accepted', 12);
+  assert.equal(orderState([theirs, buyerCancel, vendorLateAcceptance], 'order-1', theirs).status, 'cancelled');
+  // cancel after a legal acceptance ALSO stays closed: the last word is
+  // the cancel even if a peer claims paid after it
+  const accepted = update('u2', false, 'accepted', 10);
+  const paid = update('u3', false, 'paid', 12);
+  assert.equal(orderState([mine, accepted, cancelled, paid], 'order-1', mine).status, 'cancelled');
+  // the happy path is untouched: no cancel in the timeline, newest wins
+  assert.equal(orderState([mine, accepted], 'order-1', mine).status, 'accepted');
+});
+
+// The render obeys the same law the state does: the acceptance bubble
+// itself cannot show its address on a cancelled order (the payment row
+// gate reads content, so the sticky status has to be pinned at the
+// render, the way the wiring tests read their source).
+test('the payment row render obeys the sticky cancel', () => {
+  const src = fs.readFileSync(new URL('../components/MessageBubble.jsx', import.meta.url), 'utf8');
+  assert.match(src, /orderStatusOf\(chatMessages, message\.data\.orderId/);
+  assert.match(src, /cancelledOrder \? \[\] : escrowRowsFor/);
 });
 
 test('every status an order message is written with is one the machine knows', () => {

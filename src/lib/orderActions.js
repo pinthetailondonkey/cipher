@@ -93,17 +93,36 @@ function paymentEvidence(messages, orderId, request, ownPubkey) {
   return { paymentState: paymentState || 'created', paymentSeenBy };
 }
 
-// The order's state is the newest update either side sent for it, over what
-// this device changed on the request card itself. Payment facts are evidence,
-// never the newest claim (F7 above).
-export function orderState(messages, orderId, request, ownPubkey) {
+// The status an order's timeline tallies to, for state AND render alike:
+// the newest update's word, EXCEPT that a cancel is terminal — the
+// founder's pre-acceptance cancel is absolute (founder card, 2026-10-27).
+// Once a CANCELLED update lands, the deal is closed for good and a late
+// acceptance racing the cancel (the vendor tapped accept as the buyer
+// pulled the plug) cannot resurrect it or put an address back on the
+// card. A cancel only ever happens where the vendor has not engaged, so
+// nothing arriving after it is anything this device ever agreed to;
+// statuses that outrun a cancel are the resurrection lie, and they read
+// whatever anyone chooses otherwise.
+export function orderStatusOf(messages, orderId, request) {
   const updates = (Array.isArray(messages) ? messages : [])
     .filter((message) => message?.data?.type === 'order_update' && message.data.orderId === orderId)
     .sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0) || String(a.id).localeCompare(String(b.id)));
   const latest = updates[updates.length - 1] || null;
+  let status = latest?.data?.status || request?.data?.status || S.PENDING;
+  if (status !== S.CANCELLED
+    && updates.some((update) => update?.data?.status === S.CANCELLED)) {
+    status = S.CANCELLED;
+  }
+  return status;
+}
+
+// The order's state is the newest update either side sent for it, over what
+// this device changed on the request card itself. Payment facts are evidence,
+// never the newest claim (F7 above).
+export function orderState(messages, orderId, request, ownPubkey) {
   const payment = paymentEvidence(messages, orderId, request, ownPubkey);
   return {
-    status: latest?.data?.status || request?.data?.status || S.PENDING,
+    status: orderStatusOf(messages, orderId, request),
     paymentState: payment.paymentState,
     paymentSeenBy: payment.paymentSeenBy,
   };

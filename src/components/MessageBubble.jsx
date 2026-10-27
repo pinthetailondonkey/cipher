@@ -11,7 +11,7 @@ import Picture from './ui/Picture';
 import { MediaAudio, MediaImage } from './ui/PrivateMedia';
 import { attachmentsFor } from '../lib/mediaCrypto';
 import { allowsLinkPreviews } from '../lib/privacy';
-import { orderActionsFor, orderState } from '../lib/orderActions';
+import { orderActionsFor, orderState, orderStatusOf } from '../lib/orderActions';
 import { escrowActionsFor, escrowDelayDays, escrowForCard, escrowRowsFor } from '../lib/escrowActions';
 import { unitsToCoins } from '../lib/paymentState';
 import { noHexName } from '../lib/npub';
@@ -143,13 +143,19 @@ export default function MessageBubble({ message, data, onAction, senderName, isP
   const chatMessages = useChatStore((state) => (state.view === 'dm' ? state.dms[state.activeDm] : undefined));
   const pressTimer = useRef(null);
   const pressPoint = useRef(null);
-  const paymentRows = paymentRowsFor(content);
+  // The founder's pre-acceptance cancel is absolute: when the order's
+  // timeline tallies to cancelled, no money row renders — not even off a
+  // late acceptance that raced the cancel (the resurrection lie). The
+  // row gates read the same sticky status the action tables read.
+  const cancelledOrder = message?.data?.type === 'order_update'
+    && orderStatusOf(chatMessages, message.data.orderId, chatMessages?.find((m) => m?.id === message.data.orderId)) === 'cancelled';
+  const paymentRows = cancelledOrder ? [] : paymentRowsFor(content);
   // Escrow rows arrive only on an accepted card whose quote re-derives
   // here, and only when the refund key is the buyer's own slot (the
   // buyer-side claim test in escrowRowsFor; the vendor's own card
   // carries its own quote). Money state gating comes with the membrane
   // reroute — the FSM owns it, not a peer's word.
-  const escrowRows = escrowRowsFor(message, chatMessages, content);
+  const escrowRows = cancelledOrder ? [] : escrowRowsFor(message, chatMessages, content);
   const paidRows = [...paymentRows, ...escrowRows];
   const attachments = attachmentsFor(content);
   const qrSignature = `${message?.id || ''}:${paidRows.map((row) => row.currency).join(',')}`;
