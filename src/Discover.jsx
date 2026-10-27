@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Search, Store, Users, Loader2 } from 'lucide-react';
+import { Search, Users, Loader2 } from 'lucide-react';
 import { useChatStore } from './store/chatStore';
 import { joinGroup } from './lib/groupJoin';
 import { groupOnlyRelays } from './lib/relays';
@@ -7,19 +7,20 @@ import { groupOnlyRelays } from './lib/relays';
 // One row of the public directory. A space this account is already in opens
 // on tap; anything else offers Join and shows the join in flight.
 function DiscoverRow({ group, joined, joining, onOpen }) {
-  const Icon = group.isChannel ? Store : Users;
+  const initials = group.name.split(/\s+/).filter(Boolean).slice(0, 2)
+    .map((word) => word[0].toUpperCase()).join('') || '?';
   const label = joining ? '…' : joined ? 'Open' : 'Join';
   return (
     <button
       type="button"
       onClick={() => onOpen(group)}
       disabled={joining}
-      className="flex w-full items-center justify-between border-b border-line p-4 text-left last:border-0 active:bg-ink/5 disabled:opacity-50"
+      className="flex min-h-[64px] w-full items-center justify-between border-b border-line px-4 py-2 text-left last:border-0 active:bg-ink/5 disabled:opacity-50"
     >
       <div className="flex items-center gap-3">
-        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-line bg-panelAlt text-accentText">
-          <Icon size={22} />
-        </div>
+        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-line bg-panelAlt text-[13px] font-semibold text-accentText">
+          {initials}
+        </span>
         <div>
           <h3 className="text-[15px] font-semibold text-ink">{group.name}</h3>
           <p className="text-[13px] text-inkMuted line-clamp-1">{group.about}</p>

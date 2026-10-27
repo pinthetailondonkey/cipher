@@ -41,7 +41,7 @@ export default function MyOrders({ dms = {}, profiles = {}, onBack, onOpenChat, 
             {orders.map(({ message, vendorPubkey, state, countersigned }) => {
               const product = message.data.product || message.data;
               return (
-                <button type="button" key={message.id} onClick={() => onOpenChat?.(vendorPubkey)} className="flex min-h-[56px] w-full items-center gap-3 border-b border-line px-4 py-2 text-left last:border-0 active:bg-ink/5">
+                <button type="button" key={message.id} onClick={() => onOpenChat?.(vendorPubkey)} className="flex min-h-[64px] w-full items-center gap-3 border-b border-line px-4 py-2 text-left last:border-0 active:bg-ink/5">
                   <Picture src={product.image} alt="" loading="lazy" className="h-10 w-10 shrink-0 rounded-xl object-cover" fallback={<span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-panelAlt text-inkMuted"><Package size={16} /></span>} />
                   <span className="min-w-0 flex-1">
                     <span className="flex items-baseline justify-between gap-2">
