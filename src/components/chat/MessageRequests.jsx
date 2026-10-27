@@ -28,10 +28,17 @@ export default function MessageRequests({ dms = {}, profiles = {}, onBack, onOpe
             const profile = profiles[pubkey] || {};
             const name = noHexName(profile, pubkey);
             return (
-              <button type="button" key={pubkey} onClick={() => onOpenChat?.(pubkey)} className="flex min-h-[56px] w-full items-center gap-3 border-b border-line px-4 py-2 text-left last:border-0 active:bg-ink/5">
+              <button type="button" key={pubkey} onClick={() => onOpenChat?.(pubkey)} className="flex min-h-[64px] w-full items-center gap-3 border-b border-line px-4 py-2 text-left last:border-0 active:bg-ink/5">
                 <Avatar src={profile.picture} name={name} className="!h-10 !w-10 !text-[13px]" />
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate text-[15px] font-semibold text-ink">{name}</span>
+                  <span className="flex items-baseline justify-between gap-2">
+                    <span className="truncate text-[15px] font-semibold text-ink">{name}</span>
+                    {message.timestamp && (
+                      <span className="shrink-0 text-[11px] font-medium text-inkSubtle">
+                        {new Date(message.timestamp * 1000).toLocaleDateString([], { month: 'short', day: 'numeric' })}
+                      </span>
+                    )}
+                  </span>
                   <span className="block truncate text-[13px] text-inkMuted">{message.data?.message || 'New message'}</span>
                 </span>
               </button>
