@@ -28,6 +28,7 @@ import { haptic } from '../../lib/haptics';
 import { noHexName } from '../../lib/npub';
 import Logo from '../Logo';
 import Avatar from '../ui/Avatar';
+import Button from '../ui/Button';
 import IconButton from '../ui/IconButton';
 import Segmented from '../ui/Segmented';
 import ListRow from '../ui/ListRow';
@@ -417,8 +418,7 @@ export default function ChatList({ onOpenChat, onRefresh }) {
         <EmptyState
           icon={<MessageSquare size={24} />}
           title="No chats yet — your first message starts the cipher"
-          actionLabel="New chat"
-          onAction={() => setView('search')}
+          action={<Button size="md" onClick={() => setView('search')}>New chat</Button>}
         />
       </div>
     );
