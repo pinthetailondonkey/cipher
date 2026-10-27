@@ -10,7 +10,7 @@ import { pushToast } from '../ui/toast';
 import { shortNpub, noHexName } from '../../lib/npub';
 import { haptic } from '../../lib/haptics';
 import { useReputation } from '../../hooks/useReputation';
-import { monthLabelOf, riderComposeOf } from '../../lib/vendorReviews';
+import { riderComposeOf } from '../../lib/vendorReviews';
 import ProvenBanner from './ProvenBanner';
 import ReviewRow from './ReviewRow';
 
