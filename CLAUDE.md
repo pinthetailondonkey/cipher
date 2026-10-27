@@ -11,6 +11,17 @@ Nostr messenger and direct-deal shop. Vite + React. See AGENTS.md if present.
 - Push each commit. Pin every read to the SHA, never to /main.
 - If a push fails twice, push by hand: git push origin <branch>. Do not back off and wait.
 
+## Code hygiene (founder order 2026-10-27)
+
+- No secret, key, token or credential file ever enters a commit — not the
+  working tree's tracked files, not history. `.env.local` and build output
+  (`dist/`, `.vercel/`) stay untracked forever.
+- Commit both name and email under the noreply GitHub identity
+  (cipher@users.noreply.github.com). The founder's real
+  Gmail never appears in author or committer fields, any lane.
+- `.githooks/pre-commit` scans staged additions for key-shaped strings.
+  Choose `git config core.hooksPath .githooks` in every fresh checkout.
+
 ## Facts
 - Bitcoin 8 decimals, Monero 12. Round half up, never drop.
 - Confirmations: BTC 3, XMR 10, overridable.
