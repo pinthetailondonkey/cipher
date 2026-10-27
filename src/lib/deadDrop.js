@@ -82,6 +82,29 @@ function unpackFragment(fragment) {
 // The link host lives in the egress registry (id 'dead-drop'), like every
 // other outbound host this app can contact.
 import { entryById, activeUrl } from './egress.js';
+import { scopedGet, scopedSet } from './storage.js';
+
+// ————— burn ledger —————
+// The one-open promise is held by THIS device, not the relays: a kind-5
+// delete is a request relays may ignore, and the ciphertext stays fetchable
+// until every relay forgets it. Before this ledger the app path never
+// wired isConsumed at all, so the same link opened forever locally. The
+// ledger is scoped to the active account (storage.js), like every other
+// private state here — a second account on the same device holds its own
+// copy of the promise, and the holder of the URL is the reader either way.
+const CONSUMED_KEY = 'dead_drop_consumed';
+
+export function deadDropConsumed(hashHex) {
+  const ledger = scopedGet(CONSUMED_KEY, {});
+  return !!(ledger && ledger[hashHex]);
+}
+
+export function markDeadDropConsumed(hashHex) {
+  const ledger = scopedGet(CONSUMED_KEY, {}) || {};
+  if (ledger[hashHex]) return;
+  ledger[hashHex] = Math.floor(Date.now() / 1000);
+  scopedSet(CONSUMED_KEY, ledger);
+}
 
 export function noteOrigin(config = undefined) {
   return activeUrl(entryById('dead-drop'), config) || '';
@@ -129,13 +152,15 @@ export async function createDeadDropNote({ identity, text, pool, relays }) {
 // ————— read —————
 
 // Fetch and open a note from a fragment. One readable attempt; consumed
-// notes (this device already opened this hash) fail closed.
+// notes (this device already opened this hash) fail closed. The default
+// consume check is this device's own ledger; callers may pass isConsumed
+// to consult a different store.
 export async function openDeadDropNote({ identity, fragment, pool, relays, isConsumed = null }) {
   const parts = unpackFragment(fragment);
   if (!parts) throw new Error('That link is not a valid note link.');
 
   const hashHex = Array.from(parts.hash, (b) => b.toString(16).padStart(2, '0')).join('');
-  if (isConsumed && await isConsumed(hashHex)) {
+  if (isConsumed ? await isConsumed(hashHex) : deadDropConsumed(hashHex)) {
     throw new Error('This note was already opened on this device.');
   }
 
@@ -159,6 +184,11 @@ export async function openDeadDropNote({ identity, fragment, pool, relays, isCon
   try { payload = JSON.parse(new TextDecoder().decode(plaintext)); } catch {
     throw new Error('This note could not be opened — the link was altered.');
   }
+
+  // The note is open — burn it on this device now, whatever the relays
+  // decide to do with the delete request below. An unreadable or altered
+  // link never reaches this mark, so it still opens once it is fixed.
+  markDeadDropConsumed(hashHex);
 
   // Best-effort destruct: ask every relay to forget the blob (kind 5) and
   // remember locally that this hash is spent. Relays may ignore deletes;

@@ -6,6 +6,7 @@ import {
   noteOrigin,
   createDeadDropNote,
   openDeadDropNote,
+  deadDropConsumed,
 } from './deadDrop.js';
 
 const { packFragment, unpackFragment, toB64Url, fromB64Url, deriveNoteHash, NOTE_KIND } = _deadDropInternals;
@@ -17,6 +18,18 @@ if (!globalThis.btoa) {
 }
 if (!globalThis.atob) {
   globalThis.atob = (s) => Buffer.from(s, 'base64').toString('binary');
+}
+// The burn ledger lives in scoped localStorage; the browser fallback
+// (absent storage) makes burn a no-op, so tests hand it a fresh one.
+if (!globalThis.localStorage) {
+  const map = new Map();
+  globalThis.localStorage = {
+    getItem: (k) => (map.has(k) ? map.get(k) : null),
+    setItem: (k, v) => map.set(k, String(v)),
+    removeItem: (k) => map.delete(k),
+    key: (i) => Array.from(map.keys())[i] ?? null,
+    get length() { return map.size; },
+  };
 }
 
 const b64uToBuf = (t) => Buffer.from(t.replace(/-/g, '+').replace(/_/g, '/'), 'base64');
@@ -150,6 +163,36 @@ test('isConsumed blocks re-opening on the same device', async () => {
     () => openDeadDropNote({ identity, fragment: url.split('#')[1], pool, relays, isConsumed: checker }),
     /already opened/,
   );
+});
+
+test('the local burn ledger stops the same link opening twice — the app path wires no isConsumed', async () => {
+  const pool = fakePool();
+  const relays = ['wss://relay.test'];
+  const { url, hash } = await createDeadDropNote({ identity, text: 'burn once', pool, relays });
+  const fragment = url.split('#')[1];
+  const first = await openDeadDropNote({ identity, fragment, pool, relays });
+  assert.equal(first.text, 'burn once');
+  assert.equal(deadDropConsumed(hash), true);
+  await assert.rejects(
+    () => openDeadDropNote({ identity, fragment, pool, relays }),
+    /already opened/,
+  );
+});
+
+test('a failed open does not burn the note — fix the link and it still opens', async () => {
+  const pool = fakePool();
+  const relays = ['wss://relay.test'];
+  const { url } = await createDeadDropNote({ identity, text: 'recoverable', pool, relays });
+  const fragment = url.split('#')[1];
+  const b = b64uToBuf(fragment);
+  b[0] ^= 0xff; // flip one key bit
+  const badFragment = b.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  await assert.rejects(
+    () => openDeadDropNote({ identity, fragment: badFragment, pool, relays }),
+    /altered|gone/,
+  );
+  const opened = await openDeadDropNote({ identity, fragment, pool, relays });
+  assert.equal(opened.text, 'recoverable');
 });
 
 test('oversized notes are refused at create', async () => {
