@@ -84,8 +84,8 @@ Done when every built-but-unreachable feature has a door in the UI:
 - Vendor dashboard shows the vendor's actual products. Today it reads a key nothing writes and always says "you haven't published any products".
 - In-app buzz (haptics) already test-covered; ship it for t=msg, t=order, t=call per CLAUDE.md.
 
-## 8. Vendor shop meshed into the menu page
-Done when: a channel-type space (a menu) owned by a vendor shows their shop: items, prices, sold-out state, banner, about — inside the menu page; "add to menu" from the vendor's chat; one share link and one QR for the whole shop; Discover's Menus section opens it. VendorStorefront.jsx and VendorDashboard.jsx both point at the same real product key. Founder's line: "menus are vendor shops" — a menu IS the shop, not a link to one.
+## 8. The vendor's whole menu lives in the menu page
+Done when: a channel-type space (a menu) owned by a vendor shows their items, prices, sold-out state, banner, about — inside the menu page; "add to menu" from the vendor's chat; one share link and one QR for the whole menu; Discover's Menus section opens it. VendorMenuHome.jsx and VendorDashboard.jsx both point at the same real product key. Founder's line, restated: the menu IS the vendor's selling space, not a link to one.
 
 ## 9. Free Telegram-premium: personalization
 Done when, all free, no tiers:

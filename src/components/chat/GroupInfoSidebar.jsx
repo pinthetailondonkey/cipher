@@ -458,7 +458,7 @@ export default function GroupInfoSidebar({
               {canManage && <Button size="sm" variant="ghost" onClick={removePin} disabled={pending}>Unpin</Button>}
             </div>
           )}
-          {products.length === 0 && <p className="px-4 py-3 text-[13px] text-inkMuted">No products yet.</p>}
+          {products.length === 0 && <p className="px-4 py-3 text-[13px] text-inkMuted">Nothing on the menu yet.</p>}
           {products.filter(({ message }) => message.id !== pinnedId).map(({ message, product }) => (
             <div key={message.id} className="flex items-center gap-3 border-b border-line px-4 py-3 last:border-0">
               <Picture src={product.image} alt="" loading="lazy" className="h-10 w-10 rounded-xl object-cover" fallback={<span className="flex h-10 w-10 items-center justify-center rounded-xl bg-panelAlt text-inkSubtle"><Package size={16} /></span>} />

@@ -186,7 +186,7 @@ function ChatRow({
                 ) : (previewText || (isDm ? 'Tap to chat' : (chat.group.isChannel ? 'Channel' : 'Public group')))}
               </span>
               {chat.vendor && !typing && (
-                <span className="shrink-0 text-[12px] font-semibold text-accentText">Shop</span>
+                <span className="shrink-0 text-[12px] font-semibold text-accentText">Menu</span>
               )}
             </span>
           )}
@@ -254,7 +254,7 @@ function ChatRow({
                         </MenuItem>
                         {chat.vendor && isDm && (
                           <MenuItem icon={<Store size={14} className="text-inkMuted" />} onClick={() => { onViewShop(); onMenuClose(); }}>
-                            View shop
+                            Their menu
                           </MenuItem>
                         )}
                         {isDm && (

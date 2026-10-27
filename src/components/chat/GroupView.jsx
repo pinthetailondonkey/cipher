@@ -84,7 +84,7 @@ function GroupStorefront({ items, pinnedId, canList, onBuy, onList, pendingLists
           <input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Item" className="w-full border-b border-ink/5 bg-transparent px-4 py-3 text-[15px] text-ink outline-none placeholder:text-ink/30" />
           <input value={price} onChange={(event) => setPrice(event.target.value)} placeholder="Price in USD" inputMode="decimal" className="w-full border-b border-ink/5 bg-transparent px-4 py-3 text-[15px] text-ink outline-none placeholder:text-ink/30" />
           <input value={note} onChange={(event) => setNote(event.target.value)} placeholder="Note" className="w-full border-b border-ink/5 bg-transparent px-4 py-3 text-[15px] text-ink outline-none placeholder:text-ink/30" />
-          <button type="submit" className="w-full bg-accent py-3.5 font-bold text-accentInk">Post to shop</button>
+          <button type="submit" className="w-full bg-accent py-3.5 font-bold text-accentInk">Post to menu</button>
           {formError && <p role="alert" className="px-4 py-3 text-[13px] text-danger">{formError}</p>}
         </form>
       )}
@@ -318,7 +318,7 @@ export default function GroupView({
       <div className="mx-auto flex min-h-0 w-full max-w-3xl flex-1 flex-col">
       <ChatHeader mode="group" />
       <div className="grid grid-cols-2 border-b border-ink/5 px-4">
-        {[['chat', 'Chat'], ['shop', 'Shop']].map(([id, label]) => (
+        {[['chat', 'Chat'], ['shop', 'Menu']].map(([id, label]) => (
           <button key={id} type="button" onClick={() => setPane(id)} className={`py-2.5 text-[13px] font-semibold ${pane === id ? 'border-b-2 border-accent text-ink' : 'text-ink/40'}`}>{label}</button>
         ))}
       </div>
