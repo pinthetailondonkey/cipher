@@ -134,6 +134,16 @@ export const useChatStore = create((set) => ({
   }),
   mutedChats: scopedGet('muted', []),
   mutedUntil: scopedGet('muted_until', {}),
+  // PIN (presentation state, no relay traffic): which chats the list floats
+  // to the top under its PINNED heading. Chat-id list, scoped + persisted.
+  pinnedChats: scopedGet('pinned', []),
+  togglePinChat: (id) => set(s => {
+    const next = s.pinnedChats.includes(id)
+      ? s.pinnedChats.filter(x => x !== id)
+      : [id, ...s.pinnedChats];
+    scopedSet('pinned', next);
+    return { pinnedChats: next };
+  }),
   setMuteDuration: (id, durationMs) => set(s => {
     const next = { ...s.mutedUntil };
     if (durationMs === 0) {
@@ -329,6 +339,7 @@ export const useChatStore = create((set) => ({
     archivedChats: scopedGet('archived', []),
     mutedChats: scopedGet('muted', []),
     mutedUntil: scopedGet('muted_until', {}),
+    pinnedChats: scopedGet('pinned', []),
     blockedUsers: scopedGet('blocked', []),
     bookmarks: normalizeBookmarks(scopedGet('bookmarks', [])),
     messageEdits: scopedGet('msg_edits', {}),
