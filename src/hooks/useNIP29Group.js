@@ -22,6 +22,7 @@ import { sortMessages, stampArrival } from '../features/chat/media';
 import { isJoinDenied, denyPendingJoin, dropPendingJoin, clearJoinDenial, loadPendingJoins, queuePendingJoin, withoutDenied } from '../lib/groupJoinQueue.js';
 import { allowsGroupJoins } from '../lib/privacy.js';
 import { groupMetaAnnouncement } from '../lib/groupMetaAnnouncement.js';
+import { clampGroupBody } from '../lib/disappearing';
 
 function currentGroupRelay() {
   return groupSocketUrl() || '';
@@ -1085,7 +1086,12 @@ export function useNIP29Group({ identity }) {
       else { plaintext = decoded.plaintext; parsed = decoded.parsed || {}; decEpoch = decoded.epoch; }
       if (!parsed || typeof parsed !== 'object') parsed = { type: 'text', message: typeof plaintext === 'string' ? plaintext : '' };
 
+      // A stamp already dead carries no sentence — the arrival drop first.
       if (parsed.expires_at && Math.floor(Date.now() / 1000) >= parsed.expires_at) return;
+      // Then the same rule the dm live arm holds: the receiver honors a
+      // carried stamp only as far as the roster promised, and the stamped
+      // JSON the row will save is rebuilt when the clamp moves it.
+      ({ parsed, plaintext } = clampGroupBody(parsed, plaintext));
 
       if (!isPending && parsed.type === 'typing') {
         const age = (Date.now() / 1000) - event.created_at;
@@ -1176,6 +1182,12 @@ export function useNIP29Group({ identity }) {
           if (decoded.pending || decoded.error) continue;
           const parsed = decoded.parsed || {};
           if (parsed.type === 'typing') continue;
+          // A row unwrapped now is a row arriving now: a stamp already
+          // dead is not saved, and a carried stamp is honored only as far
+          // as the roster promised — the same rule the live receive path
+          // holds above.
+          if (parsed.expires_at && Math.floor(Date.now() / 1000) >= parsed.expires_at) continue;
+          const { plaintext: keptPlaintext } = clampGroupBody(parsed, decoded.plaintext);
           const replyTag = event.tags.find(t => t[0] === 'e' && t[3] === 'reply');
           const clientId = event.tags.find(t => t[0] === 'client')?.[1];
           setGroupMessages(prev => {
@@ -1185,7 +1197,7 @@ export function useNIP29Group({ identity }) {
               id: event.id, clientId, isSender: event.pubkey === identity.pk,
               pubkey: event.pubkey, timestamp: event.created_at,
               deliveryStatus: event.pubkey === identity.pk ? 'sent' : undefined,
-              local_timestamp: Date.now(), rawContent: decoded.plaintext,
+              local_timestamp: Date.now(), rawContent: keptPlaintext,
               epoch: decoded.epoch, pending: false,
               replyTo: replyTag ? replyTag[1] : null, isGroup: true,
             });
