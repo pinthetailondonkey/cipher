@@ -4,7 +4,10 @@
 
 PATTERNS='BEGIN [A-Z ]*PRIVATE|nsec1[a-z0-9]{50,}|xprv[1-9A-HJ-NP-Za-km-z]{20,}|sk-(live|proj|ant)-|ghp_[A-Za-z0-9]{20,}|gh_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|AIza[A-Za-z0-9_-]{20,}|xox[baprs]-[A-Za-z0-9-]{10,}|VERCEL_OIDC_TOKEN|AWS_ACCESS_KEY_ID|api[_-]key.*['"'"'""][A-Za-z0-9/_-]{16,}'
 
-hits=$(git diff --cached -U0 | grep '^+' | grep -Ewi -- "$PATTERNS")
+# The scanner never scans its own pattern text — the law's tooling cannot
+# pass its own scan without rewriting the patterns, so additions to this
+# file alone are excluded. Anything else is held to the full scan.
+hits=$(git diff --cached -U0 -- . ':(exclude).githooks/pre-commit' | grep '^+' | grep -Ewi -- "$PATTERNS")
 if [ -n "$hits" ]; then
   echo "pre-commit: refusing — staged addition matches a secret pattern:" >&2
   echo "$hits" | head -5 >&2
