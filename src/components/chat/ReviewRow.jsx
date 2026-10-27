@@ -5,7 +5,7 @@ import { monthLabelOf } from '../../lib/vendorReviews';
 
 // One review row on the vendor's identity page. The reviewer's display
 // name, the stars, a one-line verdict, and the order month — never the
-// item, never the amount. "Verified purchase" rides only when the bound
+// item, never the amount. The receipt chip rides only when the bound
 // receipt reads confirmed on chain.
 export default function ReviewRow({ review, profile = {}, verified = false }) {
   const name = noHexName(profile, review.buyerPubkey);
@@ -28,8 +28,8 @@ export default function ReviewRow({ review, profile = {}, verified = false }) {
       {review.verdict && <p className="mt-1 text-[14px] leading-snug text-ink/75">{review.verdict}</p>}
       <div className="mt-1.5 flex items-center gap-2">
         {verified && (
-          <Badge tone="success" aria-label="Verified purchase">
-            Verified purchase
+          <Badge tone="success" aria-label="Receipt on chain">
+            Receipt on chain
           </Badge>
         )}
         {review.orderMonth && <span className="text-[11px] text-inkSubtle">{monthLabelOf(review.orderMonth)}</span>}
