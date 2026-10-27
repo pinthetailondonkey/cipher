@@ -14,18 +14,18 @@ function DiscoverRow({ group, joined, joining, onOpen }) {
       type="button"
       onClick={() => onOpen(group)}
       disabled={joining}
-      className="flex w-full items-center justify-between border-b border-ink/5 p-4 text-left last:border-0 active:bg-ink/5 disabled:opacity-50"
+      className="flex w-full items-center justify-between border-b border-line p-4 text-left last:border-0 active:bg-ink/5 disabled:opacity-50"
     >
       <div className="flex items-center gap-3">
-        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-ink/15 bg-ink/10 text-accent">
+        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-line bg-panelAlt text-accentText">
           <Icon size={22} />
         </div>
         <div>
           <h3 className="text-[15px] font-semibold text-ink">{group.name}</h3>
-          <p className="text-[13px] text-ink/40 line-clamp-1">{group.about}</p>
+          <p className="text-[13px] text-inkMuted line-clamp-1">{group.about}</p>
         </div>
       </div>
-      <span className={`rounded-2xl px-3 py-1.5 text-[13px] font-bold ${joined ? 'text-ink/60' : 'bg-accent text-accentInk'}`}>{label}</span>
+      <span className={`rounded-2xl px-3 py-1.5 text-[13px] font-bold ${joined ? 'text-accentText' : 'bg-accent text-accentInk'}`}>{label}</span>
     </button>
   );
 }
@@ -140,42 +140,42 @@ export default function Discover({ identity, onJoined }) {
   return (
     <div className="relative flex h-full w-full flex-col bg-transparent">
       <div className="px-4 pb-3 pt-2">
-        <div className="flex items-center gap-2 rounded-2xl border border-ink/15 bg-panelStrong px-4 py-3 shadow-lg">
-          <Search size={16} className="text-ink/40" />
+        <div className="flex items-center gap-2 rounded-2xl border border-line bg-panelStrong px-4 py-3">
+          <Search size={16} className="text-inkMuted" />
           <input
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search"
-            className="flex-1 bg-transparent text-[15px] text-ink placeholder-ink/30 focus:outline-none"
+            className="flex-1 bg-transparent text-[15px] text-ink placeholder:text-inkSubtle focus:outline-none"
           />
         </div>
       </div>
 
-      {error && <p role="alert" className="px-4 text-sm text-red-400">{error}</p>}
+      {error && <p role="alert" className="px-4 text-sm text-danger">{error}</p>}
       <div className="flex-1 overflow-y-auto pb-4">
         {loading ? (
-          <div className="flex flex-col items-center justify-center mt-20 text-ink/40">
-            <Loader2 size={32} className="animate-spin mb-4 text-accent" />
+          <div className="flex flex-col items-center justify-center mt-20 text-inkMuted">
+            <Loader2 size={32} className="animate-spin mb-4 text-accentText" />
             <p className="text-sm">Searching the network...</p>
           </div>
         ) : displayGroups.length === 0 ? (
-          <div className="mx-4 rounded-2xl border border-line bg-panel px-4 py-16 text-center shadow-lg">
-            <Users size={28} className="mx-auto mb-3 text-ink/30" />
+          <div className="mx-4 rounded-2xl border border-line bg-panel px-4 py-16 text-center">
+            <Users size={28} className="mx-auto mb-3 text-inkSubtle" />
             <p className="text-[15px] font-semibold text-ink">No menus or groups yet</p>
           </div>
         ) : (
           <>
             {menus.length > 0 && (
-              <div className="mx-4 mb-4 overflow-hidden rounded-3xl border border-ink/15 bg-panelStrong shadow-lg">
-                <p className="px-4 pt-3 text-[11px] font-semibold uppercase tracking-wider text-ink/40">Menus</p>
-                <p className="px-4 pb-1 text-[12px] text-ink/25">Menus are for buying. Groups are for talking.</p>
+              <div className="mx-4 mb-4 overflow-hidden rounded-2xl border border-line bg-panel">
+                <p className="px-4 pt-3 text-[11px] font-semibold uppercase tracking-wider text-inkMuted">Menus</p>
+                <p className="px-4 pb-1 text-[12px] text-inkSubtle">Menus are for buying. Groups are for talking.</p>
                 {menus.map((group) => <DiscoverRow key={group.id} group={group} joined={joinedIds.has(group.id)} joining={joiningId === group.id} onOpen={join} />)}
               </div>
             )}
             {rooms.length > 0 && (
-              <div className="mx-4 overflow-hidden rounded-3xl border border-ink/15 bg-panelStrong shadow-lg">
-                <p className="px-4 pt-3 text-[11px] font-semibold uppercase tracking-wider text-ink/40">Groups</p>
+              <div className="mx-4 overflow-hidden rounded-2xl border border-line bg-panel">
+                <p className="px-4 pt-3 text-[11px] font-semibold uppercase tracking-wider text-inkMuted">Groups</p>
                 {rooms.map((group) => <DiscoverRow key={group.id} group={group} joined={joinedIds.has(group.id)} joining={joiningId === group.id} onOpen={join} />)}
               </div>
             )}
