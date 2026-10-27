@@ -273,6 +273,7 @@ export default function Menus({ identity, setActiveTab }) {
       {checkoutProduct && (
         <OneTapCheckout
           product={checkoutProduct}
+          identity={identity}
           onConfirmOrder={confirmOrder}
           onClose={() => setCheckoutProduct(null)}
         />
