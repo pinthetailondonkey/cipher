@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { ORDER_STATUS } from './lib/paymentState';
-import { Search, ShoppingBag, Loader2 } from 'lucide-react';
+import { Search, ShoppingBag, Share2 } from 'lucide-react';
 import OneTapCheckout from './components/OneTapCheckout';
 import { useNIP44DM } from './hooks/useNIP44DM';
 import { useChatStore } from './store/chatStore';
@@ -9,8 +9,76 @@ import { haptic } from './lib/haptics';
 import { copyText } from './lib/copyText';
 import { generalRelays } from './lib/relays';
 import Picture from './components/ui/Picture';
+import EmptyState from './components/ui/EmptyState';
+import { SkeletonGrid } from './components/ui/Skeleton';
 import { listingFromEvent, orderProduct, priceLabel } from './lib/listing';
+import { noHexName } from './lib/npub';
 import { stampArrival } from './features/chat/media';
+
+// One product card, §6: 4:5 image crop, vendor avatar 24 with display name
+// bottom-left over the picture, name two lines, mono price in accent text,
+// share in the corner, ghost Buy pill bottom-right. The card itself and the
+// pill both open the checkout Sheet.
+function ProductCard({ product, vendorName, vendorPicture, onOpen, onShare }) {
+  const vendorInitial = (vendorName || '?').trim().slice(0, 1).toUpperCase() || '?';
+  const openSheet = () => {
+    haptic('heavy');
+    onOpen(product);
+  };
+  return (
+    <div className="flex w-full flex-col overflow-hidden rounded-3xl border border-line bg-panelStrong shadow-lg">
+      <div
+        role="button"
+        tabIndex={0}
+        aria-label={`Buy ${product.name}`}
+        onClick={openSheet}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            openSheet();
+          }
+        }}
+        className="relative block aspect-[4/5] w-full cursor-pointer"
+      >
+        <Picture
+          src={product.image}
+          alt={product.name}
+          className="h-full w-full object-cover"
+          fallback={<div className="flex h-full w-full items-center justify-center bg-panelAlt text-ink/30"><ShoppingBag size={28} /></div>}
+        />
+        <button
+          type="button"
+          onClick={(event) => { event.stopPropagation(); onShare(product); }}
+          aria-label={`Share ${product.name}`}
+          className="absolute right-1.5 top-1.5 flex h-9 w-9 items-center justify-center rounded-full bg-scrim/55 text-ink backdrop-blur"
+        >
+          <Share2 size={15} />
+        </button>
+        <span className="absolute bottom-1.5 left-1.5 flex max-w-[calc(100%-4.5rem)] items-center gap-1.5 rounded-full bg-scrim/55 py-0.5 pl-0.5 pr-2 backdrop-blur">
+          <span className="flex h-6 w-6 shrink-0 items-center justify-center overflow-hidden rounded-full border border-line bg-panelStrong text-[10px] font-bold text-accentText">
+            {vendorPicture
+              ? <img src={vendorPicture} alt="" className="h-full w-full object-cover" />
+              : vendorInitial}
+          </span>
+          <span className="truncate text-[11px] font-semibold text-ink">{vendorName || 'Vendor'}</span>
+        </span>
+      </div>
+      <div className="flex items-end justify-between gap-2 p-2.5">
+        <div className="min-w-0 flex-1">
+          <p className="line-clamp-2 text-[14px] font-semibold text-ink">{product.name}</p>
+          <p className="mt-0.5 font-mono text-[13px] text-accentText">{priceLabel(product.price, product.currency)}</p>
+        </div>
+        <button
+          type="button"
+          onClick={openSheet}
+          className="flex min-h-[44px] shrink-0 items-center rounded-full border border-line bg-panel px-3.5 text-[13px] font-bold text-ink active:bg-ink/10"
+        >
+          Buy
+        </button>
+      </div>
+    </div>
+  );
+}
 
 export default function Shop({ identity, setActiveTab }) {
   const [query, setQuery] = useState('');
@@ -18,42 +86,43 @@ export default function Shop({ identity, setActiveTab }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [checkoutProduct, setCheckoutProduct] = useState(null);
+  const profiles = useChatStore((state) => state.profiles);
   const { sendDM } = useNIP44DM({ identity });
 
-  useEffect(() => {
-    const fetchMarketplace = async () => {
-      setLoading(true);
-      setError('');
-      try {
-        const { SimplePool } = await import('nostr-tools');
-        const pool = new SimplePool();
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const { SimplePool } = await import('nostr-tools');
+      const pool = new SimplePool();
 
-        const timeoutPromise = new Promise((_, reject) =>
-          setTimeout(() => reject(new Error('Relay timeout')), 4000)
-        );
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Relay timeout')), 4000)
+      );
 
-        const fetchPromise = pool.querySync(
-          generalRelays,
-          { kinds: [30402], '#t': ['cipher_marketplace'], limit: 50 }
-        );
+      const fetchPromise = pool.querySync(
+        generalRelays,
+        { kinds: [30402], '#t': ['cipher_marketplace'], limit: 50 }
+      );
 
-        const events = await Promise.race([fetchPromise, timeoutPromise]);
+      const events = await Promise.race([fetchPromise, timeoutPromise]);
 
-        const parsed = events.map(listingFromEvent).filter((p) => Number(p.price) > 0);
+      const parsed = events.map(listingFromEvent).filter((p) => Number(p.price) > 0);
 
-        const unique = Array.from(new Map(parsed.map(p => [p.id, p])).values());
-        setProducts(unique);
-        pool.close(generalRelays);
-      } catch (err) {
-        console.error('Failed to fetch marketplace:', err);
-        setError('Could not load the shop. Check your connection and try again.');
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchMarketplace();
+      const unique = Array.from(new Map(parsed.map(p => [p.id, p])).values());
+      setProducts(unique);
+      pool.close(generalRelays);
+    } catch (err) {
+      console.error('Failed to fetch marketplace:', err);
+      setError('Could not load the shop. Check your connection and try again.');
+    } finally {
+      setLoading(false);
+    }
   }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
 
   const shareProduct = async (product) => {
     const link = `${window.location.origin}${window.location.pathname}?product=${encodeURIComponent(product.id)}&vendor=${product.vendorPubkey}`;
@@ -134,51 +203,59 @@ export default function Shop({ identity, setActiveTab }) {
 
       <div className="flex-1 overflow-y-auto pb-4">
         {loading ? (
-          <div className="mt-20 flex flex-col items-center justify-center text-ink/40">
-            <Loader2 size={32} className="mb-4 animate-spin text-accent" />
-            <p className="text-sm">Fetching products from the network...</p>
+          <div className="px-4 pt-1">
+            <SkeletonGrid items={6} min={172} itemClass="h-64" />
           </div>
         ) : error ? (
           <div className="mx-4 rounded-2xl border border-line bg-panel px-4 py-16 text-center shadow-lg">
-            <p className="text-[15px] font-semibold text-ink">Shop unavailable</p>
+            <p className="text-[15px] font-semibold text-ink">Menu unavailable</p>
             <p className="mt-1 text-[13px] text-ink/40">{error}</p>
+            <button
+              type="button"
+              onClick={() => { haptic('light'); load(); }}
+              className="mt-4 inline-flex min-h-[44px] items-center rounded-full border border-line px-5 text-[13px] font-bold text-ink active:bg-ink/10"
+            >
+              Retry
+            </button>
           </div>
         ) : displayProducts.length === 0 ? (
-          <div className="mx-4 rounded-2xl border border-line bg-panel px-4 py-16 text-center shadow-lg">
-            <ShoppingBag size={28} className="mx-auto mb-3 text-ink/30" />
-            <p className="text-[15px] font-semibold text-ink">No products</p>
-          </div>
-        ) : (
-          <div className="grid grid-cols-2 gap-3 px-4 pb-4">
-            {displayProducts.map(p => (
-              <div key={p.id} className="rounded-3xl border border-ink/15 bg-panelStrong p-2 shadow-lg">
-                <div className="relative h-28 w-full overflow-hidden rounded-2xl bg-ink/5">
-                  <Picture
-                    src={p.image}
-                    alt=""
-                    className="h-full w-full object-cover"
-                    onError={(event) => { event.currentTarget.style.display = 'none'; }}
-                    fallback={<div className="flex h-full w-full items-center justify-center text-ink/30"><ShoppingBag size={28} /></div>}
-                  />
-                </div>
-                <div className="px-1.5 pb-1 pt-3">
-                  <p className="truncate text-[15px] font-semibold text-ink">{p.name}</p>
-                  <p className="text-[13px] font-bold text-accent">{priceLabel(p.price, p.currency)}</p>
-                  <button type="button" onClick={() => { haptic('heavy'); setCheckoutProduct(p); }} className="mt-3 flex min-h-[44px] w-full items-center justify-center rounded-2xl bg-accent py-2 text-[13px] font-bold text-accentInk shadow-lg">Buy</button>
-                  <button type="button" onClick={() => shareProduct(p)} className="mt-1 flex min-h-[44px] w-full items-center justify-center rounded-xl py-2 text-[12px] font-semibold text-ink/50">Copy link</button>
-                </div>
+          query
+            ? (
+              <div className="mx-4 rounded-2xl border border-line bg-panel px-4 py-16 text-center shadow-lg">
+                <ShoppingBag size={28} className="mx-auto mb-3 text-ink/30" />
+                <p className="text-[15px] font-semibold text-ink">Nothing matches that</p>
+                <p className="mt-1 text-[13px] text-ink/40">{query}</p>
               </div>
-            ))}
+            )
+            : (
+              <EmptyState icon={ShoppingBag} title="No menus yet">
+                You're early. Be the first menu on Cipher.
+              </EmptyState>
+            )
+        ) : (
+          <div className="grid gap-3 px-4 pb-4" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(172px, 1fr))' }}>
+            {displayProducts.map((product) => {
+              const vendorProfile = profiles[product.vendorPubkey] || {};
+              return (
+                <ProductCard
+                  key={product.id}
+                  product={product}
+                  vendorName={noHexName(vendorProfile, product.vendorPubkey)}
+                  vendorPicture={vendorProfile.picture}
+                  onOpen={setCheckoutProduct}
+                  onShare={shareProduct}
+                />
+              );
+            })}
           </div>
         )}
       </div>
-      {checkoutProduct && (
-        <OneTapCheckout
-          product={checkoutProduct}
-          onConfirmOrder={confirmOrder}
-          onClose={() => setCheckoutProduct(null)}
-        />
-      )}
+      <OneTapCheckout
+        product={checkoutProduct}
+        open={!!checkoutProduct}
+        onConfirmOrder={confirmOrder}
+        onClose={() => setCheckoutProduct(null)}
+      />
     </div>
   );
 }

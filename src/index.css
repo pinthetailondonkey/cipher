@@ -250,6 +250,18 @@ textarea::placeholder {
     -webkit-backdrop-filter: blur(24px);
     border-bottom: 1px solid var(--border);
   }
+
+  /* Skeleton shimmer: hover-wash to ink at 10%, on a small loop. */
+  @keyframes skeleton-shimmer {
+    0% { background-color: var(--hover-wash); }
+    55%, 100% { background-color: rgb(var(--text-rgb) / 0.10); }
+  }
+
+  .skeleton {
+    background-color: var(--hover-wash);
+    border-radius: 0.75rem;
+    animation: skeleton-shimmer 1.8s ease-in-out infinite;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
