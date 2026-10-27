@@ -38,6 +38,13 @@ export default function AuthenticatedApp({ identity }) {
     setActiveTab('chat');
   }, []);
   const showTutorial = useChatStore((state) => state.showTutorial);
+  // The vendor menu lives over the chat surface (it is the chat tab's own
+  // pane on wide screens), so opening one — from Discover or the chat list
+  // — lands on the chat tab first, menu on top.
+  const vendorMenuPubkey = useChatStore((state) => state.vendorStorefrontPubkey);
+  React.useEffect(() => {
+    if (vendorMenuPubkey) setActiveTab('chat');
+  }, [vendorMenuPubkey]);
   useEffect(() => {
     // New accounts get the walkthrough once; Profile opens it any time after.
     if (identity?.pk && localStorage.getItem('cipher_new_account') === 'true') {
