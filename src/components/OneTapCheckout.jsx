@@ -39,24 +39,24 @@ export default function OneTapCheckout({ product, onConfirmOrder, onClose }) {
       <div className="max-h-[90vh] w-full max-w-sm overflow-y-auto rounded-3xl border border-line bg-panel p-6">
         <div className="mb-4 flex items-center justify-between">
           <div>
-            <p className="text-[13px] text-ink/40">Send this order in a private chat</p>
+            <p className="text-[13px] text-inkSubtle">Send this order in a private chat</p>
             <h2 className="text-2xl font-bold tracking-tight text-ink">Checkout</h2>
-            <p className="mt-1 text-[13px] text-ink/40">{product?.name || product?.title || 'Product'}</p>
+            <p className="mt-1 text-[13px] text-inkSubtle">{product?.name || product?.title || 'Product'}</p>
           </div>
           <button type="button" onClick={onClose} className="p-2 text-ink/50 hover:text-ink" aria-label="Close checkout"><X size={20} /></button>
         </div>
-        <div className="mb-4 rounded-2xl border border-line bg-panelStrong shadow-lg p-4">
-          <p className="text-[12px] text-ink/40">Amount due</p>
-          <p className="text-[22px] font-bold text-ink">{amount}</p>
+        <div className="mb-4 rounded-2xl border border-line bg-panelStrong p-4">
+          <p className="text-[12px] text-inkSubtle">Amount due</p>
+          <p className="font-mono text-[22px] font-bold text-ink">{amount}</p>
         </div>
         {/* The order is the only way to pay. No menu card shows a payment
             address or QR here: paying one directly skips the accept, the
             address issue, the chain check and the receipt, and the seller
             ships against their own accepted order only. (security S2) */}
-        <p className="mb-3 rounded-xl border border-line bg-panelStrong shadow-lg p-4 text-[13px] leading-relaxed text-ink/55">
+        <p className="mb-3 rounded-xl border border-line bg-panelStrong p-4 text-[13px] leading-relaxed text-inkMuted">
           After the seller accepts, your payment address and QR code appear in the chat, on the accepted order. The order is the only way to pay — it is what ties the payment to a chain check.
         </p>
-        {orderError && <p role="alert" className="mt-4 text-sm text-red-400">{orderError}</p>}
+        {orderError && <p role="alert" className="mt-4 text-sm text-danger">{orderError}</p>}
         <button type="button" onClick={confirmOrder} disabled={confirmed || sending} className="mt-5 flex w-full items-center justify-center gap-2 rounded-2xl bg-accent py-3.5 font-bold text-accentInk hover:bg-accent disabled:opacity-60">
           {sending ? <><Loader2 size={17} className="animate-spin" /> Sending order…</> : confirmed ? <><Check size={17} /> Order sent. Pay in the chat.</> : 'Send order'}
         </button>
