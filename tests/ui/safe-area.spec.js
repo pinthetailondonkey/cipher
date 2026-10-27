@@ -6,7 +6,7 @@ import { seedVault } from './fixtures.js';
 // the same way so the run is identical no matter which tab is home.
 const TABS = [
   { key: 'chat', label: 'Chats' },
-  { key: 'explore', label: 'Shop' },
+  { key: 'explore', label: 'Menus' },
   { key: 'profile', label: 'Profile' },
 ];
 

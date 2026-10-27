@@ -10,7 +10,7 @@ import Segmented from './components/ui/Segmented';
 import { requestNotificationPermission } from './lib/notifications';
 import { unreadTotalOf, useChatStore } from './store/chatStore';
 
-const Shop = lazy(() => import('./Shop'));
+const Menus = lazy(() => import('./Menus'));
 const Discover = lazy(() => import('./Discover'));
 const Chat = lazy(() => import('./Chat'));
 const Wallet = lazy(() => import('./Wallet'));
@@ -38,9 +38,29 @@ export default function AuthenticatedApp({ identity }) {
     setActiveTab('chat');
   }, []);
   const showTutorial = useChatStore((state) => state.showTutorial);
+  // The vendor menu lives over the chat surface (it is the chat tab's own
+  // pane on wide screens), so opening one — from Discover, the chat list,
+  // or the Menus browse — lands on the chat tab first, menu on top. Where
+  // the drill-down came from is remembered once, so closing the menu puts
+  // the user back where they were — the Menus browse, say — instead of
+  // stranding them in a tab they never chose.
+  const vendorMenuPubkey = useChatStore((state) => state.vendorStorefrontPubkey);
+  const vendorMenuTabRef = React.useRef('');
+  React.useEffect(() => {
+    if (vendorMenuPubkey) {
+      if (!vendorMenuTabRef.current) vendorMenuTabRef.current = activeTab;
+      if (activeTab !== 'chat') setActiveTab('chat');
+    } else if (vendorMenuTabRef.current) {
+      if (vendorMenuTabRef.current !== 'chat') setActiveTab(vendorMenuTabRef.current);
+      vendorMenuTabRef.current = '';
+    }
+  }, [vendorMenuPubkey, activeTab]);
   useEffect(() => {
-    // New accounts get the walkthrough once; Profile opens it any time after.
+    // New accounts get the walkthrough once, and land on the Menus tab —
+    // browsing the network's vendors is the front door. Presentation only:
+    // the tab state is this component's own, no store selector changes.
     if (identity?.pk && localStorage.getItem('cipher_new_account') === 'true') {
+      setActiveTab('explore');
       useChatStore.getState().setShowTutorial(true);
     }
   }, [identity?.pk]);
@@ -93,12 +113,12 @@ export default function AuthenticatedApp({ identity }) {
                       className="flex-1"
                       value={exploreMode}
                       onChange={setExploreMode}
-                      options={[{ value: 'shop', label: 'Shop' }, { value: 'groups', label: 'Groups' }]}
+                      options={[{ value: 'shop', label: 'Menus' }, { value: 'groups', label: 'Groups' }]}
                     />
                   </div>
                   <div className="relative z-fab min-h-0 flex-1">
                     {exploreMode === 'shop'
-                      ? <Shop identity={identity} setActiveTab={setActiveTab} />
+                      ? <Menus identity={identity} setActiveTab={setActiveTab} />
                       : <Discover identity={identity} onJoined={() => setActiveTab('chat')} />}
                   </div>
                 </div>
@@ -121,7 +141,7 @@ export default function AuthenticatedApp({ identity }) {
         </button>
         <button onClick={() => setActiveTab('explore')} className={`flex w-16 flex-col items-center gap-1 rounded-2xl p-2 min-h-[52px] ${activeTab === 'explore' ? 'text-accent' : 'text-ink/40 hover:text-ink/60'}`}>
           <Compass size={22} strokeWidth={activeTab === 'explore' ? 2.5 : 2} />
-          <span className="text-[10px] font-medium">Shop</span>
+          <span className="text-[10px] font-medium">Menus</span>
         </button>
         <button onClick={() => setActiveTab('profile')} className={`relative flex w-16 flex-col items-center gap-1 rounded-2xl p-2 min-h-[52px] ${activeTab === 'profile' ? 'text-accent' : 'text-ink/40 hover:text-ink/60'}`}>
           <User size={22} strokeWidth={activeTab === 'profile' ? 2.5 : 2} />

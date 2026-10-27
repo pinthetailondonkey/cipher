@@ -8,7 +8,7 @@ import ForwardPicker from './ForwardPicker';
 import { useThreadActions } from './useThreadActions';
 import { useChatStore } from '../../store/chatStore';
 
-export default function DmView({ sendMessage, handleMessageAction, handleImageUpload, startRecording, stopRecording, sendDM }) {
+export default function DmView({ identity, sendMessage, handleMessageAction, handleImageUpload, startRecording, stopRecording, sendDM }) {
   const activeDm = useChatStore((state) => state.activeDm);
   const messages = useChatStore((state) => state.dms[state.activeDm] || []);
   const deletedMsgs = useChatStore((state) => state.deletedMsgs);
@@ -37,6 +37,7 @@ export default function DmView({ sendMessage, handleMessageAction, handleImageUp
       <MessageBubble
         message={message}
         data={message.data}
+        identity={identity}
         senderName={!message.isSender ? (peer?.displayName || peer?.name) : null}
         showAvatar={!message.isSender}
         avatarUrl={peer?.picture}

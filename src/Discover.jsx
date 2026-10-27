@@ -4,30 +4,39 @@ import { useChatStore } from './store/chatStore';
 import { joinGroup } from './lib/groupJoin';
 import { groupOnlyRelays } from './lib/relays';
 
-// One row of the public directory. A space this account is already in opens
-// on tap; anything else offers Join and shows the join in flight.
-function DiscoverRow({ group, joined, joining, onOpen }) {
+// One row of the public directory. A menu's body opens the vendor's menu
+// home and its pill keeps the join / open-chat action; a group row opens
+// or joins on tap. Anything without a menu to open falls back whole-row.
+function DiscoverRow({ group, joined, joining, onOpen, onOpenMenu }) {
   const initials = group.name.split(/\s+/).filter(Boolean).slice(0, 2)
     .map((word) => word[0].toUpperCase()).join('') || '?';
   const label = joining ? '…' : joined ? 'Open' : 'Join';
+  const bodyAction = onOpenMenu || onOpen;
   return (
-    <button
-      type="button"
-      onClick={() => onOpen(group)}
-      disabled={joining}
-      className="flex min-h-[64px] w-full items-center justify-between border-b border-line px-4 py-2 text-left last:border-0 active:bg-ink/5 disabled:opacity-50"
-    >
-      <div className="flex items-center gap-3">
+    <div className="flex min-h-[64px] w-full items-center justify-between gap-2 border-b border-line px-4 py-2 last:border-0">
+      <button
+        type="button"
+        onClick={() => bodyAction(group)}
+        disabled={joining}
+        className="flex min-w-0 flex-1 items-center gap-3 rounded-lg py-2 pr-2 text-left active:bg-ink/5 disabled:opacity-50"
+      >
         <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-line bg-panelAlt text-[13px] font-semibold text-accentText">
           {initials}
         </span>
-        <div>
+        <span className="min-w-0">
           <h3 className="text-[15px] font-semibold text-ink">{group.name}</h3>
           <p className="text-[13px] text-inkMuted line-clamp-1">{group.about}</p>
-        </div>
-      </div>
-      <span className={`rounded-2xl px-3 py-1.5 text-[13px] font-bold ${joined ? 'text-accentText' : 'bg-accent text-accentInk'}`}>{label}</span>
-    </button>
+        </span>
+      </button>
+      <button
+        type="button"
+        onClick={() => onOpen(group)}
+        disabled={joining}
+        className={`shrink-0 rounded-2xl px-3 py-1.5 text-[13px] font-bold disabled:opacity-50 ${joined ? 'text-accentText' : 'bg-accent text-accentInk'}`}
+      >
+        {label}
+      </button>
+    </div>
   );
 }
 
@@ -74,6 +83,9 @@ export default function Discover({ identity, onJoined }) {
             // Spaces created inside this app carry [cipher]; the wider
             // network's groups stay out of this screen.
             isCipher: ev.tags.some(t => t[0] === 'cipher'),
+            // The directory event's author is the menu's vendor: the menu
+            // home and the profile page read listings and standing from it.
+            creator: ev.pubkey,
           };
         });
 
@@ -91,6 +103,7 @@ export default function Discover({ identity, onJoined }) {
             about: group.about || 'No description',
             isChannel: group.isChannel === true,
             isCipher: true,
+            creator: group.creator || '',
           }));
         setRealGroups([...cipherGroups, ...mine]);
       } catch (err) {
@@ -138,6 +151,13 @@ export default function Discover({ identity, onJoined }) {
     }
   };
 
+  // A menu row's body enters the vendor's menu home — the vendor's chat
+  // stays one tap away from inside it ("Message vendor").
+  const openVendorMenu = (group) => {
+    if (!group?.creator) return;
+    useChatStore.getState().setVendorStorefrontPubkey(group.creator);
+  };
+
   return (
     <div className="relative flex h-full w-full flex-col bg-transparent">
       <div className="px-4 pb-3 pt-2">
@@ -171,7 +191,16 @@ export default function Discover({ identity, onJoined }) {
               <div className="mx-4 mb-4 overflow-hidden rounded-2xl border border-line bg-panel">
                 <p className="px-4 pt-3 text-[11px] font-semibold uppercase tracking-wider text-inkMuted">Menus</p>
                 <p className="px-4 pb-1 text-[12px] text-inkSubtle">Menus are for buying. Groups are for talking.</p>
-                {menus.map((group) => <DiscoverRow key={group.id} group={group} joined={joinedIds.has(group.id)} joining={joiningId === group.id} onOpen={join} />)}
+                {menus.map((group) => (
+                  <DiscoverRow
+                    key={group.id}
+                    group={group}
+                    joined={joinedIds.has(group.id)}
+                    joining={joiningId === group.id}
+                    onOpen={join}
+                    onOpenMenu={group.creator ? openVendorMenu : undefined}
+                  />
+                ))}
               </div>
             )}
             {rooms.length > 0 && (
