@@ -117,7 +117,7 @@ export default function IdentityBackup({ identity, onClose }) {
     <div className="h-full overflow-y-auto bg-transparent pb-8">
       <ScreenHeader title="Backup" onBack={onClose} />
       <div className="space-y-4 p-4">
-        <div className="flex items-start gap-3 rounded-2xl border border-amber-400/20 bg-ink/5 p-4 text-[13px] text-amber-200">
+        <div className="flex items-start gap-3 rounded-2xl border border-line bg-ink/5 p-4 text-[13px] text-ink/70">
           <Shield size={18} className="mt-0.5 shrink-0" />
           Your secret key controls this account. Never share it.
         </div>

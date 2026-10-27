@@ -64,8 +64,8 @@ function orderLabel(content) {
   if (content.status === 'disputed') return { text: 'Disputed', className: 'bg-rose-500/20 text-rose-200' };
   if (content.paymentState === 'seen' && content.paymentSeenBy !== 'vendor') return { text: 'Seen on-chain', className: 'bg-accent text-accentInk' };
   if (content.status === 'paid' || content.paymentSeenBy === 'vendor') return { text: 'Marked paid', className: 'bg-accent text-accentInk' };
-  if (content.status === 'accepted' || content.paymentState === 'address_issued') return { text: 'Address sent', className: 'bg-amber-400 text-scrim' };
-  return { text: 'Awaiting payment', className: 'bg-amber-400 text-scrim' };
+  if (content.status === 'accepted' || content.paymentState === 'address_issued') return { text: 'Address sent', className: 'bg-ink/10 text-ink' };
+  return { text: 'Awaiting payment', className: 'bg-ink/10 text-ink' };
 }
 
 function OrderReceipt({ content }) {
@@ -84,7 +84,7 @@ function OrderReceipt({ content }) {
         </div>
         {price && <p className="mt-1 text-[13px] font-bold text-accent">{price}</p>}
         {content.paymentSeenBy === 'vendor' && content.paymentState !== 'confirmed' && (
-          <p className="mt-1 text-[13px] text-amber-300">Not checked on-chain.</p>
+          <p className="mt-1 text-[13px] text-ink/50">Not checked on-chain.</p>
         )}
         {address && <p className="mt-1 text-[13px] text-ink/40">Ship to {address}</p>}
       </div>
@@ -248,7 +248,7 @@ export default function MessageBubble({ message, data, onAction, senderName, isP
         {attachments.layout === 'audio' && <MediaAudio item={attachments.items[0]} className="h-8 max-w-full" />}
         {content.type === 'product' && <Picture src={content.image} alt="" loading="lazy" className="mb-1 max-h-40 rounded-xl object-cover" />}
         {content.type === 'product' && isPinnedListing && (
-          <p className="mb-1 flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-amber-200"><BadgeCheck size={12} /> Pinned</p>
+          <p className="mb-1 flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-accent"><BadgeCheck size={12} /> Pinned</p>
         )}
         {paymentRows.length > 0 && (
           <div className="mb-1 space-y-2">
