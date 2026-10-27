@@ -31,10 +31,10 @@ export default function FloatingMenu() {
             >
               <button 
                 onClick={() => { setShowMenu(false); setView('search'); }} 
-                className={`flex items-center gap-3 rounded-2xl border border-line bg-panel shadow-lg px-5 py-3.5 font-bold text-ink shadow-lg active:bg-ink/10 ${pressable}`}
+                className={`flex items-center gap-3 rounded-2xl border border-line bg-panel px-5 py-3.5 font-bold text-ink shadow-lg active:bg-ink/10 ${pressable}`}
               >
                 <span className="text-sm font-bold tracking-wide">New Chat</span>
-                <div className="p-2 bg-accent rounded-full text-accentInk shadow-lg"><MessageSquare size={16} /></div>
+                <div className="p-2 bg-accent rounded-full text-accentInk"><MessageSquare size={16} /></div>
               </button>
               
               <button 
@@ -42,7 +42,7 @@ export default function FloatingMenu() {
                 className={`flex items-center gap-3 rounded-2xl border border-line bg-panel shadow-lg px-5 py-3.5 font-bold text-ink shadow-lg active:bg-ink/10 ${pressable}`}
               >
                 <span className="text-sm font-bold tracking-wide">New Group</span>
-                <div className="p-2 bg-accent rounded-full text-accentInk shadow-lg"><Users size={16} /></div>
+                <div className="p-2 bg-accent rounded-full text-accentInk"><Users size={16} /></div>
               </button>
 
               <button
@@ -50,7 +50,7 @@ export default function FloatingMenu() {
                 className={`flex items-center gap-3 rounded-2xl border border-line bg-panel shadow-lg px-5 py-3.5 font-bold text-ink shadow-lg active:bg-ink/10 ${pressable}`}
               >
                 <span className="text-sm font-bold tracking-wide">New Channel</span>
-                <div className="p-2 bg-accent rounded-full text-accentInk shadow-lg"><Radio size={16} /></div>
+                <div className="p-2 bg-accent rounded-full text-accentInk"><Radio size={16} /></div>
               </button>
 
               <button
@@ -58,7 +58,7 @@ export default function FloatingMenu() {
                 className={`flex items-center gap-3 rounded-2xl border border-line bg-panel shadow-lg px-5 py-3.5 font-bold text-ink shadow-lg active:bg-ink/10 ${pressable}`}
               >
                 <span className="text-sm font-bold tracking-wide">Burn Note</span>
-                <div className="p-2 bg-accent rounded-full text-accentInk shadow-lg"><Flame size={16} /></div>
+                <div className="p-2 bg-accent rounded-full text-accentInk"><Flame size={16} /></div>
               </button>
             </motion.div>
           </>
@@ -68,7 +68,7 @@ export default function FloatingMenu() {
       <motion.button
         animate={{ rotate: showMenu ? 45 : 0 }}
         onClick={() => setShowMenu(!showMenu)}
-        className={`fixed right-6 bottom-[calc(1.25rem+env(safe-area-inset-bottom))] z-50 rounded-full bg-accent p-4 text-accentInk shadow-[0_0_20px_rgba(37,99,235,0.4)] active:bg-accent md:absolute md:right-4 md:bottom-6 ${pressable}`}
+        className={`fixed right-6 bottom-[calc(1.25rem+env(safe-area-inset-bottom))] z-50 rounded-full bg-accent p-4 text-accentInk shadow-lg active:bg-accent md:absolute md:right-4 md:bottom-6 ${pressable}`}
       >
         <Plus size={24} strokeWidth={2.5} />
       </motion.button>

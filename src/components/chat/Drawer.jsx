@@ -44,11 +44,11 @@ export default function Drawer({ identity, open, onClose, onNavigate }) {
             className="absolute left-0 top-0 flex h-full w-[300px] max-w-[84%] flex-col overflow-y-auto border-r border-line bg-panel pb-safe pt-safe shadow-2xl"
           >
             <button type="button" onClick={() => onNavigate('profile')} className="flex items-center gap-3 p-4 pb-5 text-left active:bg-ink/5">
-              <Picture src={myProfile.picture} alt="" className="h-14 w-14 rounded-full border border-ink/10 object-cover" fallback={<Avatar name={name} className="!h-14 !w-14" />} />
+              <Picture src={myProfile.picture} alt="" className="h-14 w-14 rounded-full border border-line object-cover" fallback={<Avatar name={name} className="!h-14 !w-14" />} />
               <span className="min-w-0">
                 <span className="block truncate text-lg font-bold tracking-tight text-ink">{name}</span>
-                <span className="mono mt-0.5 flex items-center gap-1 text-[11px] text-ink/40">
-                  <ShieldCheck size={12} className="shrink-0" />
+                <span className="mono mt-0.5 flex items-center gap-1 text-[11px] text-inkMuted">
+                  <ShieldCheck size={12} className="shrink-0 text-inkSubtle" />
                   {identity.npub ? `${identity.npub.slice(0, 10)}…${identity.npub.slice(-4)}` : ''}
                 </span>
               </span>
@@ -57,7 +57,7 @@ export default function Drawer({ identity, open, onClose, onNavigate }) {
             <nav className="flex flex-col">
               {sections.map(({ key, label, icon: Icon, go, badge }) => (
                 <button key={key} type="button" onClick={go} className="flex min-h-[48px] w-full items-center gap-4 px-5 text-left text-[15px] font-semibold text-ink active:bg-ink/5">
-                  <Icon size={20} className="text-ink/45" />
+                  <Icon size={24} className="text-inkMuted" />
                   <span className="flex-1">{label}</span>
                   {badge > 0 && (
                     <span className="flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-accent px-1.5 text-[10px] font-bold text-accentInk">{badge > 99 ? '99+' : badge}</span>
@@ -66,11 +66,11 @@ export default function Drawer({ identity, open, onClose, onNavigate }) {
               ))}
               <div className="my-2 border-t border-line" />
               <button type="button" onClick={() => onNavigate('profile', null, 'connections')} className="flex min-h-[48px] w-full items-center gap-4 px-5 text-left text-[15px] font-semibold text-ink active:bg-ink/5">
-                <Radio size={20} className="text-ink/45" />
+                <Radio size={24} className="text-inkMuted" />
                 <span className="flex-1">Connections</span>
               </button>
               <button type="button" onClick={identity.lockApp} className="flex min-h-[48px] w-full items-center gap-4 px-5 text-left text-[15px] font-semibold text-ink active:bg-ink/5">
-                <Lock size={20} className="text-ink/45" />
+                <Lock size={24} className="text-inkMuted" />
                 <span className="flex-1">Lock now</span>
               </button>
             </nav>

@@ -69,7 +69,7 @@ export default function TutorialModal({ isOpen, onClose }) {
           <h2 className="text-2xl font-bold text-ink mb-3">{step.title}</h2>
           <p className="text-[14px] text-ink/60 leading-relaxed mb-4 px-2">{step.desc}</p>
           {currentStep === steps.length - 1 && (
-            <p className="text-[13px] text-accent leading-relaxed mb-4 px-2">You can reopen this guide any time under Profile → How to use.</p>
+            <p className="text-[13px] text-accentText leading-relaxed mb-4 px-2">You can reopen this guide any time under Profile → How to use.</p>
           )}
 
           <div className="flex gap-2 mb-8">
