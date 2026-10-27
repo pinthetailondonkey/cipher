@@ -19,6 +19,7 @@ export default function ChatHome({ identity, openChat, createGroup, fetchChats }
   const setShowBookmarks = useChatStore((state) => state.setShowBookmarks);
   const setShowNotifCenter = useChatStore((state) => state.setShowNotifCenter);
   const setShowQRScanner = useChatStore((state) => state.setShowQRScanner);
+  const setShowMenu = useChatStore((state) => state.setShowMenu);
   const notifTotal = useChatStore(notifTotalOf);
 
   return (
