@@ -1,7 +1,7 @@
 import { haptic } from '../../lib/haptics';
 
 // The pill filter row: the active segment wears the accent fill, the rest sit
-// ink-muted on the panel. One row covers Shop/Groups and the later
+// ink-muted on the panel. One row covers Menus/Groups and the later
 // All/Menus/Vendors split — no screen hand-rolls this anatomy again.
 export default function Segmented({
   options = [],

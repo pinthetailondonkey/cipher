@@ -37,7 +37,7 @@ export function SkeletonList({ rows = 4, className = '' }) {
 }
 
 // Fills as many columns as the width allows, so the skeleton shows the real
-// layout before the real cards arrive (Shop and Discover grids settle at
+// layout before the real cards arrive (Menus and Discover grids settle at
 // min 172px). `cards` renders a simple fixed two-column set instead.
 export function SkeletonGrid({ cards, cols, items, min = 172, itemClass = '', className = '' }) {
   if (cards || cols || !items) {
