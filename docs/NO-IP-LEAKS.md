@@ -12,7 +12,11 @@ This page is the law. The tests hold it up where words alone would bend. Deliver
 4. **No telemetry, no counters, no web fonts, no version checks.** The app loads its own files and asks nothing about itself.
 5. **The plain-browser web build cannot promise Tor** — a browser tab cannot choose its own route. The installed desktop app promises it. Every claim about "the app" says which build it covers.
 6. **The Deal app phones home to nobody.** A test walks its source and fails on any network call at all.
-7. **If something must see an IP, say so in plain words** on the Connections screen before it happens — never after, never in jargon.
+7. **If something must see an IP, say so in plain words** on the Connections screen before it happens — never after, never in jargon. (The founder's load-all ruling item aside: no warning cards sit between a person and their user content — the disclosure lives in Connections, the download page, and Settings, and the standing recommendation is a VPN.)
+
+## The scope line under the load-all ruling (2026-10-27)
+
+Items 2 and 3 were reclassified by the founder on purpose, with the reasoning named above. **This is a ruling about user-content fetching only.** The app's own egress wall is untouched: rule 1 and rule 2 of this page (every host on the wall; new clearnet rows need the founder's name) still hold in full, the frozen row list is unchanged, and no new clearnet row ships because of this ruling. Do not read the ruling wider than it is written.
 
 ## What the audit proved already safe
 
@@ -27,8 +31,10 @@ This page is the law. The tests hold it up where words alone would bend. Deliver
 ## Leaks left open, worst first — founder decides, nothing ships without the card
 
 1. **Voice calls — CLOSED.** The founder turned calls off in every build (2026-10-27). There is no WebRTC engine left anywhere: a call offered to us is politely refused, and no call-routing host exists on the egress wall anymore. Nothing about a call can ever form, so nothing rides the wire.
-2. **Name lookups (name@site.com) — CLOSED.** The founder refused it outright (2026-10-27), same gate as the pictures: a plain browser never visits the record's site to confirm who someone is, because the visit hands that site the searcher's address and the name looked for. Search shows the refusal in plain words and the way that leaks nothing (paste their full npub). The desktop app, riding its bundled Tor, may look up freely.
-3. **Pictures — CLOSED to the tap.** A picture pointing at an ordinary website is not loaded in a plain browser; the fetch itself was the leak. It shows a plain card naming the site, and a deliberate tap is the disclosed door. Voice notes and attachments ride the same gate — the bytes of a voice note were fetched the moment the player rendered, so the gate now sits before the open, and an attachment's name is shown the same way. Onion addresses and the desktop shell load freely.
+2. **Name lookups (name@site.com) — DISCLOSED, load-all (founder ruling, 2026-10-27).** The outright refusal shipped first (same gate as the pictures), then the founder overrode it: "I don't want any pop-ups on the site; we can't have users feeling unsafe — just recommend they use VPN." A plain browser now fetches the record directly, with no warning card and no refusal row. The search tells the site the name looked up and the searcher's IP; that exposure is named honestly in Connections and on the download page (VPN tip). The desktop app, riding its bundled Tor, still hides the searcher.
+3. **Pictures — DISCLOSED, load-all (founder ruling, 2026-10-27).** The tap-gate shipped first, then the founder overrode it with the same reasoning: frictionless over warned, nobody should feel unsafe inside the app. Every picture, voice note, and attachment now loads when it renders — no card, no tap-through. The picture's own host still sees the reader's IP and the file's address; Connections says so in plain words. Onion addresses and the desktop shell ride as before.
+
+   **The standing shield over both:** a VPN is the way for a plain-browser user today, the desktop app's bundled Tor covers it always, and the founder's onion relays will close the biggest door when they land. The recommendation lives on the download page and in Settings — one calm line each, no rules-speak.
 4. **The plain-browser build reaches the default relays over the open internet** with your IP attached. The installed app does not. The only open leak left; it lifts when onion relays are named (founder gate).
 5. **Acceptable with disclosure (each shows a plain warning before use):**
    - Link previews (off unless turned on). Honest note: the preview company fetches the page ITSELF — the page never sees you. Only the preview company sees you.
@@ -42,8 +48,9 @@ Earlier drafts said link previews tell the visited site that you clicked. **They
 ## Fix plan — decided 2026-10-27, shipped
 
 - Voice: DONE — calls off entirely (see below).
-- Name lookups: DONE — refused outright in a plain browser (see above); the consent card lost to "can't let people's IPs leak".
-- Pictures and attachments: DONE — refused until a deliberate, labeled tap; onion and desktop open (see above).
+- Name lookups: DONE then overridden — refused at first, now loads all by founder ruling (see item 2).
+- Pictures and attachments: DONE then overridden — gated at first, now loads all by founder ruling (see item 3); gate source removed so no dead code remains.
+- VPN tip: the standing recommendation in its place — one plain line each on the download page and in Settings.
 - Onion twins: APPROVED — the founder runs the box (docs/ONION-DOORS.md is the runbook; provider, price, payment, and the onion names stay outside this chat). The clearnet rows keep existing as disclosed until the doors live; the two onion wall rows come when the doors do.
 - Only item still open: the plain-browser build's default relays over the open internet — it lifts the day onion relays are named (founder gate).
 - Done already: this page, the founder-gate test, the Deal zero-network test, a stale comment in `desktop/src/main.js` that pointed at a lock living elsewhere.
