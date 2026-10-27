@@ -1,0 +1,79 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import { DISPUTE_KIND, RIDER_WORDS, parseDispute, ridersForReview } from './disputes.js';
+
+const VENDOR = 'a'.repeat(64);
+const BUYER = 'c'.repeat(64);
+const REVIEW = 'd'.repeat(64);
+const RECEIPT = 'ee'.repeat(32);
+const REVIEW_EVENT = { id: REVIEW.repeat(1), kind: 10005, pubkey: BUYER, created_at: 900, tags: [['p', VENDOR], ['rating', '5'], ['receipt', RECEIPT]], content: 'went fine' };
+
+const riderEvent = ({ rider, author = VENDOR, receipt = RECEIPT, review = REVIEW, created_at = 2000, text = 'what happened', id = rider + created_at, p = VENDOR, kind = DISPUTE_KIND }) => ({
+  kind, id, pubkey: author, created_at,
+  tags: [['p', p], ['receipt', receipt], ['review', review], ['rider', rider]],
+  content: text,
+});
+
+test('a dispute parses only a real rider on a real pair: right kind, known word, hex bindings, words to say', () => {
+  for (const word of RIDER_WORDS) assert.equal(parseDispute(riderEvent({ rider: word })).rider, word, word + ' is a rider word');
+  const parsed = parseDispute(riderEvent({ rider: 'vendor-flag', created_at: 2100 }));
+  assert.deepEqual({ ...parsed, id: undefined }, {
+    rider: 'vendor-flag', vendor: VENDOR, receipt: RECEIPT, review: REVIEW,
+    text: 'what happened', author: VENDOR, created_at: 2100, id: undefined,
+  });
+  assert.equal(parseDispute({ ...riderEvent({ rider: 'vendor-flag' }), kind: 10008 }), null, 'a vendor-reported number is never a dispute');
+  assert.equal(parseDispute(riderEvent({ rider: 'vendor-said' })), null, 'no rider word beyond the founder three');
+  assert.equal(parseDispute(riderEvent({ rider: 'vendor-flag', receipt: 'zz' })), null, 'the receipt binding is 64 hex or nothing');
+  assert.equal(parseDispute(riderEvent({ rider: 'vendor-flag', review: 'd'.repeat(63) })), null, 'the rider names a review event');
+  assert.equal(parseDispute(riderEvent({ rider: 'vendor-flag', text: '   ' })), null, 'a rider with nothing to say is nothing');
+  assert.equal(parseDispute(riderEvent({ rider: 'vendor-flag', kind: 10005 })), null);
+  assert.equal(parseDispute(null), null);
+});
+
+test('ridersForReview one-shot: exactly one of each rider word per (receipt, review), first landed wins, nothing deleted', () => {
+  const events = [
+    riderEvent({ rider: 'vendor-flag', created_at: 2000, text: 'flag: never sent', id: 'aa' }),
+    riderEvent({ rider: 'vendor-rebuttal', created_at: 3000, text: 'rebuttal: it shipped', id: 'ac' }),
+    riderEvent({ rider: 'buyer-supplement', author: BUYER, created_at: 4000, text: 'supplement: tracking says no', id: 'cc' }),
+    // A duplicate rider word is ignored, not consumed — it stays published.
+    riderEvent({ rider: 'vendor-flag', created_at: 5000, text: 'a second flag', id: 'dd' }),
+    // Same-second duplicate: the smaller event id is the record.
+    riderEvent({ rider: 'vendor-rebuttal', created_at: 3000, text: 'twin rebuttal', id: 'ab' }),  ];
+  const out = ridersForReview({ vendor: VENDOR, receipt: RECEIPT, review: REVIEW }, events);
+  assert.equal(out['vendor-flag'].text, 'flag: never sent', 'the first flag landed is the record');
+  assert.equal(out['vendor-rebuttal'].text, 'twin rebuttal', 'the smaller id wins a same-second tie');
+  assert.equal(out['buyer-supplement'].text, 'supplement: tracking says no');
+  assert.deepEqual(Object.keys(out).sort(), [...RIDER_WORDS].sort(), 'every rider word is a key, taken or not');
+  // An untouched review answers with three nulls — the thread is all doors.
+  const untouched = ridersForReview({ vendor: VENDOR, receipt: RECEIPT, review: REVIEW }, [REVIEW_EVENT]);
+  assert.deepEqual(untouched, { 'vendor-flag': null, 'vendor-rebuttal': null, 'buyer-supplement': null });
+  assert.deepEqual(ridersForReview(null, events), { 'vendor-flag': null, 'vendor-rebuttal': null, 'buyer-supplement': null });
+  assert.deepEqual(ridersForReview({ vendor: VENDOR, receipt: RECEIPT, review: REVIEW }, []), untouched);
+});
+
+test('authorship a reader can check: vendor riders are the vendor\'s, a supplement is never the vendor\'s', () => {
+  const events = [
+    riderEvent({ rider: 'vendor-flag', author: BUYER, text: 'stranger flagging' }),
+    riderEvent({ rider: 'vendor-rebuttal', author: BUYER, text: 'stranger rebuttal' }),
+    riderEvent({ rider: 'buyer-supplement', author: VENDOR, text: 'vendor rote-supplementing' }),
+  ];
+  assert.deepEqual(ridersForReview({ vendor: VENDOR, receipt: RECEIPT, review: REVIEW }, events), {
+    'vendor-flag': null, 'vendor-rebuttal': null, 'buyer-supplement': null,
+  });
+  // A rider for a different pair never answers for this one.
+  const foreign = [
+    riderEvent({ rider: 'vendor-flag', receipt: '11'.repeat(32), text: 'other trade' }),
+    riderEvent({ rider: 'vendor-rebuttal', review: 'd1'.repeat(32), text: 'other review' }),
+    riderEvent({ rider: 'buyer-supplement', author: BUYER, p: BUYER, text: 'other shop' }),
+  ];
+  assert.deepEqual(ridersForReview({ vendor: VENDOR, receipt: RECEIPT, review: REVIEW }, foreign), {
+    'vendor-flag': null, 'vendor-rebuttal': null, 'buyer-supplement': null,
+  });
+  // p names the thread: a rider stored under another shop's pubkey stays there.
+  const SHOP2 = 'e'.repeat(64);
+  const otherShop = [riderEvent({ rider: 'buyer-supplement', author: BUYER, p: SHOP2, text: 'other shop' })];
+  assert.equal(ridersForReview({ vendor: SHOP2, receipt: RECEIPT, review: REVIEW }, otherShop)['buyer-supplement']?.text, 'other shop');
+  assert.deepEqual(ridersForReview({ vendor: VENDOR, receipt: RECEIPT, review: REVIEW }, otherShop), {
+    'vendor-flag': null, 'vendor-rebuttal': null, 'buyer-supplement': null,
+  });
+});
