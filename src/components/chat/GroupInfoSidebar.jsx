@@ -219,14 +219,14 @@ export default function GroupInfoSidebar({
               <button type="button" onClick={onClose} aria-label="Close group information" className={`p-2 text-ink/45 hover:text-ink ${pressable}`}><X size={20} /></button>
             </header>
             <div className="min-h-0 flex-1 space-y-4 overflow-y-auto bg-panel p-4">
-              {group.about && <p className="rounded-2xl border border-line bg-panelStrong shadow-lg p-4 text-[13px] text-ink/50">{group.about}</p>}
-              <div className="overflow-hidden rounded-2xl border border-line bg-panelStrong shadow-lg">
+              {group.about && <p className="rounded-2xl border border-line bg-panelStrong p-4 text-[13px] text-ink/50">{group.about}</p>}
+              <div className="overflow-hidden rounded-2xl border border-line bg-panelStrong">
                 <button type="button" onClick={shareGroup} className="flex w-full items-center gap-3 border-b border-ink/5 p-4 text-left text-[15px] font-semibold text-ink active:bg-ink/5"><Link2 size={18} className="text-ink/40" /> {copied ? 'Copied' : 'Invite'}</button>
                 {canManage && <button type="button" onClick={editGroup} disabled={pending} className="flex w-full items-center gap-3 border-b border-ink/5 p-4 text-left text-[15px] font-semibold text-ink disabled:opacity-40 active:bg-ink/5"><Pencil size={18} className="text-ink/40" /> Edit group</button>}
-                <button type="button" onClick={leave} disabled={pending} className="flex w-full items-center gap-3 p-4 text-left text-[15px] font-semibold text-red-400 disabled:opacity-40 active:bg-ink/5"><LogOut size={18} /> Leave group</button>
+                <button type="button" onClick={leave} disabled={pending} className="flex w-full items-center gap-3 p-4 text-left text-[15px] font-semibold text-danger disabled:opacity-40 active:bg-ink/5"><LogOut size={18} /> Leave group</button>
               </div>
               {isOwner && pendingJoins.length > 0 && (
-                <div className="overflow-hidden rounded-2xl border border-line bg-panelStrong shadow-lg">
+                <div className="overflow-hidden rounded-2xl border border-line bg-panelStrong">
                   <p className="flex items-center gap-2 border-b border-ink/5 px-4 py-3 text-[13px] text-ink/40"><UserPlus size={16} /> Join requests</p>
                   {pendingJoins.map((row) => {
                     const profile = profiles[row.pubkey] || {};
@@ -239,13 +239,13 @@ export default function GroupInfoSidebar({
                           <span className="block truncate text-[13px] text-ink/40">wants to join</span>
                         </span>
                         <button type="button" onClick={() => denyPending(row)} disabled={pending} className={`text-[13px] font-semibold text-ink/60 disabled:opacity-50 ${pressable}`}>Deny</button>
-                        <button type="button" onClick={() => approvePending(row)} disabled={pending} aria-label={`Approve ${name}`} className={`text-[13px] font-semibold text-accent disabled:opacity-50 ${pressable}`}>Approve</button>
+                        <button type="button" onClick={() => approvePending(row)} disabled={pending} aria-label={`Approve ${name}`} className={`text-[13px] font-semibold text-accentText disabled:opacity-50 ${pressable}`}>Approve</button>
                       </div>
                     );
                   })}
                 </div>
               )}
-              <div className="overflow-hidden rounded-2xl border border-line bg-panelStrong shadow-lg">
+              <div className="overflow-hidden rounded-2xl border border-line bg-panelStrong">
                 <p className="flex items-center gap-2 border-b border-ink/5 px-4 py-3 text-[13px] text-ink/40"><Users size={16} /> Members</p>
                 {memberList.length === 0 && <p className="px-4 py-3 text-[13px] text-ink/40">Looking up members…</p>}
                 {memberList.map((member) => {
@@ -257,24 +257,24 @@ export default function GroupInfoSidebar({
                       <Avatar src={profile.picture} name={name} />
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-[15px] font-semibold text-ink">{name}</p>
-                        <p className="mt-0.5 text-[13px] text-accent">{role === 'admin' || role === 'owner' ? 'Admin' : 'Member'}</p>
+                        <p className="mt-0.5 text-[13px] text-accentText">{role === 'admin' || role === 'owner' ? 'Admin' : 'Member'}</p>
                       </div>
                       {canManage && member.pubkey !== identity?.pk && (
-                        <button type="button" onClick={() => kick(member.pubkey)} disabled={pending} aria-label={`Kick ${name}`} className={`text-[13px] font-semibold text-red-400 disabled:opacity-50 ${pressable}`}>Remove</button>
+                        <button type="button" onClick={() => kick(member.pubkey)} disabled={pending} aria-label={`Kick ${name}`} className={`text-[13px] font-semibold text-danger disabled:opacity-50 ${pressable}`}>Remove</button>
                       )}
                     </div>
                   );
                 })}
               </div>
-              <div className="overflow-hidden rounded-2xl border border-line bg-panelStrong shadow-lg">
+              <div className="overflow-hidden rounded-2xl border border-line bg-panelStrong">
                 <p className="flex items-center gap-2 border-b border-ink/5 px-4 py-3 text-[13px] text-ink/40"><Store size={16} /> Shop</p>
                 {pinnedId && (
                   <div className="flex items-center gap-2 border-b border-ink/5 px-4 py-3 text-[13px] text-ink/55">
                     <BadgeCheck size={16} /> Pinned
-                    {canManage && <button type="button" onClick={removePin} disabled={pending} className="ml-auto text-accent disabled:opacity-50">Unpin</button>}
+                    {canManage && <button type="button" onClick={removePin} disabled={pending} className="ml-auto text-accentText disabled:opacity-50">Unpin</button>}
                   </div>
                 )}
-                {error && <p role="alert" className="px-4 py-3 text-[13px] text-red-400">{error}</p>}
+                {error && <p role="alert" className="px-4 py-3 text-[13px] text-danger">{error}</p>}
                 {products.length === 0 && <p className="px-4 py-3 text-[13px] text-ink/40">No listings yet.</p>}
                 {products.map(({ message, product }) => {
                   const isPinned = pinnedId === message.id;
@@ -283,10 +283,10 @@ export default function GroupInfoSidebar({
                       <Picture src={product.image} alt="" loading="lazy" className="h-10 w-10 rounded-xl object-cover" fallback={<span className="flex h-10 w-10 items-center justify-center rounded-xl bg-scrim text-ink/30"><Package size={16} /></span>} />
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-[15px] font-semibold text-ink">{product.title || product.name || 'Product'}</p>
-                        <p className="truncate text-[13px] text-accent">{product.price || product.priceUsd || 'Ask'}</p>
+                        <p className="truncate text-[13px] text-accentText">{product.price || product.priceUsd || 'Ask'}</p>
                       </div>
                       {canManage && (
-                        <button type="button" onClick={() => isPinned ? removePin() : setPin(message.id)} disabled={pending || isPinned} className="text-[13px] font-semibold text-accent disabled:opacity-40">{isPinned ? 'Pinned' : 'Pin'}</button>
+                        <button type="button" onClick={() => isPinned ? removePin() : setPin(message.id)} disabled={pending || isPinned} className="text-[13px] font-semibold text-accentText disabled:opacity-40">{isPinned ? 'Pinned' : 'Pin'}</button>
                       )}
                     </div>
                   );

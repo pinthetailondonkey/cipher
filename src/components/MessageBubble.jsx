@@ -58,14 +58,16 @@ function urlTokens(text) {
 function orderLabel(content) {
   if (content.paymentState === 'confirmed') return { text: 'Confirmed', className: 'bg-accent text-accentInk' };
   if (content.status === 'shipped') return { text: 'Shipped', className: 'bg-accent text-accentInk' };
-  if (content.status === 'completed') return { text: 'Delivered', className: 'bg-emerald-500 text-ink' };
+  if (content.status === 'completed') return { text: 'Delivered', className: 'bg-success text-accentInk' };
   if (content.status === 'cancelled') return { text: 'Cancelled', className: 'bg-ink/15 text-ink' };
   if (content.status === 'refunded') return { text: 'Refunded', className: 'bg-ink/15 text-ink' };
-  if (content.status === 'disputed') return { text: 'Disputed', className: 'bg-rose-500/20 text-rose-200' };
+  if (content.status === 'disputed') return { text: 'Disputed', className: 'bg-ink/10 text-danger' };
   if (content.paymentState === 'seen' && content.paymentSeenBy !== 'vendor') return { text: 'Seen on-chain', className: 'bg-accent text-accentInk' };
   if (content.status === 'paid' || content.paymentSeenBy === 'vendor') return { text: 'Marked paid', className: 'bg-accent text-accentInk' };
-  if (content.status === 'accepted' || content.paymentState === 'address_issued') return { text: 'Address sent', className: 'bg-ink/10 text-ink' };
-  return { text: 'Awaiting payment', className: 'bg-ink/10 text-ink' };
+  // Money badges read as outline: accent-text ring and label, no fill.
+  const outline = 'border border-accentText bg-transparent uppercase tracking-[0.08em] text-accentText';
+  if (content.status === 'accepted' || content.paymentState === 'address_issued') return { text: 'Address sent', className: outline };
+  return { text: 'Awaiting payment', className: outline };
 }
 
 function OrderReceipt({ content }) {
@@ -75,14 +77,14 @@ function OrderReceipt({ content }) {
   const address = content.shippingAddress || content.address || content.shipTo || '';
   const pill = orderLabel(content);
   return (
-    <div className="mb-1 overflow-hidden rounded-2xl border border-line bg-panel shadow-lg text-left">
+    <div className="mb-1 overflow-hidden rounded-2xl border border-line bg-panel text-left">
       <Picture src={product.image} alt="" className="h-28 w-full object-cover" />
       <div className="p-3">
         <div className="flex items-start justify-between gap-2">
           <p className="text-[15px] font-semibold text-ink">{title}</p>
           <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold ${pill.className}`}>{pill.text}</span>
         </div>
-        {price && <p className="mt-1 text-[13px] font-bold text-accent">{price}</p>}
+        {price && <p className="mt-1 text-[13px] font-bold text-accentText">{price}</p>}
         {content.paymentSeenBy === 'vendor' && content.paymentState !== 'confirmed' && (
           <p className="mt-1 text-[13px] text-ink/50">Not checked on-chain.</p>
         )}
@@ -92,7 +94,10 @@ function OrderReceipt({ content }) {
   );
 }
 
-export default function MessageBubble({ message, data, onAction, senderName, isPinnedListing = false, showAvatar = false, avatarUrl = '', avatarInitial = '?', canPin = false }) {
+// Run boundaries arrive from the view that maps the messages: a run is a
+// stretch of consecutive bubbles from the same author, so only the run's last
+// bubble wears the squared corner and (in groups) the avatar.
+export default function MessageBubble({ message, data, onAction, senderName, isPinnedListing = false, showAvatar = false, avatarUrl = '', avatarInitial = '?', canPin = false, runStart = true, runEnd = true }) {
   const content = data || message?.data || {};
   const text = messageText(content) || messageText(message?.rawContent) || messageText(message?.text) || '';
   const isSender = !!message?.isSender;
@@ -128,7 +133,7 @@ export default function MessageBubble({ message, data, onAction, senderName, isP
     return () => clearInterval(id);
   }, [message?.deliveryStatus, message?.id]);
 
-  const avatarColor = ['text-accent', 'text-sky-400', 'text-indigo-300', 'text-cyan-300'][(message?.pubkey?.charCodeAt(0) || 0) % 4];
+  const avatarColor = ['text-accentText', 'text-sky-400', 'text-indigo-300', 'text-cyan-300'][(message?.pubkey?.charCodeAt(0) || 0) % 4];
   const securingSince = message?.securingSince || message?.local_timestamp || (validTimestamp ? validTimestamp * 1000 : 0);
   const securingStuck = message?.deliveryStatus === 'securing' && securingPhase(securingSince, clock) === 'stuck';
   const deliveryLabel = {
@@ -138,14 +143,16 @@ export default function MessageBubble({ message, data, onAction, senderName, isP
     securing: securingStuck ? '' : 'Securing…',
   }[message?.deliveryStatus];
   const read = message?.read || message?.deliveryStatus === 'read';
+  // Meta lives inside the bubble, bottom-right: white at 70% on sent,
+  // ink-subtle on received. A read pair of ticks lifts to full white.
   const checks = isSender && !deliveryLabel
-    ? <span className={read ? 'text-accent' : 'text-ink/45'}>{read ? '✓✓' : '✓'}</span>
+    ? <span className={read ? 'text-ink' : ''}>{read ? '✓✓' : '✓'}</span>
     : null;
   const timeLabel = validTimestamp === null ? '' : new Date(validTimestamp * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   const time = (
-    <span className="float-right ml-2 mt-[5px] inline-flex items-center gap-1 text-[10px] leading-none text-ink/45">
+    <span className={`float-right ml-2 mt-[5px] inline-flex items-center gap-1 text-[10px] leading-none ${isSender ? 'text-ink/70' : 'text-inkSubtle'}`}>
       {message?.edited && <span>edited</span>}
-      {isSender && deliveryLabel && <span className={message?.deliveryStatus === 'failed' ? 'text-rose-200' : ''}>{deliveryLabel}</span>}
+      {isSender && deliveryLabel && <span className={message?.deliveryStatus === 'failed' ? 'text-danger' : ''}>{deliveryLabel}</span>}
       {checks}
       <time dateTime={validTimestamp === null ? undefined : new Date(validTimestamp * 1000).toISOString()}>{timeLabel}</time>
     </span>
@@ -204,10 +211,12 @@ export default function MessageBubble({ message, data, onAction, senderName, isP
       initial={justArrived ? { y: 18, opacity: 0 } : false}
       animate={{ y: 0, opacity: 1 }}
       transition={{ type: 'spring', stiffness: 420, damping: 28 }}
-      className={`flex w-full items-end gap-2 px-3 py-1 ${isSender ? 'justify-end' : 'justify-start'}`}
+      className={`flex w-full items-end gap-2 ${runEnd ? 'mb-2' : 'mb-0.5'} ${isSender ? 'justify-end pr-3' : 'justify-start pl-3'}`}
     >
       {!isSender && showAvatar && (
-        <Picture src={avatarUrl} alt="" className="mb-0.5 h-7 w-7 shrink-0 rounded-full object-cover" fallback={<span className={`mb-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#161616] text-[11px] font-semibold ${avatarColor}`}>{avatarInitial}</span>} />
+        runEnd
+          ? <Picture src={avatarUrl} alt="" className="h-7 w-7 shrink-0 rounded-full object-cover" fallback={<span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#161616] text-[11px] font-semibold ${avatarColor}`}>{avatarInitial}</span>} />
+          : <span className="h-7 w-7 shrink-0" aria-hidden="true" />
       )}
       <div
         role="button"
@@ -218,9 +227,12 @@ export default function MessageBubble({ message, data, onAction, senderName, isP
         onPointerCancel={clearPress}
         onPointerMove={movePress}
         onContextMenu={(event) => { event.preventDefault(); haptic('medium'); setOpen(true); }}
-        className={`max-w-[78%] min-w-[4.5rem] rounded-2xl border px-3 py-2 ${isSender ? 'border-accent bg-accent text-accentInk' : 'border-line bg-panel shadow-lg text-ink'}`}
+        // One squared corner per run of same-sender bubbles: the tail corner
+        // rounds to 6px only on the run's last bubble, everything else stays
+        // at the 18px pill. Anchor image, skeleton B.
+        className={`max-w-[76%] min-w-[4.5rem] border px-3 py-2 text-ink ${isSender ? 'rounded-[18px] border-accent bg-accent text-accentInk' : 'rounded-[18px] border-line bg-panel'} ${runEnd ? (isSender ? 'rounded-br-[6px]' : 'rounded-bl-[6px]') : ''}`}
       >
-        {!isSender && senderName && <p className="mb-0.5 text-[11px] font-semibold leading-none text-accent">{senderName}</p>}
+        {!isSender && senderName && runStart && <p className="mb-0.5 text-[11px] font-semibold leading-none text-accentText">{senderName}</p>}
         {(content.type === 'cipher_order' || content.type === 'order_request' || content.type === 'order_update') && (
           // F7: the badge reads derived payment facts, not what the update
           // itself claims — a received "confirmed" with no receipt behind it
@@ -232,7 +244,7 @@ export default function MessageBubble({ message, data, onAction, senderName, isP
           const subject = target === 'peer' ? { ...message, pubkey: activeDm, data: content } : { ...message, data: content };
           const tone = action === 'accept_order' ? 'text-blue-300' : ['report_issue', 'decline_order', 'cancel_order'].includes(action) ? 'text-rose-300' : 'text-ink';
           return (
-            <button key={action} type="button" onClick={(event) => { event.stopPropagation(); onAction?.(action, subject); }} className={`mb-1 block min-h-11 text-left text-[15px] font-semibold ${tone}`}>{label}</button>
+            <button key={action} type="button" onClick={(event) => { event.stopPropagation(); onAction?.(action, subject); }} className={`mb-1 block min-h-[44px] text-left text-[15px] font-semibold ${tone}`}>{label}</button>
           );
         })}
         {attachments.layout === 'single' && (
@@ -248,7 +260,7 @@ export default function MessageBubble({ message, data, onAction, senderName, isP
         {attachments.layout === 'audio' && <MediaAudio item={attachments.items[0]} className="h-8 max-w-full" />}
         {content.type === 'product' && <Picture src={content.image} alt="" loading="lazy" className="mb-1 max-h-40 rounded-xl object-cover" />}
         {content.type === 'product' && isPinnedListing && (
-          <p className="mb-1 flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-accent"><BadgeCheck size={12} /> Pinned</p>
+          <p className="mb-1 inline-flex items-center gap-1 rounded-full border border-accentText px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-accentText"><BadgeCheck size={12} /> Pinned</p>
         )}
         {paymentRows.length > 0 && (
           <div className="mb-1 space-y-2">
@@ -274,7 +286,7 @@ export default function MessageBubble({ message, data, onAction, senderName, isP
                     rel="noreferrer noopener"
                     onPointerDown={(event) => event.stopPropagation()}
                     onClick={(event) => event.stopPropagation()}
-                    className={`break-all underline ${isSender ? 'text-ink' : 'text-blue-300'}`}
+                    className={`break-all underline ${isSender ? 'text-accentInk' : 'text-accentText'}`}
                   >
                     {token.url}
                   </a>
@@ -291,7 +303,7 @@ export default function MessageBubble({ message, data, onAction, senderName, isP
             type="button"
             onPointerDown={(event) => event.stopPropagation()}
             onClick={(event) => { event.stopPropagation(); haptic('light'); onAction?.('retry_secure', message); }}
-            className={`mt-2 block min-h-11 w-full text-left text-[15px] font-semibold underline active:scale-95 ${isSender ? 'text-ink' : 'text-blue-300'}`}
+            className={`mt-2 block min-h-[44px] w-full text-left text-[15px] font-semibold underline active:scale-95 ${isSender ? 'text-accentInk' : 'text-accentText'}`}
           >
             Still securing — retry
           </button>
@@ -314,7 +326,7 @@ export default function MessageBubble({ message, data, onAction, senderName, isP
           </div>
         )}
         {!text && !content.url && !content.urls && !content.media && !paymentRows.length && !['image', 'audio', 'product', 'cipher_order', 'order_request', 'order_update', 'text'].includes(content.type) && (
-          <p className="text-[13px] text-ink/45">Couldn't open</p>
+          <p className="text-[13px] text-inkSubtle">Couldn't open</p>
         )}
       </div>
     </motion.article>
@@ -346,7 +358,7 @@ export default function MessageBubble({ message, data, onAction, senderName, isP
                 {noHexName(profiles[person.pubkey], person.pubkey)}
               </p>
             ))}
-            <button type="button" onClick={() => setShowReactors(false)} className="mt-3 text-[13px] font-semibold text-accent">Close</button>
+            <button type="button" onClick={() => setShowReactors(false)} className="mt-3 text-[13px] font-semibold text-accentText">Close</button>
           </div>
         </div>
       )}

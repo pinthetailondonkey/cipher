@@ -26,11 +26,16 @@ export default function DmView({ sendMessage, handleMessageAction, handleImageUp
     <section className="relative flex h-full min-h-0 flex-col bg-transparent">
       <div className="mx-auto flex min-h-0 w-full max-w-3xl flex-1 flex-col">
       <ChatHeader mode="dm" />
-      <div ref={scrollRef} className="flex min-h-0 flex-1 flex-col overflow-y-auto py-3">
+      <div ref={scrollRef} className="flex min-h-0 flex-1 flex-col overflow-y-auto py-2">
         {visibleMessages.length === 0 ? (
-          <p className="m-auto mx-4 rounded-2xl border border-line bg-panel shadow-lg px-4 py-8 text-center text-[13px] text-ink/40">Your messages stay private between you and this person.</p>
-        ) : visibleMessages.map((message) => {
+          <p className="m-auto mx-4 rounded-2xl border border-line bg-panel px-4 py-8 text-center text-[13px] text-ink/40">Your messages stay private between you and this person.</p>
+        ) : visibleMessages.map((message, index) => {
           const peer = profiles[message.pubkey];
+          // A run is a stretch of consecutive bubbles from one author: the
+          // squared corner and the spacing split on the run's edges, not on
+          // each message.
+          const runStart = index === 0 || visibleMessages[index - 1].isSender !== message.isSender;
+          const runEnd = index === visibleMessages.length - 1 || visibleMessages[index + 1].isSender !== message.isSender;
           return (
             <MessageBubble
               key={message.id}
@@ -40,15 +45,17 @@ export default function DmView({ sendMessage, handleMessageAction, handleImageUp
               showAvatar={!message.isSender}
               avatarUrl={peer?.picture}
               avatarInitial={peer?.displayName?.charAt(0) || '?'}
+              runStart={runStart}
+              runEnd={runEnd}
               onAction={handleMessageAction}
             />
           );
         })}
       </div>
       {replyingTo && (
-        <div className="mx-3 mb-2 flex items-center gap-3 rounded-2xl border border-line bg-panel shadow-lg px-4 py-3">
+        <div className="mx-3 mb-2 flex items-center gap-3 rounded-2xl border border-line bg-panel px-4 py-3">
           <div className="min-w-0 flex-1 border-l-2 border-accent pl-3">
-            <p className="text-[11px] font-semibold text-accent">{replyingTo.isSender ? 'You' : 'Replying'}</p>
+            <p className="text-[11px] font-semibold text-accentText">{replyingTo.isSender ? 'You' : 'Replying'}</p>
             <p className="truncate text-[13px] text-ink/60">{replyingTo.data?.message || replyingTo.rawContent || 'Message'}</p>
           </div>
           <button type="button" onClick={() => setReplyingTo(null)} aria-label="Cancel reply" className="p-2 text-ink/45 hover:text-ink"><X size={18} /></button>
