@@ -22,6 +22,15 @@ export function resetMemberRereadCache() {
   failureCache.clear();
 }
 
+// The trust anchor for the signed member snapshot: the relay's own pubkey,
+// read over NIP-11. Honest limits this stands on: the fetch is HTTPS
+// attestation, not an event signature — a TLS-trusting transport is the
+// anchor, a network attacker is not; a failed read falls back to the
+// pinned constant and stays there for the negative TTL; a successful read
+// stays cached for the session, so a relay rotating its key mid-session is
+// picked up on the next reload, not on the next event. (round-three
+// re-hack note H5/follow-up: documented limit, not a defect against the
+// 39002 shape checks — the check refuses any event not signed by this key.)
 export function groupRelayPubkey(fetchImpl = globalThis.fetch, now = Date.now()) {
   if (relayPubkeyCache?.negative && now - relayPubkeyCache.at >= NIP11_NEGATIVE_TTL_MS) {
     relayPubkeyCache = null;
