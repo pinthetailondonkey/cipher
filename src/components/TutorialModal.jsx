@@ -55,7 +55,7 @@ function TutorialSteps({ onClose }) {
   const last = currentStep === steps.length - 1;
 
   return (
-    <Sheet open onClose={onClose} label="How to use">
+    <Sheet open onClose={onClose} title="How to use" label="How to use" closeLabel="Close guide">
       <div className="pb-6 pt-2 text-center">
         <AnimatePresence mode="wait">
           <motion.div
