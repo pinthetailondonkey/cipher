@@ -33,6 +33,12 @@ module.exports = {
       },
       fontFamily: {
         sans: ['Inter', 'system-ui', 'sans-serif'],
+      },
+      zIndex: {
+        fab: 'var(--z-fab)',
+        sheet: 'var(--z-sheet)',
+        call: 'var(--z-call)',
+        toast: 'var(--z-toast)',
       }
     },
   },

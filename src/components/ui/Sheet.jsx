@@ -1,0 +1,130 @@
+// Sheet — THE bottom surface. Phone: rounded-top panel pulled over a scrim,
+// drag-to-dismiss at 120px from the handle, handle 36x4. md+: the same body
+// renders as a centred capped panel (docked panes land in a later PR).
+// Presentation only: nothing here touches app state beyond onClose.
+import { AnimatePresence, motion, useDragControls, useReducedMotion } from 'framer-motion';
+import { useEffect, useRef } from 'react';
+
+const FOCUSABLE = 'a[href], button:not([disabled]), textarea, input, select, [tabindex]:not([tabindex="-1"])';
+
+export default function Sheet({
+  open,
+  onClose,
+  title = null,
+  ariaLabel,
+  glassHeader = false,
+  footer = null,
+  className = '',
+  bodyClassName = '',
+  stretch = false,
+  children,
+}) {
+  const reduced = useReducedMotion();
+  const panelRef = useRef(null);
+  const restoreRef = useRef(null);
+  const dragControls = useDragControls();
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const wasFocused = document.activeElement;
+    restoreRef.current = wasFocused instanceof HTMLElement ? wasFocused : null;
+    const id = requestAnimationFrame(() => panelRef.current?.focus({ preventScroll: true }));
+    const onKey = (event) => {
+      if (event.key === 'Escape') {
+        event.stopPropagation();
+        onClose?.();
+        return;
+      }
+      if (event.key !== 'Tab') return;
+      const panel = panelRef.current;
+      if (!panel) return;
+      const items = Array.from(panel.querySelectorAll(FOCUSABLE)).filter(
+        (el) => el.offsetParent !== null || el === document.activeElement,
+      );
+      if (items.length === 0) {
+        event.preventDefault();
+        panel.focus();
+        return;
+      }
+      const first = items[0];
+      const last = items[items.length - 1];
+      if (event.shiftKey && (document.activeElement === panel || document.activeElement === first)) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => {
+      cancelAnimationFrame(id);
+      window.removeEventListener('keydown', onKey);
+      restoreRef.current?.focus?.({ preventScroll: true });
+      restoreRef.current = null;
+    };
+  }, [open, onClose]);
+
+  const dismissByDrag = (_event, info) => {
+    if (info.offset.y > 120) onClose?.();
+  };
+
+  return (
+    <AnimatePresence>
+      {open && (
+        <motion.div
+          className={`fixed inset-0 z-sheet flex items-end justify-center bg-scrim/60 p-0 sm:items-center sm:p-4 ${className}`}
+          role="presentation"
+          initial={reduced ? { opacity: 0 } : { opacity: 1 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={reduced ? { duration: 0.01 } : { duration: 0.18 }}
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) onClose?.();
+          }}
+        >
+          <motion.div
+            ref={panelRef}
+            tabIndex={-1}
+            role="dialog"
+            aria-modal="true"
+            aria-label={ariaLabel || (typeof title === 'string' ? title : undefined)}
+            initial={{ y: reduced ? 0 : '100%', opacity: reduced ? 0 : 1 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: reduced ? 0 : '100%', opacity: reduced ? 0 : 1 }}
+            transition={reduced ? { duration: 0.01 } : { type: 'spring', stiffness: 380, damping: 34 }}
+            drag={reduced ? false : 'y'}
+            dragConstraints={{ top: 0, bottom: 0 }}
+            dragElastic={{ top: 0, bottom: 0.5 }}
+            dragListener={false}
+            dragControls={dragControls}
+            onDragEnd={dismissByDrag}
+            className={`flex w-full flex-col overflow-hidden rounded-t-[28px] border border-line bg-panel shadow-2xl outline-none sm:rounded-[28px] sm:max-w-md ${stretch ? 'h-[calc(100dvh-2rem)] md:h-[calc(100dvh-4rem)]' : 'max-h-[92dvh]'} ${footer ? 'pb-0' : 'pb-sheet'} ${bodyClassName}`}
+          >
+            <div
+              className="flex shrink-0 cursor-grab touch-none items-center justify-center pt-3 active:cursor-grabbing sm:cursor-default"
+              onPointerDown={(event) => {
+                if (reduced) return;
+                dragControls.start(event, { snapToEndpoint: false });
+              }}
+              data-sheet-handle="true"
+            >
+              <span className="h-1 w-9 rounded-full bg-white/20" aria-hidden="true" />
+            </div>
+            {title ? (
+              <header className={`shrink-0 border-b border-line px-4 py-3 ${glassHeader ? 'glass-header' : ''}`}>
+                <h2 className="text-[17px] font-bold tracking-tight text-ink">{title}</h2>
+              </header>
+            ) : null}
+            <div className={`min-h-0 flex-1 overflow-y-auto ${footer ? 'pb-2' : ''}`}>{children}</div>
+            {footer ? (
+              <footer className="shrink-0 border-t border-line bg-panel px-4 pb-[calc(1rem+env(safe-area-inset-bottom))] pt-3">
+                {footer}
+              </footer>
+            ) : null}
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+}

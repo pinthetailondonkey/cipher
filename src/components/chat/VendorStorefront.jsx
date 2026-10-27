@@ -1,21 +1,27 @@
 import { useEffect, useState } from 'react';
-import { BadgeCheck, MessageCircle, Package, Store, X } from 'lucide-react';
+import { MessageCircle, Package, ShieldCheck, Store } from 'lucide-react';
 import { useVouchCount } from '../../hooks/useVouchCount';
 import { generalRelays } from '../../lib/relays';
+import Sheet from '../ui/Sheet';
+import Avatar from '../ui/Avatar';
+import Button from '../ui/Button';
 import Picture from '../ui/Picture';
+import EmptyState from '../ui/EmptyState';
+import { SkeletonGrid } from '../ui/Skeleton';
 import { noHexName } from '../../lib/npub';
+import { haptic } from '../../lib/haptics';
 
 function parseListing(event) {
   let content = {};
   try {
     content = JSON.parse(event.content || '{}');
   } catch (error) {
-    console.warn('[VendorStorefront] Ignoring malformed listing:', event.id, error);
+    console.warn('[VendorStorefront] Ignoring malformed vendor event:', event.id, error);
   }
   const tag = (name) => event.tags.find((entry) => entry[0] === name)?.[1];
   return {
     id: event.id,
-    name: tag('title') || content.name || 'Product',
+    name: tag('title') || content.name || 'Item',
     description: content.description || '',
     price: tag('price') || content.price || '',
     currency: event.tags.find((entry) => entry[0] === 'price')?.[2] || content.currency || '',
@@ -23,6 +29,9 @@ function parseListing(event) {
   };
 }
 
+// The vendor's menu, open over the chat as a Sheet (not a full screen).
+// Header carries the trust row; the grid and the sticky "Message vendor"
+// ride the Sheet's own body and footer. Handlers are the pre-existing ones.
 export default function VendorStorefront({ isOpen, onClose, vendorPubkey, profiles = {}, identity, onOpenChat, onBuy }) {
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -49,8 +58,8 @@ export default function VendorStorefront({ isOpen, onClose, vendorPubkey, profil
         if (!active) return;
         setProducts(events.map(parseListing).sort((a, b) => b.createdAt - a.createdAt));
       } catch (loadError) {
-        console.error('[VendorStorefront] Listing fetch failed:', loadError);
-        if (active) setError('Could not load this vendor’s listings.');
+        console.error('[VendorStorefront] Vendor menu fetch failed:', loadError);
+        if (active) setError('Could not load this vendor’s menu.');
       } finally {
         if (active) setLoading(false);
         pool?.close(generalRelays);
@@ -63,39 +72,86 @@ export default function VendorStorefront({ isOpen, onClose, vendorPubkey, profil
     };
   }, [isOpen, vendorPubkey]);
 
-  if (!isOpen || !vendorPubkey) return null;
+  const productName = noHexName(profile, vendorPubkey);
+  const trusted = vouchCount >= 3;
 
   return (
-    <div className="fixed inset-0 z-[900] flex items-end justify-center bg-scrim/80 p-0 sm:items-center sm:p-4" role="presentation">
-      <section role="dialog" aria-modal="true" aria-label="Vendor storefront" className="max-h-[90dvh] w-full max-w-md overflow-y-auto rounded-t-3xl border border-line bg-panel pb-[env(safe-area-inset-bottom)] sm:rounded-3xl">
-        <header className="sticky top-0 z-10 flex items-center gap-3 border-b border-line bg-base px-4 py-4 pt-[env(safe-area-inset-top)]">
-          <Picture src={profile.picture} alt="" className="h-12 w-12 rounded-full border border-line object-cover" fallback={<div className="flex h-12 w-12 items-center justify-center rounded-full border border-line bg-panelAlt text-inkMuted"><Store size={20} /></div>} />
-          <div className="min-w-0 flex-1">
-            <h2 className="truncate text-[15px] font-semibold text-ink">{noHexName(profile, vendorPubkey)}</h2>
-            <p className="flex items-center gap-1 text-[13px] text-inkMuted"><BadgeCheck size={14} className={vouchCount >= 3 ? 'text-accentText' : ''} />{vouchesLoading ? 'Checking trust' : `${vouchCount} vouches${vouchCount >= 3 ? ' · Trusted Vendor' : ''}`}</p>
-          </div>
-          <button type="button" onClick={onClose} aria-label="Close storefront" className="p-2 text-inkMuted hover:text-ink"><X size={20} /></button>
-        </header>
-        <div className="space-y-3 p-4">
-        <button type="button" onClick={() => onOpenChat?.(vendorPubkey)} className="flex w-full items-center justify-center gap-2 rounded-2xl bg-accent py-3.5 font-bold text-accentInk hover:bg-accent"><MessageCircle size={17} /> Message vendor</button>
-        {loading && <p className="rounded-2xl border border-line bg-panelStrong px-4 py-8 text-center text-[13px] text-inkMuted">Loading listings…</p>}
-        {error && <p role="alert" className="rounded-2xl border border-line bg-panelStrong px-4 py-8 text-center text-[13px] text-danger">{error}</p>}
-        {!loading && !error && products.length === 0 && <p className="rounded-2xl border border-line bg-panelStrong px-4 py-8 text-center text-[13px] text-inkMuted">No active listings.</p>}
-        {products.length > 0 && <div className="overflow-hidden rounded-2xl border border-line bg-panelStrong">
-        {products.map((product) => (
-          <article key={product.id} className="flex items-center gap-3 border-b border-line p-4 last:border-0">
-            <Picture src={product.image} alt="" loading="lazy" className="h-12 w-12 rounded-xl border border-line object-cover" fallback={<div className="flex h-12 w-12 items-center justify-center rounded-xl border border-line bg-panelAlt text-inkMuted"><Package size={18} /></div>} />
-            <div className="min-w-0 flex-1">
-              <h3 className="truncate text-[15px] font-semibold text-ink">{product.name}</h3>
-              <p className="text-[13px] font-semibold text-accentText">{product.price ? `${product.price} ${product.currency || ''}`.trim() : 'Ask'}</p>
-              {product.description && <p className="truncate text-[13px] text-inkMuted">{product.description}</p>}
-            </div>
-            <button type="button" onClick={() => onBuy?.(product, vendorPubkey)} className="rounded-2xl bg-accent px-4 py-2 text-[13px] font-bold text-accentInk hover:bg-accent">Buy</button>
-          </article>
-        ))}
-        </div>}
+    <Sheet
+      open={isOpen && Boolean(vendorPubkey)}
+      onClose={onClose}
+      ariaLabel={`${productName} vendor menu`}
+      stretch={false}
+      footer={
+        <Button
+          size="lg"
+          fullWidth
+          leadingIcon={<MessageCircle size={17} />}
+          onClick={() => {
+            haptic('light');
+            onOpenChat?.(vendorPubkey);
+          }}
+        >
+          Message vendor
+        </Button>
+      }
+    >
+      <header className="glass-header sticky top-0 z-10 flex items-center gap-3 px-4 py-3">
+        <Avatar
+          src={profile.picture}
+          name={productName}
+          size={44}
+          className={profile.picture ? '' : 'text-inkSubtle'}
+        />
+        <div className="min-w-0 flex-1">
+          <h2 className="truncate text-[17px] font-bold tracking-tight text-ink">{productName}</h2>
+          <p className="flex items-center gap-1.5 text-[13px] text-inkMuted">
+            <ShieldCheck size={15} className={trusted ? 'text-accentText' : 'text-inkSubtle'} aria-hidden="true" />
+            {vouchesLoading ? 'Checking vouches…' : `${vouchCount} vouch${vouchCount === 1 ? '' : 'es'}${trusted ? ' · Trusted Vendor' : ''}`}
+          </p>
         </div>
-      </section>
-    </div>
+      </header>
+      <div className="p-4">
+        {error && <p role="alert" className="mb-3 rounded-2xl border border-line bg-panelStrong px-4 py-5 text-center text-[13px] text-danger">{error}</p>}
+        {loading && <SkeletonGrid cols={4} />}
+        {!loading && !error && products.length === 0 && (
+          <EmptyState
+            icon={<Store size={20} />}
+            title="Nothing on the menu yet"
+          >
+            Check back later, or tap Message vendor below.
+          </EmptyState>
+        )}
+        {!loading && products.length > 0 && (
+          <div className="grid grid-cols-2 gap-3">
+            {products.map((product) => (
+              <article key={product.id} className="overflow-hidden rounded-2xl border border-line bg-panelStrong">
+                <Picture
+                  src={product.image}
+                  alt=""
+                  loading="lazy"
+                  className="aspect-[4/5] w-full border-b border-line object-cover"
+                  fallback={<div className="flex aspect-[4/5] w-full items-center justify-center border-b border-line bg-panelAlt text-inkSubtle"><Package size={22} /></div>}
+                />
+                <div className="space-y-1 p-3">
+                  <h3 className="line-clamp-2 min-h-[2.2em] text-[14px] font-semibold leading-snug text-ink">{product.name}</h3>
+                  <p className="mono truncate text-[13px] font-semibold text-accentText">{product.price ? `${product.price} ${product.currency || ''}`.trim() : 'Ask'}</p>
+                  {product.description && <p className="line-clamp-2 text-[12px] leading-snug text-inkMuted">{product.description}</p>}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      haptic('light');
+                      onBuy?.(product, vendorPubkey);
+                    }}
+                    className="w-full rounded-xl bg-accent py-2.5 text-[13px] font-bold text-accentInk"
+                  >
+                    Buy
+                  </button>
+                </div>
+              </article>
+            ))}
+          </div>
+        )}
+      </div>
+    </Sheet>
   );
 }
