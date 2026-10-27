@@ -20,8 +20,24 @@ export async function getAllGroupKeys(groupId) {
 }
 export async function putGroupKey(groupId, epoch, raw, meta = {}) {
   if (!ready()) return;
+  const keyHex = toHex(raw);
   await db.transaction('rw', db.groupKeys, async () => {
-    await db.groupKeys.put({ groupId, epoch, keyHex: toHex(raw), isCurrent: true, obtainedAt: Math.floor(Date.now() / 1000), ...meta });
+    // The table's &[groupId+epoch] index is unique and a put without the
+    // ++id auto-key inserts — a second write for an epoch the device
+    // already holds crashed the install with ConstraintError instead of
+    // rewriting the row. Upsert on the pair, and a re-delivery is a
+    // rewrite, not a crash. The held obtainedAt survives: re-stating the
+    // held epoch must not move the baseline the grant path reads.
+    const held = await db.groupKeys.where('[groupId+epoch]').equals([groupId, epoch]).first();
+    await db.groupKeys.put({
+      groupId,
+      epoch,
+      keyHex,
+      isCurrent: true,
+      obtainedAt: held ? held.obtainedAt : Math.floor(Date.now() / 1000),
+      ...(held ? { id: held.id } : {}),
+      ...meta,
+    });
     await db.groupKeys.where('groupId').equals(groupId).modify(row => { if (row.epoch !== epoch) row.isCurrent = false; });
   });
   if (typeof window !== 'undefined') {
