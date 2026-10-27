@@ -453,8 +453,11 @@ function grantInputs(row) {
       refetched: null,
     };
   }
+  // 'strictly newer' covers the key: the list stamps AFTER the key was
+  // obtained. 'older' and the same-second tie read as not covering (the
+  // tie is fail-closed since the drills caught D3-C shipping on it).
   const keyObtainedAt = row[1] === 'older' ? now - 20 : now - 800;
-  const updatedAt = row[1] === 'older' ? now - 40 : now - 800;
+  const updatedAt = row[1] === 'older' ? now - 40 : now - 40;
   return {
     requester: member,
     creator,
@@ -601,7 +604,11 @@ test('a failed re-read inside the freshness window still refuses a list older th
     nowSec: now,
     refetched: null,
     keyObtainedAt: now - 30,
-  }), 'allow');
+    // Drills D3-C: the same-second tie used to pass as "covers" — exactly
+    // the equality a mid-flight rotation stamps — and shipped a withheld
+    // key on the failed-refetch arm. The tie is now fail-closed: only a
+    // strictly newer list covers a key.
+  }), 'deny');
   assert.equal(keyRequestDecision({
     requester: member,
     creator,
@@ -611,6 +618,17 @@ test('a failed re-read inside the freshness window still refuses a list older th
     refetched: null,
     keyObtainedAt: now - 10,
   }), 'deny');
+  // Strictly newer still grants, so the tie change takes nothing from the
+  // honest path.
+  assert.equal(keyRequestDecision({
+    requester: member,
+    creator,
+    snapshot: [member],
+    updatedAt: now - 3,
+    nowSec: now,
+    refetched: null,
+    keyObtainedAt: now - 30,
+  }), 'allow');
 });
 
 // H1 fix (round-three re-hack): the deny list outvotes the relay on the
