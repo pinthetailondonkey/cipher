@@ -1,9 +1,23 @@
-import React, { useRef, useState } from 'react';
-import { Archive, ArchiveRestore, Bell, BellOff, Megaphone, MoreVertical, Users } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
+import { Archive, ArchiveRestore, Bell, BellOff, MoreVertical } from 'lucide-react';
 import { useChatStore } from '../../store/chatStore';
 import Avatar from '../ui/Avatar';
 import { pressable } from '../ui/Button';
 import { noHexName } from '../../lib/npub';
+
+// The anchor's segmented filter: All / Menus / Vendors. A client-side filter
+// over the same list — the drawer stays navigation, this only narrows rows.
+// A menu is a channel-type space; a vendor is a chat where commerce happened
+// (an order crossed it, or the peer sent a product — their storefront
+// speaking in the thread). The store carries no per-peer vendor flag.
+const SEGMENTS = [
+  { key: 'all', label: 'All' },
+  { key: 'menus', label: 'Menus' },
+  { key: 'vendors', label: 'Vendors' },
+];
+
+const initialsOf = (name) => name.split(/\s+/).filter(Boolean).slice(0, 2)
+  .map((word) => word[0].toUpperCase()).join('') || '?';
 
 // One row = one tap target plus a kebab (mute / archive, persisted by the
 // store). The preview line is blurred until the row is long-pressed; the
@@ -18,11 +32,20 @@ export default function ChatList({ onOpenChat }) {
   const mutedChats = useChatStore((s) => s.mutedChats);
   const mutedUntil = useChatStore((s) => s.mutedUntil);
   const archivedChats = useChatStore((s) => s.archivedChats);
+  const typingUsers = useChatStore((s) => s.typingUsers);
+  const groupTypingUsers = useChatStore((s) => s.groupTypingUsers);
 
+  const [segment, setSegment] = useState('all');
   const [revealed, setRevealed] = useState(() => new Set());
   const [menuFor, setMenuFor] = useState(null);
+  const [now, setNow] = useState(() => Date.now());
   const pressTimer = useRef(null);
   const suppressClick = useRef(false);
+
+  useEffect(() => {
+    const tick = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(tick);
+  }, []);
 
   const startPress = (id) => {
     cancelPress();
@@ -48,20 +71,22 @@ export default function ChatList({ onOpenChat }) {
   };
   const isMuted = (id) => mutedChats.includes(id)
     || mutedUntil[id] === 'forever'
-    || (typeof mutedUntil[id] === 'number' && mutedUntil[id] > Date.now());
+    || (typeof mutedUntil[id] === 'number' && mutedUntil[id] > now);
 
   const dmList = Object.entries(dms).map(([pubkey, msgs]) => {
     const profile = profiles[pubkey];
     const safeProfile = (profile && profile.name && !/^[0-9a-f]{8,64}$/i.test(profile.name))
       ? profile
       : { displayName: noHexName(profile, pubkey), picture: null, name: noHexName(profile, pubkey) };
-    return { type: 'dm', id: pubkey, lastMsg: msgs[msgs.length - 1], profile: safeProfile };
+    const commercial = msgs.some((m) => m.data?.type === 'cipher_order' || m.data?.type === 'order_request' || m.data?.type === 'product');
+    return { type: 'dm', id: pubkey, lastMsg: msgs[msgs.length - 1], profile: safeProfile, vendor: commercial };
   });
 
   const groupList = groups.map(g => ({
     type: 'group',
     id: g.id,
     group: g,
+    menu: g.isChannel === true,
     lastMsg: groupMessages[g.id]?.[groupMessages[g.id].length - 1]
   }));
 
@@ -71,6 +96,14 @@ export default function ChatList({ onOpenChat }) {
   const allChats = Array.from(chatMap.values()).sort(
     (a, b) => (b.lastMsg?.timestamp || 0) - (a.lastMsg?.timestamp || 0)
   );
+
+  // Typing state, per row: DMs key by the peer, group typing is one set for
+  // every group (the store keys it by member), so it lights any group row.
+  const typingFor = (chat) => {
+    const fresh = (stamp) => stamp && now - stamp < 6000;
+    if (chat.type === 'dm') return fresh(typingUsers[chat.id]);
+    return Object.values(groupTypingUsers || {}).some(fresh);
+  };
 
   const previewOf = (chat) => {
     const m = chat.lastMsg;
@@ -92,6 +125,11 @@ export default function ChatList({ onOpenChat }) {
 
   const active = allChats.filter(c => !archivedChats.includes(c.id));
   const archived = allChats.filter(c => archivedChats.includes(c.id));
+  const shownChats = active.filter((chat) => {
+    if (segment === 'menus') return chat.type === 'group' && chat.menu === true;
+    if (segment === 'vendors') return chat.vendor === true;
+    return true;
+  });
 
   const renderRow = (chat) => {
     const isDm = chat.type === 'dm';
@@ -101,7 +139,7 @@ export default function ChatList({ onOpenChat }) {
     const previewText = previewOf(chat);
     const isRevealed = revealed.has(chat.id);
     const unread = unreadCounts[chat.id] || 0;
-    const Icon = chat.group?.isChannel ? Megaphone : Users;
+    const typing = typingFor(chat);
 
     return (
       <div key={chat.id} className="relative flex items-stretch border-b border-line last:border-0">
@@ -116,13 +154,13 @@ export default function ChatList({ onOpenChat }) {
           onPointerLeave={cancelPress}
           onPointerCancel={cancelPress}
           onContextMenu={(e) => e.preventDefault()}
-          className={`flex min-h-[56px] min-w-0 flex-1 items-center gap-3 px-4 py-2 text-left active:bg-ink/5 ${pressable}`}
+          className={`flex min-h-[64px] min-w-0 flex-1 items-center gap-3 px-4 py-2 text-left active:bg-ink/5 ${pressable}`}
         >
           {isDm ? (
             <Avatar src={chat.profile.picture} name={name} className="!h-10 !w-10 !text-[13px]" />
           ) : (
-            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-line bg-panelAlt text-accentText">
-              <Icon size={18} />
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-line bg-panelAlt text-[13px] font-semibold text-accentText">
+              {initialsOf(name)}
             </span>
           )}
           <span className="min-w-0 flex-1">
@@ -136,9 +174,9 @@ export default function ChatList({ onOpenChat }) {
             </span>
             <span className="mt-0.5 flex items-center justify-between gap-2">
               <span
-                className={`block truncate text-[13px] text-inkMuted transition-all duration-200 select-none ${previewText && !isRevealed ? 'blur-[5px]' : ''}`}
+                className={`block truncate text-[13px] transition-all duration-200 select-none ${typing ? 'text-accentText' : 'text-inkMuted'} ${previewText && !isRevealed ? 'blur-[5px]' : ''}`}
               >
-                {previewText || (isDm ? 'Tap to chat' : (chat.group.isChannel ? 'Channel' : 'Public group'))}
+                {typing ? 'typing…' : (previewText || (isDm ? 'Tap to chat' : (chat.group.isChannel ? 'Channel' : 'Public group')))}
               </span>
               {unread > 0 ? (
                 <span className="flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-accent px-1 text-[10px] font-bold text-accentInk">
@@ -185,10 +223,28 @@ export default function ChatList({ onOpenChat }) {
 
   return (
     <div className="px-4 pb-4">
-      {active.length > 0 && (
+      <div className="flex gap-1 rounded-full bg-panel p-1" role="group" aria-label="Filter chats">
+        {SEGMENTS.map((seg) => (
+          <button
+            key={seg.key}
+            type="button"
+            aria-pressed={segment === seg.key}
+            onClick={() => setSegment(seg.key)}
+            className={`min-h-[36px] flex-1 rounded-full px-3 py-1.5 text-[13px] font-bold ${segment === seg.key ? 'bg-accent text-accentInk' : 'text-inkMuted'} active:bg-ink/5 ${pressable}`}
+          >
+            {seg.label}
+          </button>
+        ))}
+      </div>
+      {shownChats.length > 0 && (
         <div className="overflow-hidden">
-          {active.map(renderRow)}
+          {shownChats.map(renderRow)}
         </div>
+      )}
+      {shownChats.length === 0 && segment !== 'all' && (
+        <p className="px-4 py-10 text-center text-[13px] text-inkMuted">
+          {segment === 'menus' ? 'No menus here yet.' : 'No vendor chats yet.'}
+        </p>
       )}
       {archived.length > 0 && (
         <>
