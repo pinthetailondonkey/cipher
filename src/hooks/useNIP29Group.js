@@ -953,6 +953,10 @@ export function useNIP29Group({ identity }) {
       if (event.kind === 9000) {
         const pk = event.tags.find(t => t[0] === 'p')?.[1];
         const role = event.tags.find(t => t[0] === 'role')?.[1] || 'member';
+        // The receiver arm of the kick wall: the add-back receipt an admin
+        // addresses to THIS device is what clears its own removal record —
+        // nothing else on this device un-walls it (drills D2 receiver arm).
+        if (pk && String(pk) === String(identity.pk)) clearJoinDenial(groupId, identity.pk);
         if (pk) await patchMemberSnapshot(groupId, (members) => (members.includes(pk) ? members : [...members, pk]));
         if (useChatStore.getState().activeGroup?.id === groupId) {
           setGroupMembers(prev => {
@@ -968,6 +972,13 @@ export function useNIP29Group({ identity }) {
       }
       if (event.kind === 9001) {
         const pk = event.tags.find(t => t[0] === 'p')?.[1];
+        // The receiver arm of the kick wall (drills D2): when an authorized
+        // admin's kick names THIS device, the removal becomes a durable
+        // record on its own account. No member's key bundle in a DM re-arms
+        // it afterwards; only this device's own add-back receipt (kind 9000)
+        // clears the record. The kick is authorized above — a plain roster
+        // row cannot write it.
+        if (pk && String(pk) === String(identity.pk)) denyPendingJoin(groupId, identity.pk);
         if (pk) await patchMemberSnapshot(groupId, (members) => members.filter((member) => member !== pk));
         if (useChatStore.getState().activeGroup?.id === groupId) {
           setGroupMembers(prev => Array.isArray(prev) ? prev.filter(m => m.pubkey !== pk) : []);

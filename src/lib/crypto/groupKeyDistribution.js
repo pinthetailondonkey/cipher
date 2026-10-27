@@ -2,6 +2,7 @@ import { toHex, fromHex } from './groupCipher';
 import { recordGrant, getGrantedEpochsFor, getCurrentGroupKey, putGroupKey } from './groupKeyStore';
 import { currentOwner } from '../../db';
 import { loadMemberSnapshot } from './groupKeyRotation';
+import { isJoinDenied } from '../groupJoinQueue';
 import { keyRequestRecord } from './groupKeyRequest';
 
 const KEY_HEX = /^[0-9a-f]{64}$/i;
@@ -76,6 +77,16 @@ export async function installReceivedGroupKey(payload, sender = null) {
   if (rows.some((row) => row.groupId !== groupId)) return false;
   const maxEpoch = Math.max(...rows.map((row) => row.epoch));
   const current = await getCurrentGroupKey(groupId);
+  // The receiver arm of the kick wall (drills D2): the owner says who is
+  // removed, but that ledger lives on the OWNER's device — the victim's own
+  // copy is what stops the re-arm. A device that read its own kick (kind 9001
+  // naming it, from an authorized admin) holds a self-removal record, and NO
+  // incoming key bundle re-arms it until that device's own add-back receipt
+  // (kind 9000) clears the record.
+  if (currentOwner() && isJoinDenied(groupId, currentOwner())) {
+    console.warn('[group-key] A key bundle was not installed: this device was removed from the group.', { groupId, epoch: maxEpoch });
+    return false;
+  }
   // Drills D4: the rollback guard is keyed-device-only, so a keyless device —
   // a fresh sync, exactly the window before its own gkey_req round-trip —
   // adopted ANY epoch a member of record shipped as its current key and wrote
