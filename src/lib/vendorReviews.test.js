@@ -8,6 +8,9 @@ import {
   monthsActiveForVendor,
   normalizeReview,
   orderMonthOf,
+  provenBannerOf,
+  provenDealsForVendor,
+  provenLinesOf,
   reviewEligibility,
   reviewOfferForOrder,
   reviewSummaryOf,
@@ -16,6 +19,7 @@ import {
   wholeMonthsBetween,
 } from './vendorReviews.js';
 import { publicReceipt, rememberPublicView, signPublicView, signReceipt, verifyPublicView } from './proofOfTrade.js';
+
 
 function hex(bytes) {
   return [...bytes].map((byte) => byte.toString(16).padStart(2, '0')).join('');
@@ -99,7 +103,7 @@ test('eligibility is the bound receipt, the buyer role, and a completed deal', (
 
 test('the offer reads the scoped records and the derived order state', () => {
   memoryStorage();
-  const { buyer, vendor, receipt } = boundDeal({ orderId: 'order-2', at: 1_700_000_000 });
+  const { buyer, vendor } = boundDeal({ orderId: 'order-2', at: 1_700_000_000 });
   const messages = [
     { id: 'order-2', isSender: true, pubkey: buyer, data: { type: 'cipher_order', status: 'pending' } },
     { id: 'u1', isSender: false, pubkey: vendor, timestamp: 2, data: { type: 'order_update', orderId: 'order-2', status: 'completed' } },
@@ -229,4 +233,52 @@ test('deals proven counts distinct bound receipts a public view names', () => {
   assert.equal(monthsActiveForVendor(vendor, 1_700_000_000), 0);
   assert.ok(monthsActiveForVendor(vendor, 1_736_918_400) >= 1);
   assert.equal(monthsActiveForVendor(''), 0);
+});
+
+test('the proven count is keyed by rail, nothing blended', () => {
+  memoryStorage();
+  const { buyerKey, vendorKey, vendor, receipt } = boundDeal({ orderId: 'order-9', outcome: 'confirmed' });
+  const xmrDeal = boundDeal({ orderId: 'order-10', buyerKey, vendorKey, at: 1_700_100_000 });
+  // An XMR-settled deal: re-sign the receipt body with the currency swapped,
+  // both sides, then bind it the way the countersign writes.
+  const xmrBody = { ...xmrDeal.receipt.body, currency: 'xmr' };
+  const vendorSigned = signReceipt(vendorKey, xmrBody);
+  const xmrSigned = signReceipt(buyerKey, xmrBody, vendorSigned);
+  globalThis.localStorage.setItem(`cipher_${xmrDeal.buyer}_receipt_order-10`, JSON.stringify(xmrSigned));
+  globalThis.localStorage.setItem(`cipher_${xmrDeal.buyer}_bound_receipt_order-10`, JSON.stringify(xmrSigned.hash));
+  const viewBtc = publicReceipt(receipt);
+  rememberPublicView(signPublicView(vendorKey, signPublicView(buyerKey, viewBtc)));
+  const viewXmr = publicReceipt(xmrSigned);
+  rememberPublicView(signPublicView(vendorKey, signPublicView(buyerKey, viewXmr)));
+  const keyed = provenDealsForVendor(vendor);
+  assert.deepEqual(Object.keys(keyed), ['btc', 'xmr']);
+  assert.equal(keyed.btc.count, 1);
+  assert.equal(keyed.btc.phrasing, 'proven');
+  assert.deepEqual(keyed.btc.txids, ['aa']);
+  assert.equal(keyed.xmr.count, 1);
+  assert.equal(keyed.xmr.phrasing, 'recorded');
+  // The plain "how many" total counts across rails; the banner never sums.
+  assert.equal(dealsProvenForVendor(vendor), 2);
+  // Nothing proven: the object is empty, not a shaped zero.
+  assert.deepEqual(provenDealsForVendor(''), {});
+});
+
+test('the banner words are the contract\'s, one line per rail, never summed', () => {
+  assert.equal(provenBannerOf({ count: 1, phrasing: 'proven' }), '1 deal proven. One tap shows the txids.');
+  assert.equal(provenBannerOf({ count: 3, phrasing: 'proven' }), '3 deals proven. One tap shows the txids.');
+  assert.equal(provenBannerOf({ count: 1, phrasing: 'recorded' }), '1 deal recorded on chain.');
+  assert.equal(provenBannerOf({ count: 0, phrasing: 'proven' }), '');
+  // Rail order is stable: btc first, xmr second, further rails after.
+  assert.deepEqual(
+    provenLinesOf({
+      xmr: { count: 2, phrasing: 'recorded' },
+      btc: { count: 1, phrasing: 'proven' },
+    }),
+    ['1 deal proven. One tap shows the txids.', '2 deals recorded on chain.'],
+  );
+  assert.deepEqual(provenLinesOf({}), []);
+  // An unknown rail gets no invented wording — a neutral pass-through that
+  // names the rail, with no claim attached.
+  assert.equal(provenBannerOf({ count: 4, phrasing: 'woven', rail: 'zec' }), '4 deals · zec');
+  assert.equal(provenBannerOf(null), '');
 });

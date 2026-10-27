@@ -13,6 +13,7 @@ import { SkeletonGrid } from '../ui/Skeleton';
 import { useModalA11y } from '../ui/modal';
 import { noHexName } from '../../lib/npub';
 import { haptic } from '../../lib/haptics';
+import ProvenBanner from './ProvenBanner';
 import VendorProfilePage from './VendorProfilePage';
 
 // The vendor's menu home: a full screen on the phone, a pane docked to the
@@ -21,21 +22,28 @@ import VendorProfilePage from './VendorProfilePage';
 // carries the one number this app says in public — deals proven — with the
 // months active and the standing summary beside it. The grid is the
 // vendor's published listings; the footer keeps the vendor one tap away.
-export default function VendorMenuHome({ open, onClose, vendorPubkey, profiles = {}, identity, onOpenChat, onBuy }) {
+//
+// `dealsProvenOf` is the stats-band seam: the count's real provider is the
+// Deal lane's pending txid bulletin, so the lookup arrives as a prop (or
+// falls back to the device's own proofOfTrade views). Swapping providers
+// never touches this JSX.
+export default function VendorMenuHome({ open, onClose, vendorPubkey, profiles = {}, identity, onOpenChat, onBuy, dealsProvenOf }) {
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [page, setPage] = useState('menu');
+  const [pageVendor, setPageVendor] = useState(vendorPubkey);
+  // A new vendor always opens on the menu, never on the page last read:
+  // the reset adjusts state to the prop during render, no effect.
+  if (pageVendor !== vendorPubkey) {
+    setPageVendor(vendorPubkey);
+    setPage('menu');
+  }
   const { vouchCount, loading: vouchesLoading } = useVouchCount({ identity, targetPubkey: vendorPubkey });
-  const standing = useVendorReviews({ vendorPubkey, refreshKey: open ? 1 : 0 });
+  const standing = useVendorReviews({ vendorPubkey, refreshKey: open ? 1 : 0, dealsProvenOf });
   const profile = profiles[vendorPubkey] || {};
   const name = noHexName(profile, vendorPubkey);
   const panelRef = useModalA11y(Boolean(open && vendorPubkey), onClose);
-
-  // A new vendor always opens on the menu, never on the page last read.
-  useEffect(() => {
-    setPage('menu');
-  }, [vendorPubkey]);
 
   useEffect(() => {
     if (!open || !vendorPubkey) return undefined;
@@ -93,7 +101,7 @@ export default function VendorMenuHome({ open, onClose, vendorPubkey, profiles =
           profile={profile}
           profiles={profiles}
           vouchCount={vouchCount}
-          standing={{ dealsProven: standing.dealsProven, monthsActive: standing.monthsActive }}
+          standing={{ proven: standing.proven, monthsActive: standing.monthsActive }}
           reviews={standing.reviews}
           summary={standing.summary}
           loading={standing.loading}
@@ -134,12 +142,14 @@ export default function VendorMenuHome({ open, onClose, vendorPubkey, profiles =
       </header>
 
       <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="flex flex-wrap gap-2 px-4 pb-3 pt-1" aria-label="Standing">
-          <Chip>{standing.dealsProven} {standing.dealsProven === 1 ? 'deal' : 'deals'} proven</Chip>
-          {standing.monthsActive > 0 && (
-            <Chip>Active {standing.monthsActive} {standing.monthsActive === 1 ? 'month' : 'months'}</Chip>
-          )}
-          <Chip>Standing · {vouchCount} {vouchCount === 1 ? 'vouch' : 'vouches'}</Chip>
+        <div className="px-4 pb-3 pt-1" aria-label="Standing">
+          <ProvenBanner proven={standing.proven} />
+          <div className="mt-2 flex flex-wrap gap-2">
+            {standing.monthsActive > 0 && (
+              <Chip>Active {standing.monthsActive} {standing.monthsActive === 1 ? 'month' : 'months'}</Chip>
+            )}
+            <Chip>Standing · {vouchCount} {vouchCount === 1 ? 'vouch' : 'vouches'}</Chip>
+          </div>
         </div>
 
         {profile.about && (

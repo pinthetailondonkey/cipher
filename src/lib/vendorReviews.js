@@ -5,11 +5,18 @@
 // records when a receipt binds — `receipt_<orderId>` (the two-signed
 // receipt) and `bound_receipt_<orderId>` (the hash this device signed
 // after the binding passed). This library reads those records and never
-// rewrites their rules: eligibility, display and the shop counters all
+// rewrites their rules: eligibility, display and the menu counters all
 // re-derive from the receipt this device holds, so a review is never a
-// claim a stranger could invent — and never a per-order number a shop
+// claim a stranger could invent — and never a per-order number a menu
 // could publish. Reviews themselves stay local to the reviewer's account
 // database (db.js, the vendorReviews table); nothing here sends.
+//
+// This file is strictly screen-side. The vendor data layer — review
+// events, the txid bulletin, dispute records — is owned by the Deal lane
+// on main. Nothing here names kinds on the wire, publishes, or structures
+// bulletin records; the display consumes those contracts by swapping the
+// proven-count provider and the review reader in useVendorReviews, never
+// by widening this file.
 import { scopedGet, getActivePubkey } from './storage';
 import {
   readPublicViews,
@@ -21,6 +28,24 @@ import { ORDER_STATUS } from './paymentState';
 import { orderState } from './orderActions';
 
 const HEX64 = /^[0-9a-f]{64}$/;
+
+// The review publisher gate. Deal's kind-10005 ( review post) publisher
+// does not exist on this branch — it ships on main. Until it folds:
+//   - review rows render only from Deal's reader contract, so the vendor
+//     profile's review list stays empty (its own "No reviews yet." state);
+//   - a compose saves locally to this account's database and publishes
+//     nothing.
+// Flipping this true is the fold: the publisher below gains its real body
+// in that same change.
+export const REVIEW_WIRING_LANDED = false;
+
+// Publisher swaps to Deal-lane kind-10005 publisher on fold. Nothing on
+// this branch publishes a review; the stub refuses so no code path can
+// send while the gate is down.
+export function createReviewPublisher() {
+  if (!REVIEW_WIRING_LANDED) return null;
+  return null;
+}
 const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
 function lower(value) {
@@ -93,16 +118,44 @@ export function boundReceipts() {
   return rows;
 }
 
-// The one number a menu shows: how many of this vendor's deals this device
-// can prove on chain — distinct bound receipt hashes that a signed public
-// view (buyer and vendor, or the vendor's own signature) names.
-export function dealsProvenForVendor(vendorPubkey) {
+// Proven deals, in the Deal data layer's shape (vendorStats on main): an
+// object KEYED BY RAIL — { btc: { count, txids, phrasing: 'proven' }, xmr:
+// { count, txids, phrasing: 'recorded' } } — one key per rail with proven
+// deals, {} when nothing is proven. A rail key carries its banner phrasing
+// with it; the display reads the keys it is given and never sums rails
+// into one figure.
+//
+// Nothing vendor-reported can enter the count here: every entry comes from
+// a bound receipt this device countersigned that a signed public view
+// names — the data layer's vendor-reported kind is excluded at its source,
+// not by convention in this file.
+const KNOWN_RAILS = { btc: 'proven', xmr: 'recorded' };
+const RAIL_ORDER = ['btc', 'xmr'];
+
+function railRank(rail) {
+  const at = RAIL_ORDER.indexOf(rail);
+  return at === -1 ? RAIL_ORDER.length : at;
+}
+
+// The rail a receipt's currency names. The device-local receipt only
+// certifies the two rails this app settles; any other currency word proves
+// nothing here — fail closed, the rail must be recognized before it counts.
+function railOf(currency) {
+  const word = String(currency || '').trim().toLowerCase();
+  if (/^btc/.test(word)) return 'btc';
+  if (/^(xmr|monero)/.test(word)) return 'xmr';
+  return '';
+}
+
+function provenMapsForVendor(vendorPubkey) {
   const vendor = lower(vendorPubkey);
-  if (!vendor) return 0;
+  const proven = new Map();
+  if (!vendor) return proven;
   const views = readPublicViews();
-  const proven = new Set();
   for (const { receipt, hash } of boundReceipts()) {
     if (lower(receipt.body.vendor) !== vendor) continue;
+    const rail = railOf(receipt.body.currency);
+    if (!rail) continue;
     const view = views.find((row) => row?.hash === hash);
     if (!view) continue;
     try {
@@ -110,9 +163,86 @@ export function dealsProvenForVendor(vendorPubkey) {
     } catch {
       continue;
     }
-    proven.add(hash);
+    if (!proven.has(rail)) proven.set(rail, new Map());
+    proven.get(rail).set(hash, String(receipt.body.txid || '').trim());
   }
-  return proven.size;
+  return proven;
+}
+
+// The proven-count seam, keyed by rail. 'proven' banners as "N deals
+// proven. One tap shows the txids."; 'recorded' banners as "N deals
+// recorded on chain." Provider swaps to the Deal lane's txid-bulletin
+// contract (see DATA-LAYER owner on main) replace this fallback's body
+// alone; no call site counts records itself.
+//
+// Fallback derivation, device-local: a proven deal is a bound receipt this
+// device countersigned that a signed public view names. The fallback's
+// count is those distinct receipts, not a bulletin length — the bulletin
+// count-is-txids rule is the data layer's, and it owns the real source.
+// The txids ride along (the receipts carry them) so the tap-through has
+// data when the banner learns to open it. Rails without proven deals stay
+// absent keys, so the shape is exactly the data layer's.
+export function provenDealsForVendor(vendorPubkey) {
+  const keyed = {};
+  for (const [rail, hashes] of provenMapsForVendor(vendorPubkey)) {
+    keyed[rail] = {
+      count: hashes.size,
+      rail,
+      txids: [...new Set([...hashes.values()].filter(Boolean))],
+      phrasing: KNOWN_RAILS[rail],
+    };
+  }
+  return keyed;
+}
+
+export const dealsProvenOf = provenDealsForVendor;
+
+// The total across rails. The display never blends rails into one figure —
+// Bitcoin's count proves itself, Monero's only proves existence, and a sum
+// would say less than either rail's own words — this total stays for the
+// plain "how many" callers that do not banner it.
+export function dealsProvenForVendor(vendorPubkey) {
+  let total = 0;
+  for (const entry of Object.values(provenDealsForVendor(vendorPubkey))) {
+    total += Number(entry?.count) || 0;
+  }
+  return total;
+}
+
+// One rail's banner words, verbatim from the contract. A rail the renderer
+// does not know gets no invented wording: a neutral pass-through that
+// names the rail and counts, with no claim attached (the conductor still
+// rules on that copy — see the lane report). Empty when the count is
+// nothing or nothing can be said.
+export function provenBannerOf(entry) {
+  const count = Math.max(0, Math.floor(Number(entry?.count) || 0));
+  if (!count || !entry) return '';
+  const phrasing = String(entry.phrasing || '');
+  if (phrasing === 'recorded') return `${count} ${count === 1 ? 'deal' : 'deals'} recorded on chain.`;
+  if (phrasing === 'proven') return `${count} ${count === 1 ? 'deal' : 'deals'} proven. One tap shows the txids.`;
+  if (String(entry.rail || '')) return `${count} ${count === 1 ? 'deal' : 'deals'} · ${entry.rail}`;
+  return '';
+}
+
+// The stats band's lines: one per rail the contract object carries, btc
+// first, xmr second, then any further rail in the order the object hands
+// over (Deal publishes per-asset config; nothing here assumes exactly two
+// rails, and no line ever sums two rails together).
+export function provenLinesOf(proven) {
+  if (Array.isArray(proven)) {
+    return proven.map(provenBannerOf).filter(Boolean);
+  }
+  if (!proven || typeof proven !== 'object') return [];
+  const keys = Object.keys(proven).sort((a, b) => railRank(a) - railRank(b));
+  return keys
+    .map((rail) => {
+      const value = proven[rail];
+      if (value && typeof value === 'object') return { ...value, rail };
+      const count = Number(value) || 0;
+      return { count, rail, phrasing: KNOWN_RAILS[rail] || '' };
+    })
+    .map(provenBannerOf)
+    .filter(Boolean);
 }
 
 // Months active: whole months since this vendor's earliest bound receipt
@@ -170,6 +300,7 @@ export function reviewOfferForOrder({ messages, order, buyerPubkey, vendorPubkey
   return {
     orderId: String(order.id),
     receipt,
+    buyerPubkey: lower(buyerPubkey),
     vendorPubkey: lower(receipt.body.vendor),
     orderMonth: orderMonthOf(receipt.body.at),
   };
@@ -276,6 +407,7 @@ export function reviewSummaryOf(rows, averageOf) {
 // The standing numbers one vendor page shows, read once per mount.
 export function vendorStandingOf(vendorPubkey) {
   return {
+    proven: provenDealsForVendor(vendorPubkey),
     dealsProven: dealsProvenForVendor(vendorPubkey),
     monthsActive: monthsActiveForVendor(vendorPubkey),
   };

@@ -3,6 +3,7 @@ import { pressable } from '../ui/Button';
 import Chip from '../ui/Chip';
 import Avatar from '../ui/Avatar';
 import { shortNpub, noHexName } from '../../lib/npub';
+import ProvenBanner from './ProvenBanner';
 import ReviewRow from './ReviewRow';
 
 // The vendor's public identity page. Opened from the menu's header: the
@@ -55,9 +56,11 @@ export default function VendorProfilePage({
           </section>
         )}
 
-        <section className="mt-3 flex flex-wrap gap-2" aria-label="Standing">
-          <Chip>{standing.dealsProven} {standing.dealsProven === 1 ? 'deal' : 'deals'} proven</Chip>
-          <Chip>Standing · {vouchCount} {vouchCount === 1 ? 'vouch' : 'vouches'}</Chip>
+        <section className="mt-3" aria-label="Standing">
+          <ProvenBanner proven={standing.proven} />
+          <div className="mt-2 flex flex-wrap gap-2">
+            <Chip>Standing · {vouchCount} {vouchCount === 1 ? 'vouch' : 'vouches'}</Chip>
+          </div>
         </section>
 
         {reviews.length > 0 && (
