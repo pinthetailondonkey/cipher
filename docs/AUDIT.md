@@ -802,12 +802,12 @@ ok 49 - confirmation depth is per currency, and a flag alone cannot confirm
   duration_ms: 1.29442
   ...
 # [payments] Watcher did not answer: Error: offline
-#     at fetchImpl (file:///home/aegis/cipher/src/lib/paymentWatch.test.js:59:38)
-#     at checkPayment (file:///home/aegis/cipher/src/lib/paymentWatch.js:95:22)
-#     at file:///home/aegis/cipher/src/lib/paymentWatch.test.js:54:11
+#     at fetchImpl (file://<repo>/src/lib/paymentWatch.test.js:59:38)
+#     at checkPayment (file://<repo>/src/lib/paymentWatch.js:95:22)
+#     at file://<repo>/src/lib/paymentWatch.test.js:54:11
 #     at waitForActual (node:assert:519:21)
 #     at Function.rejects (node:assert:654:31)
-#     at TestContext.<anonymous> (file:///home/aegis/cipher/src/lib/paymentWatch.test.js:53:16)
+#     at TestContext.<anonymous> (file://<repo>/src/lib/paymentWatch.test.js:53:16)
 #     at async Test.run (node:internal/test_runner/test:797:9)
 #     at async Test.processPendingSubtests (node:internal/test_runner/test:526:7)
 # Subtest: an empty watcher and a public explorer are refused before any request
