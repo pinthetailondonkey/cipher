@@ -12,6 +12,7 @@ import { sortMessages, stampArrival } from '../features/chat/media';
 import { withBuzzTag } from '../lib/pushGateway';
 import { conversationKey } from '../lib/dmKeys';
 import { noteFirstSeen } from '../lib/safetyNumber';
+import { clampedExpiresAt } from '../lib/disappearing';
 import { acceptPayment, rememberPublicView, receiptBindsOrder, sendCountersignOnce } from '../lib/proofOfTrade';
 import { deviceWatchedOrderOf, orderRecordForReceipt } from '../lib/orderActions';
 import { scopedSet } from '../lib/storage';
@@ -246,6 +247,15 @@ export function useNIP44DM({ identity }) {
               if (dmExpired(data)) {
                 console.log('[DM] Dropping expired message', { from: counterparty.slice(0, 8), expires_at: data.expires_at });
                 return;
+              }
+              // The stamp the row will carry is the one the roster promised:
+              // clamped to the longest choice the timer offers, and a stamp
+              // that is not a future whole-seconds integer carries no
+              // sentence, so the saved row honors nothing from it. (drill
+              // round residual — the receiver never clamps sender-written
+              // stamps)
+              if (data.expires_at != null) {
+                data = { ...data, expires_at: clampedExpiresAt(data.expires_at) ?? undefined };
               }
               if (dmControlAction(data) === 'gkey') {
                 openDBFor(identity.pk);
