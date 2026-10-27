@@ -56,8 +56,11 @@ export default function AuthenticatedApp({ identity }) {
     }
   }, [vendorMenuPubkey, activeTab]);
   useEffect(() => {
-    // New accounts get the walkthrough once; Profile opens it any time after.
+    // New accounts get the walkthrough once, and land on the Menus tab —
+    // browsing the network's vendors is the front door. Presentation only:
+    // the tab state is this component's own, no store selector changes.
     if (identity?.pk && localStorage.getItem('cipher_new_account') === 'true') {
+      setActiveTab('explore');
       useChatStore.getState().setShowTutorial(true);
     }
   }, [identity?.pk]);
