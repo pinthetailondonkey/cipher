@@ -119,6 +119,19 @@ export function markSafetyChange(contactPubkey) {
   return existing;
 }
 
+// The one writer the re-verify flow has: the human read the 15 digits with
+// their contact out-of-band and they matched, so the flag stops leading the
+// header. The code itself never moves — it is pinned to first-seen — and an
+// unknown contact is a no-op; there is nothing to clear.
+export function verifySafetyNumber(contactPubkey) {
+  const all = loadAll();
+  const existing = all[contactPubkey];
+  if (!existing) return null;
+  existing.changed = false;
+  saveAll(all);
+  return existing;
+}
+
 // The single readable surface a future one-line UI row reads:
 //   safetyNumberFor(pk) -> { number, changed, firstSeenAt } | null
 export function safetyNumberFor(contactPubkey) {

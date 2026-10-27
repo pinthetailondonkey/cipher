@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
-import { ChevronLeft, MoreVertical, Phone } from 'lucide-react';
+import { ChevronLeft, MoreVertical, Phone, Shield, ShieldAlert } from 'lucide-react';
 import { useChatStore } from '../../store/chatStore';
 import { startCall } from '../../lib/voiceCall';
 import { haptic } from '../../lib/haptics';
-import { safetyNumberFor } from '../../lib/safetyNumber';
+import { safetyNumberFor, verifySafetyNumber } from '../../lib/safetyNumber';
 import { shortNpub } from '../../lib/npub';
 import Picture from '../ui/Picture';
+import Sheet from '../ui/Sheet';
+import Button from '../ui/Button';
 
 // Timed messages: what the sender stamps at send; receivers honor
 // expires_at on arrival and the local sweep drops them after.
@@ -88,7 +90,8 @@ export default function ChatHeader({ mode }) {
   // The safety-engine flag, read per render: the 400ms clock below re-renders
   // this header, so a real key change is led with within a beat of it
   // landing — the flag is sticky in the safety record until re-verified.
-  const keyChanged = mode === 'dm' ? Boolean(safetyNumberFor(activeDm)?.changed) : false;
+  const safety = mode === 'dm' && activeDm ? safetyNumberFor(activeDm) : null;
+  const keyChanged = Boolean(safety?.changed);
   const subtitle = keyChanged ? 'key changed — re-verify' : (mode === 'dm' ? 'encrypted' : 'group');
 
   const placeCall = async () => {
@@ -100,9 +103,19 @@ export default function ChatHeader({ mode }) {
   // voice call stays a direct tap in DMs — it is not buried in the menu.
   // Timer and group info ride in the kebab so the row never crowds.
   const [menuOpen, setMenuOpen] = useState(false);
+  // The comparison door: the kebab row opens the sheet, and the sheet carries
+  // the 15 digits, the changed warning and — only while the flag is up — the
+  // one button that clears it, after a human says the digits matched.
+  const [safetyOpen, setSafetyOpen] = useState(false);
   const openTimer = () => {
     setMenuOpen(false);
     setShowTimer(true);
+  };
+  const markCompared = () => {
+    verifySafetyNumber(activeDm);
+    haptic('light');
+    setToast({ type: 'success', message: 'Warning cleared.' });
+    setSafetyOpen(false);
   };
 
   return (
@@ -174,6 +187,17 @@ export default function ChatHeader({ mode }) {
             Message timer
             <span className="text-[12px] text-inkSubtle">{timer && timer !== 'off' ? timer : 'Off'}</span>
           </button>
+          {mode === 'dm' && (
+            <button
+              type="button"
+              onClick={() => { setMenuOpen(false); haptic('light'); setSafetyOpen(true); }}
+              className={`flex w-full items-center justify-between rounded-xl px-3 py-3 text-left text-[14px] ${keyChanged ? 'text-danger' : 'text-ink'}`}
+            >
+              Safety number
+              {keyChanged && <ShieldAlert size={16} />}
+              {!keyChanged && <Shield size={16} className="text-inkSubtle" />}
+            </button>
+          )}
           {mode === 'group' && (
             <button
               type="button"
@@ -194,6 +218,41 @@ export default function ChatHeader({ mode }) {
           }}
         />
       )}
+      <Sheet
+        open={safetyOpen}
+        onClose={() => setSafetyOpen(false)}
+        heading="Safety number"
+        ariaLabel="Safety number"
+      >
+        <div className="pb-4">
+          {safety ? (
+            <>
+              <p className="mono text-center text-2xl font-bold tracking-widest text-ink">{safety.number}</p>
+              <p className="mt-3 text-[13px] leading-relaxed text-inkSubtle">
+                Read these 15 numbers with {title} on a call or in person. If they match, this chat is between you two and nobody else.
+              </p>
+              {keyChanged && (
+                <div className="mt-3 rounded-xl border border-line bg-panelStrong p-3">
+                  <p className="text-[13px] font-semibold text-danger">This contact's key changed.</p>
+                  <p className="mt-1 text-[13px] leading-relaxed text-inkSubtle">
+                    Do not skip the read-out. A match says the new key is really theirs.
+                  </p>
+                  <Button variant="danger" size="md" fullWidth className="mt-3" onClick={markCompared}>
+                    We compared them
+                  </Button>
+                </div>
+              )}
+              <p className="mt-3 text-center text-[11px] text-inkSubtle">
+                First seen {new Date(safety.firstSeenAt * 1000).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })}
+              </p>
+            </>
+          ) : (
+            <p className="text-[13px] text-inkSubtle">
+              No safety number yet — it shows up after your first messages with this contact.
+            </p>
+          )}
+        </div>
+      </Sheet>
     </div>
   );
 }
