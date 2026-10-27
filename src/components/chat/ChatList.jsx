@@ -33,7 +33,6 @@ export default function ChatList({ onOpenChat }) {
   const mutedUntil = useChatStore((s) => s.mutedUntil);
   const archivedChats = useChatStore((s) => s.archivedChats);
   const typingUsers = useChatStore((s) => s.typingUsers);
-  const groupTypingUsers = useChatStore((s) => s.groupTypingUsers);
 
   const [segment, setSegment] = useState('all');
   const [revealed, setRevealed] = useState(() => new Set());
@@ -97,12 +96,14 @@ export default function ChatList({ onOpenChat }) {
     (a, b) => (b.lastMsg?.timestamp || 0) - (a.lastMsg?.timestamp || 0)
   );
 
-  // Typing state, per row: DMs key by the peer, group typing is one set for
-  // every group (the store keys it by member), so it lights any group row.
+  // Typing state, per row. DMs key by the peer in the store, so they light
+  // truthfully. Group typing is one set for every group (the store keys it
+  // by member, not group), so it cannot be attributed to a row — it stays a
+  // follow-up until the store keys it per group.
   const typingFor = (chat) => {
-    const fresh = (stamp) => stamp && now - stamp < 6000;
-    if (chat.type === 'dm') return fresh(typingUsers[chat.id]);
-    return Object.values(groupTypingUsers || {}).some(fresh);
+    if (chat.type !== 'dm') return false;
+    const at = typingUsers[chat.id];
+    return Boolean(at && now - at < 6000);
   };
 
   const previewOf = (chat) => {
