@@ -502,7 +502,7 @@ export default function ChatList({ onOpenChat, onRefresh }) {
             />
             <IconButton
               icon={<Bookmark size={20} />}
-              label="Bookmarks"
+              label="Saved messages"
               onClick={() => setShowBookmarks(true)}
             />
             <span className="relative">
