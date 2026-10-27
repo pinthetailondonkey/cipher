@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Copy } from 'lucide-react';
+import { Copy, Link2 as LinkIcon } from 'lucide-react';
 import { useChatStore } from '../../store/chatStore';
 import Sheet from '../ui/Sheet';
 import Button from '../ui/Button';
@@ -30,6 +30,25 @@ export default function MyProfileModal({ identity }) {
     }
   };
 
+  // The link shape the boot reader already walks (?chat=<npub>):
+  // whoever opens it lands straight in a chat with this identity. The
+  // raw npub stays the other affordance — not everyone copies into a
+  // browser address bar.
+  const copyChatLink = async () => {
+    setError('');
+    try {
+      const { nip19 } = await import('nostr-tools');
+      const npub = identity?.npub || (identity?.pk ? nip19.npubEncode(identity.pk) : '');
+      if (!npub) throw new Error('No public key yet.');
+      const link = `${window.location.origin}${window.location.pathname}?chat=${encodeURIComponent(npub)}`;
+      const ok = await copyText(link);
+      if (ok) setNotice('Copied!');
+    } catch (linkError) {
+      console.error('[MyProfileModal] Could not copy chat link:', linkError);
+      setError('Could not copy the link.');
+    }
+  };
+
   const name = noHexName(profile, identity?.pk);
 
   return (
@@ -46,6 +65,13 @@ export default function MyProfileModal({ identity }) {
         <Button onClick={copyNpub} fullWidth className="mt-5">
           <Copy size={16} className="mr-1 inline" /> Copy npub
         </Button>
+        <button
+          type="button"
+          onClick={copyChatLink}
+          className="mt-2 flex min-h-[52px] w-full items-center justify-center gap-2 rounded-full border border-line text-[15px] font-bold text-ink"
+        >
+          <LinkIcon size={16} /> Copy link to chat with me
+        </button>
         {notice && <p role="status" className="mt-3 text-center text-[13px] text-accentText">{notice}</p>}
         {error && <p role="alert" className="mt-3 text-center text-[13px] text-danger">{error}</p>}
       </div>
