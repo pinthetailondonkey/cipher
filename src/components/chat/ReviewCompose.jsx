@@ -57,7 +57,9 @@ export default function ReviewCompose({ offer, vendorProfile = {}, identity = nu
         result = { success: false, error: error?.message };
       }
       if (result?.success) {
-        pushToast({ type: 'success', message: 'Your review is published.' });
+        // The publisher's two faces, from Deal's bc9d90e: relays took the
+        // event, or the outbox took it to retry — the words say which.
+        pushToast({ type: 'success', message: result.queued ? 'Your review is saved and will send.' : 'Your review is published.' });
         haptic('light');
         onClose?.();
       } else {
