@@ -4,7 +4,7 @@ import { generateGroupKey } from './groupCipher';
 import { distributeGroupKey } from './groupKeyDistribution';
 import { getAllGroupKeys, getCurrentGroupKey, putGroupKey } from './groupKeyStore';
 import { queueMemberBaseline } from './memberBaseline';
-import { isJoinDenied } from '../groupJoinQueue';
+import { isJoinDenied, hasPendingJoin } from '../groupJoinQueue';
 
 // A snapshot older than this is not grounds to refuse a key. Re-fetch first.
 export const MEMBER_SNAPSHOT_MAX_AGE_SEC = 120;
@@ -210,6 +210,10 @@ export async function grantKeyRequest({
   // the owner already denied. Key provision to a denied person is refused
   // outright, whatever the roster happens to name right now.
   if (isJoinDenied(groupId, requester)) return 'deny';
+  // Drills D1-B/D1-D: a queued-but-never-approved sender gets nothing from
+  // any roster that names them, cached or relay-fresh. The owner approves
+  // by dropping the row — only then can a roster decision stand.
+  if (hasPendingJoin(groupId, requester)) return 'deny';
   return resolveKeyRequest({
     requester,
     creator,
