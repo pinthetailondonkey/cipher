@@ -67,6 +67,10 @@ export const REFUND_KINDS = Object.freeze(['admitted', 'timed']);
 // app's clock, so nothing here is forgeable by a lying phone.
 export const BLOCKS_PER_DAY = 144;
 
+// The card's displayed default: the 20-day refund timer as the chain
+// counts it (docs/ESCROW.md). Tunable per order before funding only.
+export const DEFAULT_DELAY_BLOCKS = DEFAULT_DELAY_DAYS * BLOCKS_PER_DAY;
+
 export class Escrow {
   constructor({ priceSats, delayDays = DEFAULT_DELAY_DAYS, caps = {} } = {}) {
     if (typeof priceSats !== 'bigint' || priceSats <= 0n) {
