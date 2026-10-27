@@ -5,10 +5,31 @@ import Avatar from '../ui/Avatar';
 import { pressable } from '../ui/Button';
 import { noHexName } from '../../lib/npub';
 
-// One row = one tap target plus a kebab (mute / archive, persisted by the
-// store). The preview line is blurred until the row is long-pressed; the
-// reveal holds until you leave the list — opening a chat unmounts this
-// component, which resets it.
+// One row = one tap target plus a kebab (mute with a duration, archive,
+// persisted by the store). The preview line is blurred until the row is
+// long-pressed; the reveal holds until you leave the list — opening a chat
+// unmounts this component, which resets it.
+
+// The durations the store supports: an offset in ms, -1 = forever (the
+// store's own sentinel), 0 = unmute. The kebab row names the current state.
+const MUTE_DURATIONS = [
+  { value: 8 * 60 * 60 * 1000, label: '8 hours' },
+  { value: 7 * 24 * 60 * 60 * 1000, label: '1 week' },
+  { value: -1, label: 'Forever' },
+];
+
+// "Muted · 8h"-style label for the current mute, or null when unmuted.
+function muteStateOf(id, mutedChats, mutedUntil) {
+  const until = mutedUntil[id];
+  if (until === 'forever') return 'Muted · Forever';
+  if (typeof until === 'number' && until > Date.now()) {
+    const hours = Math.round((until - Date.now()) / (60 * 60 * 1000));
+    return `Muted · ${hours >= 24 ? `${Math.round(hours / 24)}d` : `${hours}h`}`;
+  }
+  if (mutedChats.includes(id)) return 'Muted';
+  return null;
+}
+
 export default function ChatList({ onOpenChat }) {
   const dms = useChatStore((s) => s.dms);
   const groups = useChatStore((s) => s.groups);
@@ -21,8 +42,14 @@ export default function ChatList({ onOpenChat }) {
 
   const [revealed, setRevealed] = useState(() => new Set());
   const [menuFor, setMenuFor] = useState(null);
+  const [muteMenuFor, setMuteMenuFor] = useState(null);
   const pressTimer = useRef(null);
   const suppressClick = useRef(false);
+
+  const closeMenus = () => {
+    setMenuFor(null);
+    setMuteMenuFor(null);
+  };
 
   const startPress = (id) => {
     cancelPress();
@@ -102,6 +129,7 @@ export default function ChatList({ onOpenChat }) {
     const isRevealed = revealed.has(chat.id);
     const unread = unreadCounts[chat.id] || 0;
     const Icon = chat.group?.isChannel ? Megaphone : Users;
+    const muteLabel = muteStateOf(chat.id, mutedChats, mutedUntil);
 
     return (
       <div key={chat.id} className="relative flex items-stretch border-b border-ink/5 last:border-0">
@@ -151,31 +179,71 @@ export default function ChatList({ onOpenChat }) {
         <button
           type="button"
           aria-label="Chat options"
-          onClick={() => setMenuFor(menuFor === chat.id ? null : chat.id)}
+          onClick={() => { setMenuFor(menuFor === chat.id ? null : chat.id); setMuteMenuFor(null); }}
           className="flex w-10 shrink-0 items-center justify-center text-ink/25 hover:text-ink/60 active:bg-ink/5"
         >
           <MoreVertical size={16} />
         </button>
         {menuFor === chat.id && (
           <>
-            <button type="button" aria-label="Close options" onClick={() => setMenuFor(null)} className="fixed inset-0 z-10 cursor-default" />
-            <div className="absolute right-2 top-2 z-20 w-40 overflow-hidden rounded-xl border border-line bg-panel shadow-lg">
-              <button
-                type="button"
-                onClick={() => { useChatStore.getState().toggleMuteChat(chat.id); setMenuFor(null); }}
-                className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-[14px] font-medium text-ink active:bg-ink/5"
-              >
-                {isMuted(chat.id) ? <BellOff size={14} className="text-ink/45" /> : <Bell size={14} className="text-ink/45" />}
-                {isMuted(chat.id) ? 'Unmute' : 'Mute'}
-              </button>
-              <button
-                type="button"
-                onClick={() => { useChatStore.getState().toggleArchiveChat(chat.id); setMenuFor(null); }}
-                className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-[14px] font-medium text-ink active:bg-ink/5"
-              >
-                {archivedChats.includes(chat.id) ? <ArchiveRestore size={14} className="text-ink/45" /> : <Archive size={14} className="text-ink/45" />}
-                {archivedChats.includes(chat.id) ? 'Unarchive' : 'Archive'}
-              </button>
+            <button type="button" aria-label="Close options" onClick={closeMenus} className="fixed inset-0 z-10 cursor-default" />
+            <div className="absolute right-2 top-2 z-20 w-44 overflow-hidden rounded-xl border border-line bg-panel shadow-lg">
+              {muteMenuFor === chat.id ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setMuteMenuFor(null)}
+                    className="flex w-full items-center gap-2.5 border-b border-line px-3 py-2.5 text-left text-[13px] font-medium text-inkSubtle active:bg-ink/5"
+                  >
+                    Mute
+                  </button>
+                  {MUTE_DURATIONS.map((choice) => (
+                    <button
+                      key={choice.value}
+                      type="button"
+                      onClick={() => { useChatStore.getState().setMuteDuration(chat.id, choice.value); closeMenus(); }}
+                      className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-[14px] font-medium text-ink active:bg-ink/5"
+                    >
+                      <BellOff size={14} className="text-ink/45" />
+                      {choice.label}
+                    </button>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      useChatStore.getState().setMuteDuration(chat.id, 0);
+                      if (mutedChats.includes(chat.id)) useChatStore.getState().toggleMuteChat(chat.id);
+                      closeMenus();
+                    }}
+                    className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-[14px] font-medium text-ink active:bg-ink/5"
+                  >
+                    <Bell size={14} className="text-ink/45" />
+                    Unmute
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setMuteMenuFor(chat.id)}
+                    className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-[14px] font-medium text-ink active:bg-ink/5"
+                  >
+                    {isMuted(chat.id) ? <BellOff size={14} className="text-ink/45" /> : <Bell size={14} className="text-ink/45" />}
+                    Mute
+                    {muteLabel && (
+                      <span className="ml-auto text-[12px] font-normal text-inkSubtle">{muteLabel}</span>
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { useChatStore.getState().toggleArchiveChat(chat.id); closeMenus(); }}
+                    className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-[14px] font-medium text-ink active:bg-ink/5"
+                  >
+                    {archivedChats.includes(chat.id) ? <ArchiveRestore size={14} className="text-ink/45" /> : <Archive size={14} className="text-ink/45" />}
+                    {archivedChats.includes(chat.id) ? 'Unarchive' : 'Archive'}
+                  </button>
+                </>
+              )}
             </div>
           </>
         )}
