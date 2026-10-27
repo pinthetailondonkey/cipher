@@ -40,7 +40,7 @@ export default function VendorMenuHome({ open, onClose, vendorPubkey, profiles =
     setPage('menu');
   }
   const { vouchCount, loading: vouchesLoading } = useVouchCount({ identity, targetPubkey: vendorPubkey });
-  const standing = useVendorReviews({ vendorPubkey, refreshKey: open ? 1 : 0, dealsProvenOf });
+  const standing = useVendorReviews({ vendorPubkey, identity, refreshKey: open ? 1 : 0, dealsProvenOf });
   const profile = profiles[vendorPubkey] || {};
   const name = noHexName(profile, vendorPubkey);
   const panelRef = useModalA11y(Boolean(open && vendorPubkey), onClose);

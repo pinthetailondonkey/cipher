@@ -66,9 +66,9 @@ export default function VendorProfilePage({
         {reviews.length > 0 && (
           <section className="mt-4 overflow-hidden rounded-2xl border border-line bg-panelStrong">
             <p className="border-b border-line px-4 py-2.5 text-[13px] text-inkMuted">Reviews</p>
-            {reviews.map((review) => (
+            {reviews.map((review, index) => (
               <ReviewRow
-                key={review.receiptHash}
+                key={review.receiptHash || `${review.id || ''}-${index}`}
                 review={review}
                 profile={profiles[review.buyerPubkey] || {}}
                 verified={review.receipt?.body?.outcome === 'confirmed'}

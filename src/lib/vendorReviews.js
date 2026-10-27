@@ -26,6 +26,8 @@ import {
 } from './proofOfTrade';
 import { ORDER_STATUS } from './paymentState';
 import { orderState } from './orderActions';
+import { clampRating, receiptBindingOf } from './reputation';
+import { RIDER_WORDS, ridersForReview } from './disputes';
 
 const HEX64 = /^[0-9a-f]{64}$/;
 
@@ -405,6 +407,126 @@ export async function reviewsForVendor(vendorPubkey, table) {
   const rows = table || (await import('../db')).db.vendorReviews;
   const stored = await rows.where('vendorPubkey').equals(vendor).toArray();
   return stored.filter(canDisplayReview).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+}
+
+// ————— the wire side of the display —————
+//
+// One kind-10005 review off the vendor's fetched thread, parsed plainly.
+// The checks a reader can make without any private state: right kind,
+// published under the vendor's key, bound to a 64-hex receipt hash, a whole
+// rating 0..5, a verdict of some words, a 64-hex author who is not the
+// vendor (self-review counts nothing). The receipt stays private, so a
+// wire row never claims the receipt's contents — the month and the chip
+// are only ever derived from receipt evidence this device holds.
+export function parseReviewEvent(event, vendorPubkey) {
+  const vendor = lower(vendorPubkey);
+  if (!vendor || !event || Number(event.kind) !== 10005) return null;
+  const vendorTag = lower(event.tags?.find((tag) => tag[0] === 'p')?.[1]);
+  if (vendorTag !== vendor) return null;
+  const receiptHash = receiptBindingOf(event);
+  if (!receiptHash) return null;
+  const stars = clampRating(event.tags?.find((tag) => tag[0] === 'rating')?.[1]);
+  if (!Number.isFinite(stars) || String(event.tags?.find((tag) => tag[0] === 'rating')?.[1] || '').trim() === '') return null;
+  const author = String(event.pubkey || '').toLowerCase();
+  if (!HEX64.test(author) || author === vendor) return null;
+  const verdict = String(event.content || '').trim();
+  if (!verdict) return null;
+  return {
+    source: 'wire',
+    id: String(event.id || ''),
+    vendorPubkey: vendor,
+    author,
+    stars,
+    verdict,
+    receiptHash,
+    createdAt: Number(event.created_at) || 0,
+  };
+}
+
+// The receipt evidence this device holds, keyed by hash: the month a
+// wire-only review shows and the "Receipt on chain" chip are derived from
+// these, never from anything the wire row claims.
+export function boundReceiptsByHash() {
+  const byHash = {};
+  for (const { receipt } of boundReceipts()) byHash[receipt.hash] = receipt;
+  return byHash;
+}
+
+// The display rows for one vendor page: the wire's review rows merged with
+// the rows this device saved, keyed by receipt hash.
+//   - A hash named by both: the wire row is preferred (the device's own
+//     event may not have come back through the fetch), but only when the
+//     wire signer IS the local row's buyer — a stranger naming a receipt
+//     hash it overheard is a transplant, and the local row stands. The
+//     hybrid keeps the local row's receipt evidence (orderId, receipt,
+//     the derived month, the chip) — that is this device's knowledge, and
+//     the wire row carries none.
+//   - A hash named only on the wire: a wire-only row, month and chip
+//     derived from whatever bound receipt this device happens to hold for
+//     that hash, and buyer = the wire author. Nothing invented.
+//   - A hash named only locally: the local row, untouched.
+// Rows come out newest first.
+export function reviewsFromWire({ vendorPubkey, wireEvents = [], localRows = [], receiptsByHash = {} } = {}) {
+  const vendor = lower(vendorPubkey);
+  const byHash = new Map();
+  if (!vendor) return [];
+  for (const row of Array.isArray(localRows) ? localRows : []) {
+    const hash = lower(row?.receiptHash);
+    if (!hash || lower(row.vendorPubkey) !== vendor) continue;
+    byHash.set(hash, { ...row, receiptHash: hash, source: row.source || 'local' });
+  }
+  for (const event of Array.isArray(wireEvents) ? wireEvents : []) {
+    const wire = parseReviewEvent(event, vendor);
+    if (!wire) continue;
+    const held = byHash.get(wire.receiptHash);
+    if (held) {
+      if (lower(wire.author) !== lower(held.buyerPubkey)) continue;
+      byHash.set(wire.receiptHash, {
+        ...held,
+        stars: wire.stars,
+        verdict: wire.verdict,
+        createdAt: wire.createdAt || held.createdAt,
+        id: wire.id,
+        source: 'wire',
+      });
+      continue;
+    }
+    const receipt = receiptsByHash[wire.receiptHash];
+    const row = {
+      source: 'wire',
+      id: wire.id,
+      vendorPubkey: vendor,
+      buyerPubkey: wire.author,
+      stars: wire.stars,
+      verdict: wire.verdict,
+      receiptHash: wire.receiptHash,
+      createdAt: wire.createdAt,
+      orderId: '',
+      orderMonth: '',
+      receipt: null,
+      riders: [],
+    };
+    if (receipt?.body && receipt.hash === wire.receiptHash) {
+      row.receipt = receipt;
+      row.orderMonth = orderMonthOf(receipt.body.at);
+    }
+    byHash.set(wire.receiptHash, row);
+  }
+  return [...byHash.values()]
+    .filter((row) => row.source !== 'local' || canDisplayReview(row))
+    .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+}
+
+// The riders of record for one display row: the fetched dispute set is
+// read through ridersForReview against the row's own (vendor, receipt,
+// review) pair — so a rider's word taken on the wire is spent for display.
+// The row must have a wire event id; a local-only row has nothing to ride.
+export function ridersOfRow(row, disputeEvents) {
+  if (!row?.id || !row.receiptHash || !row.vendorPubkey) return [];
+  const words = ridersForReview({ vendor: row.vendorPubkey, receipt: row.receiptHash, review: row.id }, disputeEvents);
+  return RIDER_WORDS
+    .filter((word) => words[word])
+    .map((word) => ({ rider: word, text: words[word].text, author: words[word].author, id: words[word].id }));
 }
 
 // The summary band: count and average on the displayed rows. The average
