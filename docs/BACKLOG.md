@@ -4,6 +4,24 @@ Read docs/VISION.md before starting any item.
 Owners' view after the founder's 2026-10-26 board (score today: 4/10; reachable when the board lands: 9/10 — "dispute-free, or math refunds you"): design-lane (6, 9, 10) plus the UI doors in 7 stay with this session; escrow spec, show-proof beats, PoT v2 and membrane wiring belong to the Breakthrough lane; tor/tailes drills stay with the tails lane (feat/tor-tails is MERGED, on-hardware walkthrough still owed).
 Escrow is founder-locked (docs/ESCROW.md on feat/escrow-2of2 @ fa0e546): 5% total = 2.5% buyer + 2.5% vendor, charged once at successful release only; everything rides the order card, no new screens; whale-order fee cap stays a constant the founder flips, nothing hardcoded. Build order, all six the Breakthrough lane's: escrow-fsm → escrow-script → escrow-membrane → escrow-psbt → escrow-ui → re-attack round.
 
+## 15. Whole-app consistency pass — the founder's montage (2026-10-26) — STARTED
+Owner: this session, subagent waves. Founder's call, 2026-10-26: theme the ENTIRE app around the mockup — pure black ground, blue accent, charcoal panels — one look on every screen, chats included: blue sent bubbles, charcoal received bubbles, timestamp + ticks inside the bubble, pill composer with the plus inside it, circular blue send button, centered wordmark header. This supersedes the multi-theme plans in items 6 and 14; Paper light retires with the registry (recoverable from history if the founder asks). Done when every line lands as its own commit:
+1. One look, zero yellow: the vault tokens bake into the stylesheet root, the theme registry, picker and per-theme blocks all go; every amber/yellow literal rides a token; a guard test bans the classes and any return of the theme switcher. Warnings go plain ink with a border.
+2. Chats restyle to the mockup: bubbles, in-bubble meta, pill composer, centered header; group rows show sender name + avatar Telegram-style; display names everywhere — a raw npub is never the name on a row, header or person.
+3. Channels die: nothing creates one, nothing renders the word. Vendor mode gets a real shop instead — products, prices, and a share link + QR people use to walk in.
+4. Burn note is real: audit what it does today (founder: it's a demo), report, then make it send sealed and burn on read.
+5. Connections shrinks to two controls: Tor on/off, proxy. Every relay row goes.
+6. How-to-use is its own page: novice detail — what an npub is, what the twelve words unlock, why the messages are sealed. The startup pop-up dies.
+7. Restore gains the Face ID option.
+8. The chats FAB sits above the input again; the drawer's dim covers the whole screen.
+9. Sending in a group no longer says "Group name was changed".
+10. Member profiles carry reviews and vouches again.
+11. The call button returns to the header.
+12. Pictures and voice notes send; a circular meter shows the climb, Telegram-style.
+13. The built-no-door list ships: safety numbers screen, receipt inspection, product share link (?product=&vendor=), vendor dashboard reading real products, buzz on t=msg/order/call.
+14. Nits: "1 members" reads "1 member"; group timer pills leave the header row; "Copy link" tucks away on shop cards.
+Wave rules: gates before every commit, one change per commit, push each, no yellow may return, and the fix lane's dirty files (useNIP44DM.js, the orderActions pair) are never committed by this lane.
+
 ## 14. Two-sided UI: one app, dark + paper + drawer — DONE (c15951c, 714d5b9, de1ae20, 899024c, 057ae45, 9fbcec1, f429e59, eb46fb0, ba94bc6)
 Done when:
 - Theme tokens (DONE c15951c): every white/black literal rides ink/scrim, glass/hover/shadow tokens live per theme in src/index.css, Paper (light) joins vault/lobby/chromerooms, dark stays default.
