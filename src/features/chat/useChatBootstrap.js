@@ -14,6 +14,7 @@ import { useGroupKeyReconciler } from '../../hooks/useGroupKeyReconciler';
 import { flushSecuringGroupSends } from '../../hooks/useNIP29Group';
 import { bindMemberBaselinePublisher, sealMemberBaseline } from '../../lib/crypto/memberBaseline';
 import { sortMessages } from './media';
+import { rowExpired } from '../../lib/disappearing';
 import { activeUrl, entryById } from '../../lib/egress';
 import { isNativeShell, registerWithGateway, subscribeBrowser, subscribeNative } from '../../lib/pushGateway';
 
@@ -315,11 +316,24 @@ export function useChatBootstrap({
       (await deletedMessageIds()).forEach((id) => deleted.add(id));
       setDeletedMsgs(deleted);
       const allDbMsgs = await db.messages.toArray();
+      // The carried stamp dies first: a row whose own expires_at is past is
+      // dead on load, whatever the local timer says — a local timer that is
+      // missing (fresh device, restored account) is exactly how expired rows
+      // used to resurrect. The dead rows also leave the database, so the
+      // death survives the next load instead of repeating every one.
+      const expiredIds = [];
+      for (const msg of allDbMsgs) {
+        if (rowExpired(msg)) expiredIds.push(msg.id);
+      }
+      if (expiredIds.length) {
+        db.messages.bulkDelete(expiredIds).catch((error) => console.error('[disappearing] Could not delete expired messages:', error));
+      }
+      const liveDbMsgs = expiredIds.length ? allDbMsgs.filter((msg) => !expiredIds.includes(msg.id)) : allDbMsgs;
       const reads = await db.chatReads.toArray();
       const readMap = {};
       reads.forEach(r => { readMap[r.chatId] = r.lastRead; });
       const counts = {};
-      allDbMsgs.forEach(msg => {
+      liveDbMsgs.forEach(msg => {
         if (!msg.isSender) {
           const lastRead = readMap[msg.chatId] || 0;
           if (msg.timestamp > lastRead) counts[msg.chatId] = (counts[msg.chatId] || 0) + 1;
@@ -329,7 +343,7 @@ export function useChatBootstrap({
       const finalDms = {};
       const finalGroups = {};
       let _j = 0;
-      for (const msg of allDbMsgs) {
+      for (const msg of liveDbMsgs) {
         if (++_j % 50 === 0) await new Promise(r => setTimeout(r, 0)); // Yield to UI
         if (msg.isGroup === true) {
           if (!finalGroups[msg.chatId]) finalGroups[msg.chatId] = [];
@@ -446,6 +460,18 @@ export function useChatBootstrap({
       const now = Math.floor(Date.now() / 1000);
       const expiredIds = [];
     const expire = (messages, timerStr) => {
+      // The carried stamp is the death this device can always see: a row
+      // whose own expires_at is past is dead whatever the chat timer is —
+      // the seeding timer lives in the sender's payload, and keying only on
+      // the local setting is how swept rows resurrected after every save.
+      let kept = messages.filter((message) => {
+        if (rowExpired(message, now)) {
+          if (message.id) expiredIds.push(message.id);
+          return false;
+        }
+        return true;
+      });
+      if (kept.length !== messages.length) messages = kept;
       if (!timerStr || timerStr === 'off') return messages;
       let seconds = 0;
       if (String(timerStr).endsWith('m')) seconds = parseInt(timerStr, 10) * 60;
@@ -454,12 +480,12 @@ export function useChatBootstrap({
       else if (timerStr === '7d') seconds = 604800;
       else if (timerStr === '30d') seconds = 2592000;
       if (!seconds) return messages;
-      const kept = messages.filter((message) => {
+      const timerKept = messages.filter((message) => {
         const keep = (now - message.timestamp) < seconds;
         if (!keep && message.id) expiredIds.push(message.id);
         return keep;
       });
-      return kept.length === messages.length ? messages : kept;
+      return timerKept.length === messages.length ? messages : timerKept;
     };
     setDms((prev) => {
       let changed = false;
