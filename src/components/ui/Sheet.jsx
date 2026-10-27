@@ -1,42 +1,93 @@
+// Sheet — THE bottom surface. Phone: rounded-top panel pulled over a scrim,
+// drag-to-dismiss past 120px from the handle, handle 36x4, slide-up spring
+// (380/34); on md+ the same body renders as a centred max-w-md panel. It
+// carries role=dialog, aria-modal, Escape (topmost open sheet only), backdrop
+// tap, focus trap and focus restore, and it locks the page behind itself.
+// Presentation only: nothing here touches app state beyond onClose.
+// `label`/`heading` are aliases of `ariaLabel`/`title` — earlier converted
+// screens call them by the first pair.
+import { AnimatePresence, motion, useDragControls, useReducedMotion } from 'framer-motion';
 import { useEffect, useRef } from 'react';
-import { AnimatePresence, motion, useDragControls } from 'framer-motion';
 
-// The one bottom sheet. rounded-t-[28px] panel, 36x4 drag handle, scrim/60
-// backdrop, slide-up spring (stiffness 380, damping 34), drag-to-dismiss past
-// 120px; on md+ it centers as a max-w-md panel. role=dialog, aria-modal,
-// Escape, backdrop tap, focus trap and focus restore come from here, so no
-// surface hand-rolls that again.
-export default function Sheet({ open, onClose, label, heading, children, className = '' }) {
-  const dragControls = useDragControls();
+const FOCUSABLE = 'a[href], button:not([disabled]), textarea, input, select, [tabindex]:not([tabindex="-1"])';
+
+// Open Sheet registry: Escape (and Tab trapping) applies to the topmost
+// open Sheet only, so a Sheet opened on top of a Sheet does not take both
+// down with one key press.
+let sheetUid = 0;
+const openSheets = [];
+
+export default function Sheet({
+  open,
+  onClose,
+  title = null,
+  heading = null,
+  label = null,
+  ariaLabel = null,
+  glassHeader = false,
+  footer = null,
+  className = '',
+  bodyClassName = '',
+  stretch = false,
+  children,
+}) {
+  const reduced = useReducedMotion();
   const panelRef = useRef(null);
+  const restoreRef = useRef(null);
+  const dragControls = useDragControls();
+  const headingText = title || heading;
+  const spokenLabel = ariaLabel || label || headingText;
+
+  const uid = useRef(null);
+
+  const dropFromStack = () => {
+    const at = openSheets.indexOf(uid.current);
+    if (at !== -1) openSheets.splice(at, 1);
+  };
 
   useEffect(() => {
-    if (!open) return undefined;
+    if (!open) {
+      if (uid.current) {
+        dropFromStack();
+        uid.current = null;
+      }
+      return undefined;
+    }
+    if (!uid.current) {
+      sheetUid += 1;
+      uid.current = sheetUid;
+      openSheets.push(uid.current);
+    }
     // Lock the page behind the sheet; the sheet itself scrolls.
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
-    const opener = document.activeElement;
-    const panel = panelRef.current;
-    panel?.focus({ preventScroll: true });
-
+    const wasFocused = document.activeElement;
+    restoreRef.current = wasFocused instanceof HTMLElement ? wasFocused : null;
+    const id = requestAnimationFrame(() => panelRef.current?.focus({ preventScroll: true }));
     const onKey = (event) => {
       if (event.key === 'Escape') {
+        if (openSheets[openSheets.length - 1] !== uid.current) return;
         event.stopPropagation();
         onClose?.();
         return;
       }
       if (event.key !== 'Tab') return;
-      const focusables = panel?.querySelectorAll(
-        'a[href], button:not([disabled]), textarea, input, select, [tabindex]:not([tabindex="-1"])'
+      const panel = panelRef.current;
+      if (!panel) return;
+      const items = Array.from(panel.querySelectorAll(FOCUSABLE)).filter(
+        (el) => el.offsetParent !== null || el === document.activeElement,
       );
-      if (!focusables || focusables.length === 0) return;
-      const first = focusables[0];
-      const last = focusables[focusables.length - 1];
-      const current = document.activeElement;
-      if (event.shiftKey && (current === first || current === panel)) {
+      if (items.length === 0) {
+        event.preventDefault();
+        panel.focus();
+        return;
+      }
+      const first = items[0];
+      const last = items[items.length - 1];
+      if (event.shiftKey && (document.activeElement === panel || document.activeElement === first)) {
         event.preventDefault();
         last.focus();
-      } else if (!event.shiftKey && current === last) {
+      } else if (!event.shiftKey && document.activeElement === last) {
         event.preventDefault();
         first.focus();
       }
@@ -44,54 +95,80 @@ export default function Sheet({ open, onClose, label, heading, children, classNa
     window.addEventListener('keydown', onKey);
     return () => {
       document.body.style.overflow = previousOverflow;
+      cancelAnimationFrame(id);
       window.removeEventListener('keydown', onKey);
-      if (opener instanceof HTMLElement && document.contains(opener)) opener.focus({ preventScroll: true });
+      restoreRef.current?.focus?.({ preventScroll: true });
+      restoreRef.current = null;
     };
   }, [open, onClose]);
+
+  // If the whole component unmounts while open, leave the stack clean.
+  useEffect(() => () => {
+    if (uid.current) {
+      dropFromStack();
+      uid.current = null;
+    }
+  }, []);
+
+  const dismissByDrag = (_event, info) => {
+    if (info.offset.y > 120) onClose?.();
+  };
 
   return (
     <AnimatePresence>
       {open && (
-        <div className="fixed inset-0 flex items-end justify-center md:items-center" style={{ zIndex: 'var(--z-sheet)' }}>
-          <motion.div
-            className="absolute inset-0 bg-scrim/60"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            onClick={onClose}
-          />
+        <motion.div
+          className={`fixed inset-0 z-sheet flex items-end justify-center bg-scrim/60 p-0 sm:items-center sm:p-4 ${className}`}
+          role="presentation"
+          initial={reduced ? { opacity: 0 } : { opacity: 1 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={reduced ? { duration: 0.01 } : { duration: 0.18 }}
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) onClose?.();
+          }}
+        >
           <motion.div
             ref={panelRef}
+            tabIndex={-1}
             role="dialog"
             aria-modal="true"
-            aria-label={label || heading || 'Dialog'}
-            tabIndex={-1}
-            drag="y"
+            aria-label={typeof spokenLabel === 'string' ? spokenLabel : undefined}
+            initial={{ y: reduced ? 0 : '100%', opacity: reduced ? 0 : 1 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: reduced ? 0 : '100%', opacity: reduced ? 0 : 1 }}
+            transition={reduced ? { duration: 0.01 } : { type: 'spring', stiffness: 380, damping: 34 }}
+            drag={reduced ? false : 'y'}
+            dragConstraints={{ top: 0, bottom: 0 }}
+            dragElastic={{ top: 0, bottom: 0.5 }}
             dragListener={false}
             dragControls={dragControls}
-            dragConstraints={{ top: 0, bottom: 0 }}
-            dragElastic={{ top: 0, bottom: 0.35 }}
-            onDragEnd={(event, info) => {
-              if (info.offset.y > 120 || info.velocity.y > 500) onClose?.();
-            }}
-            initial={{ y: '100%' }}
-            animate={{ y: 0 }}
-            exit={{ y: '100%' }}
-            transition={{ type: 'spring', stiffness: 380, damping: 34 }}
-            className={`relative flex w-full max-w-md flex-col overflow-y-auto rounded-t-[28px] border border-line bg-panel pb-sheet max-h-[92dvh] shadow-2xl outline-none md:rounded-3xl md:max-h-[85dvh] ${className}`}
+            onDragEnd={dismissByDrag}
+            className={`flex w-full flex-col overflow-hidden rounded-t-[28px] border border-line bg-panel shadow-2xl outline-none sm:rounded-[28px] sm:max-w-md ${stretch ? 'h-[calc(100dvh-2rem)] md:h-[calc(100dvh-4rem)]' : 'max-h-[92dvh]'} ${footer ? 'pb-0' : 'pb-sheet'} ${bodyClassName}`}
           >
-            {/* The handle and an optional heading carry the drag region, so a
-                long scrollable body never fights the dismissal gesture. */}
             <div
-              className="shrink-0 touch-none select-none px-4 pt-3"
-              onPointerDown={(event) => dragControls.start(event)}
+              className="flex shrink-0 cursor-grab touch-none items-center justify-center pt-3 active:cursor-grabbing sm:cursor-default"
+              onPointerDown={(event) => {
+                if (reduced) return;
+                dragControls.start(event, { snapToEndpoint: false });
+              }}
+              data-sheet-handle="true"
             >
-              <div className="mx-auto h-1 w-9 rounded-full bg-ink/20" aria-hidden="true" />
-              {heading && <h2 className="mt-3 text-[22px] font-bold tracking-tight text-ink">{heading}</h2>}
+              <span className="h-1 w-9 rounded-full bg-ink/20" aria-hidden="true" />
             </div>
-            {children}
+            {headingText ? (
+              <header className={`shrink-0 border-b border-line px-4 py-3 ${glassHeader ? 'glass-header' : ''}`}>
+                <h2 className="text-[17px] font-bold tracking-tight text-ink">{headingText}</h2>
+              </header>
+            ) : null}
+            <div className={`min-h-0 flex-1 overflow-y-auto ${footer ? 'pb-2' : ''}`}>{children}</div>
+            {footer ? (
+              <footer className="shrink-0 border-t border-line bg-panel px-4 pb-[calc(1rem+env(safe-area-inset-bottom))] pt-3">
+                {footer}
+              </footer>
+            ) : null}
           </motion.div>
-        </div>
+        </motion.div>
       )}
     </AnimatePresence>
   );
