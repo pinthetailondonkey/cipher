@@ -415,7 +415,7 @@ export default function MessageBubble({ message, data, onAction, senderName, ide
           // The review door: the offer is already gated — a bound receipt on
           // this device, the buyer's key on it, the deal completed. Anything
           // else and it never renders.
-          <ReviewPrompt offer={reviewOffer} vendorProfile={profiles[activeDm] || {}} />
+          <ReviewPrompt offer={reviewOffer} vendorProfile={profiles[activeDm] || {}} identity={identity} />
         )}
         <EscrowDormantRow content={content} isBuyer={!!message.isSender} />
         {attachments.layout === 'single' && (
