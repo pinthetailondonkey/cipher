@@ -38,6 +38,7 @@ export function useChatBootstrap({
   const setDms = useChatStore((s) => s.setDms);
   const setProfiles = useChatStore((s) => s.setProfiles);
   const setLoading = useChatStore((s) => s.setLoading);
+  const loading = useChatStore((s) => s.loading);
   const setReactions = useChatStore((s) => s.setReactions);
   const setDeletedMsgs = useChatStore((s) => s.setDeletedMsgs);
   const setUnreadCounts = useChatStore((s) => s.setUnreadCounts);
@@ -569,6 +570,45 @@ export function useChatBootstrap({
     })();
     return () => { cancelled = true; };
   }, [identity?.pk]);
+  // A shared chat link (?chat=<pubkey>) is resolved after the history fetch
+  // lands (master §2): the store's own openChat sets the view, and the read
+  // marker moves the way tapping the row would. The link has done its one
+  // job afterwards, so the search params drop from the address bar — the
+  // way the group join lands. Hex keys and npubs both resolve.
+  useEffect(() => {
+    if (loading || !identity?.pk) return undefined;
+    const urlParams = new URLSearchParams(window.location.search);
+    const chatParam = urlParams.get('chat');
+    if (!chatParam) return undefined;
+    let cancelled = false;
+    (async () => {
+      let peer = '';
+      if (/^[0-9a-f]{64}$/i.test(chatParam)) {
+        peer = chatParam.toLowerCase();
+      } else if (chatParam.startsWith('npub1')) {
+        try {
+          const { nip19 } = await import('nostr-tools');
+          const decoded = nip19.decode(chatParam);
+          if (decoded.type === 'npub') {
+            const data = decoded.data;
+            peer = typeof data === 'string' ? data : Array.from(data).map((byte) => byte.toString(16).padStart(2, '0')).join('');
+          }
+        } catch (error) {
+          console.warn('[chat link] Could not read the address:', error);
+        }
+      }
+      if (!peer || cancelled || peer === identity.pk) return;
+      try {
+        await db.chatReads.put({ chatId: peer, lastRead: Math.floor(Date.now() / 1000) });
+        setUnreadCounts((prev) => ({ ...prev, [peer]: 0 }));
+      } catch {}
+      useChatStore.getState().openChat('dm', peer);
+      if (window.location.search.length > 0) {
+        window.history.replaceState({}, document.title, window.location.pathname + window.location.hash);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [loading, identity?.pk]);
 
   return { fetchChats };
 }
