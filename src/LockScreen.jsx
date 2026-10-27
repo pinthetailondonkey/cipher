@@ -1,5 +1,5 @@
 import Logo from './components/Logo';
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { RefreshCw } from "lucide-react";
 import Button from './components/ui/Button';
 import Keypad from './components/ui/Keypad';
@@ -11,7 +11,42 @@ import SetupProfile from './components/onboarding/SetupProfile';
 import Restore from './components/onboarding/Restore';
 import RestoreMnemonic from './components/onboarding/RestoreMnemonic';
 
+// The vow lines for a cold landing at the app's root (founder order, verbatim
+// from the parked download-page copy in docs/DESKTOP.md). Words only: this
+// block touches no styling, no layout, no relay name. It shows on a device's
+// first open only — the flag goes up once it has been shown, so a returning
+// user skips straight to the pin pad.
+const VOWS_SEEN_KEY = 'cipher_first_run_vows_seen';
+
+const VOW_LEAD = "A messenger and a shop for your phone's browser, or your own computer.";
+
+const VOW_LINES = [
+  'Cipher is a messenger and a shop. Your messages, payments and pictures travel encrypted, and nothing here reports back to us.',
+  'The desktop app routes everything through Tor, built in — your address never rides the envelope in the clear.',
+  'Prefer the browser version? Run a VPN alongside it — it keeps your IP address harder to see.',
+];
+
+function firstRunVowsOwed() {
+  try {
+    return !localStorage.getItem(VOWS_SEEN_KEY);
+  } catch {
+    return false;
+  }
+}
+
 export default function LockScreen({ identity }) {
+  const [showVows] = useState(firstRunVowsOwed);
+
+  // The flag rides the show: set once when the vows render, so a returning
+  // user never sees them twice. Private mode keeps re-showing next open —
+  // the write failing silently is the honest behavior there.
+  useEffect(() => {
+    if (!showVows) return;
+    try {
+      localStorage.setItem(VOWS_SEEN_KEY, '1');
+    } catch { /* private mode */ }
+  }, [showVows]);
+
   const [mode, setMode] = useState(() => {
     try {
       const vaults = JSON.parse(localStorage.getItem('cipher_vaults') || '{}');
@@ -93,6 +128,15 @@ export default function LockScreen({ identity }) {
         <div className="mb-8">
           <Logo size={72} />
         </div>
+
+        {showVows && (
+          <div className="mb-8 w-full max-w-[280px]">
+            <p className="mb-3 text-center text-[13px] font-medium leading-relaxed text-ink">{VOW_LEAD}</p>
+            {VOW_LINES.map((line) => (
+              <p key={line} className="text-center text-[12px] leading-relaxed text-inkMuted">{line}</p>
+            ))}
+          </div>
+        )}
 
         {mode === 'unlock' ? (
           <>
