@@ -19,7 +19,7 @@ import { groupSocketUrl } from '../lib/egress';
 import { relaysForPeer } from '../lib/dmRelays';
 import { dropSecuringSend, forgetPendingKeyRequest, queueSecuringSend, resetKeyRequest, securingSendsFor } from '../lib/crypto/groupKeyRequest';
 import { sortMessages, stampArrival } from '../features/chat/media';
-import { isJoinDenied, denyPendingJoin, loadPendingJoins, queuePendingJoin, withoutDenied } from '../lib/groupJoinQueue.js';
+import { isJoinDenied, denyPendingJoin, dropPendingJoin, clearJoinDenial, loadPendingJoins, queuePendingJoin, withoutDenied } from '../lib/groupJoinQueue.js';
 import { allowsGroupJoins } from '../lib/privacy.js';
 import { groupMetaAnnouncement } from '../lib/groupMetaAnnouncement.js';
 
@@ -686,6 +686,12 @@ export function useNIP29Group({ identity }) {
   }, [identity]);
 
   const kickMember = useCallback(async (groupId, memberPubkey) => {
+    // Drills D3-B: a kick is a durable removal, not a snapshot edit. The
+    // rotation rotated, but the grant path read only the deny list — and
+    // the kick never wrote one — so a replayed 9021 into an open-join
+    // relay re-armed the kicked peer and shipped them the post-kick epoch.
+    // The removal rides the same durable record the deny path uses.
+    denyPendingJoin(groupId, memberPubkey);
     const pool = await getAuthenticatedPool(identity);
     const allMembers = useChatStore.getState().groupMembers || [];
     const remaining = allMembers.filter(m => m.pubkey !== memberPubkey).map(m => m.pubkey);
@@ -738,6 +744,11 @@ export function useNIP29Group({ identity }) {
     if (!results.some((result) => result.status === 'fulfilled')) {
       throw new Error('No relay accepted the add. Try again.');
     }
+    // An owner-initiated add un-walls the member: a past kick or deny stops
+    // blocking the grant path only through the owner's own act (drills
+    // D1-E/D3-B) — a pending row for them stops it too.
+    dropPendingJoin(groupId, memberPubkey);
+    clearJoinDenial(groupId, memberPubkey);
     const snapshot = await loadMemberSnapshot(groupId);
     await rememberMembers(groupId, [...new Set([...(snapshot || []), memberPubkey, identity.pk])]);
     appendSystemMessage(groupId, `${shortNpub(memberPubkey)} was added to the group`, ev.id);

@@ -375,6 +375,11 @@ export function useNIP44DM({ identity }) {
       const counterparty = isSender ? ev.tags.find(t => t[0] === 'p')?.[1] : ev.pubkey;
       if (counterparty) counterparties.add(counterparty);
     }
+    // The drill (round three, 4d) caught commit 9b07acd dropping this
+    // return: the hook then resolves undefined and every app load throws
+    // reading .length of it in useChatBootstrap — profile loading dies
+    // with it.
+    return [...counterparties];
   }, [identity, sendDM, receiptMayBind]);
 
   return { sendDM, sendTypingIndicator, subscribeToDMs, fetchDMs };
