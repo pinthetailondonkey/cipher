@@ -22,6 +22,8 @@ import { sortMessages, stampArrival } from '../features/chat/media';
 import { isJoinDenied, denyPendingJoin, loadPendingJoins, queuePendingJoin, withoutDenied } from '../lib/groupJoinQueue.js';
 import { allowsGroupJoins } from '../lib/privacy.js';
 import { groupMetaAnnouncement } from '../lib/groupMetaAnnouncement.js';
+import { buzzTagFor } from '../lib/pushGateway';
+import { buzzHaptic } from '../lib/haptics';
 
 function currentGroupRelay() {
   return groupSocketUrl() || '';
@@ -1123,6 +1125,10 @@ export function useNIP29Group({ identity }) {
             if (myUsername && parsed.message && parsed.message.includes('@' + myUsername)) isMentioned = true;
           } catch (e) {}
           // S11: the sender is the throttle key; only the OS notification is held back.
+          // Receive-side haptics consume the same tag verdict the OS push does:
+          // the tag engine already refuses typing, read, pin and key bundles.
+          const buzzTag = buzzTagFor(parsed);
+          if (buzzTag) buzzHaptic(buzzTag);
           if (isReplyToMe) showNotification(`💬 Reply in ${groupId.slice(0, 6)}`, event.pubkey);
           else if (isMentioned) showNotification('📣 You were mentioned', event.pubkey);
           else showNotification('New Group Message', event.pubkey);

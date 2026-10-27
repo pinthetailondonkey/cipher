@@ -1,5 +1,7 @@
 import { getPrivacy } from './privacy';
 import { iceServers } from './egress';
+import { buzzHaptic } from './haptics';
+import { useChatStore } from '../store/chatStore';
 
 const LIVE = new Set(['calling', 'ringing', 'connecting', 'active']);
 
@@ -85,6 +87,21 @@ function startRing() {
 function stopRing() {
   if (ringTimer) clearInterval(ringTimer);
   ringTimer = null;
+}
+
+// A muted or archived chat never buzzes. Same rule the notification gate
+// honors in the DM ingestion paths (mutedUntil ± the legacy mutedChats list).
+function incomingBuzzAllowed(peer) {
+  try {
+    const state = useChatStore.getState();
+    const until = state.mutedUntil?.[peer];
+    const muted = until === 'forever' || (typeof until === 'number' && until > Date.now())
+      || state.mutedChats?.includes(peer);
+    const archived = state.archivedChats?.includes(peer);
+    return !muted && !archived;
+  } catch {
+    return true;
+  }
 }
 
 function attachRemoteAudio(pc) {
@@ -263,6 +280,9 @@ export async function handleCallSignal({ data, from, eventId, createdAt }) {
     };
     earlyIce.delete(data.callId);
     emit();
+    // t=call receive side: the same tag the gateway rings for buzzes here,
+    // a distinct long double-pulse, unless this chat is muted or archived.
+    if (incomingBuzzAllowed(from)) buzzHaptic('call');
     startRing();
     return;
   }
