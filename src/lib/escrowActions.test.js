@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import {
   buildEscrowAcceptance,
+  CLOCK_CLAIM_LINE,
+  CLOCK_CLAIM_TITLE,
   deliveryNonceOf,
   escrowActionsFor,
   escrowForCard,
@@ -291,6 +293,25 @@ test('the dead drop receipt words are staged, honest as an assertion only', () =
     && !s.startsWith("'../") && !s.startsWith("'./") && !s.startsWith("'@noble"));
   assert.equal(literals(action).includes(`'${OVERT_REFUND_TITLE}'`), true, 'predicates: the staged words are in the source');
   assert.equal(escrowCopy.includes(`'${OVERT_REFUND_LINE}'`), true, 'predicates: the staged line is in the scanned copy');
+  for (const s of escrowCopy) {
+    assert.doesNotMatch(s, /verif|confirm|guarantee|\bproof\b/, `escrow copy claimed too much: ${s}`);
+  }
+});
+
+// The Clock Box receipt: the day-20 claim moves money on silence, and
+// silence is not an inspection either. Pinned verbatim, scanned under
+// the same honesty ban as the dead drop's words.
+test('the clock claim receipt words are staged, honest as silence only', () => {
+  assert.equal(CLOCK_CLAIM_TITLE, 'Settled by the clock');
+  assert.equal(CLOCK_CLAIM_LINE, 'The buyer went quiet past the timer, so the clock freed the money to the vendor. Silence is not an inspection.');
+  const action = fs.readFileSync(new URL('./escrowActions.js', import.meta.url), 'utf8');
+  const bubble = fs.readFileSync(new URL('../components/MessageBubble.jsx', import.meta.url), 'utf8');
+  const literals = (src) => src.match(/'[^'\n]*'/g) ?? [];
+  const escrowCopy = [...literals(action), ...literals(bubble), CLOCK_CLAIM_TITLE, CLOCK_CLAIM_LINE].filter((s) =>
+    /escrow|Escrow|Dead Drop|dead drop|delivered|refund|Refund|clock|Clock/.test(s)
+    && !s.startsWith("'../") && !s.startsWith("'./") && !s.startsWith("'@noble"));
+  assert.equal(escrowCopy.includes(`'${CLOCK_CLAIM_TITLE}'`), true, 'predicates: the staged title is in the scanned copy');
+  assert.equal(escrowCopy.includes(`'${CLOCK_CLAIM_LINE}'`), true, 'predicates: the staged line is in the scanned copy');
   for (const s of escrowCopy) {
     assert.doesNotMatch(s, /verif|confirm|guarantee|\bproof\b/, `escrow copy claimed too much: ${s}`);
   }

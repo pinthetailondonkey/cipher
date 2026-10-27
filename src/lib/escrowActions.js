@@ -255,6 +255,14 @@ export function escrowActionsFor(message, messages, ownPubkey) {
 export const OVERT_REFUND_TITLE = 'Returned in full';
 export const OVERT_REFUND_LINE = 'The vendor said they delivered. The money went home on their word, not an inspection.';
 
+// The Clock Box receipt words (the founder's day-20 rule). A claim
+// moves money because the buyer went quiet past the timer — the chain
+// proves silence and the preimage, never that atoms moved, so these
+// words upgrade nothing either. Same law as the dead drop: never
+// "verified", never "confirmed", never "proof".
+export const CLOCK_CLAIM_TITLE = 'Settled by the clock';
+export const CLOCK_CLAIM_LINE = 'The buyer went quiet past the timer, so the clock freed the money to the vendor. Silence is not an inspection.';
+
 // The one payment row an accepted escrow card shows: the deposit, to the
 // 2-of-2 address, through the same bitcoin: URI rail a direct deal pays.
 export function escrowPaymentRow(quote) {
