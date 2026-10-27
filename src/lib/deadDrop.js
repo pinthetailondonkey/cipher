@@ -155,7 +155,17 @@ export async function createDeadDropNote({ identity, text, pool, relays }) {
 // notes (this device already opened this hash) fail closed. The default
 // consume check is this device's own ledger; callers may pass isConsumed
 // to consult a different store.
-export async function openDeadDropNote({ identity, fragment, pool, relays, isConsumed = null }) {
+//
+// `hold: true` hands the burn to the caller: it returns { text, hash, burn }
+// without marking the hash consumed or asking the relays to forget, and
+// `burn()` does both. That exists for the delivery-address carrier: the
+// opened text is the buyer's address and it must be SAVED into the
+// vendor's order record first — burning before the save would destroy the
+// address on a save failure — and once the record is down the transit
+// copy burns. Nothing else in this file touches encryption (NIP-44,
+// group AAD, outbox are elsewhere); this only reorders when the local
+// burn marks and the kind-5 request happen.
+export async function openDeadDropNote({ identity, fragment, pool, relays, isConsumed = null, hold = false }) {
   const parts = unpackFragment(fragment);
   if (!parts) throw new Error('That link is not a valid note link.');
 
@@ -185,28 +195,33 @@ export async function openDeadDropNote({ identity, fragment, pool, relays, isCon
     throw new Error('This note could not be opened — the link was altered.');
   }
 
-  // The note is open — burn it on this device now, whatever the relays
-  // decide to do with the delete request below. An unreadable or altered
-  // link never reaches this mark, so it still opens once it is fixed.
-  markDeadDropConsumed(hashHex);
-
-  // Best-effort destruct: ask every relay to forget the blob (kind 5) and
-  // remember locally that this hash is spent. Relays may ignore deletes;
-  // without the fragment the ciphertext stays unreadable either way.
-  if (identity?.sk) {
-    try {
-      const { finalizeEvent } = await import('nostr-tools');
-      const del = finalizeEvent({
-        kind: 5,
-        created_at: Math.floor(Date.now() / 1000),
-        tags: [['e', latest.id]],
-        content: '',
-      }, identity.sk);
-      Promise.allSettled(pool.publish(relays, del)).catch(() => {});
-    } catch (error) {
-      console.warn('[deadDrop] The delete request could not be published:', error);
+  // The burn, as one awaited step: mark the ledger, then best-effort ask
+  // every relay to forget the blob (kind 5) and remember locally that this
+  // hash is spent. Relays may ignore deletes; without the fragment the
+  // ciphertext stays unreadable either way. An unreadable or altered link
+  // never reaches this mark, so it still opens once it is fixed.
+  const burn = async () => {
+    markDeadDropConsumed(hashHex);
+    if (identity?.sk) {
+      try {
+        const { finalizeEvent } = await import('nostr-tools');
+        const del = finalizeEvent({
+          kind: 5,
+          created_at: Math.floor(Date.now() / 1000),
+          tags: [['e', latest.id]],
+          content: '',
+        }, identity.sk);
+        Promise.allSettled(pool.publish(relays, del)).catch(() => {});
+      } catch (error) {
+        console.warn('[deadDrop] The delete request could not be published:', error);
+      }
     }
+  };
+
+  if (hold) {
+    return { text: typeof payload.t === 'string' ? payload.t : '', hash: hashHex, burn };
   }
+  await burn();
   return { text: typeof payload.t === 'string' ? payload.t : '', hash: hashHex };
 }
 
