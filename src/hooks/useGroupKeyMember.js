@@ -18,6 +18,16 @@ export function dmControlAction(data) {
   return null;
 }
 
+// Audit H9 (drill round three): expiry is a decision the DM arms must make
+// BEFORE any engine runs. An expired message is dead on arrival — it installs
+// no key and countersigns no receipt on its way to the drop. Same clock and
+// boundary the arms have always used: whole seconds, and "now" already counts
+// as expired. A missing, zero, or unparseable expires_at is no expiry at all.
+export function dmExpired(data, now = Math.floor(Date.now() / 1000)) {
+  if (!data || !data.expires_at) return false;
+  return now >= Number(data.expires_at);
+}
+
 export async function installMemberGroupKey(payload, sender = null) {
   if (!isGroupKeyPayload(payload)) return false;
   return installReceivedGroupKey(payload, sender);
