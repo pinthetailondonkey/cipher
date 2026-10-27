@@ -59,9 +59,21 @@ const dist = path.resolve(
 );
 // The bundled tor arrives via extraResources, outside the asar: a packed
 // archive cannot be spawned. Dev, it is staged by scripts/fetch-tor.sh.
+// The tor expert bundle ships `tor` on Linux and `tor.exe` on Windows
+// (verified in the bundle layout: tor/tor.exe), so the path is whichever of
+// the two is actually staged — one currency at a time in the same vendor/
+// folder, one fetch script per pack. When neither is there the path still
+// points at `tor`, and startTor below says its own plain words and refuses
+// to leak: every connection fails instead.
+function resolveTorBinary(dir) {
+  for (const name of ['tor', 'tor.exe']) {
+    if (fs.existsSync(path.join(dir, name))) return path.join(dir, name);
+  }
+  return path.join(dir, 'tor');
+}
 const bundledTor = app.isPackaged
-  ? path.join(process.resourcesPath, 'vendor', 'tor', 'tor', 'tor')
-  : path.join(appRoot, 'vendor', 'tor', 'tor', 'tor');
+  ? resolveTorBinary(path.join(process.resourcesPath, 'vendor', 'tor', 'tor'))
+  : resolveTorBinary(path.join(appRoot, 'vendor', 'tor', 'tor'));
 const devCalls = process.env.CIPHER_CALLS === '1';
 
 // Tails=1 env wins; otherwise the os-release check decides (src/tor.js).
