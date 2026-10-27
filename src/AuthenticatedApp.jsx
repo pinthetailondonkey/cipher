@@ -57,6 +57,21 @@ export default function AuthenticatedApp({ identity }) {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, []);
   const showTutorial = useChatStore((state) => state.showTutorial);
+  // A saved product link (?product=&vendor=) resolves on boot and opens its
+  // checkout over the Shop tab. The checkout renders inside Shop, so this
+  // shell — which owns the tab state — follows the checkout product the
+  // link sets. The move rides the store subscription: a Buy tap opens the
+  // checkout on a tab that already shows the shop, and closing one never
+  // moves the shell.
+  useEffect(() => {
+    return useChatStore.subscribe((state, previous) => {
+      const id = state.checkoutProduct?.id || null;
+      if (id && id !== (previous?.checkoutProduct?.id || null)) {
+        setExploreMode('shop');
+        setActiveTab('explore');
+      }
+    });
+  }, [setActiveTab]);
   useEffect(() => {
     // New accounts get the walkthrough once; Profile opens it any time after.
     if (identity?.pk && localStorage.getItem('cipher_new_account') === 'true') {
