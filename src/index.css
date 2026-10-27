@@ -3,8 +3,9 @@
 @tailwind utilities;
 
 /* The one look, worn everywhere: pure black ground, blue accent, charcoal
-   panels. These are the only values the app reads; there is no theme
-   registry and no per-theme override. */
+   panels. Two modes — this dark set is the default; the single light set
+   below applies when data-theme="light". No theme registry, no picker:
+   one switch, two value sets. */
 :root {
   color-scheme: dark;
   --sat: env(safe-area-inset-top, 0px);
@@ -35,6 +36,37 @@
   --glass-header: rgba(10, 10, 10, 0.75);
   --glass-shadow: rgba(0, 0, 0, 0.37);
   --hover-wash: rgba(255, 255, 255, 0.06);
+}
+
+/* The one light set. Paper's values from history, with the directional
+   tokens corrected for white surfaces: accent-text must darken (#60a5fa
+   is 2.3:1 on white) and ink-subtle lightens past its dark value. */
+[data-theme='light'] {
+  color-scheme: light;
+  --bg: #f7f5f0;
+  --bg-soft: #efece5;
+  --panel: #ffffff;
+  --panel-strong: #fbf9f5;
+  --panel-alt: #f2efe8;
+  --border: rgba(28, 27, 24, 0.10);
+  --border-strong: rgba(28, 27, 24, 0.28);
+  --text: #1c1b18;
+  --text-rgb: 28 27 24;
+  --scrim-rgb: 28 27 24;
+  --text-muted: #56544e;
+  --text-subtle: #5f6875;
+  --accent: #2563eb;
+  --accent-text: #1d4ed8;
+  --accent-soft: rgba(37, 99, 235, 0.12);
+  --accent-ink: #ffffff;
+  --success: #0f9d6f;
+  --danger: #dc2626;
+  --glow-a: rgba(37, 99, 235, 0.10);
+  --glow-b: rgba(37, 99, 235, 0.04);
+  --glass-panel: rgba(255, 255, 255, 0.78);
+  --glass-header: rgba(247, 245, 240, 0.82);
+  --glass-shadow: rgba(28, 27, 24, 0.14);
+  --hover-wash: rgba(28, 27, 24, 0.05);
 }
 
 html, body, #root {

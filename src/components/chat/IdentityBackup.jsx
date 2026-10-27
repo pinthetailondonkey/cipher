@@ -117,53 +117,53 @@ export default function IdentityBackup({ identity, onClose }) {
     <div className="h-full overflow-y-auto bg-transparent pb-8">
       <ScreenHeader title="Backup" onBack={onClose} />
       <div className="space-y-4 p-4">
-        <div className="flex items-start gap-3 rounded-2xl border border-line bg-ink/5 p-4 text-[13px] text-ink/70">
-          <Shield size={18} className="mt-0.5 shrink-0" />
+        <div className="flex items-start gap-3 rounded-2xl border border-line bg-panel p-4 text-[13px] text-ink/70">
+          <Shield size={24} className="mt-0.5 shrink-0 text-inkSubtle" />
           Your secret key controls this account. Never share it.
         </div>
-        <div className="overflow-hidden rounded-2xl border border-line bg-panel shadow-lg">
+        <div className="overflow-hidden rounded-2xl border border-line bg-panel">
           {identity?.hasBiometric ? (
-            <p className="flex items-center gap-3 p-4 text-[15px] text-emerald-300"><Fingerprint size={18} /> Face ID is on</p>
+            <p className="flex items-center gap-3 p-4 text-[15px] text-success"><Fingerprint size={24} className="shrink-0" /> Face ID is on</p>
           ) : (
             <button type="button" onClick={setupBiometric} disabled={!identity?.sk || enablingBiometric} className={`flex w-full items-center gap-3 p-4 text-left text-[15px] font-semibold text-ink disabled:opacity-40 ${pressable}`}>
-              <Fingerprint size={18} className="text-ink/40" /> {enablingBiometric ? 'Setting up…' : 'Set up Face ID'}
+              <Fingerprint size={24} className="shrink-0 text-inkSubtle" /> {enablingBiometric ? 'Setting up…' : 'Set up Face ID'}
             </button>
           )}
-          {biometricMessage && <p role="status" className="border-t border-ink/5 px-4 py-3 text-[13px] text-ink/40">{biometricMessage}</p>}
+          {biometricMessage && <p role="status" className="border-t border-line px-4 py-3 text-[13px] text-inkMuted">{biometricMessage}</p>}
         </div>
-        <div className="overflow-hidden rounded-2xl border border-line bg-panel shadow-lg">
-          <div className="flex items-center gap-3 border-b border-ink/5 p-4">
-            <KeyRound size={18} className="shrink-0 text-ink/40" />
+        <div className="overflow-hidden rounded-2xl border border-line bg-panel">
+          <div className="flex items-center gap-3 border-b border-line p-4">
+            <KeyRound size={24} className="shrink-0 text-inkSubtle" />
             <div className="min-w-0 flex-1">
-              <p className="text-[12px] text-ink/40">Public key</p>
+              <p className="text-[12px] text-inkSubtle">Public key</p>
               <p className="truncate font-mono text-[13px] text-ink">{npub || 'Not loaded'}</p>
             </div>
-            <button type="button" onClick={() => copy('npub', npub)} disabled={!npub} className={`text-[13px] font-semibold text-accent ${pressable}`}>{copied === 'npub' ? 'Copied' : 'Copy'}</button>
+            <button type="button" onClick={() => copy('npub', npub)} disabled={!npub} className={`text-[13px] font-semibold text-accentText ${pressable}`}>{copied === 'npub' ? 'Copied' : 'Copy'}</button>
           </div>
           <div className="flex items-center gap-3 p-4">
-            <KeyRound size={18} className="shrink-0 text-ink/40" />
+            <KeyRound size={24} className="shrink-0 text-inkSubtle" />
             <div className="min-w-0 flex-1">
-              <p className="text-[12px] text-ink/40">Secret key</p>
+              <p className="text-[12px] text-inkSubtle">Secret key</p>
               <p className="truncate font-mono text-[13px] text-ink">{showSecret ? secretKey : '••••••••••••••••'}</p>
             </div>
-            <button type="button" onClick={toggleSecret} className={`text-[13px] font-semibold text-accent ${pressable}`}>{showSecret ? 'Hide' : 'Show'}</button>
+            <button type="button" onClick={toggleSecret} className={`text-[13px] font-semibold text-accentText ${pressable}`}>{showSecret ? 'Hide' : 'Show'}</button>
           </div>
         </div>
         <button type="button" onClick={() => copy('nsec')} disabled={!identity?.sk} className={`flex w-full items-center justify-center gap-2 rounded-2xl bg-accent py-3.5 font-bold text-accentInk hover:bg-accent disabled:opacity-40 ${pressable}`}>
           <Copy size={16} /> {copied === 'nsec' ? 'Copied' : 'Copy secret key'}
         </button>
-        <button type="button" onClick={copyPhrase} disabled={!identity?.sk} className={`flex w-full items-center justify-center gap-2 rounded-2xl border border-line bg-panel shadow-lg py-3.5 font-bold text-ink disabled:opacity-40 ${pressable}`}>
+        <button type="button" onClick={copyPhrase} disabled={!identity?.sk} className={`flex w-full items-center justify-center gap-2 rounded-2xl border border-line bg-panel py-3.5 font-bold text-ink disabled:opacity-40 ${pressable}`}>
           <Copy size={16} /> {copied === 'phrase' ? 'Copied' : 'Copy 12-word phrase'}
         </button>
-        <label className="flex items-start gap-3 rounded-2xl border border-line bg-panel shadow-lg p-4 text-[13px] text-ink/70">
-          <input type="checkbox" checked={exportReady} onChange={(event) => setExportReady(event.target.checked)} className="mt-0.5 h-5 w-5 accent-blue-600" />
+        <label className="flex items-start gap-3 rounded-2xl border border-line bg-panel p-4 text-[13px] text-ink/70">
+          <input type="checkbox" checked={exportReady} onChange={(event) => setExportReady(event.target.checked)} className="mt-0.5 h-5 w-5 accent-accent" />
           I understand this file contains my secret key and 12-word phrase.
         </label>
         <button type="button" onClick={downloadRecoveryFile} disabled={!identity?.sk || exporting || !exportReady} className={`flex w-full items-center justify-center gap-2 rounded-2xl bg-accent py-3.5 font-bold text-accentInk hover:bg-accent disabled:opacity-40 ${pressable}`}>
           <Download size={16} /> {exporting ? 'Preparing…' : 'Download recovery backup'}
         </button>
-        <p className="px-1 text-[13px] text-ink/40">Store it privately. Never upload or share it.</p>
-        {copied && copied !== 'npub' && copied !== 'nsec' && copied !== 'phrase' && <p role="status" className="text-[13px] text-accent">{copied}</p>}
+        <p className="px-1 text-[13px] text-inkMuted">Store it privately. Never upload or share it.</p>
+        {copied && copied !== 'npub' && copied !== 'nsec' && copied !== 'phrase' && <p role="status" className="text-[13px] text-accentText">{copied}</p>}
       </div>
     </div>
   );
