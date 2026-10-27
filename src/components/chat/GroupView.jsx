@@ -164,6 +164,15 @@ export default function GroupView({
   const setToast = useChatStore((state) => state.setToast);
   const [pendingLists, setPendingLists] = useState([]);
   const [now, setNow] = useState(() => Date.now());
+  // md+ docks the group's information pane beside the thread, the way the
+  // stack already splits list and thread; below md it rides a Sheet.
+  const [infoDocked, setInfoDocked] = useState(() => window.matchMedia('(min-width: 768px)').matches);
+  useEffect(() => {
+    const query = window.matchMedia('(min-width: 768px)');
+    const onChange = (event) => setInfoDocked(event.matches);
+    query.addEventListener('change', onChange);
+    return () => query.removeEventListener('change', onChange);
+  }, []);
 
   useEffect(() => {
     if (!identity?.pk || !activeGroup?.id) return undefined;
@@ -314,8 +323,8 @@ export default function GroupView({
   };
 
   return (
-    <section className="relative flex h-full min-h-0 flex-col bg-transparent">
-      <div className="mx-auto flex min-h-0 w-full max-w-3xl flex-1 flex-col">
+    <section className="relative flex h-full min-h-0 flex-col bg-transparent md:flex-row">
+      <div className={`flex min-h-0 flex-1 flex-col ${infoDocked ? 'min-w-0' : 'mx-auto w-full max-w-3xl'}`}>
       <ChatHeader mode="group" />
       <div className="grid grid-cols-2 border-b border-ink/5 px-4">
         {[['chat', 'Chat'], ['shop', 'Shop']].map(([id, label]) => (
@@ -395,6 +404,7 @@ export default function GroupView({
       <GroupInfoSidebar
         isOpen={showGroupInfo}
         onClose={() => setShowGroupInfo(false)}
+        docked={infoDocked}
         identity={identity}
         fetchGroupMembers={fetchGroupMembers}
         fetchPinnedMessage={fetchPinnedMessage}
