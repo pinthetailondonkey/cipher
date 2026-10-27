@@ -130,6 +130,9 @@ test('every escrow acceptance is a Dead Drop box: the script embeds the spoken c
   assert.equal(escrow.overtHashHex, overtHashHexOf(nonce));
   const decoded = decodeOrderScript(hexToScript(escrow.scriptHex));
   assert.equal(scriptToHex(decoded.overtHash), escrow.overtHashHex);
+  // and the acceptance is a Clock Box: the day-20 vendor claim rides
+  // the same CSV gate as the buyer's refund
+  assert.equal(decoded.claimBlocks, escrow.delayBlocks);
   // no commitment, no acceptance — a silent open would strand the dead drop
   assert.throws(() => buildEscrowAcceptance({
     priceSats: PRICE, vendorPubHex: PUB_V_HEX, buyerPubHex: PUB_B_HEX, issuedAt: ISSUED_AT,

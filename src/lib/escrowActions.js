@@ -22,7 +22,7 @@
 //   order's slot before it renders at all.
 
 import { quoteEscrow, canEscrow, MIN_ORDER_SATS, BLOCKS_PER_DAY, DEFAULT_DELAY_BLOCKS } from './escrowFsm.js';
-import { assembleOvertOrderScript, decodeOrderScript, hexToScript, scriptToHex } from './escrowScript.js';
+import { assembleClockClaimScript, decodeOrderScript, hexToScript, scriptToHex } from './escrowScript.js';
 import { escrowAddress } from './escrowPsbt.js';
 import { sha256 } from '@noble/hashes/sha2.js';
 import { satsFromString, satsToCoins } from './orderMembrane.js';
@@ -138,7 +138,7 @@ export function buildEscrowAcceptance({ priceSats, delayBlocks = DEFAULT_DELAY_B
   if (!/^[0-9a-f]{64}$/.test(commitment)) {
     throw new Error('An escrow acceptance needs the delivery commitment — sha256 of the vendor’s own delivery nonce.');
   }
-  const scriptHex = scriptToHex(assembleOvertOrderScript({
+  const scriptHex = scriptToHex(assembleClockClaimScript({
     vendorPubKey: hexToScript(vendorPubHex),
     buyerPubKey: hexToScript(buyerPubHex),
     delayBlocks,
