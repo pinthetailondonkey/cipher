@@ -19,10 +19,8 @@ export const EGRESS = [
   { id: 'blossom-band', role: 'Media host', url: 'https://blossom.band', sees: 'Chat photos and voice notes: your IP and the encrypted file when you send, under a throwaway key; each reader\u2019s IP and when they opened it. Not the content. Profile and product pictures are public and stored as they are.' },
   { id: 'link-preview', role: 'Link previews', url: 'https://api.microlink.io', sees: 'Nothing until you turn on Link previews in Privacy. Then your IP and every link a preview is fetched for.' },
   { id: 'dead-drop', role: 'Burn notes', url: 'https://cipherlinkhere.com', sees: 'Your IP when a burn note link is opened there. The note itself lives on the message relay as ciphertext; this host only serves the link page. The key to open it rides in the link fragment, which never reaches any server.' },
-  { id: 'stun-google', role: 'Call routing', url: 'stun:stun.l.google.com:19302', sees: 'Your IP while a call connects. It never carries the audio.' },
-  { id: 'stun-google-1', role: 'Call routing', url: 'stun:stun1.l.google.com:19302', sees: 'Your IP while a call connects. It never carries the audio.' },
-  { id: 'stun-twilio', role: 'Call routing', url: 'stun:global.stun.twilio.com:3478', sees: 'Your IP while a call connects. It never carries the audio.' },
-  { id: 'turn', role: 'Call relay', url: 'turn:openrelayproject:openrelayproject@openrelay.metered.ca:80?transport=tcp', hint: 'Built in. The Connections screen no longer edits relay rows.', sees: 'Routes the audio when a direct link will not cross two networks. The relay sees your IP, never the audio: it is encrypted end to end.' },
+  // Call-routing rows (stun, turn) are gone: calls are off in every build
+  // under the no-IP-leak law, so no call-routing host is contacted at all.
   { id: 'dns', role: 'Name lookup', url: '', hint: 'This device’s resolver', sees: 'Every hostname, at the resolver on this device. Cipher cannot choose it or turn it off.', dynamic: true },
   { id: 'images', role: 'Pictures', url: '', hint: 'Each picture’s own host', sees: 'Your IP and the address of every chat or product picture. The browser fetches each host. The app does not choose that path.', dynamic: true },
   { id: 'profile-photo', role: 'Profile photos', url: '', hint: 'Each photo’s own host', sees: 'Your IP and whatever host a profile photo points at. A photo can be any site. The app does not proxy it.', dynamic: true },
@@ -47,7 +45,6 @@ export const RELAY_SETS = {
   username: ['dm-relay', 'profile-nos'],
   product: ['dm-relay'],
   blossom: ['blossom-primal', 'blossom-nostr-build', 'blossom-band'],
-  stun: ['stun-google', 'stun-google-1', 'stun-twilio'],
   preview: ['link-preview'],
 };
 
@@ -211,31 +208,6 @@ export function groupRelayHttp(config) {
 
 export function blossomServers(config) {
   return urlsFor('blossom', config);
-}
-
-function iceServerFrom(url) {
-  const raw = String(url || '').trim();
-  if (!raw) return null;
-  const server = { urls: raw };
-  try {
-    // Accept both turn://user:pass@host and the spec form turn:user:pass@host.
-    const withoutScheme = raw.replace(/^turns?:\/?\/?/i, '');
-    const parsed = new URL(`https://${withoutScheme}`);
-    if (parsed.username) server.username = decodeURIComponent(parsed.username);
-    if (parsed.password) server.credential = decodeURIComponent(parsed.password);
-    if (parsed.username || parsed.password) {
-      // The login never rides in the urls prop; the browser gets it separately.
-      server.urls = raw.replace(/^(turns?:)\/?\/?[^@/]*@/i, '$1');
-    }
-  } catch { /* a bare stun or turn URL is still usable */ }
-  return server;
-}
-
-export function iceServers(config = readNetworkConfig()) {
-  const servers = urlsFor('stun', config).map((urls) => ({ urls }));
-  const turn = iceServerFrom(activeUrl(entryById('turn'), config));
-  if (turn) servers.push(turn);
-  return servers;
 }
 
 export function linkPreviewEndpoint(target, config) {
