@@ -55,7 +55,8 @@ const PROTOCOL_FILES = new Set([
 ]);
 
 // A line can also mark itself exempt when the string is wire format, not
-// words a person sees. Kept to one string today: the Blossom upload header.
+// words a person sees. Two strings today: the Blossom upload header and the
+// scanned-code scheme strip in lib/npub.js.
 const LINE_WAIVER = 'not UI copy';
 
 // Module specifiers are imports, not prose: `nostr-tools` is a package name.

@@ -1,15 +1,19 @@
 import { useEffect, useRef, useState } from 'react';
-import { CameraOff, Check, Copy, Scan } from 'lucide-react';
+import { CameraOff, Check, Copy, Scan, UserRound } from 'lucide-react';
 import ScreenHeader from '../ui/ScreenHeader';
 import Sheet from '../ui/Sheet';
 import useDialogA11y from '../ui/dialogA11y';
 import { writeClipboard } from '../../lib/copyText';
+import { pubkeyFromScanned } from '../../lib/npub';
+import { haptic } from '../../lib/haptics';
+import { useChatStore } from '../../store/chatStore';
 
 export default function QRScanner({ onClose }) {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const decodedRef = useRef('');
   useDialogA11y(true, () => onClose?.());
+  const setProfilePubkey = useChatStore((state) => state.setProfilePubkey);
   const [error, setError] = useState('');
   const [decodedValue, setDecodedValue] = useState('');
   const [copied, setCopied] = useState(false);
@@ -113,6 +117,15 @@ export default function QRScanner({ onClose }) {
     }
   };
 
+  // Act on a scanned key: the profile opens over the scanner (its own
+  // Message action starts the chat). Not a key, no action — copy remains.
+  const decodedPubkey = decodedValue ? pubkeyFromScanned(decodedValue) : '';
+  const openDecodedProfile = () => {
+    haptic('light');
+    setProfilePubkey(decodedPubkey);
+    onClose?.();
+  };
+
   return (
     <>
     <div className="fixed inset-0 z-call flex flex-col bg-scrim pt-safe pb-safe md:items-center md:justify-center md:bg-scrim/70" role="dialog" aria-modal="true" aria-label="Scan QR code">
@@ -155,6 +168,11 @@ export default function QRScanner({ onClose }) {
           <button type="button" onClick={copyDecodedValue} className="mt-4 flex min-h-[52px] w-full items-center justify-center gap-2 rounded-full bg-accent text-[15px] font-bold text-accentInk">
             <Copy size={16} /> {copied ? 'Copied' : 'Copy'}
           </button>
+          {decodedPubkey && (
+            <button type="button" onClick={openDecodedProfile} className="mt-2 flex min-h-[52px] w-full items-center justify-center gap-2 rounded-full border border-line text-[15px] font-bold text-ink">
+              <UserRound size={16} /> Open profile
+            </button>
+          )}
         </div>
       </Sheet>
     </>
