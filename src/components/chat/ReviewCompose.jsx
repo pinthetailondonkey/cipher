@@ -5,7 +5,8 @@ import Input from '../ui/Input';
 import Button from '../ui/Button';
 import Avatar from '../ui/Avatar';
 import { pushToast } from '../ui/toast';
-import { monthLabelOf, saveReview } from '../../lib/vendorReviews';
+import { createReviewPublisher, monthLabelOf, saveReview } from '../../lib/vendorReviews';
+import { useReputation } from '../../hooks/useReputation';
 import { noHexName } from '../../lib/npub';
 import { haptic } from '../../lib/haptics';
 
@@ -14,19 +15,23 @@ import { haptic } from '../../lib/haptics';
 // Stars and a one-line verdict; the bound receipt hash is the purchase
 // evidence. The sheet derives NOTHING about the date — the order month
 // comes from the receipt at display time, so no flattering month is ever
-// submitted. The review saves to this account's own database; nothing is
-// sent until Deal's kind-10005 publisher folds in
-// (createReviewPublisher, "publisher swaps to Deal-lane kind-10005
-// publisher on fold").
-export default function ReviewCompose({ offer, vendorProfile = {}, open, onClose }) {
+// submitted. Submit is sign-and-publish: the publisher (main's sendReview,
+// through createReviewPublisher) signs kind 10005 over the wire, and the
+// local record is always kept beside the publication so the
+// one-per-receipt door and the offline history survive. A publish refusal
+// keeps the local save and reports itself honestly — no fake success.
+export default function ReviewCompose({ offer, vendorProfile = {}, identity = null, open, onClose }) {
+  const { sendReview } = useReputation({ identity });
   const [stars, setStars] = useState(0);
   const [verdict, setVerdict] = useState('');
   const [saving, setSaving] = useState(false);
+  const [publishError, setPublishError] = useState('');
   const vendorName = noHexName(vendorProfile, offer?.vendorPubkey);
 
   const save = async () => {
     if (!offer || stars < 1 || !verdict.trim() || saving) return;
     setSaving(true);
+    setPublishError('');
     try {
       // No date rides the submission: the month is derived display-side
       // from the receipt the row keeps bound to.
@@ -39,9 +44,26 @@ export default function ReviewCompose({ offer, vendorProfile = {}, open, onClose
         orderId: offer.orderId,
         receipt: offer.receipt,
       });
-      pushToast({ type: 'success', message: 'Your review is saved.' });
-      haptic('light');
-      onClose?.();
+      let result;
+      try {
+        result = await createReviewPublisher({ sendReview })({
+          vendorPubkey: offer.vendorPubkey,
+          stars,
+          verdict,
+          receiptHash: offer.receipt.hash,
+        });
+      } catch (error) {
+        console.error('[ReviewCompose] The review could not be published:', error);
+        result = { success: false, error: error?.message };
+      }
+      if (result?.success) {
+        pushToast({ type: 'success', message: 'Your review is published.' });
+        haptic('light');
+        onClose?.();
+      } else {
+        // The local save stands; the wire told us what it did not take.
+        setPublishError(result?.error || 'The review could not be published.');
+      }
     } catch (error) {
       console.error('[ReviewCompose] The review could not be saved:', error);
       pushToast({ type: 'error', message: error?.message || 'Your review could not be saved.' });
@@ -97,8 +119,14 @@ export default function ReviewCompose({ offer, vendorProfile = {}, open, onClose
           />
         </div>
 
+        {publishError && (
+          <p role="alert" className="mt-3 rounded-xl border border-line bg-panelStrong px-3 py-2 text-[13px] text-danger">
+            {publishError}
+          </p>
+        )}
+
         <p className="mt-3 text-[12px] text-inkSubtle">
-          Saved to your own record. Only the order month shows beside it — never the item or the amount.
+          Published under this account, open to anyone who reads the vendor. Only the order month shows beside it — never the item or the amount.
         </p>
 
         <Button
@@ -108,7 +136,7 @@ export default function ReviewCompose({ offer, vendorProfile = {}, open, onClose
           disabled={stars < 1 || !verdict.trim()}
           className="mt-4"
         >
-          {saving ? 'Saving…' : 'Save review'}
+          {saving ? 'Publishing…' : 'Publish review'}
         </Button>
       </form>
     </Sheet>
