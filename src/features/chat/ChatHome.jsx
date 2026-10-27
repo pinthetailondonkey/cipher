@@ -6,7 +6,6 @@ import CreateGroupModal from '../../components/chat/CreateGroupModal';
 import FloatingMenu from '../../components/chat/FloatingMenu';
 import MyProfileModal from '../../components/chat/MyProfileModal';
 import { notifTotalOf, useChatStore } from '../../store/chatStore';
-import ToastBanner from './ToastBanner';
 
 export default function ChatHome({ identity, openChat, createGroup, fetchChats }) {
   // NotificationCenter, BookmarksViewer and QRScanner are NOT mounted here —
@@ -23,7 +22,6 @@ export default function ChatHome({ identity, openChat, createGroup, fetchChats }
 
   return (
     <motion.div initial={{ x: -20, opacity: 0 }} animate={{ x: 0, opacity: 1 }} exit={{ x: -20, opacity: 0 }} transition={{ duration: 0.2 }} className="relative h-full min-h-0 overflow-y-auto bg-transparent pb-4 md:static">
-      <ToastBanner />
       <div className="mb-2 flex items-center justify-between px-4 pt-3 md:px-3">
         <div className="flex items-center gap-3 md:gap-2">
           <button type="button" onClick={() => useChatStore.getState().setShowDrawer(true)} aria-label="Open menu" className="-ml-1 touch-target p-2 text-ink/50 hover:text-ink md:hidden"><Menu size={20} /></button>
