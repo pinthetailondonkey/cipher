@@ -30,11 +30,44 @@ const NEXT = {
   seen: { confirm: 'confirmed' },
 };
 
-const DEFAULT_CONFIRMATIONS = { btc: 3, xmr: 10 };
+// The one table that knows a coin. Founder ruling ("deal should work with
+// all crypto not just btc and xmr"): adding a rail is a row here plus a
+// watcher — never engine surgery. scale is the atomic-unit power (the
+// piconero class bug is what every future row must get right), depth is the
+// confirmation count, chain is how the chain itself keeps amounts:
+//   transparent     — amounts are public (btc): the chain self-attests and
+//                     the stats word is "proven".
+//   hidden-amount   — amounts are hidden (xmr): a txid proves existence,
+//                     not value, and the stats word is "recorded".
+// LOCKED constraints that do not widen with the table: escrow stays
+// BTC-only 2-of-2 — any other asset rides a direct deal; the vendor's own
+// wallet is never a chain confirmation; only a watcher is.
+export const ASSETS = {
+  btc: { scale: 8, depth: 3, chain: 'transparent' },
+  xmr: { scale: 12, depth: 10, chain: 'hidden-amount' },
+};
+
+// The one stats word per chain class: the short tag a bulletin's reader
+// carries inside an entry (phrasing: 'proven'), kept apart from the
+// verbatim banner sentence that phrasingFor speaks for a screen.
+export const CHAIN_WORD = {
+  transparent: 'proven',
+  'hidden-amount': 'recorded',
+};
+
+// A currency this device trades, or null. Every "is this a coin" check on
+// every rail reads this one answer, so a new row is live everywhere it
+// should be and nowhere it should not.
+export function assetOf(currency) {
+  return ASSETS[String(currency || '').toLowerCase()] || null;
+}
+
+// The rails the stats law can speak for.
+export const RAILS = Object.keys(ASSETS);
 
 export function confirmationsRequired(currency, overrides = {}) {
   const key = String(currency || '').toLowerCase();
-  const fallback = DEFAULT_CONFIRMATIONS[key] ?? 10;
+  const fallback = ASSETS[key]?.depth ?? 10;
   const chosen = overrides && overrides[key] != null ? overrides[key] : fallback;
   const count = Number(chosen);
   if (!Number.isInteger(count) || count < 1) return fallback;
@@ -61,7 +94,7 @@ export function normalizeAmount(value) {
 export function orderCoinAmount(product, currency) {
   const unit = String(product?.currency || '').toLowerCase();
   const wanted = String(currency || '').toLowerCase();
-  if (unit !== 'btc' && unit !== 'xmr') return null;
+  if (!assetOf(unit)) return null;
   if (unit !== wanted) return null;
   const text = String(product?.price ?? product?.amount ?? '').trim();
   if (!/^\d+(\.\d+)?$/.test(text)) return null;
@@ -95,7 +128,7 @@ export function acceptanceDemand(product, ownListings, coinCurrency) {
   const listed = listedItem(product, ownListings);
   if (listed) {
     const currency = String(listed.currency || '').toLowerCase();
-    if (currency !== 'btc' && currency !== 'xmr') return { kind: 'dollars' };
+    if (!assetOf(currency)) return { kind: 'dollars' };
     const price = String(listed.price ?? '').trim();
     if (!/^\d+(\.\d+)?$/.test(price) || !(Number(price) > 0)) return { kind: 'unbound' };
     if (currency !== String(coinCurrency || '').toLowerCase()) return { kind: 'unit', currency };
@@ -114,7 +147,7 @@ export function nextPaymentState(current, event) {
 // The vendor's phone must not call this. A watcher you run is the only caller.
 // There is no fetch here, and an empty watcher URL is a hard stop.
 // `confirmed: true` on the report is not enough. The count has to clear the threshold.
-const SCALE = { btc: 8, xmr: 12 };
+
 
 function decimalUnits(value, scale) {
   const text = typeof value === 'number' && Number.isFinite(value)
@@ -129,16 +162,16 @@ function decimalUnits(value, scale) {
 // Whole coins as exact integer units. Null when the value is not a plain
 // decimal, or is finer than the currency allows.
 export function coinUnits(value, currency) {
-  const scale = SCALE[String(currency || '').toLowerCase()];
-  if (scale == null) return null;
-  return decimalUnits(value, scale);
+  const asset = assetOf(currency);
+  if (!asset) return null;
+  return decimalUnits(value, asset.scale);
 }
 
 export function unitsToCoins(units, currency) {
-  const scale = SCALE[String(currency || '').toLowerCase()];
-  if (scale == null || typeof units !== 'bigint' || units < 0n) return null;
-  const factor = 10n ** BigInt(scale);
-  const frac = (units % factor).toString().padStart(scale, '0').replace(/0+$/, '');
+  const asset = assetOf(currency);
+  if (!asset || typeof units !== 'bigint' || units < 0n) return null;
+  const factor = 10n ** BigInt(asset.scale);
+  const frac = (units % factor).toString().padStart(asset.scale, '0').replace(/0+$/, '');
   return frac ? `${units / factor}.${frac}` : `${units / factor}`;
 }
 
@@ -151,21 +184,21 @@ export function unitsToCoins(units, currency) {
 export function acceptAmount(value, currency) {
   const text = normalizeAmount(value);
   const unit = String(currency || '').toLowerCase();
-  const scale = SCALE[unit];
-  if (scale == null) {
-    throw new Error(`Accept in BTC or XMR. ${String(currency).toUpperCase()} is not a coin this device checks on chain.`);
+  const asset = assetOf(unit);
+  if (!asset) {
+    throw new Error(`Accept in a coin this device checks on chain. ${String(currency).toUpperCase()} is not one of them.`);
   }
-  if (decimalUnits(text, scale) == null) {
-    throw new Error(`${text} is finer than ${unit.toUpperCase()} can count. The chain check could never confirm it, so ask for an amount with at most ${scale} decimal places.`);
+  if (decimalUnits(text, asset.scale) == null) {
+    throw new Error(`${text} is finer than ${unit.toUpperCase()} can count. The chain check could never confirm it, so ask for an amount with at most ${asset.scale} decimal places.`);
   }
   return text;
 }
 
 export function amountCovers(reported, expected, currency) {
-  const scale = SCALE[String(currency || '').toLowerCase()];
-  if (scale == null) return false;
-  const got = decimalUnits(reported, scale);
-  const need = decimalUnits(expected, scale);
+  const asset = assetOf(currency);
+  if (!asset) return false;
+  const got = decimalUnits(reported, asset.scale);
+  const need = decimalUnits(expected, asset.scale);
   if (got == null || need == null) return false;
   return got >= need;
 }
