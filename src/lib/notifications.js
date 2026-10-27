@@ -1,5 +1,6 @@
 import { Capacitor } from '@capacitor/core';
 import { NOTIFICATION_PER_PEER_MS, NOTIFICATION_QUIET_MS, notificationAllowed } from './notificationThrottle';
+import { haptic } from './haptics';
 
 // The gate every OS notification passes before it can fire. It remembers the
 // time of the last notification overall and the last one per counterparty,
@@ -54,6 +55,11 @@ export const showNotification = async (type = 'message', peer = '') => {
   // The message has already landed, saved, and marked unread by the time
   // this is called; the throttle holds back only this OS notification.
   if (!gateNotification(peer)) return;
+  // Receive-side buzz (backlog 6): the same gate that throttles the OS
+  // notification throttles the vibration — one buzz per accepted
+  // notification, never a burst. Call rings buzz in CallOverlay instead;
+  // typing, read, pin and key bundles never reach this door.
+  haptic(type === 'order' ? 'heavy' : 'light');
   const isOrder = type === 'order';
   const title = isOrder ? 'New Order' : 'New Message';
   const body = 'Open Cipher to view it.';
