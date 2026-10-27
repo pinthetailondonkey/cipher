@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
-  JOIN_REQUESTS_EVENT, denyPendingJoin, dropPendingJoin, isJoinDenied,
+  JOIN_REQUESTS_EVENT, clearJoinDenial, denyPendingJoin, dropPendingJoin, hasPendingJoin, isJoinDenied,
   loadPendingJoins, pendingJoinsFor, queuePendingJoin, subscribeJoinRequests,
   withoutDenied,
 } from './groupJoinQueue.js';
@@ -102,5 +102,40 @@ test('a deny strips the sender from a relay roster: an open-join relay cannot br
     // No groupId or no rows at all: nothing to strip.
     assert.deepEqual(withoutDenied('', roster), roster);
     assert.deepEqual(withoutDenied(GROUP, null), []);
+  });
+});
+
+test('a pending row outvotes the relay roster on the grant path (drills D1-B/D1-D)', () => {
+  withStorage(() => {
+    queuePendingJoin(GROUP, { pubkey: PK, eventId: 'ev1', at: 10 });
+    // A relay can name the queued sender; the pending row says nobody has
+    // approved them yet, so the grant path must refuse outright.
+    assert.equal(hasPendingJoin(GROUP, PK), true);
+    // A peer who was never queued decides from the roster as before.
+    assert.equal(hasPendingJoin(GROUP, OTHER), false);
+    // The owner's approval drops the row; a roster naming them then stands.
+    dropPendingJoin(GROUP, PK);
+    assert.equal(hasPendingJoin(GROUP, PK), false);
+    // Case-blind: the attacker's own casing buys nothing.
+    queuePendingJoin(GROUP, { pubkey: PK, at: 10 });
+    assert.equal(hasPendingJoin(GROUP, PK.toUpperCase()), true);
+    assert.equal(hasPendingJoin('', PK), false);
+  });
+});
+
+test('the owner clears the denial and the sender becomes grantable again (drills D1-E)', () => {
+  withStorage(() => {
+    denyPendingJoin(GROUP, PK);
+    assert.equal(isJoinDenied(GROUP, PK), true);
+    // Owner-initiated re-add clears the record — the relay's word never does.
+    assert.equal(clearJoinDenial(GROUP, PK), true);
+    assert.equal(isJoinDenied(GROUP, PK), false);
+    // Clearing an absent denial is a no-op, not an error.
+    assert.equal(clearJoinDenial(GROUP, PK), false);
+    assert.equal(clearJoinDenial('', PK), false);
+    // Deny survives through the same call shape as before, and re-add still works.
+    denyPendingJoin(GROUP, OTHER);
+    clearJoinDenial(GROUP, OTHER);
+    assert.equal(isJoinDenied(GROUP, OTHER), false);
   });
 });

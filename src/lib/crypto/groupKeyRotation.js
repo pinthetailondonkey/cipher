@@ -4,7 +4,7 @@ import { generateGroupKey } from './groupCipher';
 import { distributeGroupKey } from './groupKeyDistribution';
 import { getAllGroupKeys, getCurrentGroupKey, putGroupKey } from './groupKeyStore';
 import { queueMemberBaseline } from './memberBaseline';
-import { isJoinDenied } from '../groupJoinQueue';
+import { isJoinDenied, hasPendingJoin } from '../groupJoinQueue';
 
 // A snapshot older than this is not grounds to refuse a key. Re-fetch first.
 export const MEMBER_SNAPSHOT_MAX_AGE_SEC = 120;
@@ -120,7 +120,10 @@ export function requesterMayReceiveKey(snapshot, requester) {
 export const GRANT_DECISION_TABLE = [
   ['succeeds', '—', 'yes', 'allow'],
   ['succeeds', '—', 'no', 'deny'],
-  ['fails', 'newer or equal', 'yes', 'allow'],
+  // Drills D3-C: a same-second tie used to count as "covers" — the exact
+  // equality a mid-flight rotation stamps — and shipped a withheld key.
+  // The tie is now fail-closed and the row is strictly newer.
+  ['fails', 'strictly newer', 'yes', 'allow'],
   ['fails', 'older', 'yes', 'deny'],
   ['fails', 'none', '—', 'deny'],
 ];
@@ -150,9 +153,12 @@ export function keyRequestDecision({
   const snapshotCoversKey = named
     && clockOk
     && Number.isFinite(updatedAt)
-    && (!Number.isFinite(keyObtainedAt) || updatedAt >= keyObtainedAt);
+    && (!Number.isFinite(keyObtainedAt) || updatedAt > keyObtainedAt);
   // A fresh list that already covers this key does not need a re-read.
   // A list older than the key never takes this path, even inside 120s.
+  // Strictly newer (drills D3-C): a same-second tie reads as "older" and
+  // falls to the re-read, fail-closed — whole-second stamps collapse the
+  // "newer" question at exactly the moment a rotation is mid-flight.
   if (refetched === undefined) {
     if (fresh && snapshotCoversKey) return 'allow';
     return 'refetch';
@@ -210,6 +216,10 @@ export async function grantKeyRequest({
   // the owner already denied. Key provision to a denied person is refused
   // outright, whatever the roster happens to name right now.
   if (isJoinDenied(groupId, requester)) return 'deny';
+  // Drills D1-B/D1-D: a queued-but-never-approved sender gets nothing from
+  // any roster that names them, cached or relay-fresh. The owner approves
+  // by dropping the row — only then can a roster decision stand.
+  if (hasPendingJoin(groupId, requester)) return 'deny';
   return resolveKeyRequest({
     requester,
     creator,
@@ -249,10 +259,16 @@ export async function rotateGroupEpoch({ identity, groupId, remainingPubkeys, pu
   const recipients = [...new Set((remainingPubkeys || []).filter(Boolean))];
   const nextEpoch = current.epoch + 1;
   const newKey = generateGroupKey();
-  await putGroupKey(groupId, nextEpoch, newKey);
-  // Drop the removed member from the snapshot before distribution. A failed
-  // publish must not leave them eligible to re-request the new epoch.
+  // Drills D3-C/D3-E: the record is stripped BEFORE the new epoch lands.
+  // The old order — key first, strip after — left a window where a grant
+  // request saw the new epoch on a record that still named the removed
+  // member, and both timestamps stamp the same whole second, so the
+  // "newer snapshot" check collapsed to equality and shipped the key the
+  // rotation existed to withhold.
   await rememberMembers(groupId, recipients);
+  await putGroupKey(groupId, nextEpoch, newKey);
+  // A failed publish must not leave them eligible to re-request the new
+  // epoch — the strip above already saw to that.
   const prior = (await getAllGroupKeys(groupId)).filter((epoch) => epoch.epoch !== nextEpoch);
   if (recipients.length > 0) {
     await distributeGroupKey({
