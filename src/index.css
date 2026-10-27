@@ -262,6 +262,85 @@ textarea::placeholder {
   }
 }
 
+  /* Escrow timeline (§4): a 5-beat rail with its connector line. Pulse
+     and shimmer ride the global prefers-reduced-motion kill below, and
+     this pair repeats it per-animation for completeness. */
+  .escrow-beat {
+    align-items: flex-start;
+    gap: 0.5rem;
+    padding-bottom: 10px;
+    position: relative;
+  }
+
+  .escrow-beat:last-child {
+    padding-bottom: 0;
+  }
+
+  .escrow-beat:not(:last-child)::before {
+    background: var(--border);
+    border-radius: 1px;
+    bottom: -2px;
+    content: '';
+    left: 5px;
+    position: absolute;
+    top: 14px;
+    width: 2px;
+  }
+
+  .escrow-beat .escrow-dot {
+    flex: none;
+    height: 12px;
+    width: 12px;
+    border: 2px solid var(--border-strong);
+    border-radius: 9999px;
+    background: transparent;
+    margin-top: 3px;
+  }
+
+  .escrow-beat .escrow-dot[data-state='done'] {
+    background: var(--success);
+    border-color: var(--success);
+  }
+
+  .escrow-beat .escrow-dot[data-state='current'] {
+    background: var(--accent);
+    border-color: var(--accent);
+  }
+
+  .escrow-beat .escrow-dot[data-state='unknown'] {
+    background: var(--panel-alt);
+    border-color: var(--border-strong);
+  }
+
+  .escrow-pulse {
+    animation: escrow-pulse 1.4s ease-in-out infinite;
+  }
+
+  .escrow-shimmer {
+    background-image: linear-gradient(90deg, var(--hover-wash), rgba(255, 255, 255, 0.1), var(--hover-wash));
+    background-size: 200% 100%;
+    animation: escrow-shimmer 1.6s linear infinite;
+  }
+
+  @keyframes escrow-pulse {
+    0%,
+    100% {
+      box-shadow: 0 0 0 0 var(--accent-soft);
+    }
+    50% {
+      box-shadow: 0 0 0 5px var(--accent-soft);
+    }
+  }
+
+  @keyframes escrow-shimmer {
+    from {
+      background-position: 200% 0;
+    }
+    to {
+      background-position: -200% 0;
+    }
+  }
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.01ms !important;

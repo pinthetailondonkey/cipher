@@ -14,6 +14,16 @@ import { attachmentsFor } from '../lib/mediaCrypto';
 import { allowsLinkPreviews } from '../lib/privacy';
 import { orderActionsFor, orderState } from '../lib/orderActions';
 import { nameColorOf } from '../lib/nameColor';
+import { escrowActionsFor, escrowForCard, escrowRowsFor } from '../lib/escrowActions';
+import EscrowFactBox from './chat/EscrowFactBox';
+
+// The escrow wire-up (slot keys, quotes, accept-escrow actions) lands inside
+// useCommerce on the escrow branch. Until that commit reaches the app the
+// door stays out — no unwired buttons. Flip when the wiring lands (grep:
+// accept_with_escrow / escrowRequestSlot in src/features/chat/useCommerce.js).
+const ESCROW_WIRING_LANDED = false;
+import EscrowTimeline from './chat/EscrowTimeline';
+import EscrowDormantRow from './chat/EscrowDormantRow';
 import { noHexName } from '../lib/npub';
 import { forwardableContent } from './chat/useThreadActions';
 import { orderPriceLabel } from '../lib/listing';
@@ -65,15 +75,17 @@ function orderLabel(content) {
   if (content.paymentState === 'confirmed') return { text: 'Confirmed', className: 'bg-accent text-accentInk' };
   if (content.status === 'shipped') return { text: 'Shipped', className: 'bg-accent text-accentInk' };
   if (content.status === 'completed') return { text: 'Delivered', className: 'bg-success text-accentInk' };
-  if (content.status === 'cancelled') return { text: 'Cancelled', className: 'bg-ink/15 text-ink' };
-  if (content.status === 'refunded') return { text: 'Refunded', className: 'bg-ink/15 text-ink' };
-  if (content.status === 'disputed') return { text: 'Disputed', className: 'bg-ink/10 text-danger' };
+  if (content.status === 'cancelled') return { text: 'Cancelled', className: 'bg-ink/15 text-inkMuted' };
+  if (content.status === 'refunded') return { text: 'Refunded', className: 'bg-ink/15 text-inkMuted' };
+  // Disputed wears the danger outline: the danger token is a plain var(),
+  // so a /15 fill would never generate, and the outline reads anyway.
+  if (content.status === 'disputed') return { text: 'Disputed', className: 'border border-danger bg-transparent text-danger' };
   if (content.paymentState === 'seen' && content.paymentSeenBy !== 'vendor') return { text: 'Seen on-chain', className: 'bg-accent text-accentInk' };
   if (content.status === 'paid' || content.paymentSeenBy === 'vendor') return { text: 'Marked paid', className: 'bg-accent text-accentInk' };
   // Money badges read as outline: accent-text ring and label, no fill.
   const outline = 'border border-accentText bg-transparent uppercase tracking-[0.08em] text-accentText';
   if (content.status === 'accepted' || content.paymentState === 'address_issued') return { text: 'Address sent', className: outline };
-  return { text: 'Awaiting payment', className: outline };
+  return { text: 'Awaiting payment', className: 'bg-accentSoft text-accentText' };
 }
 
 function OrderReceipt({ content }) {
@@ -83,20 +95,46 @@ function OrderReceipt({ content }) {
   const address = content.shippingAddress || content.address || content.shipTo || '';
   const pill = orderLabel(content);
   return (
-    <div className="mb-1 overflow-hidden rounded-2xl border border-line bg-panel text-left">
-      <Picture src={product.image} alt="" className="h-28 w-full object-cover" />
+    // Telegram's attached card: the card takes the full bubble width, up
+    // to 280px, and the product shot crops flat to 28:9.
+    <div className="w-full max-w-[280px] overflow-hidden rounded-2xl border border-line bg-panel text-left">
+      <Picture src={product.image} alt="" className="aspect-[28/9] w-full object-cover" />
       <div className="p-3">
         <div className="flex items-start justify-between gap-2">
           <p className="text-[15px] font-semibold text-ink">{title}</p>
           <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold ${pill.className}`}>{pill.text}</span>
         </div>
-        {price && <p className="mt-1 text-[13px] font-bold text-accentText">{price}</p>}
+        {price && <p className="mt-1 text-[15px] font-bold text-accentText">{price}</p>}
+        {escrow && (
+          // The escrow quote on the card: prices read back only after they
+          // re-derive on this device (escrowForCard), so the words under
+          // the pill are this device's own arithmetic, never the peer's.
+          <EscrowFactBox escrow={escrow} />
+        )}
+        <EscrowTimeline
+          quote={escrow}
+          status={content.status}
+          paymentState={content.paymentState}
+          paymentSeenBy={content.paymentSeenBy}
+        />
         {content.paymentSeenBy === 'vendor' && content.paymentState !== 'confirmed' && (
           <p className="mt-1 text-[13px] text-ink/50">Not checked on-chain.</p>
         )}
         {address && <p className="mt-1 text-[13px] text-ink/40">Ship to {address}</p>}
       </div>
     </div>
+  );
+}
+
+function OrderActionButton({ action, label, target, message, content, activeDm, onAction, toneByAction }) {
+  // Vendor actions send to the buyer, msg.pubkey; buyer actions to the chat peer.
+  const subject = target === 'peer' ? { ...message, pubkey: activeDm, data: content } : { ...message, data: content };
+  const tone = (
+    { accept_order: 'text-blue-300', ...(toneByAction || {}) }[action]
+    || (['report_issue', 'decline_order', 'cancel_order'].includes(action) ? 'text-rose-300' : 'text-ink')
+  );
+  return (
+    <button key={action} type="button" onClick={(event) => { event.stopPropagation(); onAction?.(action, subject); }} className={`mb-1 block min-h-11 text-left text-[15px] font-semibold ${tone}`}>{label}</button>
   );
 }
 
@@ -171,15 +209,22 @@ export default function MessageBubble({ message, data, onAction, senderName, isP
   const pressPoint = useRef(null);
   const paymentRows = paymentRowsFor(content);
   const attachments = attachmentsFor(content);
-  const qrSignature = `${message?.id || ''}:${paymentRows.map((row) => row.currency).join(',')}`;
+  // Escrow rows arrive only on an accepted card whose quote re-derives
+  // here, and only when the refund key is the buyer's own slot (the
+  // buyer-side claim test in escrowRowsFor; the vendor's own card
+  // carries its own quote). Money state gating comes with the membrane
+  // reroute — the FSM owns it, not a peer's word.
+  const escrowRows = escrowRowsFor(message, chatMessages, content);
+  const paidRows = [...paymentRows, ...escrowRows];
+  const qrSignature = `${message?.id || ''}:${paidRows.map((row) => row.currency).join(',')}`;
   const lastQrSignature = useRef('');
 
   useEffect(() => {
-    if (paymentRows.length && qrSignature !== lastQrSignature.current) {
+    if (paidRows.length && qrSignature !== lastQrSignature.current) {
       lastQrSignature.current = qrSignature;
       if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate([20, 40, 20]);
     }
-  }, [paymentRows.length, qrSignature]);
+  }, [paidRows.length, qrSignature]);
 
   useEffect(() => {
     if (message?.deliveryStatus !== 'securing') return undefined;
@@ -344,14 +389,15 @@ export default function MessageBubble({ message, data, onAction, senderName, isP
           // reads back as its real state.
           <OrderReceipt content={{ ...content, ...orderState(chatMessages, message?.id, { data: content }, '', activeDm) }} />
         )}
-        {orderActionsFor({ ...message, data: content }, chatMessages, '', activeDm).map(({ action, label, target }) => {
-          // Vendor actions send to the buyer, msg.pubkey; buyer actions to the chat peer.
-          const subject = target === 'peer' ? { ...message, pubkey: activeDm, data: content } : { ...message, data: content };
-          const tone = action === 'accept_order' ? 'text-blue-300' : ['report_issue', 'decline_order', 'cancel_order'].includes(action) ? 'text-rose-300' : 'text-ink';
-          return (
-            <button key={action} type="button" onClick={(event) => { event.stopPropagation(); onAction?.(action, subject); }} className={`mb-1 block min-h-[44px] text-left text-[15px] font-semibold ${tone}`}>{label}</button>
-          );
-        })}
+        {orderActionsFor({ ...message, data: content }, chatMessages, '', activeDm).map(({ action, label, target }) => (
+          <OrderActionButton key={`o-${action}`} action={action} label={label} target={target} message={message} content={content} activeDm={activeDm} onAction={onAction} />
+        ))}
+        {ESCROW_WIRING_LANDED && escrowActionsFor({ ...message, data: content }, chatMessages).map(({ action, label, target }) => (
+          // The escrow door: same subject as the direct accept, its own tone
+          // (accent-text, the ask marked by colour).
+          <OrderActionButton key={`e-${action}`} action={action} label={label} target={target} message={message} content={content} activeDm={activeDm} onAction={onAction} toneByAction={{ accept_with_escrow: 'text-accentText' }} />
+        ))}
+        <EscrowDormantRow content={content} isBuyer={!!message.isSender} />
         {attachments.layout === 'single' && (
           <MediaImage item={attachments.items[0]} className="max-h-64 max-w-full rounded-xl object-contain" />
         )}
@@ -367,7 +413,29 @@ export default function MessageBubble({ message, data, onAction, senderName, isP
         {content.type === 'product' && isPinnedListing && (
           <p className="mb-1 inline-flex items-center gap-1 rounded-full border border-accentText px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-accentText"><BadgeCheck size={12} /> Pinned</p>
         )}
-        {paymentRows.length > 0 && <PaymentBlock rows={paymentRows} />}
+        {paidRows.length > 0 && (
+          // The payment block: one black inset panel per coin. The address
+          // is the trust edge — selectable, copyable, openable in the
+          // wallet, never rendered by an explorer link.
+          <div className="mb-1 space-y-2">
+            {paidRows.map(({ currency, address, amount, uri }) => (
+              <div key={`${currency}-${address}`} className="flex flex-col items-center rounded-xl bg-panelStrong p-2">
+                {amount && <p className="mb-1 select-all text-center font-mono text-[15px] font-bold text-inkMuted">Pay {amount} {currency}</p>}
+                <QRCodeSVG value={uri} size={120} level="M" />
+                <span className="mt-1 select-all break-all text-center font-mono text-[10px] text-inkMuted">{address}</span>
+                <div className="mt-2 flex flex-wrap items-center justify-center gap-2">
+                  <button type="button" onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); copyText(address); }} className="min-h-[44px] rounded-full border border-line px-3 py-1.5 text-[13px] font-semibold text-accentText">Copy address</button>
+                  <button type="button" onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); haptic('light'); sharePayment(currency, address, amount, uri); }} className="min-h-[44px] rounded-full border border-line px-3 py-1.5 text-[13px] font-semibold text-accentText">Share link</button>
+                  {uri && (
+                    <a href={uri} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => event.stopPropagation()} className="inline-flex min-h-[44px] items-center gap-1 rounded-full border border-line px-3 py-1.5 text-[13px] font-semibold text-accentText">
+                      Open in wallet
+                    </a>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
         {text ? (
           <p className="whitespace-pre-wrap break-words text-[14.5px] leading-[1.28]">
             {urlTokens(text).map((token, i) => (
@@ -420,7 +488,7 @@ export default function MessageBubble({ message, data, onAction, senderName, isP
             ))}
           </div>
         )}
-        {!text && !content.url && !content.urls && !content.media && !paymentRows.length && !['image', 'audio', 'product', 'cipher_order', 'order_request', 'order_update', 'text'].includes(content.type) && (
+        {!text && !content.url && !content.urls && !content.media && !paidRows.length && !['image', 'audio', 'product', 'cipher_order', 'order_request', 'order_update', 'text'].includes(content.type) && (
           <p className="text-[13px] text-inkSubtle">Couldn't open</p>
         )}
       </div>
