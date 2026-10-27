@@ -132,13 +132,9 @@ test('the network snapshot stays the same object until storage changes', () => {
 test('people search publishes nothing, and its text goes only to the search rows', () => {
   const search = fs.readFileSync(new URL('../features/chat/usePeopleSearch.js', import.meta.url), 'utf8');
   assert.equal(/finalizeEvent|\.publish\(|5315/.test(search), false);
-  // The name-lookup gate sits before the fetch, same shape as the pictures:
-  // a plain browser never visits name@site.com for a record, because the
-  // visit tells that site the searcher's address and the name looked for.
-  assert.match(search, /pictureIsGated\(`https:\/\/\$\{domain\}`\)/);
-  assert.match(search, /'nip05-off'/);
-  assert.ok(search.indexOf('pictureIsGated') < search.indexOf('.well-known/nostr.json'),
-    'the gate must run before the site is ever contacted');
+  // Name lookups load as set by the founder: the fetch itself runs, with no
+  // refusal row before it (load-all + VPN tip, docs/NO-IP-LEAKS.md).
+  assert.equal(/'nip05-off'/.test(search), false);
   const searchCalls = search.match(/\n[^\n]*\n[^\n]*search: (rawQuery|usernameToFind)/g) || [];
   assert.ok(searchCalls.length >= 2);
   for (const call of searchCalls) assert.match(call, /searchRelays|publicSearchRelays/);
