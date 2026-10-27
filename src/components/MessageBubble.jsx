@@ -14,6 +14,8 @@ import { MediaImage } from './ui/PrivateMedia';
 import { attachmentsFor } from '../lib/mediaCrypto';
 import { allowsLinkPreviews } from '../lib/privacy';
 import { orderActionsFor, orderState } from '../lib/orderActions';
+import { reviewOfferForOrder } from '../lib/vendorReviews';
+import ReviewPrompt from './chat/ReviewPrompt';
 import { nameColorOf } from '../lib/nameColor';
 import { escrowActionsFor, escrowForCard, escrowRowsFor } from '../lib/escrowActions';
 import EscrowFactBox from './chat/EscrowFactBox';
@@ -188,7 +190,7 @@ function PaymentBlock({ rows }) {
 // Run boundaries arrive from the view that maps the messages: a run is a
 // stretch of consecutive bubbles from the same author, so only the run's last
 // bubble wears the squared corner and (in groups) the avatar.
-export default function MessageBubble({ message, data, onAction, senderName, isPinnedListing = false, showAvatar = false, avatarUrl = '', avatarInitial = '?', canPin = false, runStart = true, runEnd = true, selectMode = false, selected = false, onToggleSelect }) {
+export default function MessageBubble({ message, data, onAction, senderName, identity = null, isPinnedListing = false, showAvatar = false, avatarUrl = '', avatarInitial = '?', canPin = false, runStart = true, runEnd = true, selectMode = false, selected = false, onToggleSelect }) {
   const content = data || message?.data || {};
   const text = messageText(content) || messageText(message?.rawContent) || messageText(message?.text) || '';
   const isSender = !!message?.isSender;
@@ -206,6 +208,17 @@ export default function MessageBubble({ message, data, onAction, senderName, isP
   const chatMessages = useChatStore((state) => (state.view === 'dm' ? state.dms[state.activeDm] : undefined));
   // The reply quote reads its parent from THIS thread's list, dm or group.
   const replyThread = useChatStore((state) => (state.view === 'group' ? state.groupMessages[state.activeGroup?.id] : state.dms[state.activeDm]) || []);
+  // The review offer composes only where it can: this device holds the
+  // bound receipt, the viewer is its buyer, and the deal reads completed.
+  // Anything else and no door renders.
+  const reviewOffer = (content.type === 'cipher_order' || content.type === 'order_request') && identity?.pk && activeDm
+    ? reviewOfferForOrder({
+        messages: chatMessages || [],
+        order: message,
+        buyerPubkey: identity.pk,
+        vendorPubkey: activeDm,
+      })
+    : null;
   const pressTimer = useRef(null);
   const pressPoint = useRef(null);
   const paymentRows = paymentRowsFor(content);
@@ -313,7 +326,7 @@ export default function MessageBubble({ message, data, onAction, senderName, isP
     // option only shows for one. The group hook re-checks standing anyway.
     ...(inGroup && canPin ? [{ action: 'pin', label: 'Pin' }] : []),
     ...(isSender && text && content.type !== 'product' ? [{ action: 'edit', label: 'Edit' }] : []),
-    ...(content.type === 'product' && !isSender ? [{ action: 'buy_product', label: 'Buy' }, { action: 'view_vendor', label: 'Seller shop' }] : []),
+    ...(content.type === 'product' && !isSender ? [{ action: 'buy_product', label: 'Buy' }, { action: 'view_vendor', label: 'Their menu' }] : []),
     ...(content.type === 'product' && isSender ? [{ action: 'broadcast_product', label: 'Share' }, { action: 'edit_product', label: 'Edit listing' }] : []),
     { action: 'select', label: 'Select' },
     { action: 'delete', label: 'Delete', danger: true },
@@ -398,6 +411,12 @@ export default function MessageBubble({ message, data, onAction, senderName, isP
           // (accent-text, the ask marked by colour).
           <OrderActionButton key={`e-${action}`} action={action} label={label} target={target} message={message} content={content} activeDm={activeDm} onAction={onAction} toneByAction={{ accept_with_escrow: 'text-accentText' }} />
         ))}
+        {reviewOffer && (
+          // The review door: the offer is already gated — a bound receipt on
+          // this device, the buyer's key on it, the deal completed. Anything
+          // else and it never renders.
+          <ReviewPrompt offer={reviewOffer} vendorProfile={profiles[activeDm] || {}} />
+        )}
         <EscrowDormantRow content={content} isBuyer={!!message.isSender} />
         {attachments.layout === 'single' && (
           <MediaImage item={attachments.items[0]} className="max-h-64 max-w-full rounded-xl object-contain" />
