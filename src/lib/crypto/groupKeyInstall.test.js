@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { senderAuthorizedForGroupKey, parseGroupKeyBundle } from './groupKeyDistribution.js';
+import { senderAuthorizedForGroupKey, parseGroupKeyBundle, safetyChangeFromInstall } from './groupKeyDistribution.js';
 
 // F1: a kind-4 t:'gkey' DM used to install for ANY sender — key takeover.
 // The guard: sender must be named in the relay-signed member snapshot, and
@@ -69,4 +69,20 @@ test('a bundle must not mix group ids (partial install of a split bundle refused
     ...parseGroupKeyBundle({ t: 'gkey', gid: 'g2', keys: [{ ep: 2, k: hex }] }),
   ];
   assert.equal(new Set(mixed.map((row) => row.groupId)).size > 1, true);
+});
+
+// Drill residual: markSafetyChange had zero callers. It fires only from
+// installReceivedGroupKey, only after every guard passed, and only when
+// this device's key knowledge actually MOVED — the first key or a roll
+// forward is the contact changing the key material it may trust; a
+// re-delivery, a backfill of a prior epoch, or a rollback (refused
+// anyway) moves nothing and flags nothing.
+test('the safety flag rides only an install that moved the key forward', () => {
+  assert.equal(safetyChangeFromInstall({ currentEpoch: undefined, maxEpoch: 1 }), true, 'the device\'s first key is a change');
+  assert.equal(safetyChangeFromInstall({ currentEpoch: undefined, maxEpoch: 0 }), true, 'epoch 0 as a first key still installs');
+  assert.equal(safetyChangeFromInstall({ currentEpoch: 5, maxEpoch: 6 }), true, 'a roll forward is the contact changing keys');
+  assert.equal(safetyChangeFromInstall({ currentEpoch: 5, maxEpoch: 5 }), false, 're-stating the held epoch flags nothing');
+  assert.equal(safetyChangeFromInstall({ currentEpoch: 6, maxEpoch: 5 }), false, 'a refused rollback flags nothing');
+  assert.equal(safetyChangeFromInstall({ currentEpoch: 5, maxEpoch: NaN }), false, 'no epoch, no flag');
+  assert.equal(safetyChangeFromInstall({ currentEpoch: 5, maxEpoch: '6' }), false, 'a string epoch is no epoch');
 });
