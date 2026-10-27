@@ -1,7 +1,9 @@
-import React, { useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronRight, X } from 'lucide-react';
+import { useState } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
+import { ChevronRight } from 'lucide-react';
 import Logo from './Logo';
+import Sheet from './ui/Sheet';
+import Button from './ui/Button';
 
 const steps = [
   {
@@ -31,9 +33,14 @@ const steps = [
 ];
 
 export default function TutorialModal({ isOpen, onClose }) {
-  const [currentStep, setCurrentStep] = useState(0);
-
+  // The sheet shell stays mounted between closes; the steps remount below, so
+  // every open starts the tour again at step one.
   if (!isOpen) return null;
+  return <TutorialSteps onClose={onClose} />;
+}
+
+function TutorialSteps({ onClose }) {
+  const [currentStep, setCurrentStep] = useState(0);
 
   const handleNext = () => {
     if (currentStep < steps.length - 1) {
@@ -45,8 +52,10 @@ export default function TutorialModal({ isOpen, onClose }) {
   };
 
   const step = steps[currentStep];
+  const last = currentStep === steps.length - 1;
 
   return (
+<<<<<<< HEAD
     <AnimatePresence>
       <motion.div 
         initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
@@ -85,5 +94,39 @@ export default function TutorialModal({ isOpen, onClose }) {
         </motion.div>
       </motion.div>
     </AnimatePresence>
+=======
+    <Sheet open onClose={onClose} label="How to use">
+      <div className="pb-6 pt-2 text-center">
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={currentStep}
+            initial={{ x: 20, opacity: 0 }}
+            animate={{ x: 0, opacity: 1 }}
+            exit={{ x: -20, opacity: 0 }}
+            transition={{ type: 'spring', stiffness: 380, damping: 34 }}
+            className="flex flex-col items-center"
+          >
+            <div className="mb-6 mt-1">
+              <Logo size={72} />
+            </div>
+            <h2 className="mb-3 text-[22px] font-bold tracking-tight text-ink">{step.title}</h2>
+            <p className="mb-4 px-2 text-[14px] leading-relaxed text-inkMuted">{step.desc}</p>
+            {last && (
+              <p className="mb-4 px-2 text-[13px] leading-relaxed text-accentText">You can reopen this guide any time under Profile → How to use.</p>
+            )}
+            <div className="mb-6 flex gap-2">
+              {steps.map((_, i) => (
+                <span key={i} className={`h-1.5 w-1.5 rounded-full transition-all duration-300 ${i === currentStep ? 'h-1.5 w-6 bg-accent' : 'bg-ink/10'}`} />
+              ))}
+            </div>
+          </motion.div>
+        </AnimatePresence>
+        <Button onClick={handleNext} fullWidth>
+          {last ? 'Start Using Cipher' : 'Next'}
+          {!last && <ChevronRight size={18} className="ml-1 inline" />}
+        </Button>
+      </div>
+    </Sheet>
+>>>>>>> origin/feat/rebuild-pr2
   );
 }

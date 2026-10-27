@@ -1,5 +1,7 @@
 import { Bookmark } from 'lucide-react';
 import ScreenHeader from '../ui/ScreenHeader';
+import ListRow from '../ui/ListRow';
+import EmptyState from '../ui/EmptyState';
 import { useChatStore } from '../../store/chatStore';
 
 export default function BookmarksViewer({ onClose, onJump }) {
@@ -28,29 +30,20 @@ export default function BookmarksViewer({ onClose, onJump }) {
         <ScreenHeader title="Saved" onBack={onClose} />
         <div className="min-h-0 flex-1 overflow-y-auto p-4">
           {items.length === 0 ? (
-            <div className="rounded-2xl border border-line bg-panel px-4 py-16 text-center">
-              <Bookmark size={28} className="mx-auto mb-3 text-ink/30" />
-              <p className="text-[15px] font-semibold text-ink">Nothing saved</p>
-              <p className="mt-1 text-[13px] text-ink/40">Long-press a message and choose Save.</p>
-            </div>
+            <EmptyState icon={<Bookmark size={22} />} title="Nothing saved" line="Long-press a message and choose Save." />
           ) : (
             <div className="overflow-hidden rounded-2xl border border-line bg-panel">
               {items.map(({ chatId, messageId, isGroup, message }) => (
-                <button
+                <ListRow
                   key={`${chatId}:${messageId}`}
-                  type="button"
                   onClick={() => {
                     onJump?.(chatId, messageId, isGroup);
                     onClose?.();
                   }}
-                  className="flex w-full items-start gap-3 border-b border-line p-4 text-left last:border-0 active:bg-ink/5"
-                >
-                  <Bookmark size={18} className="mt-0.5 shrink-0 text-ink/40" />
-                  <span className="min-w-0">
-                    <span className="block truncate text-[15px] font-semibold text-ink">{isGroup ? groupList.find((group) => group.id === chatId)?.name || 'Group' : 'Direct message'}</span>
-                    <span className="mt-1 block truncate text-[13px] text-ink/40">{message.data?.message || message.rawContent || message.data?.url || 'Saved message'}</span>
-                  </span>
-                </button>
+                  leading={<Bookmark size={18} className="shrink-0 text-ink/40" />}
+                  title={isGroup ? groupList.find((group) => group.id === chatId)?.name || 'Group' : 'Direct message'}
+                  subtitle={message.data?.message || message.rawContent || message.data?.url || 'Saved message'}
+                />
               ))}
             </div>
           )}

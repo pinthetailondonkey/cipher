@@ -1,11 +1,17 @@
 import { useState } from 'react';
+<<<<<<< HEAD
 import { Copy, Check } from 'lucide-react';
 import Sheet from '../ui/Sheet';
+=======
+import { Check, Copy } from 'lucide-react';
+>>>>>>> origin/feat/rebuild-pr2
 import { useChatStore } from '../../store/chatStore';
 import { createDeadDropNote } from '../../lib/deadDrop';
 import { getAuthenticatedPool } from '../../lib/pool';
 import { generalRelays } from '../../lib/relays';
 import { haptic } from '../../lib/haptics';
+import Sheet from '../ui/Sheet';
+import Button from '../ui/Button';
 
 // Dead-drop note writer: type it, get one link, the note burns after it is
 // opened. The link carries the key in its fragment — anyone who can see the
@@ -18,8 +24,6 @@ export default function DeadDropModal({ identity }) {
   const [link, setLink] = useState('');
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
-
-  if (!show) return null;
 
   const close = () => {
     setShow(false);
@@ -56,24 +60,45 @@ export default function DeadDropModal({ identity }) {
   };
 
   return (
+<<<<<<< HEAD
     <Sheet open={show} onClose={close} label="Burn note" heading="Burn note">
       <div className="px-5 pb-5 pt-2">
         <p className="mb-3 text-[13px] leading-relaxed text-ink/50">
           Write it, get one link, send it however you want. The note opens once — after that it is gone. Whoever has the link can read it, so send it to the right chat.
         </p>
+=======
+    <Sheet open={show} onClose={close} title="Burn note">
+      <p className="mb-3 text-[13px] leading-relaxed text-inkMuted">
+        Write it, get one link, send it however you want. The note opens once — after that it is gone. Whoever has the link can read it, so send it to the right chat.
+      </p>
+>>>>>>> origin/feat/rebuild-pr2
 
-        {link ? (
-          <div>
-            <div className="max-h-32 overflow-y-auto break-all rounded-2xl border border-line bg-panel p-3 font-mono text-[12px] text-accentText">{link}</div>
-            <button
-              type="button"
-              onClick={copy}
-              className="mt-3 flex min-h-[44px] w-full items-center justify-center gap-2 rounded-2xl bg-accent py-2.5 font-bold text-accentInk active:scale-[0.99]"
-            >
-              {copied ? <><Check size={16} /> Copied</> : <><Copy size={16} /> Copy link</>}
-            </button>
-            <p className="mt-2 text-center text-[11px] text-ink/40">This link shows once. It is not saved anywhere.</p>
+      {link ? (
+        <div className="pb-2">
+          <div className="max-h-32 overflow-y-auto break-all rounded-2xl border border-line bg-panelStrong p-3 font-mono text-[12px] text-accentText">{link}</div>
+          <Button fullWidth className="mt-3" onClick={copy}>
+            {copied ? <><Check size={16} className="mr-1 inline" /> Copied</> : <><Copy size={16} className="mr-1 inline" /> Copy link</>}
+          </Button>
+          <p className="mt-2 text-center text-[11px] text-inkSubtle">This link shows once. It is not saved anywhere.</p>
+        </div>
+      ) : (
+        <div className="pb-2">
+          <textarea
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            maxLength={8000}
+            rows={5}
+            placeholder="Say it once."
+            className="w-full resize-none rounded-2xl border border-line bg-panelStrong p-3 text-[14px] text-ink placeholder-ink/30 outline-none focus:border-accent"
+            autoFocus
+          />
+          <div className="mt-1 flex items-center justify-between pb-1">
+            <span className="text-[11px] text-inkSubtle">{text.length}/8000</span>
+            <Button onClick={make} loading={busy} disabled={!text.trim() || busy}>
+              {busy ? 'Sealing…' : 'Make the link'}
+            </Button>
           </div>
+<<<<<<< HEAD
         ) : (
           <div>
             <textarea
@@ -99,6 +124,10 @@ export default function DeadDropModal({ identity }) {
           </div>
         )}
       </div>
+=======
+        </div>
+      )}
+>>>>>>> origin/feat/rebuild-pr2
     </Sheet>
   );
 }

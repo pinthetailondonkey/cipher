@@ -1,49 +1,14 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { AlertTriangle, Check, X } from 'lucide-react';
 import { useChatStore } from '../store/chatStore';
+import Dialog from './ui/Dialog';
 
+// The store's dialog config maps straight onto the ui/Dialog primitive —
+// handlers stay in the store, the shell is the design system.
 export default function GlobalDialog() {
   const dialog = useChatStore((state) => state.dialog);
   const closeDialog = useChatStore((state) => state.closeDialog);
-  const [value, setValue] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
-
-  const panelRef = useRef(null);
-
-  useEffect(() => {
-    setValue(dialog?.inputDefault || '');
-    setError('');
-    setBusy(false);
-    if (!dialog) return undefined;
-    const onKey = (event) => {
-      if (event.key === 'Escape') closeDialog();
-    };
-    window.addEventListener('keydown', onKey);
-    const focusable = panelRef.current?.querySelector('textarea, button');
-    focusable?.focus();
-    return () => window.removeEventListener('keydown', onKey);
-  }, [dialog, closeDialog]);
-
-  if (!dialog) return null;
-
-  const confirm = async (event) => {
-    event.preventDefault();
-    if (busy) return;
-    setBusy(true);
-    setError('');
-    try {
-      await dialog.onConfirm?.(dialog.hasInput ? value : undefined);
-      closeDialog();
-    } catch (confirmError) {
-      console.error('[GlobalDialog] Action failed:', confirmError);
-      setError(confirmError?.message || 'Could not complete this action.');
-    } finally {
-      setBusy(false);
-    }
-  };
 
   return (
+<<<<<<< HEAD
     <div className="fixed inset-0 z-sheet flex items-center justify-center bg-scrim/80 p-4" role="presentation">
       <form ref={panelRef} onSubmit={confirm} role="dialog" aria-modal="true" aria-labelledby="global-dialog-title" className="w-full max-w-sm rounded-3xl border border-line bg-panel p-6">
         <div className="flex items-start gap-3">
@@ -74,5 +39,21 @@ export default function GlobalDialog() {
         </div>
       </form>
     </div>
+=======
+    <Dialog
+      open={Boolean(dialog)}
+      onClose={closeDialog}
+      title={dialog?.title}
+      message={dialog?.message}
+      danger={dialog?.type === 'danger'}
+      confirmText={dialog?.confirmText}
+      onConfirm={(value) => dialog?.onConfirm?.(dialog.hasInput ? value : undefined)}
+      hasInput={Boolean(dialog?.hasInput)}
+      inputDefault={dialog?.inputDefault || ''}
+      inputLocked={Boolean(dialog?.inputLocked)}
+      inputRows={dialog?.inputRows || 4}
+      inputPlaceholder={dialog?.placeholder || ''}
+    />
+>>>>>>> origin/feat/rebuild-pr2
   );
 }
