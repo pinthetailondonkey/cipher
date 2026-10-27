@@ -1,0 +1,243 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import {
+  escrowAddress,
+  bip143Digest,
+  p2wshSignatureDigest,
+  buildSpendTx,
+  finalizeReleaseTx,
+  finalizeTimedRefundTx,
+  signSpend,
+  verifySpendSignature,
+  buildEscrowPsbt,
+  psbtBase64,
+  doubleSha256,
+} from './escrowPsbt.js';
+import {
+  assembleOrderScript,
+  scriptToHex,
+  hexToScript,
+  MAX_CSV_BLOCK_DELAY,
+} from './escrowScript.js';
+import { quoteEscrow } from './escrowFsm.js';
+import { sha256 } from '@noble/hashes/sha2.js';
+import { secp256k1 } from '@noble/curves/secp256k1.js';
+import { bech32, base64 } from '@scure/base';
+
+// The wire bytes, attacked before anyone's coins move. Anchors are
+// external: the BIP-350 bech32m address encoding (through @scure/base),
+// and the BIP-143 SIGHASH_ALL digest whose preimage pieces, hash, and
+// expectations are published in the Bitcoin BIPs repository.
+
+const PUB_V = Uint8Array.from({ length: 33 }, (_, i) => 0x11 + i);
+const PUB_B = Uint8Array.from({ length: 33 }, (_, i) => 0x2a + i);
+const SCRIPT_HEX = scriptToHex(assembleOrderScript({ vendorPubKey: PUB_V, buyerPubKey: PUB_B, delayBlocks: 2880 }));
+const VENDOR_PRIV = secp256k1.utils.randomSecretKey();
+const BUYER_PRIV = secp256k1.utils.randomSecretKey();
+
+test('the deposit address is bech32 of the script hash, per network', () => {
+  const addr = escrowAddress(hexToScript(SCRIPT_HEX));
+  const decode = bech32.decode(addr, 200);
+  assert.equal(decode.prefix, 'bc');
+  const words = decode.words;
+  assert.equal(words[0], 0); // witness v0
+  const program = new Uint8Array(bech32.fromWords(words.slice(1)));
+  assert.equal(scriptToHex(program), scriptToHex(sha256(hexToScript(SCRIPT_HEX))));
+  const tb = escrowAddress(hexToScript(SCRIPT_HEX), { network: 'test' });
+  assert.equal(tb.startsWith('tb1q'), true); // witness v0 = bech32, q prefix
+  assert.notEqual(tb, addr);
+  assert.throws(() => escrowAddress(hexToScript(SCRIPT_HEX), { network: 'snorkel' }), /network/);
+});
+
+// The BIP-143 P2SH-P2WSH test vector, hashType SIGHASH_ALL. Our digest
+// builder takes the same inputs (outpoint, amount 987654321, sequence
+// 0xffffffff, two outputs, that scriptCode) and must produce the
+// published digest: 185c0be5263dce5b4bb50a047973c1b6272bfbd0103a8944459
+// 7dc40b248ee7c.
+const VECTOR = {
+  // The BIP writes the outpoint txid in the RAW byte order that sits in
+  // the preimage; txids humans quote are that hex reversed. Feed the
+  // digest builder the REVERSED form, the way a real caller would.
+  leTxid: '36641869ca081e70f394c6948e8af409e18b619df2ed74aa106c1ca29787b96e',
+  vout: 1,
+  amountSats: 987654321n,
+  sequence: 0xffffffff,
+  scriptCodeHex: '56210307b8ae49ac90a048e9b53357a2354b3334e9c8bee813ecb98e99a7e07e8c3ba32103b28f0c28bfab54554ae8c658ac5c3e0ce6e79ad336331f78c428dd43eea8449b21034b8113d703413d57761b8b9781957b8c0ac1dfe69f492580ca4195f50376ba4a21033400f6afecb833092a9a21cfdf1ed1376e58c5d1f47de74683123987e967a8f42103a6d48b1131e94ba04d9737d61acdaa1322008af9602b3b14862c07a1789aac162102d8b661b0b3302ee2f162b09e07a55ad5dfbe673a9f01d9f0c19617681024306b56ae',
+  outputs: [
+    // 900,000,000 (0x35a4e900) and 87,000,000 (0x052f83c0), straight
+    // from the vector's output hex; sums under the 987,654,321 input
+    { sats: 900000000n, scriptHex: '76a914389ffce9cd9ae88dcc0631e88a821ffdbe9bfe2688ac' },
+    { sats: 87000000n, scriptHex: '76a9147480a33f950689af511e6e84c138dbbd3c3ee41588ac' },
+  ],
+  locktime: 0,
+  digestHex: '185c0be5263dce5b4bb50a047973c1b6272bfbd0103a89444597dc40b248ee7c',
+};
+
+const displayTxid = () => hexToScript(VECTOR.leTxid).slice().reduceRight((t, b) => t + b.toString(16).padStart(2, '0'), '');
+
+function vectorTx() {
+  return {
+    version: 1, // the BIP-143 example uses version 1
+    vin: [{ txidHex: displayTxid(), vout: VECTOR.vout, sequence: VECTOR.sequence, amountSats: VECTOR.amountSats }],
+    vout: VECTOR.outputs,
+    locktime: VECTOR.locktime,
+  };
+}
+
+test('the signature digest matches Bitcoin step for step (BIP-143, ALL)', () => {
+  const digest = bip143Digest({
+    tx: vectorTx(),
+    scriptCodeHex: VECTOR.scriptCodeHex,
+    prevAmountSats: VECTOR.amountSats,
+  });
+  assert.equal(scriptToHex(digest), VECTOR.digestHex);
+});
+
+test('the escrow digest refuses to sign a script that is not the exact shape', () => {
+  const tx = vectorTx();
+  assert.throws(
+    () => p2wshSignatureDigest({ tx, witnessScriptHex: VECTOR.scriptCodeHex, prevAmountSats: VECTOR.amountSats }),
+    /exact escrow shape/,
+  );
+  // and an escrow script itself digests fine through the same builder
+  const escrowTx = buildSpendTx({
+    fundingTxid: displayTxid(), fundingVout: VECTOR.vout, fundingSats: VECTOR.amountSats,
+    witnessScriptHex: SCRIPT_HEX, outputs: VECTOR.outputs, sequence: VECTOR.sequence,
+  });
+  assert.doesNotThrow(
+    () => p2wshSignatureDigest({ tx: escrowTx, witnessScriptHex: SCRIPT_HEX, prevAmountSats: VECTOR.amountSats }),
+  );
+});
+
+test('the outputs of a spend can never pay out more than the escrow held', () => {
+  assert.throws(() => buildSpendTx({
+    fundingTxid: 'ab'.repeat(32), fundingSats: 1000n,
+    witnessScriptHex: SCRIPT_HEX,
+    outputs: [{ sats: 1001n, scriptHex: '76a914' + '00'.repeat(20) + '88ac' }],
+  }), /overreach/);
+  assert.throws(() => buildSpendTx({
+    fundingTxid: 'ab'.repeat(32), fundingSats: 1000n,
+    witnessScriptHex: SCRIPT_HEX,
+    outputs: [{ sats: 500n, scriptHex: 'x' }],
+  }), /script/);
+  // and the same object builds a tx twice, identically (determinism)
+  const a = buildSpendTx({
+    fundingTxid: 'ab'.repeat(32), fundingSats: 1000n, witnessScriptHex: SCRIPT_HEX,
+    outputs: [{ sats: 1000n, scriptHex: '76a914' + '00'.repeat(20) + '88ac' }], sequence: 2880,
+  });
+  const b = buildSpendTx({
+    fundingTxid: 'ab'.repeat(32), fundingSats: 1000n, witnessScriptHex: SCRIPT_HEX,
+    outputs: [{ sats: 1000n, scriptHex: '76a914' + '00'.repeat(20) + '88ac' }], sequence: 2880,
+  });
+  assert.deepEqual(a, b);
+});
+
+// A full release: the FSM table as outputs, a 1,440-sat miner fee taken
+// out of the buyer change, both keys signing the SAME digest,
+// signatures verified against the public keys they came from.
+const P = 50_000_000n;
+const Q = quoteEscrow(P);
+const FUNDING_TXID = 'aa'.repeat(32);
+const MINER_FEE = 1440n;
+// funding = deposit + 2,000 -> buyer change = 2,000 - fee; outputs +
+// fee == funding exactly
+const FUNDING = Q.depositSats + 2000n;
+const TX_OUTS = () => ([
+  { sats: Q.vendorOutSats, scriptHex: '76a914' + '11'.repeat(20) + '88ac' }, // vendor
+  { sats: Q.feeOutSats, scriptHex: '76a914' + '22'.repeat(20) + '88ac' },    // fee
+  { sats: 2000n - MINER_FEE, scriptHex: '76a914' + '33'.repeat(20) + '88ac' }, // buyer change
+]);
+
+test('a release signs, double-signs, and its signatures verify', () => {
+  const result = finalizeReleaseTx({
+    fundingTxid: FUNDING_TXID, fundingSats: FUNDING,
+    witnessScriptHex: SCRIPT_HEX,
+    outputs: TX_OUTS(),
+    vendorKeyBytes: VENDOR_PRIV,
+    buyerKeyBytes: BUYER_PRIV,
+  });
+  const digest = result.digest;
+  assert.equal(
+    verifySpendSignature({ signatureBytes: result.vendorSig, publicKeyBytes: secp256k1.getPublicKey(VENDOR_PRIV, true), digest }),
+    true,
+  );
+  assert.equal(
+    verifySpendSignature({ signatureBytes: result.buyerSig, publicKeyBytes: secp256k1.getPublicKey(BUYER_PRIV, true), digest }),
+    true,
+  );
+  // the wrong key never verifies
+  assert.equal(
+    verifySpendSignature({ signatureBytes: result.vendorSig, publicKeyBytes: secp256k1.getPublicKey(BUYER_PRIV, true), digest }),
+    false,
+  );
+  // deterministic: same keys, same digest, same tx
+  const again = finalizeReleaseTx({
+    fundingTxid: FUNDING_TXID, fundingSats: FUNDING, witnessScriptHex: SCRIPT_HEX,
+    outputs: TX_OUTS(), vendorKeyBytes: VENDOR_PRIV, buyerKeyBytes: BUYER_PRIV,
+  });
+  assert.equal(again.bytes, result.bytes);
+  assert.notEqual(again.txid, '', 'txid derives');
+  // conservation on the wire: outputs + miner fee == what the escrow held
+  const outSum = TX_OUTS().reduce((n, o) => n + o.sats, 0n);
+  assert.equal(outSum + MINER_FEE, FUNDING);
+});
+
+test('a timed refund carries the CSV clock on the input sequence, not anywhere else', () => {
+  const result = finalizeTimedRefundTx({
+    fundingTxid: FUNDING_TXID, fundingSats: Q.depositSats,
+    witnessScriptHex: SCRIPT_HEX,
+    outputs: [{ sats: Q.depositSats - 1440n, scriptHex: '76a914' + '33'.repeat(20) + '88ac' }],
+    delayBlocks: 2880,
+    buyerKeyBytes: BUYER_PRIV,
+  });
+  assert.equal(result.tx.vin[0].sequence, 2880);
+  assert.equal(
+    verifySpendSignature({ signatureBytes: result.buyerSig, publicKeyBytes: secp256k1.getPublicKey(BUYER_PRIV, true), digest: result.digest }),
+    true,
+  );
+  assert.throws(() => finalizeTimedRefundTx({
+    fundingTxid: FUNDING_TXID, fundingSats: Q.depositSats, witnessScriptHex: SCRIPT_HEX,
+    outputs: [{ sats: 1n, scriptHex: '76a914' + '33'.repeat(20) + '88ac' }],
+    buyerKeyBytes: BUYER_PRIV,
+  }), /script delay/);
+  // refund refund pays out what went in (minus fee = 0 at the money table)
+  assert.equal(result.tx.vout[0].sats < result.tx.vin[0].amountSats, true); // miner fee came out
+});
+
+test('signatures are DER with one SIGHASH_ALL byte, checked byte by byte', () => {
+  const digest = doubleSha256(new Uint8Array([9]));
+  const sig = signSpend({ privateKeyBytes: VENDOR_PRIV, digest });
+  assert.equal(sig[sig.length - 1], 0x01); // the trailing hashType byte
+  const derLen = sig.length - 1;
+  assert.equal(derLen > 64 && derLen <= 72, true); // 0x30||..; nil short DER
+  assert.equal(sig[0], 0x30);
+  assert.equal(
+    verifySpendSignature({ signatureBytes: sig, publicKeyBytes: secp256k1.getPublicKey(VENDOR_PRIV, true), digest }),
+    true,
+  );
+  assert.throws(() => signSpend({ privateKeyBytes: 'x', digest }), /32-byte/);
+});
+
+test('the escape-hatch PSBT carries exactly what a foreign wallet needs', () => {
+  const psbt = buildEscrowPsbt({
+    fundingTxid: FUNDING_TXID,
+    fundingVout: 0,
+    fundingSats: FUNDING,
+    witnessScriptHex: SCRIPT_HEX,
+    outputs: TX_OUTS(),
+  });
+  const b64 = psbtBase64(psbt);
+  const bytes = base64.decode(b64);
+  // magic
+  assert.equal(scriptToHex(bytes.slice(0, 5)), '70736274ff');
+  // the input's witness utxo (0x01) carries amount + script (0020 + sha256 of the escrow script)
+  const whole = scriptToHex(bytes);
+  const witnessUtxoScript = '0020' + scriptToHex(sha256(hexToScript(SCRIPT_HEX)));
+  assert.equal(whole.includes(witnessUtxoScript), true, 'PSBT embeds the P2WSH program');
+  // the witness script (0x04) is embedded verbatim
+  assert.equal(whole.includes(SCRIPT_HEX), true, 'PSBT embeds the escrow witness script');
+  // unsigned tx inside embeds the funding txid little-endian (reversed)
+  const leFunding = [...hexToScript(FUNDING_TXID)].reverse().map((b) => b.toString(16).padStart(2, '0')).join('');
+  assert.equal(whole.includes(leFunding), true, 'PSBT embeds the outpoint');
+  assert.notEqual(b64, '');
+});
