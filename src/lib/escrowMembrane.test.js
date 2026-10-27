@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { OrderMembrane, MemoryJournal, satsToCoins } from './orderMembrane.js';
-import { assembleOrderScript, scriptToHex } from './escrowScript.js';
+import { assembleOrderScript, assembleOvertOrderScript, scriptToHex } from './escrowScript.js';
 import { MIN_ORDER_SATS } from './escrowFsm.js';
 
 // The escrow ops walk the SAME admission door every other order fact
@@ -13,6 +13,11 @@ const PRICE = 50_000_000n; // 0.5 BTC
 const PUB_V = Uint8Array.from({ length: 33 }, (_, i) => 0x11 + i);
 const PUB_B = Uint8Array.from({ length: 33 }, (_, i) => 0x2a + i);
 const SCRIPT_HEX = scriptToHex(assembleOrderScript({ vendorPubKey: PUB_V, buyerPubKey: PUB_B, delayBlocks: 2880 }));
+const OVERT_HASH = Uint8Array.from({ length: 32 }, (_, i) => 0x5a + i);
+const OVERT_HASH_HEX = scriptToHex(OVERT_HASH);
+const OVERT_SCRIPT_HEX = scriptToHex(assembleOvertOrderScript({
+  vendorPubKey: PUB_V, buyerPubKey: PUB_B, delayBlocks: 2880, overtHash: OVERT_HASH,
+}));
 const TX_FUND = 'aa'.repeat(32);
 const TX_SETTLE = 'bb'.repeat(32);
 const FUND_HEIGHT = 800_000;
@@ -22,15 +27,15 @@ function freshMembrane() {
   return membrane;
 }
 
-function openOrder(m, { revision = 0, id = 'open-1' } = {}) {
+function openOrder(m, { revision = 0, id = 'open-1', script = SCRIPT_HEX, overtHashHex } = {}) {
   return m.admit({
     schemaVersion: 1,
     operationId: id,
     principal: 'vendor',
     payload: {
       type: 'escrow_open', expectedRevision: revision, currency: 'btc',
-      priceSats: PRICE.toString(), scriptHex: SCRIPT_HEX, delayBlocks: 2880,
-      issuedAt: 1_000, publicKeysHex: null,
+      priceSats: PRICE.toString(), scriptHex: script, delayBlocks: 2880,
+      issuedAt: 1_000, publicKeysHex: null, ...(overtHashHex ? { overtHashHex } : {}),
     },
   });
 }
@@ -248,6 +253,48 @@ test('an admitted refund lands right after funding — zero fee lives in the mon
   const st = m.summary();
   assert.equal(st.escrow.state, 'refunded');
   assert.equal(st.status, 'refunded');
+});
+
+// The Dead Drop doors: the box opens only when the vendor SPOKE the
+// commitment, and the ghost signature is the journal sequence
+// funded -> overt refund -> the delivery word lives on-chain forever.
+test('a dead drop box opens with the spoken commitment and refunds overt, fee-free, any time', () => {
+  const m = freshMembrane();
+  // the commitment must be spoken at the door: the script opens an
+  // overt branch but the op names no hash -> malformed
+  assert.equal(openOrder(m, { id: 'overt-silent', script: OVERT_SCRIPT_HEX }).reason, 'malformed');
+  assert.equal(m.summary().escrow, null);
+  // a hash that is not the script's hash -> malformed, too
+  assert.equal(
+    openOrder(m, { id: 'overt-lie', script: OVERT_SCRIPT_HEX, overtHashHex: '00'.repeat(32) }).reason,
+    'malformed',
+  );
+  // the spoken truth opens the box, and the summary carries what the
+  // script commits to
+  assert.equal(openOrder(m, { id: 'overt-open', script: OVERT_SCRIPT_HEX, overtHashHex: OVERT_HASH_HEX }).status, 'accepted');
+  let st = m.summary();
+  assert.equal(st.escrow.overtHashHex, OVERT_HASH_HEX);
+  assert.equal(st.escrow.state, 'draft');
+
+  fundOrder(m, { sats: depositSats(st).toString() });
+  // the dead drop fires ANY time after funding — day zero, hours in:
+  // overt refund at funding height + 1, like an admitted one
+  assert.equal(settleOrder(m, 'escrow_refund', { id: 'overt-refund', height: FUND_HEIGHT + 1, refundKind: 'overt' }).status, 'accepted');
+  st = m.summary();
+  assert.equal(st.escrow.state, 'refunded');
+  assert.equal(st.escrow.refundKind, 'overt');
+  assert.equal(st.escrow.settleTxid, TX_SETTLE);
+
+  // and the ghost signature survives replay byte-exactly: the journal
+  // puts the same box back, commitment and refund kind included
+  const journal = new MemoryJournal();
+  const m2 = new OrderMembrane('order-1', 'btc', journal);
+  openOrder(m2, { id: 'overt-open', script: OVERT_SCRIPT_HEX, overtHashHex: OVERT_HASH_HEX });
+  fundOrder(m2, { sats: depositSats(m2.summary()).toString() });
+  settleOrder(m2, 'escrow_refund', { id: 'overt-refund', height: FUND_HEIGHT + 1, refundKind: 'overt' });
+  const fresh = new OrderMembrane('order-1', 'btc', journal);
+  assert.equal(fresh.summary().escrow.refundKind, 'overt');
+  assert.equal(fresh.summary().escrow.overtHashHex, OVERT_HASH_HEX);
 });
 
 test('a forged escrow_open by the buyer hits the authority wall, not the escrow', () => {

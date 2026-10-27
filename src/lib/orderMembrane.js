@@ -25,7 +25,7 @@ import {
   acceptAmount,
 } from './paymentState.js';
 import { quoteEscrow, canEscrow } from './escrowFsm.js';
-import { decodeOrderScript, hexToScript } from './escrowScript.js';
+import { decodeOrderScript, hexToScript, scriptToHex } from './escrowScript.js';
 
 const SCHEMA_VERSION = 1;
 
@@ -196,11 +196,19 @@ function decodeOp(payload) {
       if (!Number.isInteger(payload.delayBlocks) || payload.delayBlocks !== script.delayBlocks) {
         return { ok: false, reason: 'malformed' };
       }
+      // The Dead Drop commitment is spoken at the door: a script that
+      // opens an overt branch requires the op to carry the SAME hash —
+      // the vendor fixing their delivery word before anyone's money
+      // moves. A plain box names none.
+      const overtHashHex = script.overtHash === null ? null : scriptToHex(script.overtHash);
+      if (overtHashHex !== null && payload.overtHashHex !== overtHashHex) {
+        return { ok: false, reason: 'malformed' };
+      }
       if (!Number.isFinite(payload.issuedAt) || payload.issuedAt <= 0) return { ok: false, reason: 'malformed' };
       // Sats stay a decimal string inside op: the journal record must be
       // JSON-stable (BigInt stringifies to a throw) and digest-stable
       // across a recovery replay. checkOp converts through satsFromString.
-      return { ok: true, op: { type: 'escrow_open', expectedRevision: payload.expectedRevision, currency: payload.currency, publicKeysHex: payload.publicKeysHex ?? null, scriptHex: payload.scriptHex, priceSats: payload.priceSats, delayBlocks: payload.delayBlocks, issuedAt: payload.issuedAt } };
+      return { ok: true, op: { type: 'escrow_open', expectedRevision: payload.expectedRevision, currency: payload.currency, publicKeysHex: payload.publicKeysHex ?? null, scriptHex: payload.scriptHex, priceSats: payload.priceSats, delayBlocks: payload.delayBlocks, overtHashHex, issuedAt: payload.issuedAt } };
     }
     case 'escrow_fund': {
       // The funding landed on chain. Confirmations below 1 never mark a
@@ -223,7 +231,7 @@ function decodeOp(payload) {
     case 'escrow_refund': {
       if (typeof payload.expectedRevision !== 'number') return { ok: false, reason: 'malformed' };
       if (typeof payload.txid !== 'string' || payload.txid.length < 32) return { ok: false, reason: 'malformed' };
-      if (payload.kind !== 'admitted' && payload.kind !== 'timed') return { ok: false, reason: 'malformed' };
+      if (payload.kind !== 'admitted' && payload.kind !== 'timed' && payload.kind !== 'overt') return { ok: false, reason: 'malformed' };
       const height = Number(payload.height);
       if (!Number.isFinite(height) || height <= 0) return { ok: false, reason: 'malformed' };
       return { ok: true, op: { type: 'escrow_refund', expectedRevision: payload.expectedRevision, txid: payload.txid, kind: payload.kind, height } };
@@ -307,6 +315,7 @@ function checkOp(st, principal, op) {
           buyerFeeSats: quote.buyerFeeSats.toString(),
           vendorFeeSats: quote.vendorFeeSats.toString(),
           delayBlocks: op.delayBlocks,
+          overtHashHex: op.overtHashHex,
           fundedSats: null,
           fundingTxid: null,
           fundingHeight: null,
@@ -358,10 +367,15 @@ function checkOp(st, principal, op) {
       } };
     }
     case 'escrow_refund': {
-      // An admitted refund any time after funding; a timed one only
-      // past the script's OWN timer, counted in blocks from the funding
-      // height -- the chain reads the script, not the phone. Either way
-      // the fee is zero, which lives in the PSBT path, not here.
+      // Refunds are fee-free, and which refund says who opened the box:
+      // admitted any time after funding; timed only past the script's
+      // OWN timer, counted in blocks from the funding height -- the
+      // chain reads the script, not the phone. The overt refund is the
+      // Dead Drop: the vendor opens it ALONE, also any time after
+      // funding, and the spend carries the delivery preimage (the
+      // commitment is already in the script, so the door needs only
+      // kinds and heights here). The fee is zero in all three; that
+      // lives in the PSBT path, not here.
       if (!st.escrow || st.escrow.state !== 'funded') return { ok: false, reason: 'invalid_transition' };
       if (op.kind === 'timed' && op.height < st.escrow.fundingHeight + st.escrow.delayBlocks) {
         return { ok: false, reason: 'escrow_refused' };
