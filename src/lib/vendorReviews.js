@@ -29,28 +29,36 @@ import { orderState } from './orderActions';
 
 const HEX64 = /^[0-9a-f]{64}$/;
 
-// The review publisher gate. Deal's kind-10005 ( review post) publisher
-// does not exist on this branch — it ships on main. Until it folds:
-//   - review rows render only from Deal's reader contract, so the vendor
-//     profile's review list stays empty (its own "No reviews yet." state);
-//   - a compose saves locally to this account's database and publishes
-//     nothing.
-// Flipping this true is the fold: the publisher below gains its real body
-// in that same change.
-export const REVIEW_WIRING_LANDED = false;
+// The review publisher gate. Deal's kind-10005 publisher — sendReview in
+// useReputation on main (8a36b9a) — has folded under the stack, so the fuse
+// is true: a compose is sign-and-publish, and the local record stays beside
+// the publication so the one-per-receipt door and the offline history keep
+// working.
+export const REVIEW_WIRING_LANDED = true;
 
-// Publisher swaps to Deal-lane kind-10005 publisher on fold. Nothing on
-// this branch publishes a review; the stub refuses so no code path can
-// send while the gate is down.
-//
-// Compose-side one-shot guard for the fold, per Deal's 610294d: the dispute
-// riders check BOTH ridersForReview (the wire's parsed rider of record) AND
-// ownRiderTaken(vendor, receipt, review, rider) in disputes.js — the local
-// ledger covers the word the device already spent before its own rider
-// event has come back through the fetch.
-export function createReviewPublisher() {
+// The publisher IS useReputation's sendReview; the stub is gone. sendReview
+// arrives bound to this device's identity (see the compose below, which
+// reads it off its own useReputation call), so the closure here stays pure
+// policy: it takes the four fields a review publishes — vendor pubkey,
+// stars, one-line verdict, receipt hash — and hands back { success, error }
+// exactly as sendReview does. Only those four ride the publish; the order
+// month is NEVER submitted — display derives it from the bound receipt
+// evidence.
+export function createReviewPublisher(options) {
   if (!REVIEW_WIRING_LANDED) return null;
-  return null;
+  const { sendReview } = options || {};
+  if (typeof sendReview !== 'function') return null;
+  return async ({ vendorPubkey, stars, verdict, receiptHash } = {}) => {
+    try {
+      const result = await sendReview(vendorPubkey, stars, verdict, receiptHash);
+      if (!result?.success) {
+        return { success: false, error: result?.error || 'The review could not be published.' };
+      }
+      return { success: true, queued: result.queued === true };
+    } catch (error) {
+      return { success: false, error: error?.message || 'The review could not be published.' };
+    }
+  };
 }
 const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 

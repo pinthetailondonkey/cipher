@@ -11,6 +11,8 @@ import {
   provenBannerOf,
   provenDealsForVendor,
   provenLinesOf,
+  createReviewPublisher,
+  REVIEW_WIRING_LANDED,
   reviewEligibility,
   reviewOfferForOrder,
   reviewSummaryOf,
@@ -281,4 +283,37 @@ test('the banner words are the contract\'s, one line per rail, never summed', ()
   // names the rail, with no claim attached.
   assert.equal(provenBannerOf({ count: 4, phrasing: 'woven', rail: 'zec' }), '4 deals · zec');
   assert.equal(provenBannerOf(null), '');
+});
+
+test('the fuse is up and the publisher is main\'s sendReview, promising { success, error }', async () => {
+  assert.equal(REVIEW_WIRING_LANDED, true);
+  // No bound sendReview, no publisher — the seam refuses rather than guess.
+  assert.equal(createReviewPublisher({}), null);
+  assert.equal(createReviewPublisher(null), null);
+  const sent = [];
+  const sendReview = async (targetPubkey, rating, text, receiptHash) => {
+    sent.push([targetPubkey, rating, text, receiptHash]);
+    return { success: true };
+  };
+  const publisher = createReviewPublisher({ sendReview });
+  const ok = await publisher({ vendorPubkey: 'v', stars: 4, verdict: 'Fine deal.', receiptHash: 'ee'.repeat(32) });
+  assert.equal(ok.success, true);
+  // Exactly the four published fields go through, in sendReview's own
+  // argument shape — the order month is never submitted.
+  assert.deepEqual(sent, [['v', 4, 'Fine deal.', 'ee'.repeat(32)]]);
+  // A refused publish returns the refusal's own words — never a fake success.
+  const refused = await createReviewPublisher({
+    sendReview: async () => ({ success: false, error: 'A review needs the receipt of a completed trade.' }),
+  })({ stars: 4, verdict: 'Fine deal.', receiptHash: 'ee'.repeat(32) });
+  assert.equal(refused.success, false);
+  assert.equal(refused.error, 'A review needs the receipt of a completed trade.');
+  // A throwing sendReview is an error, shaped as always.
+  const thrown = await createReviewPublisher({
+    sendReview: () => { throw new Error('no identity'); },
+  })({ stars: 4, verdict: 'Fine deal.', receiptHash: 'ee'.repeat(32) });
+  assert.deepEqual(thrown, { success: false, error: 'no identity' });
+  // A wordless refusal still refuses, no invented success.
+  const wordless = await createReviewPublisher({ sendReview: async () => ({ success: false }) })({});
+  assert.equal(wordless.success, false);
+  assert.ok(wordless.error);
 });
