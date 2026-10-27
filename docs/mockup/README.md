@@ -33,8 +33,7 @@ It is a chat list, not a palette — the palette above wins; this section is str
 - Live row states, all three: a preview that says a voice note was sent, a typing state in accent-text in place of the preview, and a preview that wraps to two lines. Rows are variable height.
 - Times descend. Rows keep 44px minimum taps and must pass tests/ui/safe-area.spec.js.
 
-Cipher mapping: the reference's three segments become All / Groups / Vendors on the chat list.
-The sliding drawer stays exactly as it is — the segments are a filter inside a list, not a second navigation.
+Cipher mapping: the reference's three segments become All / Menus / Vendors on the chat list — MENUS, never groups (founder's correction, twice: "REMEMBER ITS NOT GROUPS !!! ITS MENUS!!"). A menu is a vendor's channel-type space and the vendor's shop at once. The sliding drawer stays exactly as it is — the segments are a filter inside a list, not a second navigation.
 
 ## Two modes
 

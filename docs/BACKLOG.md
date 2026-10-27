@@ -22,6 +22,20 @@ Owner: this session, subagent waves. Founder's call, 2026-10-26: theme the ENTIR
 14. Nits: "1 members" reads "1 member"; group timer pills leave the header row; "Copy link" tucks away on shop cards.
 Wave rules: gates before every commit, one change per commit, push each, no yellow may return, and the fix lane's dirty files (useNIP44DM.js, the orderActions pair) are never committed by this lane.
 
+## 16. Every wired engine gets its door — the audit (2026-10-26) — STARTED
+Owner: this session. Source: the read-only sweep (10 findings, all call-site-verified). Founder's standing rule: everything wired must be visible. One commit per door.
+1. Safety numbers (src/lib/safetyNumber.js — deriveSafetyNumber/safetyRecord/markSafetyChange have zero callers; markSafetyChange never fires so the change flag can never flip): a verify-contact row in the DM header showing safetyNumberFor(pk), the red key-changed banner off record.changed, and a real markSafetyChange caller on the key-change path. Also the mechanism item 11's vendor-key warning expects.
+2. Receipt inspection: a "View receipt" door on the order bubble + MyOrders rows that reads receipt_<orderId>, verifies via verifyReceipt, and shows the body both sides signed (orderId, currency, address, amount, txid, timestamp, outcome, sigs).
+3. Product share link (?product=&vendor=): copied by Shop.jsx but parsed by nothing — a boot-path branch fetching the kind-30402 listing and opening checkout.
+4. QR scanner acts: the scanner dead-ends in copy-to-clipboard; its result card must recognize a group id / 64-hex / naddr / Cipher link and open the group or chat like the URL handlers do.
+5. Vendor dashboard reads cipher_my_products, written by nothing; the real key is cipher_cached_products (Wallet.jsx:338). One-line fix, filtered to own pubkey.
+6. Receive-side haptics: eventShouldBuzz/eventShouldRing/eventShouldOrder have zero callers; notifications never vibrate. Ship on DM/order ingest + call ring per CLAUDE.md.
+7. Watcher + gateway paste doors: egress 'explorer' and 'push' entries have no UI writer (Connections is deliberately Tor+proxy only) — two paste inputs, so "Check chain" stops throwing and push stops silently no-oping. Natural screen: Connections, under the Tor/proxy controls.
+8. Message edit history: addMessageEdit writes msg_edits that nothing ever reads — an "Edit history" entry in the bubble long-press sheet, or the write dies.
+9. Mute durations: setMuteDuration (8h/forever/timed) unreachable — duration submenu in the chat-row kebab.
+10. Shop door: VendorStorefront reachable only via a received product message — "View shop" on vendor rows/profiles (interim to item 8's full mesh).
+Verified alive-and-visible (no work): burn notes end to end, group lifecycle + approvals, calls, mute/archive/block, bookmarks, notifications, commerce loop, vouches, vendor mode.
+
 ## 14. Two-sided UI: one app, dark + paper + drawer — DONE (c15951c, 714d5b9, de1ae20, 899024c, 057ae45, 9fbcec1, f429e59, eb46fb0, ba94bc6)
 Done when:
 - Theme tokens (DONE c15951c): every white/black literal rides ink/scrim, glass/hover/shadow tokens live per theme in src/index.css, Paper (light) joins vault/lobby/chromerooms, dark stays default.
