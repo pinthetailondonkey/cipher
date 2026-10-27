@@ -89,7 +89,7 @@ test('the accept-time parser and the watcher parser read an amount the same way'
   // nothing rounds at acceptance: a nine on the far edge is refused, not
   // carried up, because half-up belongs to a report of a real transaction
   assert.throws(() => acceptAmount('0.999999995', 'btc'), /finer than BTC can count/);
-  assert.throws(() => acceptAmount('1', 'usd'), /Accept in BTC or XMR/);
+  assert.throws(() => acceptAmount('1', 'usd'), /not one of them/, 'a dollar price never reads as a coin the device checks');
 });
 
 test('a payment moves created, address issued, seen, confirmed, and skips nothing', () => {
