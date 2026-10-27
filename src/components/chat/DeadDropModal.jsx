@@ -70,7 +70,7 @@ export default function DeadDropModal({ identity }) {
 
         {link ? (
           <div>
-            <div className="max-h-32 overflow-y-auto break-all rounded-2xl border border-line bg-panel p-3 font-mono text-[12px] text-accent">{link}</div>
+            <div className="max-h-32 overflow-y-auto break-all rounded-2xl border border-line bg-panel p-3 font-mono text-[12px] text-accentText">{link}</div>
             <button
               type="button"
               onClick={copy}
@@ -88,11 +88,11 @@ export default function DeadDropModal({ identity }) {
               maxLength={8000}
               rows={5}
               placeholder="Say it once."
-              className="w-full resize-none rounded-2xl border border-line bg-panel p-3 text-[14px] text-ink placeholder-ink/30 outline-none focus:border-accentSoft"
+              className="w-full resize-none rounded-2xl border border-line bg-panel p-3 text-[14px] text-ink placeholder-ink/30 outline-none focus:border-lineStrong"
               autoFocus
             />
             <div className="mt-1 flex items-center justify-between">
-              <span className="text-[11px] text-ink/30">{text.length}/8000</span>
+              <span className="text-[11px] text-inkSubtle">{text.length}/8000</span>
               <button
                 type="button"
                 onClick={make}

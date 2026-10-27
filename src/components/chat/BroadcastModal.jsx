@@ -31,7 +31,7 @@ export default function BroadcastModal({ isOpen, onClose, product, groups = [], 
     <div className="fixed inset-0 z-[950] flex items-center justify-center bg-scrim/80 p-4" role="presentation">
       <section role="dialog" aria-modal="true" aria-label="Broadcast product" className="w-full max-w-sm rounded-3xl border border-line bg-panel p-5">
         <header className="mb-4 flex items-center gap-3">
-          <Radio size={19} className="text-accent" />
+          <Radio size={19} className="text-accentText" />
           <div className="min-w-0 flex-1">
             <h2 className="text-2xl font-bold tracking-tight text-ink">Broadcast</h2>
             <p className="truncate text-xs text-ink/45">{product.title || product.name || 'Product'}</p>
@@ -42,15 +42,15 @@ export default function BroadcastModal({ isOpen, onClose, product, groups = [], 
         <div className="max-h-64 space-y-2 overflow-y-auto">
           {groups.length === 0 && <p className="rounded-xl bg-ink/5 p-4 text-sm text-ink/45">You have not joined any groups yet.</p>}
           {groups.map((group) => (
-            <label key={group.id} className="flex cursor-pointer items-center gap-3 rounded-xl border border-ink/10 bg-ink/[0.03] px-3 py-3 hover:bg-ink/[0.07]">
+            <label key={group.id} className="flex cursor-pointer items-center gap-3 rounded-xl border border-line bg-ink/[0.03] px-3 py-3 hover:bg-ink/[0.07]">
               <input
                 type="checkbox"
                 checked={selectedGroups.includes(group.id)}
                 onChange={() => toggleGroup(group.id)}
-                className="h-4 w-4 accent-blue-500"
+                className="h-4 w-4 accent-[var(--accent)]"
               />
               <span className="min-w-0 flex-1 truncate text-sm text-ink">{group.name || group.id}</span>
-              <span className="truncate text-[10px] text-ink/35">{group.id.slice(0, 8)}</span>
+              <span className="truncate text-[10px] text-inkSubtle">{group.id.slice(0, 8)}</span>
             </label>
           ))}
         </div>
@@ -58,7 +58,7 @@ export default function BroadcastModal({ isOpen, onClose, product, groups = [], 
           type="button"
           onClick={broadcast}
           disabled={sending || selectedGroups.length === 0}
-          className="mt-5 w-full rounded-2xl bg-accent py-3.5 font-bold text-accentInk hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
+          className="mt-5 w-full rounded-2xl bg-accent py-3.5 font-bold text-accentInk active:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
         >
           {sending ? 'Broadcasting…' : `Post to ${selectedGroups.length} group${selectedGroups.length === 1 ? '' : 's'}`}
         </button>
