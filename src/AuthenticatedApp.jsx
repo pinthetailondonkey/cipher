@@ -90,10 +90,9 @@ export default function AuthenticatedApp({ identity }) {
           <div className="absolute inset-0 md:left-[72px]">
             <Suspense fallback={tabFallback}>
               {activeTab === 'explore' && (
-                <div className="relative mx-auto flex h-full w-full max-w-md flex-col md:border-x md:border-line">
-                  <div className="relative z-10 flex items-center px-4 pb-1 pt-3">
-                    <button type="button" onClick={() => useChatStore.getState().setShowDrawer(true)} aria-label="Open menu" className="-ml-1 touch-target p-2 text-ink/50 hover:text-ink md:hidden"><Menu size={20} /></button>
-                    <div className="grid flex-1 grid-cols-2 rounded-2xl border border-ink/15 bg-panelStrong p-1 shadow-lg">
+                <div className="relative mx-auto flex h-full w-full max-w-md flex-col md:max-w-none md:border-x md:border-line">
+                  <div className="relative z-10 mx-auto w-full max-w-xl px-4 pb-1 pt-3 md:w-full">
+                    <div className="grid grid-cols-2 rounded-2xl border border-line bg-panelStrong p-1 shadow-lg">
                       <button type="button" onClick={() => setExploreMode('shop')} className={`min-h-[44px] rounded-xl py-2.5 text-[13px] font-bold ${exploreMode === 'shop' ? 'bg-accent text-accentInk shadow-lg' : 'text-ink/60'}`}>Shop</button>
                       <button type="button" onClick={() => setExploreMode('groups')} className={`min-h-[44px] rounded-xl py-2.5 text-[13px] font-bold ${exploreMode === 'groups' ? 'bg-accent text-accentInk shadow-lg' : 'text-ink/60'}`}>Groups</button>
                     </div>
@@ -106,7 +105,7 @@ export default function AuthenticatedApp({ identity }) {
                 </div>
               )}
               {activeTab === 'profile' && (
-                <div className="mx-auto h-full w-full max-w-md md:border-x md:border-line">
+                <div className="mx-auto h-full w-full max-w-md md:max-w-none md:border-x md:border-line">
                   <Wallet key={profileNavNonce} identity={identity} onOpenChat={openChatFromProfile} startView={profileStartView} />
                 </div>
               )}
@@ -129,20 +128,32 @@ export default function AuthenticatedApp({ identity }) {
             <span className="block truncate text-[11px] text-ink/40">{myProfile?.displayName || myProfile?.name || ''}</span>
           </span>
         </div>
-        <button onClick={() => setActiveTab('chat')} className={`relative h-12 flex-none ${railButton} ${activeTab === 'chat' ? 'text-accentText' : 'text-ink/40 hover:text-ink/60'}`}>
+        {/* Clicking a rail button leaves it focused, and focus-within pins
+            the rail open over content laid out for the 72px strip — so each
+            click releases focus and lets the rail close like Telegram's. */}
+        <button
+          onClick={(event) => { event.currentTarget.blur(); setActiveTab('chat'); }}
+          className={`relative h-12 flex-none ${railButton} ${activeTab === 'chat' ? 'text-accentText' : 'text-ink/40 hover:text-ink/60'}`}
+        >
           <span className="flex h-10 w-10 flex-none items-center justify-center rounded-full hover:bg-ink/5">
             <MessageSquare size={22} strokeWidth={activeTab === 'chat' ? 2.5 : 2} />
           </span>
           {unreadTotal > 0 && <span className="absolute left-[46px] top-0 flex h-[16px] min-w-[16px] items-center justify-center rounded-full bg-accent px-1.5 text-[10px] font-bold text-accentInk">{unreadTotal > 99 ? '99+' : unreadTotal}</span>}
           <span className={railLabel}>Chats</span>
         </button>
-        <button onClick={() => setActiveTab('explore')} className={`relative h-12 flex-none ${railButton} ${activeTab === 'explore' ? 'text-accentText' : 'text-ink/40 hover:text-ink/60'}`}>
+        <button
+          onClick={(event) => { event.currentTarget.blur(); setActiveTab('explore'); }}
+          className={`relative h-12 flex-none ${railButton} ${activeTab === 'explore' ? 'text-accentText' : 'text-ink/40 hover:text-ink/60'}`}
+        >
           <span className="flex h-10 w-10 flex-none items-center justify-center rounded-full hover:bg-ink/5">
             <Compass size={22} strokeWidth={activeTab === 'explore' ? 2.5 : 2} />
           </span>
           <span className={railLabel}>Shop</span>
         </button>
-        <button onClick={() => setActiveTab('profile')} className={`relative h-12 flex-none ${railButton} ${activeTab === 'profile' ? 'text-accentText' : 'text-ink/40 hover:text-ink/60'}`}>
+        <button
+          onClick={(event) => { event.currentTarget.blur(); setActiveTab('profile'); }}
+          className={`relative h-12 flex-none ${railButton} ${activeTab === 'profile' ? 'text-accentText' : 'text-ink/40 hover:text-ink/60'}`}
+        >
           <span className="flex h-10 w-10 flex-none items-center justify-center rounded-full hover:bg-ink/5">
             <User size={22} strokeWidth={activeTab === 'profile' ? 2.5 : 2} />
           </span>
