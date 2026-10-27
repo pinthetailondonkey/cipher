@@ -64,10 +64,13 @@ export default function AuthenticatedApp({ identity }) {
           — a 120px live blur re-rasterizes per frame and stung Safari. */}
       <TutorialModal isOpen={showTutorial} onClose={() => { useChatStore.getState().setShowTutorial(false); localStorage.removeItem('cipher_new_account'); }} />
       <DeadDropModal identity={identity} />
-      <GlobalDialog />
+      {/* GlobalDialog renders after CallOverlay so the flat sheet tiers keep
+          the app-wide confirm above the call surface, as the old literal
+          z-range did. */}
       <CallOverlay />
+      <GlobalDialog />
 
-      <main className="relative z-10 h-[100dvh] w-full max-w-md overflow-hidden md:w-auto md:max-w-none md:flex-1">
+      <main className="relative h-[100dvh] w-full max-w-md overflow-hidden md:w-auto md:max-w-none md:flex-1">
         <div className={`absolute inset-0 md:left-[72px] ${activeTab === 'chat' ? '' : 'invisible pointer-events-none'}`}>
           <Suspense fallback={tabFallback}>
             <Chat identity={identity} />
@@ -78,14 +81,14 @@ export default function AuthenticatedApp({ identity }) {
             <Suspense fallback={tabFallback}>
               {activeTab === 'explore' && (
                 <div className="relative mx-auto flex h-full w-full max-w-md flex-col md:border-x md:border-line">
-                  <div className="relative z-10 flex items-center px-4 pb-1 pt-3">
+                  <div className="relative flex items-center px-4 pb-1 pt-3">
                     <button type="button" onClick={() => useChatStore.getState().setShowDrawer(true)} aria-label="Open menu" className="-ml-1 touch-target p-2 text-ink/50 hover:text-ink md:hidden"><Menu size={20} /></button>
                     <div className="grid flex-1 grid-cols-2 rounded-2xl border border-ink/15 bg-panelStrong p-1 shadow-lg">
                       <button type="button" onClick={() => setExploreMode('shop')} className={`min-h-[44px] rounded-xl py-2.5 text-[13px] font-bold ${exploreMode === 'shop' ? 'bg-accent text-accentInk shadow-lg' : 'text-ink/60'}`}>Shop</button>
                       <button type="button" onClick={() => setExploreMode('groups')} className={`min-h-[44px] rounded-xl py-2.5 text-[13px] font-bold ${exploreMode === 'groups' ? 'bg-accent text-accentInk shadow-lg' : 'text-ink/60'}`}>Groups</button>
                     </div>
                   </div>
-                  <div className="relative z-10 min-h-0 flex-1">
+                  <div className="relative min-h-0 flex-1">
                     {exploreMode === 'shop'
                       ? <Shop identity={identity} setActiveTab={setActiveTab} />
                       : <Discover identity={identity} onJoined={() => setActiveTab('chat')} />}
@@ -104,7 +107,7 @@ export default function AuthenticatedApp({ identity }) {
 
       <Drawer identity={identity} open={showDrawer} onClose={() => useChatStore.getState().setShowDrawer(false)} onNavigate={openDrawerSection} />
 
-      <nav aria-label="Tabs" className="fixed bottom-0 left-0 top-0 z-20 hidden w-[72px] flex-col items-center gap-3 border-r border-line bg-panelStrong pt-4 md:flex">
+      <nav aria-label="Tabs" className="fixed bottom-0 left-0 top-0 z-fab hidden w-[72px] flex-col items-center gap-3 border-r border-line bg-panelStrong pt-4 md:flex">
         <button onClick={() => setActiveTab('chat')} className={`relative flex w-16 flex-col items-center gap-1 rounded-2xl p-2 min-h-[52px] ${activeTab === 'chat' ? 'text-accent' : 'text-ink/40 hover:text-ink/60'}`}>
           <MessageSquare size={22} strokeWidth={activeTab === 'chat' ? 2.5 : 2} />
           {unreadTotal > 0 && <span className="absolute right-2 top-0 flex h-[16px] min-w-[16px] items-center justify-center rounded-full bg-accent px-1.5 text-[10px] font-bold text-accentInk">{unreadTotal > 99 ? '99+' : unreadTotal}</span>}

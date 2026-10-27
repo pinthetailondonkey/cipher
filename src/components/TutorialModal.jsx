@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ChevronRight, X } from 'lucide-react';
 import Logo from './Logo';
+import useDialogA11y from './ui/dialogA11y';
 
 const steps = [
   {
@@ -32,6 +33,8 @@ const steps = [
 
 export default function TutorialModal({ isOpen, onClose }) {
   const [currentStep, setCurrentStep] = useState(0);
+  const panelRef = useRef(null);
+  useDialogA11y(isOpen, onClose, panelRef);
 
   if (!isOpen) return null;
 
@@ -50,15 +53,17 @@ export default function TutorialModal({ isOpen, onClose }) {
     <AnimatePresence>
       <motion.div 
         initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-        className="fixed inset-0 z-[999] flex items-center justify-center bg-scrim/80 p-6"
+        className="fixed inset-0 z-sheet flex items-center justify-center bg-scrim/80 p-6"
       >
-        <motion.div 
+        <motion.div
           key={currentStep}
+          ref={panelRef}
           initial={{ x: 20, opacity: 0 }} animate={{ x: 0, opacity: 1 }} exit={{ x: -20, opacity: 0 }}
           transition={{ type: "spring", damping: 25, stiffness: 300 }}
+          role="dialog" aria-modal="true" aria-label="How to use"
           className="relative bg-panel border border-line rounded-3xl w-full max-w-sm p-8 overflow-hidden shadow-lg flex flex-col items-center text-center"
         >
-          <button onClick={() => { localStorage.removeItem('cipher_new_account'); onClose(); }} className="absolute top-4 right-4 text-ink/30 hover:text-ink transition-colors">
+          <button onClick={() => { localStorage.removeItem('cipher_new_account'); onClose(); }} aria-label="Close guide" className="absolute top-4 right-4 text-ink/30 hover:text-ink transition-colors">
             <X size={20} />
           </button>
 

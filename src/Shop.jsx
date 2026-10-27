@@ -29,7 +29,7 @@ export default function Shop({ identity, setActiveTab }) {
         const pool = new SimplePool();
 
         const timeoutPromise = new Promise((_, reject) =>
-          setTimeout(() => reject(new Error('Relay timeout')), 4000)
+          setTimeout(() => reject(new Error('Network timeout')), 4000)
         );
 
         const fetchPromise = pool.querySync(

@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Copy, X } from 'lucide-react';
 import { useChatStore } from '../../store/chatStore';
 import Avatar from '../ui/Avatar';
 import Button, { pressable } from '../ui/Button';
+import useDialogA11y from '../ui/dialogA11y';
 import { copyText } from '../../lib/copyText';
 import { noHexName, shortNpub } from '../../lib/npub';
 
@@ -14,6 +15,8 @@ export default function MyProfileModal({ identity }) {
   const profile = useChatStore((state) => (identity?.pk ? state.profiles[identity.pk] : undefined)) || EMPTY_PROFILE;
   const [notice, setNotice] = useState('');
   const [error, setError] = useState('');
+  const panelRef = useRef(null);
+  useDialogA11y(isOpen, () => setShowMyProfile(false), panelRef);
   if (!isOpen) return null;
 
   const copyNpub = async () => {
@@ -33,10 +36,10 @@ export default function MyProfileModal({ identity }) {
   const name = noHexName(profile, identity?.pk);
 
   return (
-    <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-scrim/70 p-4" role="presentation" onMouseDown={(event) => {
+    <div className="fixed inset-0 z-sheet flex items-center justify-center bg-scrim/70 p-4" role="presentation" onMouseDown={(event) => {
       if (event.target === event.currentTarget) setShowMyProfile(false);
     }}>
-      <section role="dialog" aria-modal="true" aria-label="My profile" className="relative w-full max-w-sm rounded-3xl border border-line bg-panel p-6">
+      <section ref={panelRef} role="dialog" aria-modal="true" aria-label="My profile" className="relative w-full max-w-sm rounded-3xl border border-line bg-panel p-6">
         <button type="button" onClick={() => setShowMyProfile(false)} aria-label="Close profile" className={`absolute right-4 top-4 p-2 text-ink/45 hover:text-ink ${pressable}`}><X size={20} /></button>
         <div className="flex items-center gap-4 pr-8">
           <Avatar src={profile.picture} name={name} className="!h-16 !w-16 text-xl" />

@@ -461,7 +461,7 @@ export default function Wallet({ identity, onOpenChat, startView = 'main' }) {
   // --- MAIN PROFILE TAB ---
   return (
     <div className="animate-fade-in overflow-y-auto h-full pb-4 pb-[env(safe-area-inset-bottom)]">
-      {status && <div className="fixed left-1/2 top-[calc(5rem+env(safe-area-inset-top))] -translate-x-1/2 md:left-auto md:right-6 md:top-6 md:translate-x-0 bg-panelStrong border border-line text-ink px-4 py-2 rounded-xl text-xs font-bold z-50 animate-fade-in">{status}</div>}
+      {status && <div className="fixed left-1/2 top-[calc(5rem+env(safe-area-inset-top))] -translate-x-1/2 md:left-auto md:right-6 md:top-6 md:translate-x-0 bg-panelStrong border border-line text-ink px-4 py-2 rounded-xl text-xs font-bold z-fab animate-fade-in">{status}</div>}
 
       {/* HEADER PROFILE CARD */}
       <div className="flex flex-col items-center px-4 pb-2 pt-3 md:pt-8">
@@ -604,7 +604,7 @@ export default function Wallet({ identity, onOpenChat, startView = 'main' }) {
 
       {/* PANIC CONFIRM MODAL */}
       {showPanicConfirm && (
-        <div className="fixed inset-0 z-[999] flex items-center justify-center bg-scrim/80 p-4 animate-fade-in">
+        <div className="fixed inset-0 z-sheet flex items-center justify-center bg-scrim/80 p-4 animate-fade-in">
           <div className="bg-panel border border-line rounded-2xl w-full max-w-sm p-6">
             <h2 className="text-xl font-bold text-ink mb-2">Panic Wipe</h2>
             <p className="text-sm text-ink/70 mb-6">This will instantly destroy all local data on this device. Make sure you have saved your 12-word recovery phrase!</p>

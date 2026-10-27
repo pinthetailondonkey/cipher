@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
-import { BadgeCheck, Bookmark, Copy, Pencil, Pin, Radio, Reply, ShoppingBag, Store, Trash2 } from 'lucide-react';
+import { BadgeCheck, Bookmark, Check, CheckCheck, Copy, Pencil, Pin, Radio, Reply, ShoppingBag, Store, Trash2 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { paymentRowsFor } from '../lib/paymentUri';
 import { haptic } from '../lib/haptics';
@@ -146,7 +146,7 @@ export default function MessageBubble({ message, data, onAction, senderName, isP
   // Meta lives inside the bubble, bottom-right: white at 70% on sent,
   // ink-subtle on received. A read pair of ticks lifts to full white.
   const checks = isSender && !deliveryLabel
-    ? <span className={read ? 'text-ink' : ''}>{read ? '✓✓' : '✓'}</span>
+    ? <span className={read ? 'text-ink' : ''}>{read ? <CheckCheck size={13} strokeWidth={2.5} /> : <Check size={13} strokeWidth={2.5} />}</span>
     : null;
   const timeLabel = validTimestamp === null ? '' : new Date(validTimestamp * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   const time = (
@@ -215,7 +215,7 @@ export default function MessageBubble({ message, data, onAction, senderName, isP
     >
       {!isSender && showAvatar && (
         runEnd
-          ? <Picture src={avatarUrl} alt="" className="h-7 w-7 shrink-0 rounded-full object-cover" fallback={<span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#161616] text-[11px] font-semibold ${avatarColor}`}>{avatarInitial}</span>} />
+          ? <Picture src={avatarUrl} alt="" className="h-7 w-7 shrink-0 rounded-full object-cover" fallback={<span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-panelStrong text-[11px] font-semibold ${avatarColor}`}>{avatarInitial}</span>} />
           : <span className="h-7 w-7 shrink-0" aria-hidden="true" />
       )}
       <div
@@ -331,7 +331,7 @@ export default function MessageBubble({ message, data, onAction, senderName, isP
       </div>
     </motion.article>
     {open && (
-      <div className="fixed inset-0 z-[75] flex items-end justify-center bg-scrim/70 p-3" onPointerDown={(event) => { if (event.target === event.currentTarget) setOpen(false); }}>
+      <div className="fixed inset-0 z-sheet flex items-end justify-center bg-scrim/70 p-3" onPointerDown={(event) => { if (event.target === event.currentTarget) setOpen(false); }}>
         <div className="mb-safe w-full max-w-sm rounded-3xl border border-line bg-panel p-3" onPointerDown={(event) => event.stopPropagation()}>
           <div className="mb-2 flex justify-between rounded-2xl bg-ink/5 px-2 py-2">
             {REACTION_CHOICES.map((emoji) => (
@@ -350,7 +350,7 @@ export default function MessageBubble({ message, data, onAction, senderName, isP
       </div>
     )}
       {showReactors && (
-        <div className="fixed inset-0 z-[70] flex items-end justify-center bg-scrim/60 p-4" onClick={() => setShowReactors(false)}>
+        <div className="fixed inset-0 z-sheet flex items-end justify-center bg-scrim/60 p-4" onClick={() => setShowReactors(false)}>
           <div className="w-full max-w-sm rounded-2xl border border-line bg-panel p-4" onClick={(event) => event.stopPropagation()}>
             <p className="mb-3 text-[15px] font-semibold text-ink">{showReactors}</p>
             {(grouped.get(showReactors) || []).map((person) => (

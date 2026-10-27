@@ -53,7 +53,7 @@ export default function Discover({ identity, onJoined }) {
         const pool = new SimplePool();
 
         const timeoutPromise = new Promise((_, reject) =>
-          setTimeout(() => reject(new Error('Relay timeout')), 4000)
+          setTimeout(() => reject(new Error('Network timeout')), 4000)
         );
 
         const fetchPromise = pool.querySync(
