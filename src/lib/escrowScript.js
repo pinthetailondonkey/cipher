@@ -9,7 +9,26 @@
 // The absence of any other branch is the product: there is no arbiter
 // key, no recovery key, no support backdoor. Both readers of this file
 // — the app and a skeptical outsider — must assemble the same bytes,
-// so decode is exact: one shape, strict pushes, nothing optional.
+// so decode is exact: two shapes, strict pushes, nothing optional.
+//
+// The second shape is the Dead Drop box: the same release branch, and
+// the refund side gains one nested overt branch the VENDOR fires alone.
+//
+//   OP_IF    <vendor_pub> OP_CHECKSIGVERIFY <buyer_pub> OP_CHECKSIG
+//   OP_ELSE  OP_IF      OP_SHA256 <overt_hash> OP_EQUALVERIFY <vendor_pub> OP_CHECKSIG
+//            OP_ELSE    <delay> OP_CSV OP_DROP <buyer_pub> OP_CHECKSIG
+//            OP_ENDIF
+//   OP_ENDIF
+//
+// The vendor returns ALL the money to the buyer fee-free, any time —
+// but only by publishing preimage(overt_hash) on-chain: the act of
+// handing the money back is a chain-anchored delivery attestation.
+// (The hash is fixed before funding, so it cannot be minted after.)
+// What it proves is the honesty limit, everywhere this ships: the
+// vendor ASSERTED delivery. It does not prove atoms moved. Where the
+// money goes (ALL to the buyer, fee-free) is the spend's output set,
+// not script bytes — the callers build that output, the wire tests pin
+// it, and no CTV means no script can force the destination.
 
 const OP_IF = 0x63;
 const OP_ELSE = 0x67;
@@ -18,6 +37,8 @@ const OP_DROP = 0x75;
 const OP_CHECKSIG = 0xac;
 const OP_CHECKSIGVERIFY = 0xad;
 const OP_CSV = 0xb2;
+const OP_SHA256 = 0xa8;
+const OP_EQUALVERIFY = 0x88;
 
 const COMPRESSED_PUBKEY = 33; // Bitcoin compressed secp256k1 point
 
@@ -53,6 +74,10 @@ function isPubkey(value) {
   return value instanceof Uint8Array && value.length === COMPRESSED_PUBKEY;
 }
 
+function isOvertHash(value) {
+  return value instanceof Uint8Array && value.length === 32;
+}
+
 // Assemble the order script from per-order derived keys. delayBlocks is
 // the chain-enforced refund timer (docs default 20 days = 2880 blocks);
 // the app displays days, the chain counts blocks.
@@ -66,6 +91,33 @@ export function assembleOrderScript({ vendorPubKey, buyerPubKey, delayBlocks }) 
     OP_ELSE,
     ...scriptNumPush(delayBlocks), OP_CSV, OP_DROP,
     ...pushBytes(buyerPubKey), OP_CHECKSIG,
+    OP_ENDIF,
+  ]);
+}
+
+// The Dead Drop box: the plain box plus the nested overt branch. The
+// inner branch opens ONLY on a preimage whose SHA-256 is the overt hash
+// fixed before funding, then on the vendor key alone — no buyer key, no
+// timer. overtHash is SHA-256 of the vendor's delivery nonce, committed
+// at escrow_open; only the vendor ever holds the nonce, so only the
+// vendor can ever fire this branch.
+export function assembleOvertOrderScript({ vendorPubKey, buyerPubKey, delayBlocks, overtHash }) {
+  if (!isPubkey(vendorPubKey)) throw new Error('The vendor key must be a 33-byte compressed point.');
+  if (!isPubkey(buyerPubKey)) throw new Error('The buyer key must be a 33-byte compressed point.');
+  if (!isOvertHash(overtHash)) throw new Error('The overt hash must be a 32-byte SHA-256.');
+  return Uint8Array.from([
+    OP_IF,
+    ...pushBytes(vendorPubKey), OP_CHECKSIGVERIFY,
+    ...pushBytes(buyerPubKey), OP_CHECKSIG,
+    OP_ELSE,
+    OP_IF,
+    OP_SHA256,
+    ...pushBytes(overtHash), OP_EQUALVERIFY,
+    ...pushBytes(vendorPubKey), OP_CHECKSIG,
+    OP_ELSE,
+    ...scriptNumPush(delayBlocks), OP_CSV, OP_DROP,
+    ...pushBytes(buyerPubKey), OP_CHECKSIG,
+    OP_ENDIF,
     OP_ENDIF,
   ]);
 }
@@ -119,11 +171,32 @@ export function decodeOrderScript(bytes) {
     const buyerPubKey = readPush();
     if (!isPubkey(buyerPubKey) || readByte() !== OP_CHECKSIG) return null;
     if (readByte() !== OP_ELSE) return null;
+    // After the outer OP_ELSE, the plain box's next byte is the delay
+    // push's length byte (1..4); the Dead Drop box opens OP_IF (0x63),
+    // which is never a legal delay push length — one unambiguous byte.
+    let overtHash = null;
+    if (readByte() === OP_IF) {
+      // Dead Drop branch: OP_SHA256 <32-byte hash> OP_EQUALVERIFY <vendor_pub> OP_CHECKSIG
+      if (readByte() !== OP_SHA256) return null;
+      overtHash = readPush();
+      if (!isOvertHash(overtHash) || readByte() !== OP_EQUALVERIFY) return null;
+      const overtVendor = readPush();
+      if (!isPubkey(overtVendor) || readByte() !== OP_CHECKSIG) return null;
+      // the overt unlock is the VENDOR's key — the same one the release
+      // branch verifies; a stranger fires nobody's dead drop
+      if (scriptToHex(overtVendor) !== scriptToHex(vendorPubKey)) return null;
+      if (readByte() !== OP_ELSE) return null;
+    } else {
+      i -= 1; // plain box: step back onto the delay push's length byte
+    }
     const delay = readNum();
     if (delay === null || readByte() !== OP_CSV || readByte() !== OP_DROP) return null;
     const refundBuyer = readPush();
     if (!isPubkey(refundBuyer) || readByte() !== OP_CHECKSIG) return null;
     if (readByte() !== OP_ENDIF) return null;
+    // the Dead Drop box nests one frame deeper: a second OP_ENDIF
+    // closes the outer refund side. The plain box has exactly one frame.
+    if (overtHash !== null && readByte() !== OP_ENDIF) return null;
     if (i !== bytes.length) return null;
     // the refund branch pays the buyer — the same buyer the release
     // branch verifies; a stranger's key in the refund branch never assembles.
@@ -134,7 +207,7 @@ export function decodeOrderScript(bytes) {
     // derivation, but the strict shape is the contract, so it is the
     // shape that refuses it.)
     if (scriptToHex(vendorPubKey) === scriptToHex(buyerPubKey)) return null;
-    return { vendorPubKey, buyerPubKey, delayBlocks: delay };
+    return { vendorPubKey, buyerPubKey, delayBlocks: delay, overtHash };
   } catch {
     return null;
   }

@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   assembleOrderScript,
+  assembleOvertOrderScript,
   decodeOrderScript,
   hexToScript,
   scriptToHex,
@@ -17,6 +18,89 @@ import {
 const V = Uint8Array.from({ length: 33 }, (_, i) => 0x11 + i);
 const B = Uint8Array.from({ length: 33 }, (_, i) => 0x2a + i);
 const WRONG = Uint8Array.from({ length: 33 }, (_, i) => 0xf0 + i);
+const OVERT = Uint8Array.from({ length: 32 }, (_, i) => 0x5a + i);
+
+// The Dead Drop box, attacked the same way: the plain box plus the
+// nested overt branch the vendor fires alone. Everything here keeps
+// the round-trip law — decode is exact, nothing optional, a crafted
+// variant is a foreign object.
+test('the dead drop box round-trips: deployment hash, keys, delay all come back', () => {
+  for (const delay of [2880, MIN_CSV_BLOCK_DELAY, MAX_CSV_BLOCK_DELAY, 144, 65534]) {
+    const bytes = assembleOvertOrderScript({ vendorPubKey: V, buyerPubKey: B, delayBlocks: delay, overtHash: OVERT });
+    const back = decodeOrderScript(bytes);
+    assert.notEqual(back, null, `dead drop round-trip failed at delay ${delay}`);
+    assert.equal(scriptToHex(back.vendorPubKey), scriptToHex(V));
+    assert.equal(scriptToHex(back.buyerPubKey), scriptToHex(B));
+    assert.equal(back.delayBlocks, delay);
+    // the committed hash comes back byte for byte: the vendor fixed it
+    // before funding and the decoder says exactly what it is
+    assert.equal(scriptToHex(back.overtHash), scriptToHex(OVERT));
+  }
+});
+
+test('the plain box still decodes, with no overt branch recorded', () => {
+  const bytes = assembleOrderScript({ vendorPubKey: V, buyerPubKey: B, delayBlocks: 2880 });
+  const back = decodeOrderScript(bytes);
+  assert.notEqual(back, null);
+  assert.equal(back.overtHash, null, 'the plain box carries no overt hash');
+});
+
+test('the delay dispatch after OP_ELSE is unambiguous: a delay ending in 0x63 does not decode as an overt branch', () => {
+  // 0x63 = OP_IF; a plain box whose delay's first byte would be 0x63
+  // would go to the overt parser and die. But the delay always pushes
+  // its LENGTH first, so the dispatch byte is 1..4, never 0x63.
+  const bytes = assembleOrderScript({ vendorPubKey: V, buyerPubKey: B, delayBlocks: 99 }); // 99 = 0x63
+  const back = decodeOrderScript(bytes);
+  assert.notEqual(back, null, 'a delay of 99 (0x63 the number) still decodes as plain');
+  assert.equal(back.delayBlocks, 99);
+  assert.equal(back.overtHash, null);
+});
+
+test('the overt branch is the vendor ALONE: a stranger at the dead drop refuses', () => {
+  // the overt branch must verify the SAME vendor key the release branch
+  // verifies — a swapped key is a foreign object
+  const bytes = assembleOvertOrderScript({ vendorPubKey: V, buyerPubKey: B, delayBlocks: 2880, overtHash: OVERT });
+  const hex = scriptToHex(bytes);
+  const overtKeyAt = hex.indexOf(scriptToHex(V), hex.indexOf('a8')); // after OP_SHA256
+  const strangerBox = hexToScript(hex.slice(0, overtKeyAt) + scriptToHex(WRONG) + hex.slice(overtKeyAt + 66));
+  assert.equal(decodeOrderScript(strangerBox), null, "a stranger's key at the dead drop refuses to decode");
+});
+
+test('the overt branch is the vendor ALONE: refund branch equality holds on the dead drop too', () => {
+  // swap the refund key inside the innermost (timed) branch
+  const bytes = assembleOvertOrderScript({ vendorPubKey: V, buyerPubKey: B, delayBlocks: 2880, overtHash: OVERT });
+  const hex = scriptToHex(bytes);
+  const refundAt = hex.lastIndexOf(scriptToHex(B));
+  const strangerRefund = hexToScript(hex.slice(0, refundAt) + scriptToHex(WRONG) + hex.slice(refundAt + 66));
+  assert.equal(decodeOrderScript(strangerRefund), null);
+});
+
+test('the committed hash is exactly 32 bytes of hash: wrong lengths refuse', () => {
+  assert.throws(
+    () => assembleOvertOrderScript({ vendorPubKey: V, buyerPubKey: B, delayBlocks: 2880, overtHash: Uint8Array.from({ length: 20 }, () => 1) }),
+    /overt hash/,
+  );
+  assert.throws(
+    () => assembleOvertOrderScript({ vendorPubKey: V, buyerPubKey: B, delayBlocks: 2880, overtHash: '5a'.repeat(32) }),
+    /overt hash/,
+  );
+  assert.throws(
+    () => assembleOvertOrderScript({ vendorPubKey: V, buyerPubKey: B, delayBlocks: 2880 }),
+    /overt hash/,
+  );
+  // and the decoder refuses the hash lie from the other side: a hash
+  // push that is not exactly 32 bytes means no box at all — it can
+  // never be ENDIF'd back together
+  const bytes = assembleOvertOrderScript({ vendorPubKey: V, buyerPubKey: B, delayBlocks: 2880, overtHash: OVERT });
+  const hex = scriptToHex(bytes);
+  const full = '20' + scriptToHex(OVERT);
+  assert.notEqual(hex.indexOf(full), -1, 'the 32-byte hash push is where this test thinks it is');
+  // 31-byte push: wrong length, refused before the branch even finishes
+  assert.equal(decodeOrderScript(hexToScript(hex.replace(full, '1f' + scriptToHex(OVERT).slice(2)))), null);
+  // 33-byte padded push: same refusal
+  assert.equal(decodeOrderScript(hexToScript(hex.replace(full, '21' + scriptToHex(OVERT) + '00'))), null);
+});
+
 
 test('assemble + decode round-trips at the 20-day default and across delays', () => {
   for (const delay of [2880, MIN_CSV_BLOCK_DELAY, MAX_CSV_BLOCK_DELAY, 144, 65534]) {
