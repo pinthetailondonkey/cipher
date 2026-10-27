@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { ORDER_STATUS } from './lib/paymentState';
-import { Search, ChevronRight, Loader2, ShoppingBag } from 'lucide-react';
+import { Search, ChevronRight, ShoppingBag } from 'lucide-react';
 import OneTapCheckout from './components/OneTapCheckout';
 import { useNIP44DM } from './hooks/useNIP44DM';
 import { useChatStore } from './store/chatStore';
@@ -29,7 +29,7 @@ import { noHexName } from './lib/npub';
 
 const APP_HOST_URL = entryById('app-host')?.url || '';
 
-function MenuTile({ item, vendorPubkey, onBuy, onCopyLink }) {
+function MenuTile({ item, onBuy, onCopyLink }) {
   return (
     <article className="rounded-3xl border border-line bg-panelStrong p-2">
       <div className="relative h-28 w-full overflow-hidden rounded-2xl bg-ink/5">
@@ -239,7 +239,6 @@ export default function Menus({ identity, setActiveTab }) {
                   <MenuTile
                     key={item.id}
                     item={item}
-                    vendorPubkey={vendor}
                     onBuy={(chosen) => setCheckoutProduct(chosen)}
                     onCopyLink={(chosen) => shareProduct(chosen)}
                   />
