@@ -235,6 +235,50 @@ test('only this device\'s own watcher check lets a receipt attach', () => {
   assert.equal(deviceWatchedOrderOf([other, card], 'order-1'), false);
 });
 
+// N3 (round-three re-hack): the lifecycle status is the newest claim, so a
+// later claim could flip a COMPLETED deal back to 'paid' — with payment
+// evidence already earned, mark_shipped reopened on a deal that was over.
+// A deal the updates ever sealed stays sealed; the claim shows and the
+// shipping lever stays down.
+test('a sealed deal cannot be walked back to a shipping decision by a claim', () => {
+  const theirs = request(false, {});
+  const completed = update('u1', false, ORDER_STATUS.COMPLETED, 12, { paymentState: 'confirmed' });
+  // The 'paid' claim after the seal: the display shows it, the lever does
+  // not follow.
+  const resurrect = update('u2', false, ORDER_STATUS.PAID, 30, { paymentState: 'confirmed' });
+  const state = orderState([theirs, completed, resurrect], 'order-1', theirs);
+  assert.equal(state.status, ORDER_STATUS.PAID);
+  assert.equal(state.resurrected, true);
+  assert.deepEqual(names(allowedActionsFor(state, 'vendor')), ['check_chain']);
+  // Same for the buyer's card: delivery confirmation does not reopen on
+  // the claim.
+  const buyerCard = request(true, {});
+  const buyerState = orderState(
+    [buyerCard, { ...completed, isSender: true }, { ...resurrect, isSender: true }],
+    'order-1',
+    buyerCard,
+  );
+  assert.deepEqual(names(allowedActionsFor(buyerState, 'buyer')), ['check_chain', 'report_issue']);
+  // The unsealed dispute keeps the S6 resolution both sides rely on: no
+  // seal in history, no resurrected mark, resume and refund stay put.
+  const dispute = orderState(
+    [theirs, update('ud', false, ORDER_STATUS.DISPUTED, 20)],
+    'order-1',
+    theirs,
+  );
+  assert.equal(dispute.resurrected, false);
+  assert.deepEqual(names(allowedActionsFor(dispute, 'vendor')), ['mark_refunded', 'resume_order']);
+  // Refunded and cancelled seal as well; a fresh deal is a fresh order.
+  for (const sealing of [ORDER_STATUS.REFUNDED, ORDER_STATUS.CANCELLED]) {
+    const state2 = orderState([theirs, update('ux', false, ORDER_STATUS.PAID, 11), update('uy', false, sealing, 12), update('uz', false, ORDER_STATUS.PAID, 30)], 'order-1', theirs);
+    assert.equal(state2.resurrected, true);
+    assert.deepEqual(names(allowedActionsFor(state2, 'vendor')), ['check_chain']);
+  }
+  // The seal never blocks the reading a vendor needs: a true completed
+  // order stays buttonless, as the table already reads.
+  assert.deepEqual(names(allowedActionsFor(orderState([theirs, completed], 'order-1', theirs), 'vendor')), []);
+});
+
 test('a never-accepted vendor order builds no receipt record, whatever the peer claims', () => {
   // security F4 re-attack: the newest-wins lifecycle status is a claim. A
   // peer's fake 'paid' update on an order the vendor never accepted, with

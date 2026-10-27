@@ -119,17 +119,27 @@ function paymentEvidence(messages, orderId, request, ownPubkey, peerPubkey) {
 
 // The order's state is the newest update either side sent for it, over what
 // this device changed on the request card itself. Payment facts are evidence,
-// never the newest claim (F7 above).
+// never the newest claim (F7 above). A deal the updates ever sealed —
+// completed, refunded or cancelled — stays sealed: a later claim can flip
+// the displayed status back, but it cannot reopen the shipping and
+// delivery decisions that state once earned. (security re-attack, N3)
+const SEALED_STATUSES = new Set([S.COMPLETED, S.REFUNDED, S.CANCELLED]);
+
 export function orderState(messages, orderId, request, ownPubkey, peerPubkey) {
   const updates = (Array.isArray(messages) ? messages : [])
     .filter((message) => message?.data?.type === 'order_update' && message.data.orderId === orderId)
     .sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0) || String(a.id).localeCompare(String(b.id)));
   const latest = updates[updates.length - 1] || null;
   const payment = paymentEvidence(messages, orderId, request, ownPubkey, peerPubkey);
+  const status = latest?.data?.status || request?.data?.status || S.PENDING;
+  const everSealed = SEALED_STATUSES.has(request?.data?.status)
+    || SEALED_STATUSES.has(request?.localPatch?.status)
+    || updates.some((update) => SEALED_STATUSES.has(update.data?.status));
   return {
-    status: latest?.data?.status || request?.data?.status || S.PENDING,
+    status,
     paymentState: payment.paymentState,
     paymentSeenBy: payment.paymentSeenBy,
+    resurrected: everSealed && status !== S.DISPUTED && !SEALED_STATUSES.has(status),
   };
 }
 
@@ -321,9 +331,25 @@ export function reopenedStatus(paymentState) {
 // The one table of what each side may do with an order in each state. Every
 // order button renders from this. A status it does not know is an error.
 export function allowedActionsFor(order, viewer) {
-  const { status, paymentState = 'created', paymentSeenBy = '' } = order || {};
+  const { status, paymentState = 'created', paymentSeenBy = '', resurrected = false } = order || {};
   if (!isOrderStatus(status)) throw new Error(`Unknown order status: ${status}`);
   const named = (...actions) => actions.map((action) => ({ action, label: ACTION[action] }));
+  if (resurrected) {
+    // N3: the updates once sealed this deal and a later claim walked it
+    // back to a live status. A shipping or delivery decision does not
+    // reopen on that claim — the same lever that resurrected the order
+    // could farm a second shipment off one payment. What is left is
+    // reading and complaint: the chain check and, for the buyer, the issue
+    // path. A fresh deal gets a fresh order.
+    if (viewer === 'vendor') {
+      return status === S.PENDING ? named('accept_order', 'decline_order') : named('check_chain');
+    }
+    if (viewer === 'buyer') {
+      if (status === S.PENDING) return named('cancel_order');
+      return named('check_chain', 'report_issue');
+    }
+    throw new Error(`Unknown order viewer: ${viewer}`);
+  }
   if (viewer === 'vendor') {
     if (status === S.PENDING) return named('accept_order', 'decline_order');
     // A dispute is not a dead end (security S6): the vendor pays it back or
