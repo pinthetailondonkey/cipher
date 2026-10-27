@@ -259,7 +259,7 @@ export default function Menus({ identity, setActiveTab }) {
             {APP_HOST_URL && (
               <a
                 href={APP_HOST_URL}
-                className="font-semibold text-accentText underline decoration-line"
+                className="inline-flex min-h-[44px] min-w-[44px] items-center px-3 font-semibold text-accentText underline decoration-line"
                 rel="noreferrer"
               >
                 Get the app
