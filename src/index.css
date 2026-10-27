@@ -40,6 +40,13 @@
   --glass-header: rgba(10, 10, 10, 0.75);
   --glass-shadow: rgba(0, 0, 0, 0.37);
   --hover-wash: rgba(255, 255, 255, 0.06);
+  /* Layer tokens: the only z values any component may use. fab floats over
+     content, sheet overlays content and chrome, call takes the phone,
+     toast answers to no one. */
+  --z-fab: 40;
+  --z-sheet: 60;
+  --z-call: 80;
+  --z-toast: 100;
 }
 
 html, body, #root {

@@ -75,7 +75,7 @@ export default function AuthenticatedApp({ identity }) {
       <GlobalDialog />
       <CallOverlay />
 
-      <main className="relative z-10 h-[100dvh] w-full max-w-md overflow-hidden md:w-auto md:max-w-none md:flex-1">
+      <main className="relative z-fab h-[100dvh] w-full max-w-md overflow-hidden md:w-auto md:max-w-none md:flex-1">
         <div className={`absolute inset-0 md:left-[72px] ${activeTab === 'chat' ? '' : 'invisible pointer-events-none'}`}>
           <Suspense fallback={tabFallback}>
             <Chat identity={identity} />
@@ -86,7 +86,7 @@ export default function AuthenticatedApp({ identity }) {
             <Suspense fallback={tabFallback}>
               {activeTab === 'explore' && (
                 <div className="relative mx-auto flex h-full w-full max-w-md flex-col md:border-x md:border-line">
-                  <div className="relative z-10 flex items-center px-4 pb-1 pt-3">
+                  <div className="relative z-fab flex items-center px-4 pb-1 pt-3">
                     <button type="button" onClick={() => useChatStore.getState().setShowDrawer(true)} aria-label="Open menu" className="-ml-1 touch-target p-2 text-ink/50 hover:text-ink md:hidden"><Menu size={20} /></button>
                     <Segmented
                       ariaLabel="Discover sections"
@@ -96,7 +96,7 @@ export default function AuthenticatedApp({ identity }) {
                       options={[{ value: 'shop', label: 'Shop' }, { value: 'groups', label: 'Groups' }]}
                     />
                   </div>
-                  <div className="relative z-10 min-h-0 flex-1">
+                  <div className="relative z-fab min-h-0 flex-1">
                     {exploreMode === 'shop'
                       ? <Shop identity={identity} setActiveTab={setActiveTab} />
                       : <Discover identity={identity} onJoined={() => setActiveTab('chat')} />}
@@ -113,7 +113,7 @@ export default function AuthenticatedApp({ identity }) {
         )}
       </main>
 
-      <nav aria-label="Tabs" className="fixed bottom-0 left-0 top-0 z-20 hidden w-[72px] flex-col items-center gap-3 border-r border-line bg-panelStrong pt-4 md:flex">
+      <nav aria-label="Tabs" className="fixed bottom-0 left-0 top-0 z-fab hidden w-[72px] flex-col items-center gap-3 border-r border-line bg-panelStrong pt-4 md:flex">
         <button onClick={() => setActiveTab('chat')} className={`relative flex w-16 flex-col items-center gap-1 rounded-2xl p-2 min-h-[52px] ${activeTab === 'chat' ? 'text-accent' : 'text-ink/40 hover:text-ink/60'}`}>
           <MessageSquare size={22} strokeWidth={activeTab === 'chat' ? 2.5 : 2} />
           {unreadTotal > 0 && <span className="absolute right-2 top-0 flex h-[16px] min-w-[16px] items-center justify-center rounded-full bg-accent px-1.5 text-[10px] font-bold text-accentInk">{unreadTotal > 99 ? '99+' : unreadTotal}</span>}

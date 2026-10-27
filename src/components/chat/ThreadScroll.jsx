@@ -143,7 +143,7 @@ export default function ThreadScroll({ messages, emptyState, renderMessage }) {
           <div key={group.rows[0].message.clientId || group.rows[0].message.id || groupIndex}>
             {group.label && (
               <div className="pointer-events-none py-1">
-                <span className="sticky top-2 z-10 mx-auto flex w-fit justify-center rounded-full border border-line bg-panelStrong px-3 py-1 text-[11px] font-semibold text-inkMuted shadow-lg">
+                <span className="sticky top-2 z-fab mx-auto flex w-fit justify-center rounded-full border border-line bg-panelStrong px-3 py-1 text-[11px] font-semibold text-inkMuted shadow-lg">
                   {group.label}
                 </span>
               </div>

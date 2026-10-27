@@ -95,7 +95,7 @@ export default function VendorStorefront({ isOpen, onClose, vendorPubkey, profil
         </Button>
       }
     >
-      <header className="glass-header sticky top-0 z-10 flex items-center gap-3 px-4 py-3">
+      <header className="glass-header sticky top-0 z-fab flex items-center gap-3 px-4 py-3">
         <Avatar
           src={profile.picture}
           name={productName}

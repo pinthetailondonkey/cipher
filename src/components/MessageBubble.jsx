@@ -8,6 +8,7 @@ import { haptic } from '../lib/haptics';
 import { securingPhase } from '../lib/crypto/groupKeyRequest';
 import { useChatStore } from '../store/chatStore';
 import LinkPreview, { firstUrl } from './chat/LinkPreview';
+import Sheet from './ui/Sheet';
 import Picture from './ui/Picture';
 import { MediaImage } from './ui/PrivateMedia';
 import { attachmentsFor } from '../lib/mediaCrypto';
