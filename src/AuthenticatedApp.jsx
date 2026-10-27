@@ -39,12 +39,22 @@ export default function AuthenticatedApp({ identity }) {
   }, []);
   const showTutorial = useChatStore((state) => state.showTutorial);
   // The vendor menu lives over the chat surface (it is the chat tab's own
-  // pane on wide screens), so opening one — from Discover or the chat list
-  // — lands on the chat tab first, menu on top.
+  // pane on wide screens), so opening one — from Discover, the chat list,
+  // or the Menus browse — lands on the chat tab first, menu on top. Where
+  // the drill-down came from is remembered once, so closing the menu puts
+  // the user back where they were — the Menus browse, say — instead of
+  // stranding them in a tab they never chose.
   const vendorMenuPubkey = useChatStore((state) => state.vendorStorefrontPubkey);
+  const vendorMenuTabRef = React.useRef('');
   React.useEffect(() => {
-    if (vendorMenuPubkey) setActiveTab('chat');
-  }, [vendorMenuPubkey]);
+    if (vendorMenuPubkey) {
+      if (!vendorMenuTabRef.current) vendorMenuTabRef.current = activeTab;
+      if (activeTab !== 'chat') setActiveTab('chat');
+    } else if (vendorMenuTabRef.current) {
+      if (vendorMenuTabRef.current !== 'chat') setActiveTab(vendorMenuTabRef.current);
+      vendorMenuTabRef.current = '';
+    }
+  }, [vendorMenuPubkey, activeTab]);
   useEffect(() => {
     // New accounts get the walkthrough once; Profile opens it any time after.
     if (identity?.pk && localStorage.getItem('cipher_new_account') === 'true') {
