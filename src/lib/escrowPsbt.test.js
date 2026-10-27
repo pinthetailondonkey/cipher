@@ -240,4 +240,33 @@ test('the escape-hatch PSBT carries exactly what a foreign wallet needs', () => 
   const leFunding = [...hexToScript(FUNDING_TXID)].reverse().map((b) => b.toString(16).padStart(2, '0')).join('');
   assert.equal(whole.includes(leFunding), true, 'PSBT embeds the outpoint');
   assert.notEqual(b64, '');
+  // and the default kind is the release: 0xffffffff on the input
+  assert.equal(psbt.tx.vin[0].sequence, 0xffffffff);
+});
+
+test('the escape hatch carries the refund branch too — with the CSV clock on the sequence', () => {
+  // A refund PSBT built at 0xffffffff is a dead end: that sequence
+  // disables BIP-68, so OP_CSV can never pass and a foreign wallet
+  // holding the escape hatch could never take the refund home.
+  // (re-attack round @ 52cbdab)
+  const psbt = buildEscrowPsbt({
+    fundingTxid: FUNDING_TXID, fundingSats: Q.depositSats,
+    witnessScriptHex: SCRIPT_HEX,
+    outputs: [{ sats: Q.depositSats - 1440n, scriptHex: '76a914' + '33'.repeat(20) + '88ac' }],
+    kind: 'timed-refund', delayBlocks: 2880,
+  });
+  assert.equal(psbt.tx.vin[0].sequence, 2880);
+  // and the digest signs under the refund variant, too
+  assert.doesNotThrow(() => p2wshSignatureDigest({ tx: psbt.tx, witnessScriptHex: SCRIPT_HEX, prevAmountSats: Q.depositSats }));
+  // a refund PSBT without the delay is refused, not defaulted
+  assert.throws(() => buildEscrowPsbt({
+    fundingTxid: FUNDING_TXID, fundingSats: Q.depositSats, witnessScriptHex: SCRIPT_HEX,
+    outputs: [{ sats: Q.depositSats - 1440n, scriptHex: '76a914' + '33'.repeat(20) + '88ac' }],
+    kind: 'timed-refund',
+  }), /script delay/);
+  assert.throws(() => buildEscrowPsbt({
+    fundingTxid: FUNDING_TXID, fundingSats: Q.depositSats, witnessScriptHex: SCRIPT_HEX,
+    outputs: [{ sats: Q.depositSats, scriptHex: '76a914' + '33'.repeat(20) + '88ac' }],
+    kind: 'snorkel',
+  }), /Unknown PSBT kind/);
 });

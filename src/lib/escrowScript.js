@@ -128,6 +128,12 @@ export function decodeOrderScript(bytes) {
     // the refund branch pays the buyer — the same buyer the release
     // branch verifies; a stranger's key in the refund branch never assembles.
     if (scriptToHex(refundBuyer) !== scriptToHex(buyerPubKey)) return null;
+    // and the two slot keys are not equal: one signature would then pass
+    // both CHECKSIGs and the 2-of-2 would silently close as 1-of-1.
+    // (re-attack round @ 52cbdab — unreachable through the vault's
+    // derivation, but the strict shape is the contract, so it is the
+    // shape that refuses it.)
+    if (scriptToHex(vendorPubKey) === scriptToHex(buyerPubKey)) return null;
     return { vendorPubKey, buyerPubKey, delayBlocks: delay };
   } catch {
     return null;

@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import {
   buildEscrowAcceptance,
   escrowActionsFor,
@@ -167,4 +168,23 @@ test('a fresh slot per order: two orders, two salts, two keys', async () => {
   assert.notEqual(one.publicKeyHex, two.publicKeyHex);
   // the salt is public data: 32 hex bytes, no secret in it
   assert.equal(/^[0-9a-f]{64}$/.test(one.salt), true);
+});
+
+// Wiring pins, read off the app source (the way the order action
+// coherence test reads it): the request slot and the escrow price
+// come off tables, not off the buyer's word. (re-attack round @
+// 52cbdab — the first wiring shipped slot.salt off a return that has
+// no salt, so requests went out keyless and the dead button leaned
+// on the same read; and the quote priced the buyer's typed amount.)
+test('the request slot and the escrow price are wired off the right tables', () => {
+  const commerce = fs.readFileSync(new URL('../features/chat/useCommerce.js', import.meta.url), 'utf8');
+  // the slot is built by escrowRequestSlot — salt AND key from one pair
+  assert.match(commerce, /const slot = await escrowRequestSlot\(identity\.sk\)/);
+  assert.doesNotMatch(commerce, /orderEscrowKey\(identity\.sk, newEscrowSalt/);
+  // the escrow handler prices through acceptanceDemand + the own menu
+  const start = commerce.indexOf("if (action === 'accept_with_escrow')");
+  assert.notEqual(start, -1, 'the escrow handler moved — re-pin the wiring test');
+  const escrowBlock = commerce.slice(start, commerce.indexOf("if (action === 'accept_order'", start));
+  assert.match(escrowBlock, /acceptanceDemand\(msg\.data\.product, readOwnMenu\(\), 'btc'\)/);
+  assert.doesNotMatch(escrowBlock, /orderCoinAmount\(msg\.data\.product/);
 });

@@ -136,6 +136,53 @@ test('escrow state survives a reload: replay puts the box back exactly', () => {
   );
 });
 
+test('the deposit races the rooms: an ordinary payment report before the fund never jams the box', () => {
+  // One deposit tx, two reporters: the buyer's own chain check walks the
+  // ordinary payment beats, the escrow fund report lands the box fact.
+  // Either order of arrival must leave the deal closable. (re-attack
+  // round @ 52cbdab: the fund gate demanded address_issued exactly, so
+  // the first legitimate watcher report welded the escrow shut forever.)
+  const m = freshMembrane();
+  openOrder(m);
+  let st = m.summary();
+  assert.equal(m.admit({
+    schemaVersion: 1, operationId: 'watch-1', principal: 'watcher',
+    payload: { type: 'watcher_report', expectedRevision: st.revision,
+      report: { source: 'watcher', txid: TX_FUND, confirmations: 3, amount: satsToCoins(depositSats(st)) } },
+  }).status, 'accepted');
+  assert.equal(m.summary().paymentState, 'confirmed');
+  // the fund report arrives second: the box funds and the beat never steps back
+  assert.equal(fundOrder(m, { sats: depositSats(st).toString() }).status, 'accepted');
+  st = m.summary();
+  assert.equal(st.escrow.state, 'funded');
+  assert.equal(st.paymentState, 'confirmed');
+  // and both closes still walk from there
+  assert.equal(settleOrder(m, 'escrow_release', { id: 'release-late-watch' }).status, 'accepted');
+  assert.equal(m.summary().escrow.state, 'released');
+});
+
+test('the same race with only "seen": the fund does not step the payment state back', () => {
+  const m = freshMembrane();
+  openOrder(m);
+  let st = m.summary();
+  assert.equal(m.admit({
+    schemaVersion: 1, operationId: 'watch-1-seen', principal: 'watcher',
+    payload: { type: 'watcher_report', expectedRevision: st.revision,
+      report: { source: 'watcher', txid: TX_FUND, confirmations: 1, amount: satsToCoins(depositSats(st)) } },
+  }).status, 'accepted');
+  assert.equal(m.summary().paymentState, 'seen');
+  // the fund report arrives second: it lands the box and does not
+  // demote the beat the watcher already earned
+  assert.equal(fundOrder(m, { sats: depositSats(st).toString() }).status, 'accepted');
+  st = m.summary();
+  assert.equal(st.escrow.state, 'funded');
+  assert.equal(st.paymentState, 'seen');
+  // the ordinary confirm still walks, and release lands from there
+  assert.equal(confirmOrder(m).status, 'accepted');
+  assert.equal(settleOrder(m, 'escrow_release', { id: 'release-seen-race' }).status, 'accepted');
+  assert.equal(m.summary().escrow.state, 'released');
+});
+
 test('an underpaid deposit is refused at the door; a full one lands right after', () => {
   const m = freshMembrane();
   openOrder(m);

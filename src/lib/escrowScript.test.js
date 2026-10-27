@@ -40,6 +40,15 @@ test('the bytes match the documented shape, byte for byte', () => {
   assert.equal(back.delayBlocks, 2880);
 });
 
+test('two equal slot keys are not a 2-of-2 — decode refuses them', () => {
+  // One key in both positions makes one signature pass both CHECKSIGs:
+  // the release branch closes silently as 1-of-1. Unreachable through
+  // the vault's own derivation, but the strict shape is the contract,
+  // so the shape refuses it. (re-attack round @ 52cbdab)
+  const bytes = assembleOrderScript({ vendorPubKey: V, buyerPubKey: V, delayBlocks: 2880 });
+  assert.equal(decodeOrderScript(bytes), null);
+});
+
 test('the delay is read the way the CHAIN reads it, not any other way', () => {
   // little-endian, minimal, sign-correct: 2880 = 0x0B40 -> bytes 40 0B
   const bytes = assembleOrderScript({ vendorPubKey: V, buyerPubKey: B, delayBlocks: 2880 });

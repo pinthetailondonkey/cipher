@@ -321,7 +321,15 @@ function checkOp(st, principal, op) {
       // release. One or more confirmations means mined, and mined is
       // seen -- the no-0-conf rule, applied to escrow money too.
       if (!st.escrow || st.escrow.state !== 'draft') return { ok: false, reason: 'invalid_transition' };
-      if (st.paymentState !== 'address_issued') return { ok: false, reason: 'invalid_transition' };
+      // The deposit is one transaction two rooms of this app may report:
+      // the ordinary payment watcher (the buyer's own chain check) and
+      // the escrow fund report. Either arrival order must leave the box
+      // fundable, and the fund never steps the payment state backward.
+      // (re-attack round @ 52cbdab: the tighter gate welded the escrow
+      // shut for good the moment a normal payment report beat it in.)
+      if (!['address_issued', 'seen', 'confirmed'].includes(st.paymentState)) {
+        return { ok: false, reason: 'invalid_transition' };
+      }
       const sats = satsFromString(op.sats);
       if (sats === null) return { ok: false, reason: 'invalid_transition' };
       const deposit = BigInt(st.escrow.priceSats) + BigInt(st.escrow.buyerFeeSats);
@@ -333,7 +341,7 @@ function checkOp(st, principal, op) {
         esc.fundingTxid = op.txid;
         esc.fundingHeight = op.height;
         state.coinAmount = satsToCoins(sats); // the deposit note, so confirms cover what landed
-        state.paymentState = 'seen';
+        if (state.paymentState === 'address_issued') state.paymentState = 'seen';
         state.paymentSeenBy = 'watcher';
       } };
     }

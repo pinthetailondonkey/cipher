@@ -3,7 +3,7 @@ import { db, patchMessage, saveMessage } from '../../db';
 import { scopedGet, scopedSet } from '../../lib/storage';
 import { addressSpokenFor, getOrderPaymentMethods, markConsumed, readConsumedLedger, readPaymentAddresses, txidSpokenFor } from '../../lib/vendorPayments';
 import { ORDER_STATUS, RECEIPT_OUTCOME, acceptAmount, acceptanceDemand, amountCovers, coinUnits, nextPaymentState, orderCoinAmount } from '../../lib/paymentState';
-import { buildEscrowAcceptance, escrowSaltOf, newEscrowSalt, orderEscrowKey } from '../../lib/escrowActions';
+import { buildEscrowAcceptance, escrowRequestSlot, escrowSaltOf, orderEscrowKey } from '../../lib/escrowActions';
 import { checkPayment } from '../../lib/paymentWatch';
 import { activeUrl, entryById } from '../../lib/egress';
 import { publicReceipt, rememberPublicView, receiptBindsOrder, signPublicView, signReceipt } from '../../lib/proofOfTrade';
@@ -96,23 +96,37 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
           setSelectedMessage(null);
           return true;
         }
-        const priceCoins = orderCoinAmount(msg.data.product, 'btc');
-        if (!priceCoins) {
-          setToast({ type: 'error', message: 'Escrow needs the order priced in BTC coins.' });
+        // F5 for escrow, the same lock the direct accept enforces: the
+        // amount starts from THIS menu — the buyer's card never prices
+        // it. (re-attack round @ 52cbdab: the wiring read the buyer's
+        // payload raw, and a cheap order could escrow expensive goods.)
+        const demand = acceptanceDemand(msg.data.product, readOwnMenu(), 'btc');
+        if (demand.kind === 'dollars') {
+          setToast({ type: 'error', message: 'Escrow needs a Bitcoin price. This item is priced in dollars, so it stays a direct deal.' });
+          setSelectedMessage(null);
+          return true;
+        }
+        if (demand.kind === 'unit') {
+          setToast({ type: 'error', message: 'Escrow is Bitcoin-only. Your menu prices this item in XMR, so it stays a direct deal.' });
+          setSelectedMessage(null);
+          return true;
+        }
+        if (demand.kind !== 'listing') {
+          setToast({ type: 'error', message: 'Your menu has no Bitcoin price for this item. Price the item in BTC for escrow, or accept it as a direct deal.' });
           setSelectedMessage(null);
           return true;
         }
         let priceSats;
         try {
-          priceSats = coinUnits(priceCoins, 'btc');
-          if (priceSats == null) throw new Error('The order price does not read as a BTC coin amount.');
+          priceSats = coinUnits(demand.amount, 'btc');
+          if (priceSats == null) throw new Error('The menu price does not read as a BTC coin amount.');
         } catch (error) {
-          setToast({ type: 'error', message: error?.message || 'The order price does not read as a BTC coin amount.' });
+          setToast({ type: 'error', message: error?.message || 'The menu price does not read as a BTC coin amount.' });
           setSelectedMessage(null);
           return true;
         }
         try {
-          const { privateKeyBytes, publicKeyHex } = await orderEscrowKey(identity.sk, slot);
+          const { publicKeyHex } = await orderEscrowKey(identity.sk, slot);
           const acceptance = buildEscrowAcceptance({
             priceSats,
             vendorPubHex: publicKeyHex,
@@ -705,7 +719,11 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
       // secret, never the private half). BTC-priced orders only — XMR
       // escrow is parked by decision (docs/ESCROW.md).
       try {
-        const slot = await orderEscrowKey(identity.sk, newEscrowSalt());
+        // escrowRequestSlot returns the salt AND the key in one pair —
+        // orderEscrowKey alone has no salt field, so the request went
+        // out keyless and the button never rendered. (re-attack round
+        // @ 52cbdab)
+        const slot = await escrowRequestSlot(identity.sk);
         payload.escrowSalt = slot.salt;
         payload.escrowPubKey = slot.publicKeyHex;
       } catch (error) {

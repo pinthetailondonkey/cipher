@@ -280,10 +280,18 @@ function encodeKeyPair(key, value) {
   return concat([compactSize(key.length), key, compactSize(value.length), value]);
 }
 
-export function buildEscrowPsbt({ fundingTxid, fundingVout = 0, fundingSats, witnessScriptHex, outputs, locktime = 0 }) {
+export function buildEscrowPsbt({ fundingTxid, fundingVout = 0, fundingSats, witnessScriptHex, outputs, kind = 'release', delayBlocks, locktime = 0 }) {
+  // The escape hatch comes in BOTH close variants. The release branch
+  // spends with 0xffffffff -- the CSV disable flag, fine. The refund
+  // branch spends with sequence = delayBlocks: without it a foreign
+  // wallet holds a PSBT whose embedded sequence OP_CSV can never pass,
+  // and the escape hatch is no refund hatch at all. (re-attack round
+  // @ 52cbdab: the first draft was release-only.)
+  if (kind !== 'release' && kind !== 'timed-refund') throw new Error(`Unknown PSBT kind: ${kind}.`);
+  if (kind === 'timed-refund' && !delayBlocks) throw new Error('A timed-refund PSBT needs the script delay.');
   const tx = buildSpendTx({
     fundingTxid, fundingVout, fundingSats, witnessScriptHex, outputs,
-    sequence: LEARLY_RELEASE_SEQUENCE, locktime,
+    sequence: kind === 'timed-refund' ? delayBlocks : LEARLY_RELEASE_SEQUENCE, locktime,
   });
   const script = hexToBytes(witnessScriptHex);
   const outpointScript = concat([Uint8Array.from([0x00, 0x20]), sha256(script)]);
