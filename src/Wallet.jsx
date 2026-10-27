@@ -1,8 +1,8 @@
-import { lazy, Suspense, useState, useEffect } from 'react'
+import { lazy, Suspense, useState, useEffect, useLayoutEffect } from 'react'
 import {
   User, Plus, AlertCircle, RefreshCw,
   Lock, ChevronRight, ArrowLeft, Copy, CreditCard, Camera,
-  BarChart3, Package, KeyRound, Menu, ShieldAlert, Users, SlidersHorizontal, Shield, BookOpen
+  BarChart3, Package, KeyRound, Menu, ShieldAlert, Users, SlidersHorizontal, Shield, BookOpen, Moon
 } from 'lucide-react'
 import { uploadToBlossom } from '@nostr-wot/blossom'
 import { useProfiles, updateProfileCache } from './useProfiles'
@@ -28,6 +28,35 @@ import { blossomServers } from './lib/egress';
 
 const VendorDashboard = lazy(() => import('./components/chat/VendorDashboard'));
 const ProfileEditor = lazy(() => import('./components/chat/ProfileEditor'));
+
+// Two modes, one switch. The key is cipher_theme — the same key the old
+// theme registry wrote — but with exactly two values now: 'dark' (default)
+// and 'light'. Old registry values still saved on existing installs are
+// orphaned and coerced here: 'paper' meant the light skin, everything else
+// ('vault', 'lobby', 'chromerooms') meant dark.
+const THEME_KEY = 'cipher_theme';
+
+function readTheme() {
+  try {
+    const saved = globalThis.localStorage?.getItem(THEME_KEY);
+    if (saved === 'paper') return 'light';
+    return 'dark';
+  } catch {
+    return 'dark';
+  }
+}
+
+function writeTheme(mode) {
+  try {
+    globalThis.localStorage?.setItem(THEME_KEY, mode);
+  } catch { /* private mode */ }
+  return mode;
+}
+
+function applyTheme(mode) {
+  document.documentElement.dataset.theme = mode === 'light' ? 'light' : '';
+  return mode;
+}
 
 export default function Wallet({ identity, onOpenChat, startView = 'main' }) {
   const isVendor = useChatStore((state) => state.isVendor);
@@ -95,6 +124,13 @@ export default function Wallet({ identity, onOpenChat, startView = 'main' }) {
   const [uploadingImage, setUploadingImage] = useState(false)
   const [copied, setCopied] = useState(false)
   const [savingAdvanced, setSavingAdvanced] = useState(false)
+
+  // The look starts before first paint of this screen: read the persisted
+  // mode and pin the attribute in a layout effect so no themed surface
+  // flashes. Old registry values coerce on read (paper -> light, rest dark).
+  const [theme, setTheme] = useState(readTheme)
+  useLayoutEffect(() => { applyTheme(theme) }, [theme])
+  const toggleTheme = () => setTheme((current) => writeTheme(current === 'light' ? 'dark' : 'light'))
 
   useEffect(() => {
     if (myProfile.name) setUsername(myProfile.name)
@@ -269,40 +305,40 @@ export default function Wallet({ identity, onOpenChat, startView = 'main' }) {
       <div className="h-full overflow-y-auto bg-transparent pb-safe">
         <ScreenHeader title="Order settings" onBack={() => setView('main')} />
         <div className="space-y-4 p-4">
-          <p className="text-[13px] text-ink/40">Defaults for new orders and chain checks. Everything stays on this device.</p>
-          <div className="overflow-hidden rounded-2xl border border-line bg-panel shadow-lg">
+          <p className="text-[13px] text-inkMuted">Defaults for new orders and chain checks. Everything stays on this device.</p>
+          <div className="overflow-hidden rounded-2xl border border-line bg-panel">
             <div className="p-4">
               <p className="text-[15px] font-semibold text-ink">Preferred payment</p>
-              <p className="mt-0.5 text-[13px] text-ink/40">The coin a new order asks for first.</p>
+              <p className="mt-0.5 text-[13px] text-inkMuted">The coin a new order asks for first.</p>
               <div className="mt-3 grid grid-cols-2 rounded-xl border border-line p-1">
-                <button type="button" onClick={() => { setPreferredMethod('btc'); scopedSet('preferred_payment_method', 'btc'); }} className={`min-h-[40px] rounded-lg py-2 text-[13px] font-bold ${preferredMethod === 'btc' ? 'bg-accent text-accentInk' : 'text-ink/60'}`}>Bitcoin</button>
-                <button type="button" onClick={() => { setPreferredMethod('xmr'); scopedSet('preferred_payment_method', 'xmr'); }} className={`min-h-[40px] rounded-lg py-2 text-[13px] font-bold ${preferredMethod === 'xmr' ? 'bg-accent text-accentInk' : 'text-ink/60'}`}>Monero</button>
+                <button type="button" onClick={() => { setPreferredMethod('btc'); scopedSet('preferred_payment_method', 'btc'); }} className={`min-h-[40px] rounded-lg py-2 text-[13px] font-bold ${preferredMethod === 'btc' ? 'bg-accent text-accentInk' : 'text-inkMuted'}`}>Bitcoin</button>
+                <button type="button" onClick={() => { setPreferredMethod('xmr'); scopedSet('preferred_payment_method', 'xmr'); }} className={`min-h-[40px] rounded-lg py-2 text-[13px] font-bold ${preferredMethod === 'xmr' ? 'bg-accent text-accentInk' : 'text-inkMuted'}`}>Monero</button>
               </div>
             </div>
           </div>
-          <form onSubmit={saveConfirmations} className="overflow-hidden rounded-2xl border border-line bg-panel shadow-lg">
+          <form onSubmit={saveConfirmations} className="overflow-hidden rounded-2xl border border-line bg-panel">
             <div className="p-4">
               <p className="text-[15px] font-semibold text-ink">Confirmation count</p>
-              <p className="mt-0.5 text-[13px] text-ink/40">How many mined blocks before an order reads paid. Leave a count empty to keep its default: Bitcoin 3, Monero 10.</p>
+              <p className="mt-0.5 text-[13px] text-inkMuted">How many mined blocks before an order reads paid. Leave a count empty to keep its default: Bitcoin 3, Monero 10.</p>
             </div>
-            <div className="grid grid-cols-2 border-t border-ink/5">
-              <label className="border-r border-ink/5 p-4">
-                <span className="block text-[11px] font-semibold uppercase tracking-wide text-ink/40">Bitcoin blocks</span>
-                <input type="number" min="1" inputMode="numeric" autoComplete="off" value={confBtc} onChange={(event) => setConfBtc(event.target.value)} placeholder="3" className="mt-1 w-full bg-transparent text-[17px] font-bold text-ink outline-none placeholder:text-ink/30" />
+            <div className="grid grid-cols-2 border-t border-line">
+              <label className="border-r border-line p-4">
+                <span className="block text-[11px] font-semibold uppercase tracking-wide text-inkSubtle">Bitcoin blocks</span>
+                <input type="number" min="1" inputMode="numeric" autoComplete="off" value={confBtc} onChange={(event) => setConfBtc(event.target.value)} placeholder="3" className="mt-1 w-full bg-transparent text-[17px] font-bold text-ink outline-none placeholder:text-inkSubtle" />
               </label>
               <label className="p-4">
-                <span className="block text-[11px] font-semibold uppercase tracking-wide text-ink/40">Monero blocks</span>
-                <input type="number" min="1" inputMode="numeric" autoComplete="off" value={confXmr} onChange={(event) => setConfXmr(event.target.value)} placeholder="10" className="mt-1 w-full bg-transparent text-[17px] font-bold text-ink outline-none placeholder:text-ink/30" />
+                <span className="block text-[11px] font-semibold uppercase tracking-wide text-inkSubtle">Monero blocks</span>
+                <input type="number" min="1" inputMode="numeric" autoComplete="off" value={confXmr} onChange={(event) => setConfXmr(event.target.value)} placeholder="10" className="mt-1 w-full bg-transparent text-[17px] font-bold text-ink outline-none placeholder:text-inkSubtle" />
               </label>
             </div>
-            <button type="submit" className="w-full border-t border-ink/5 bg-transparent py-3 text-[14px] font-bold text-accent active:bg-ink/5">Save counts</button>
+            <button type="submit" className="w-full border-t border-line bg-transparent py-3 text-[14px] font-bold text-accentText active:bg-ink/5">Save counts</button>
           </form>
-          <div className="overflow-hidden rounded-2xl border border-line bg-panel shadow-lg">
+          <div className="overflow-hidden rounded-2xl border border-line bg-panel">
             <button type="button" onClick={toggleAutoVouch} aria-pressed={autoVouch} className="flex w-full items-center gap-3 p-4 text-left">
-              <Shield size={18} className="text-ink/40" />
-              <span className="min-w-0 flex-1"><span className="block text-[15px] font-semibold text-ink">Auto-vouch on delivery</span><span className="block text-[13px] text-ink/40">After you deliver, vouch the trade automatically.</span></span>
+              <Shield size={24} className="shrink-0 text-inkSubtle" />
+              <span className="min-w-0 flex-1"><span className="block text-[15px] font-semibold text-ink">Auto-vouch on delivery</span><span className="block text-[13px] text-inkMuted">After you deliver, vouch the trade automatically.</span></span>
               <span aria-hidden="true" className={`relative h-6 w-10 shrink-0 rounded-full transition-colors ${autoVouch ? 'bg-accent' : 'bg-ink/15'}`}>
-                <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-accentInk shadow transition-all ${autoVouch ? 'left-[18px]' : 'left-0.5'}`} />
+                <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-accentInk transition-all ${autoVouch ? 'left-[18px]' : 'left-0.5'}`} />
               </span>
             </button>
           </div>
@@ -331,11 +367,11 @@ export default function Wallet({ identity, onOpenChat, startView = 'main' }) {
   if (view === 'connections') return <Connections onBack={() => setView('main')} />;
 
   if (view === 'profile_editor') {
-    return <Suspense fallback={<div className="flex h-full items-center justify-center bg-scrim"><div className="h-7 w-7 animate-spin rounded-full border-2 border-ink/20 border-t-blue-500" /></div>}><ProfileEditor identity={identity} onClose={() => setView('main')} /></Suspense>;
+    return <Suspense fallback={<div className="flex h-full items-center justify-center bg-scrim"><div className="h-7 w-7 animate-spin rounded-full border-2 border-ink/20 border-t-accentText" /></div>}><ProfileEditor identity={identity} onClose={() => setView('main')} /></Suspense>;
   }
 
   if (view === 'vendor') {
-    return <Suspense fallback={<div className="flex h-full items-center justify-center bg-scrim"><div className="h-7 w-7 animate-spin rounded-full border-2 border-ink/20 border-t-blue-500" /></div>}><VendorDashboard identity={identity} products={JSON.parse(localStorage.getItem('cipher_my_products') || '[]')} onBack={() => setView('main')} onCreate={() => setView('product')} /></Suspense>;
+    return <Suspense fallback={<div className="flex h-full items-center justify-center bg-scrim"><div className="h-7 w-7 animate-spin rounded-full border-2 border-ink/20 border-t-accentText" /></div>}><VendorDashboard identity={identity} products={JSON.parse(localStorage.getItem('cipher_my_products') || '[]')} onBack={() => setView('main')} onCreate={() => setView('product')} /></Suspense>;
   }
 
   if (view === 'vendor_setup') {
@@ -343,12 +379,12 @@ export default function Wallet({ identity, onOpenChat, startView = 'main' }) {
       <div className="h-full overflow-y-auto bg-transparent pb-safe">
         <ScreenHeader title="Start selling" onBack={() => setView('main')} />
         <form onSubmit={saveVendorSetup} className="space-y-4 p-4">
-          <p className="text-[13px] text-ink/40">Add at least one address. It stays on this device. Never enter a seed phrase or spending key.</p>
-          <div className="overflow-hidden rounded-2xl border border-line bg-panel shadow-lg">
-            <input value={btcAddress} onChange={(event) => setBtcAddress(event.target.value)} autoComplete="off" spellCheck="false" placeholder="Bitcoin address" className="w-full border-b border-ink/5 bg-transparent px-4 py-4 text-[15px] text-ink outline-none placeholder:text-ink/30" />
-            <input value={xmrAddress} onChange={(event) => setXmrAddress(event.target.value)} autoComplete="off" spellCheck="false" placeholder="Monero address" className="w-full bg-transparent px-4 py-4 text-[15px] text-ink outline-none placeholder:text-ink/30" />
+          <p className="text-[13px] text-inkMuted">Add at least one address. It stays on this device. Never enter a seed phrase or spending key.</p>
+          <div className="overflow-hidden rounded-2xl border border-line bg-panel">
+            <input value={btcAddress} onChange={(event) => setBtcAddress(event.target.value)} autoComplete="off" spellCheck="false" placeholder="Bitcoin address" className="w-full border-b border-line bg-transparent px-4 py-4 text-[15px] text-ink outline-none placeholder:text-inkSubtle" />
+            <input value={xmrAddress} onChange={(event) => setXmrAddress(event.target.value)} autoComplete="off" spellCheck="false" placeholder="Monero address" className="w-full bg-transparent px-4 py-4 text-[15px] text-ink outline-none placeholder:text-inkSubtle" />
           </div>
-          {status && <p role="status" className="text-[13px] text-accent">{status}</p>}
+          {status && <p role="status" className="text-[13px] text-accentText">{status}</p>}
           <button type="submit" className="w-full rounded-2xl bg-accent py-3.5 font-bold text-accentInk hover:bg-accent">Save and turn on selling</button>
         </form>
       </div>
@@ -359,9 +395,9 @@ export default function Wallet({ identity, onOpenChat, startView = 'main' }) {
     if (!isVendor) {
       return (
         <div className="h-full p-4">
-          <button type="button" onClick={() => setView('main')} className="mb-5 -ml-2 touch-target p-2 text-ink/50 hover:text-ink"><ArrowLeft size={20} /></button>
+          <button type="button" onClick={() => setView('main')} className="mb-5 -ml-2 touch-target p-2 text-inkMuted hover:text-ink"><ArrowLeft size={20} /></button>
           <h2 className="text-xl font-bold text-ink">Vendor settings only</h2>
-          <p className="mt-2 text-sm text-ink/45">Advanced payment settings are available after completing Vendor setup.</p>
+          <p className="mt-2 text-sm text-inkMuted">Advanced payment settings are available after completing Vendor setup.</p>
         </div>
       );
     }
@@ -369,12 +405,12 @@ export default function Wallet({ identity, onOpenChat, startView = 'main' }) {
       <div className="h-full overflow-y-auto bg-transparent pb-8">
         <ScreenHeader title="Payment settings" onBack={() => setView('main')} />
         <form onSubmit={saveAdvancedSettings} className="space-y-4 p-4">
-          <p className="text-[13px] text-ink/40">A view key and an xpub only let you watch payments. They stay on this device. Never enter a seed or a spend key.</p>
-          <div className="overflow-hidden rounded-2xl border border-line bg-panel shadow-lg">
-            <input value={xmrAddress} onChange={(event) => setXmrAddress(event.target.value)} autoComplete="off" spellCheck="false" placeholder="Monero address" className="w-full border-b border-ink/10 bg-ink/5 px-4 py-4 text-[15px] text-ink outline-none placeholder:text-ink/30" />
-            <input type="password" value={xmrPrivateViewKey} onChange={(event) => setXmrPrivateViewKey(event.target.value)} autoComplete="new-password" spellCheck="false" placeholder="Monero view key" className="w-full border-b border-ink/10 bg-ink/5 px-4 py-4 text-[15px] text-ink outline-none placeholder:text-ink/30" />
-            <input type="password" value={btcXpub} onChange={(event) => setBtcXpub(event.target.value)} autoComplete="off" spellCheck="false" placeholder="Bitcoin xpub" className="w-full border-b border-ink/10 bg-ink/5 px-4 py-4 text-[15px] text-ink outline-none placeholder:text-ink/30" />
-            <select value={btcNetwork} onChange={(event) => setBtcNetwork(event.target.value)} className="w-full bg-ink/5 px-4 py-4 text-[15px] text-ink outline-none">
+          <p className="text-[13px] text-inkMuted">A view key and an xpub only let you watch payments. They stay on this device. Never enter a seed or a spend key.</p>
+          <div className="overflow-hidden rounded-2xl border border-line bg-panel">
+            <input value={xmrAddress} onChange={(event) => setXmrAddress(event.target.value)} autoComplete="off" spellCheck="false" placeholder="Monero address" className="w-full border-b border-line bg-panelStrong px-4 py-4 text-[15px] text-ink outline-none placeholder:text-inkSubtle" />
+            <input type="password" value={xmrPrivateViewKey} onChange={(event) => setXmrPrivateViewKey(event.target.value)} autoComplete="new-password" spellCheck="false" placeholder="Monero view key" className="w-full border-b border-line bg-panelStrong px-4 py-4 text-[15px] text-ink outline-none placeholder:text-inkSubtle" />
+            <input type="password" value={btcXpub} onChange={(event) => setBtcXpub(event.target.value)} autoComplete="off" spellCheck="false" placeholder="Bitcoin xpub" className="w-full border-b border-line bg-panelStrong px-4 py-4 text-[15px] text-ink outline-none placeholder:text-inkSubtle" />
+            <select value={btcNetwork} onChange={(event) => setBtcNetwork(event.target.value)} className="w-full bg-panelStrong px-4 py-4 text-[15px] text-ink outline-none">
               <option value="bc">Bitcoin mainnet</option>
               <option value="bcrt">Bitcoin regtest</option>
             </select>
@@ -382,7 +418,7 @@ export default function Wallet({ identity, onOpenChat, startView = 'main' }) {
           <button type="submit" disabled={savingAdvanced} className="w-full rounded-2xl bg-accent py-3.5 font-bold text-accentInk disabled:opacity-40">
             {savingAdvanced ? 'Saving…' : 'Save'}
           </button>
-          {status && <p role="status" className={`text-center text-sm ${status.startsWith('Could not') || status.startsWith('Error') ? 'text-red-400' : 'text-emerald-400'}`}>{status}</p>}
+          {status && <p role="status" className={`text-center text-sm ${status.startsWith('Could not') || status.startsWith('Error') ? 'text-danger' : 'text-success'}`}>{status}</p>}
         </form>
       </div>
     );
@@ -425,106 +461,116 @@ export default function Wallet({ identity, onOpenChat, startView = 'main' }) {
   // --- MAIN PROFILE TAB ---
   return (
     <div className="animate-fade-in overflow-y-auto h-full pb-4 pb-[env(safe-area-inset-bottom)]">
-      {status && <div className="fixed left-1/2 top-[calc(5rem+env(safe-area-inset-top))] -translate-x-1/2 md:left-auto md:right-6 md:top-6 md:translate-x-0 bg-accent text-accentInk px-4 py-2 rounded-xl text-xs font-bold shadow-lg z-50 animate-fade-in">{status}</div>}
+      {status && <div className="fixed left-1/2 top-[calc(5rem+env(safe-area-inset-top))] -translate-x-1/2 md:left-auto md:right-6 md:top-6 md:translate-x-0 bg-panelStrong border border-line text-ink px-4 py-2 rounded-xl text-xs font-bold z-50 animate-fade-in">{status}</div>}
 
       {/* HEADER PROFILE CARD */}
       <div className="flex flex-col items-center px-4 pb-2 pt-3 md:pt-8">
         <div className="mb-2 flex w-full items-center px-1 md:hidden">
-          <button type="button" onClick={() => useChatStore.getState().setShowDrawer(true)} aria-label="Open menu" className="-ml-1 touch-target p-2 text-ink/50 hover:text-ink"><Menu size={20} /></button>
+          <button type="button" onClick={() => useChatStore.getState().setShowDrawer(true)} aria-label="Open menu" className="-ml-1 touch-target p-2 text-inkMuted hover:text-ink"><Menu size={20} /></button>
         </div>
         <div className="relative mb-4">
           <input type="file" accept="image/*" onChange={(e) => handleImageUpload(e, 'profile')} className="hidden" id="main-avatar-upload" />
           <label htmlFor="main-avatar-upload" className="relative block cursor-pointer">
-            <Picture src={myProfile.picture} alt="" className="h-20 w-20 rounded-full border border-ink/10 object-cover" fallback={<Avatar name={myProfile.displayName || myProfile.name} className="!h-20 !w-20 text-2xl" />} />
+            <Picture src={myProfile.picture} alt="" className="h-20 w-20 rounded-full border border-line object-cover" fallback={<Avatar name={myProfile.displayName || myProfile.name} className="!h-20 !w-20 text-2xl" />} />
           </label>
         </div>
         <h2 className="text-2xl font-bold tracking-tight text-ink">{myProfile.displayName}</h2>
-        <p className="mb-3 text-[13px] text-ink/40">@{myProfile.name}</p>
-        {myProfile.about && <p className="mb-3 px-6 text-center text-[13px] text-ink/50">{myProfile.about}</p>}
-        <button onClick={copyNpub} className="flex min-h-[44px] items-center gap-2 rounded-full border border-line bg-panel shadow-lg px-4 py-2 text-[12px] text-ink/60">
+        <p className="mb-3 text-[13px] text-inkMuted">@{myProfile.name}</p>
+        {myProfile.about && <p className="mb-3 px-6 text-center text-[13px] text-inkMuted">{myProfile.about}</p>}
+        <button onClick={copyNpub} className="flex min-h-[44px] items-center gap-2 rounded-full border border-line bg-panel px-4 py-2 text-[12px] text-inkMuted">
           {copied ? 'Copied!' : `${identity.npub?.slice(0, 12)}...${identity.npub?.slice(-4)}`}
           <Copy size={12} />
         </button>
       </div>
 
       <div className="space-y-4 p-4">
-        <div className="overflow-hidden rounded-2xl border border-line bg-panel shadow-lg">
-          <button onClick={() => setView('orders')} className={`flex w-full items-center gap-3 border-b border-ink/5 p-4 text-left ${pressable}`}>
-            <Package size={18} className="text-ink/40" />
-            <span className="min-w-0 flex-1"><span className="block text-[15px] font-semibold text-ink">My Orders</span><span className="block text-[13px] text-ink/40">Purchases and shipping</span></span>
-            <ChevronRight size={18} className="text-ink/30" />
+        <div className="overflow-hidden rounded-2xl border border-line bg-panel">
+          <button onClick={() => setView('orders')} className={`flex w-full items-center gap-3 border-b border-line p-4 text-left ${pressable}`}>
+            <Package size={24} className="shrink-0 text-inkSubtle" />
+            <span className="min-w-0 flex-1"><span className="block text-[15px] font-semibold text-ink">My Orders</span><span className="block text-[13px] text-inkMuted">Purchases and shipping</span></span>
+            <ChevronRight size={18} className="shrink-0 text-inkSubtle" />
           </button>
-          <button onClick={() => setView('profile_editor')} className={`flex w-full items-center gap-3 border-b border-ink/5 p-4 text-left ${pressable}`}>
-            <User size={18} className="text-ink/40" />
-            <span className="min-w-0 flex-1"><span className="block text-[15px] font-semibold text-ink">Edit Profile</span><span className="block text-[13px] text-ink/40">Name, bio, and photo</span></span>
-            <ChevronRight size={18} className="text-ink/30" />
+          <button onClick={() => setView('profile_editor')} className={`flex w-full items-center gap-3 border-b border-line p-4 text-left ${pressable}`}>
+            <User size={24} className="shrink-0 text-inkSubtle" />
+            <span className="min-w-0 flex-1"><span className="block text-[15px] font-semibold text-ink">Edit Profile</span><span className="block text-[13px] text-inkMuted">Name, bio, and photo</span></span>
+            <ChevronRight size={18} className="shrink-0 text-inkSubtle" />
           </button>
-          <button onClick={() => useChatStore.getState().setShowTutorial(true)} className={`flex w-full items-center gap-3 border-b border-ink/5 p-4 text-left ${pressable}`}>
-            <BookOpen size={18} className="text-ink/40" />
-            <span className="min-w-0 flex-1"><span className="block text-[15px] font-semibold text-ink">How to use</span><span className="block text-[13px] text-ink/40">A walkthrough of the app</span></span>
-            <ChevronRight size={18} className="text-ink/30" />
+          <button onClick={() => useChatStore.getState().setShowTutorial(true)} className={`flex w-full items-center gap-3 border-b border-line p-4 text-left ${pressable}`}>
+            <BookOpen size={24} className="shrink-0 text-inkSubtle" />
+            <span className="min-w-0 flex-1"><span className="block text-[15px] font-semibold text-ink">How to use</span><span className="block text-[13px] text-inkMuted">A walkthrough of the app</span></span>
+            <ChevronRight size={18} className="shrink-0 text-inkSubtle" />
           </button>
           <button onClick={() => setView('privacy')} className="flex w-full items-center gap-3 p-4 text-left">
-            <Shield size={18} className="text-ink/40" />
-            <span className="min-w-0 flex-1"><span className="block text-[15px] font-semibold text-ink">Privacy</span><span className="block text-[13px] text-ink/40">Calls, last seen, blocked</span></span>
-            <ChevronRight size={18} className="text-ink/30" />
+            <Shield size={24} className="shrink-0 text-inkSubtle" />
+            <span className="min-w-0 flex-1"><span className="block text-[15px] font-semibold text-ink">Privacy</span><span className="block text-[13px] text-inkMuted">Calls, last seen, blocked</span></span>
+            <ChevronRight size={18} className="shrink-0 text-inkSubtle" />
           </button>
         </div>
 
-        <div className="overflow-hidden rounded-2xl border border-line bg-panel shadow-lg">
+        <div className="overflow-hidden rounded-2xl border border-line bg-panel">
           {!isVendor ? (
             <button type="button" onClick={() => { setStatus(''); setView('vendor_setup'); }} className="flex w-full items-center gap-3 p-4 text-left">
-              <CreditCard size={18} className="text-ink/40" />
-              <span className="min-w-0 flex-1"><span className="block text-[15px] font-semibold text-ink">Start selling</span><span className="block text-[13px] text-ink/40">Take payment directly</span></span>
-              <ChevronRight size={18} className="text-ink/30" />
+              <CreditCard size={24} className="shrink-0 text-inkSubtle" />
+              <span className="min-w-0 flex-1"><span className="block text-[15px] font-semibold text-ink">Start selling</span><span className="block text-[13px] text-inkMuted">Take payment directly</span></span>
+              <ChevronRight size={18} className="shrink-0 text-inkSubtle" />
             </button>
           ) : (
             <>
-              <button type="button" onClick={() => setView('vendor')} className="flex w-full items-center gap-3 border-b border-ink/5 p-4 text-left">
-                <BarChart3 size={18} className="text-ink/40" />
-                <span className="min-w-0 flex-1"><span className="block text-[15px] font-semibold text-ink">Vendor</span><span className="block text-[13px] text-ink/40">Orders and listings</span></span>
-                <ChevronRight size={18} className="text-ink/30" />
+              <button type="button" onClick={() => setView('vendor')} className="flex w-full items-center gap-3 border-b border-line p-4 text-left">
+                <BarChart3 size={24} className="shrink-0 text-inkSubtle" />
+                <span className="min-w-0 flex-1"><span className="block text-[15px] font-semibold text-ink">Vendor</span><span className="block text-[13px] text-inkMuted">Orders and listings</span></span>
+                <ChevronRight size={18} className="shrink-0 text-inkSubtle" />
               </button>
               <button type="button" onClick={() => setView('advanced')} className="flex w-full items-center gap-3 p-4 text-left">
-                <SlidersHorizontal size={18} className="text-ink/40" />
-                <span className="min-w-0 flex-1"><span className="block text-[15px] font-semibold text-ink">Payment settings</span><span className="block text-[13px] text-ink/40">Addresses for each order</span></span>
-                <ChevronRight size={18} className="text-ink/30" />
+                <SlidersHorizontal size={24} className="shrink-0 text-inkSubtle" />
+                <span className="min-w-0 flex-1"><span className="block text-[15px] font-semibold text-ink">Payment settings</span><span className="block text-[13px] text-inkMuted">Addresses for each order</span></span>
+                <ChevronRight size={18} className="shrink-0 text-inkSubtle" />
               </button>
             </>
           )}
         </div>
 
-        <div className="overflow-hidden rounded-2xl border border-line bg-panel shadow-lg">
+        <div className="overflow-hidden rounded-2xl border border-line bg-panel">
           <button onClick={() => setView('order_settings')} className="flex w-full items-center gap-3 p-4 text-left">
-            <Package size={18} className="text-ink/40" />
-            <span className="min-w-0 flex-1"><span className="block text-[15px] font-semibold text-ink">Order settings</span><span className="block text-[13px] text-ink/40">Preferred coin, confirmation count, auto-vouch</span></span>
-            <ChevronRight size={18} className="text-ink/30" />
+            <Package size={24} className="shrink-0 text-inkSubtle" />
+            <span className="min-w-0 flex-1"><span className="block text-[15px] font-semibold text-ink">Order settings</span><span className="block text-[13px] text-inkMuted">Preferred coin, confirmation count, auto-vouch</span></span>
+            <ChevronRight size={18} className="shrink-0 text-inkSubtle" />
           </button>
         </div>
 
-        <div className="overflow-hidden rounded-2xl border border-line bg-panel shadow-lg">
-          <button onClick={() => setView('message_requests')} className="flex w-full items-center gap-3 border-b border-ink/5 p-4 text-left">
-            <Users size={18} className="text-ink/40" />
-            <span className="min-w-0 flex-1"><span className="block text-[15px] font-semibold text-ink">Message requests</span><span className="block text-[13px] text-ink/40">People you have not answered</span></span>
-            <ChevronRight size={18} className="text-ink/30" />
+        <div className="overflow-hidden rounded-2xl border border-line bg-panel">
+          <button type="button" role="switch" aria-checked={theme === 'light'} aria-label="Light mode" onClick={toggleTheme} className={`flex w-full items-center gap-3 p-4 text-left ${pressable}`}>
+            <Moon size={24} className="shrink-0 text-inkSubtle" />
+            <span className="min-w-0 flex-1"><span className="block text-[15px] font-semibold text-ink">Light mode</span><span className="block text-[13px] text-inkMuted">Warm paper instead of dark. Remembered on this device.</span></span>
+            <span aria-hidden="true" className={`relative h-6 w-11 shrink-0 rounded-full transition-colors ${theme === 'light' ? 'bg-accent' : 'bg-ink/15'}`}>
+              <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-ink transition-transform ${theme === 'light' ? 'translate-x-5' : 'translate-x-0.5'}`} />
+            </span>
           </button>
-          <button onClick={() => setView('identity_backup')} className="flex w-full items-center gap-3 border-b border-ink/5 p-4 text-left">
-            <KeyRound size={18} className="text-ink/40" />
-            <span className="min-w-0 flex-1"><span className="block text-[15px] font-semibold text-ink">Backup</span><span className="block text-[13px] text-ink/40">Secret key and recovery phrase</span></span>
-            <ChevronRight size={18} className="text-ink/30" />
+        </div>
+
+        <div className="overflow-hidden rounded-2xl border border-line bg-panel">
+          <button onClick={() => setView('message_requests')} className="flex w-full items-center gap-3 border-b border-line p-4 text-left">
+            <Users size={24} className="shrink-0 text-inkSubtle" />
+            <span className="min-w-0 flex-1"><span className="block text-[15px] font-semibold text-ink">Message requests</span><span className="block text-[13px] text-inkMuted">People you have not answered</span></span>
+            <ChevronRight size={18} className="shrink-0 text-inkSubtle" />
           </button>
-          <button onClick={() => setView('account_switcher')} className="flex w-full items-center gap-3 border-b border-ink/5 p-4 text-left">
-            <RefreshCw size={18} className="text-ink/40" />
-            <span className="min-w-0 flex-1"><span className="block text-[15px] font-semibold text-ink">Accounts</span><span className="block text-[13px] text-ink/40">Switch on this device</span></span>
-            <ChevronRight size={18} className="text-ink/30" />
+          <button onClick={() => setView('identity_backup')} className="flex w-full items-center gap-3 border-b border-line p-4 text-left">
+            <KeyRound size={24} className="shrink-0 text-inkSubtle" />
+            <span className="min-w-0 flex-1"><span className="block text-[15px] font-semibold text-ink">Backup</span><span className="block text-[13px] text-inkMuted">Secret key and recovery phrase</span></span>
+            <ChevronRight size={18} className="shrink-0 text-inkSubtle" />
+          </button>
+          <button onClick={() => setView('account_switcher')} className="flex w-full items-center gap-3 border-b border-line p-4 text-left">
+            <RefreshCw size={24} className="shrink-0 text-inkSubtle" />
+            <span className="min-w-0 flex-1"><span className="block text-[15px] font-semibold text-ink">Accounts</span><span className="block text-[13px] text-inkMuted">Switch on this device</span></span>
+            <ChevronRight size={18} className="shrink-0 text-inkSubtle" />
           </button>
           <button onClick={identity.lockApp} className="flex w-full items-center gap-3 p-4 text-left">
-            <Lock size={18} className="text-ink/40" />
+            <Lock size={24} className="shrink-0 text-inkSubtle" />
             <span className="min-w-0 flex-1 text-[15px] font-semibold text-ink">Lock</span>
           </button>
         </div>
 
-        <div className="overflow-hidden rounded-2xl border border-line bg-panel shadow-lg">
+        <div className="overflow-hidden rounded-2xl border border-line bg-panel">
           {isVendor && (
             <button onClick={async () => {
               setIsVendor(false);
@@ -545,13 +591,13 @@ export default function Wallet({ identity, onOpenChat, startView = 'main' }) {
                 useChatStore.getState().setToast({ type: 'error', message: `Could not clear vendor payment settings. ${wipeError?.message || ''}`.trim() });
               }
               useChatStore.getState().setToast({ type: 'success', message: 'Switched to buyer mode. Payment details were cleared from this device.' });
-            }} className="flex w-full items-center gap-3 border-b border-ink/5 p-4 text-left">
-              <span className="text-[15px] font-semibold text-accent">Switch to buyer mode</span>
+            }} className="flex w-full items-center gap-3 border-b border-line p-4 text-left">
+              <span className="text-[15px] font-semibold text-accentText">Switch to buyer mode</span>
             </button>
           )}
           <button onClick={() => setShowPanicConfirm(true)} className="flex w-full items-center gap-3 p-4 text-left">
-            <AlertCircle size={18} className="text-red-400" />
-            <span><span className="block text-[15px] font-semibold text-red-400">Panic wipe</span><span className="block text-[13px] text-red-400/70">Erase this device</span></span>
+            <AlertCircle size={24} className="shrink-0 text-danger" />
+            <span><span className="block text-[15px] font-semibold text-danger">Panic wipe</span><span className="block text-[13px] text-inkSubtle">Erase this device</span></span>
           </button>
         </div>
       </div>
@@ -559,11 +605,11 @@ export default function Wallet({ identity, onOpenChat, startView = 'main' }) {
       {/* PANIC CONFIRM MODAL */}
       {showPanicConfirm && (
         <div className="fixed inset-0 z-[999] flex items-center justify-center bg-scrim/80 p-4 animate-fade-in">
-          <div className="bg-ink/5 border border-red-500/30 rounded-2xl w-full max-w-sm p-6 shadow-2xl">
-            <h2 className="text-xl font-bold text-red-500 mb-2">Panic Wipe</h2>
+          <div className="bg-panel border border-line rounded-2xl w-full max-w-sm p-6">
+            <h2 className="text-xl font-bold text-ink mb-2">Panic Wipe</h2>
             <p className="text-sm text-ink/70 mb-6">This will instantly destroy all local data on this device. Make sure you have saved your 12-word recovery phrase!</p>
             <div className="flex gap-3">
-              <button onClick={() => setShowPanicConfirm(false)} className="flex-1 py-3 bg-ink/5 hover:bg-ink/10 rounded-xl font-bold transition-colors">Cancel</button>
+              <button onClick={() => setShowPanicConfirm(false)} className="flex-1 py-3 border border-line bg-panelStrong rounded-xl font-bold text-ink transition-colors">Cancel</button>
               <button onClick={async () => {
                 setShowPanicConfirm(false);
                 try {
@@ -572,7 +618,7 @@ export default function Wallet({ identity, onOpenChat, startView = 'main' }) {
                   console.error('[Wallet] Could not clear active message table before full wipe:', error);
                 }
                 await identity.panicWipe();
-              }} className="flex-1 py-3 bg-red-600 hover:bg-red-500 text-ink rounded-xl font-bold transition-colors">Wipe It</button>
+              }} className="flex-1 py-3 bg-danger text-accentInk rounded-xl font-bold transition-colors">Wipe It</button>
             </div>
           </div>
         </div>

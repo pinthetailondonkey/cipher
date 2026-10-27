@@ -68,44 +68,44 @@ export default function ProfileEditor({ identity, onClose }) {
   };
 
   const set = (key) => (event) => setDraft((current) => ({ ...values, ...current, [key]: event.target.value }));
-  const field = 'w-full bg-transparent text-[15px] text-ink outline-none placeholder:text-ink/30';
+  const field = 'w-full bg-transparent text-[15px] text-ink outline-none placeholder:text-inkSubtle';
 
   return (
     <div className="h-full overflow-y-auto bg-transparent pb-8">
       <form onSubmit={publishProfile} className="space-y-4">
         <ScreenHeader title="Edit Profile" onBack={onClose} />
         <div className="space-y-4 px-4">
-          <div className="overflow-hidden rounded-2xl border border-line bg-panel shadow-lg">
-            <label className="flex items-center gap-3 border-b border-ink/5 p-4">
-              <AtSign size={18} className="shrink-0 text-ink/40" />
+          <div className="overflow-hidden rounded-2xl border border-line bg-panel">
+            <label className="flex items-center gap-3 border-b border-line p-4">
+              <AtSign size={24} className="shrink-0 text-inkSubtle" />
               <span className="min-w-0 flex-1">
-                <span className="block text-[12px] text-ink/40">Username</span>
+                <span className="block text-[12px] text-inkSubtle">Username</span>
                 <input value={values.name} onChange={set('name')} className={field} maxLength={64} />
               </span>
             </label>
-            <label className="flex items-center gap-3 border-b border-ink/5 p-4">
-              <User size={18} className="shrink-0 text-ink/40" />
+            <label className="flex items-center gap-3 border-b border-line p-4">
+              <User size={24} className="shrink-0 text-inkSubtle" />
               <span className="min-w-0 flex-1">
-                <span className="block text-[12px] text-ink/40">Display name</span>
+                <span className="block text-[12px] text-inkSubtle">Display name</span>
                 <input value={values.displayName} onChange={set('displayName')} className={field} maxLength={64} />
               </span>
             </label>
-            <label className="flex items-start gap-3 border-b border-ink/5 p-4">
-              <Type size={18} className="mt-1 shrink-0 text-ink/40" />
+            <label className="flex items-start gap-3 border-b border-line p-4">
+              <Type size={24} className="mt-1 shrink-0 text-inkSubtle" />
               <span className="min-w-0 flex-1">
-                <span className="block text-[12px] text-ink/40">About</span>
+                <span className="block text-[12px] text-inkSubtle">About</span>
                 <textarea value={values.about} onChange={set('about')} className={`${field} resize-none`} rows={3} maxLength={500} />
               </span>
             </label>
             <label className="flex items-center gap-3 p-4">
-              <Image size={18} className="shrink-0 text-ink/40" />
+              <Image size={24} className="shrink-0 text-inkSubtle" />
               <span className="min-w-0 flex-1">
-                <span className="block text-[12px] text-ink/40">Picture URL</span>
+                <span className="block text-[12px] text-inkSubtle">Picture URL</span>
                 <input type="url" value={values.picture} onChange={set('picture')} className={field} maxLength={2048} placeholder="https://" />
               </span>
             </label>
           </div>
-          {message && <p role="status" className={`text-[13px] ${/could not|unlock|error|no relay/i.test(message) ? 'text-red-400' : 'text-accent'}`}>{message}</p>}
+          {message && <p role="status" className={`text-[13px] ${/could not|unlock|error|no relay/i.test(message) ? 'text-danger' : 'text-accentText'}`}>{message}</p>}
           <button type="submit" disabled={saving} className="w-full rounded-2xl bg-accent py-3.5 font-bold text-accentInk hover:bg-accent active:scale-95 disabled:opacity-50">
             {saving ? 'Publishing…' : 'Publish profile'}
           </button>
