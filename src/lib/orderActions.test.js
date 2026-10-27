@@ -4,6 +4,7 @@ import test from 'node:test';
 import { schnorr } from '@noble/curves/secp256k1.js';
 import { ORDER_ACTIONS, allowedActionsFor, deviceWatchedOrderOf, frozenIssuedMethods, issuedPaymentMethods, newestOwnIssuedMethods, orderActionsFor, orderHasVerifiedReceipt, orderPaymentDetails, orderRecordForReceipt, orderState, reopenedStatus } from './orderActions.js';
 import { ORDER_STATUS, ORDER_STATUSES, RECEIPT_OUTCOMES } from './paymentState.js';
+import { ESCROW_ORDER_ACTIONS } from './escrowActions.js';
 import { signReceipt, verifyReceipt as verifyReceipt2 } from './proofOfTrade.js';
 
 // F7: the payment facts on an order are earned on this device, never asserted
@@ -103,7 +104,9 @@ test('every status an order message is written with is one the machine knows', (
 test('the action table and the handlers name the same actions, with nothing left over', () => {
   const commerce = fs.readFileSync(new URL('../features/chat/useCommerce.js', import.meta.url), 'utf8');
   const handled = JSON.parse(commerce.match(/if \(!(\[[^\]]+\])\.includes\(action\)\)/)[1].replace(/'/g, '"'));
-  assert.deepEqual([...handled].sort(), [...ORDER_ACTIONS].sort());
+  // Two tables, one door: the direct-deal actions and the escrow actions
+  // (owned by escrowActions.js) together are everything the handlers take.
+  assert.deepEqual([...handled].sort(), [...ORDER_ACTIONS, ...ESCROW_ORDER_ACTIONS].sort());
   const bubble = fs.readFileSync(new URL('../components/MessageBubble.jsx', import.meta.url), 'utf8');
   for (const action of ORDER_ACTIONS) assert.equal(bubble.includes(`onAction?.('${action}'`), false, `${action} is wired outside the table`);
   assert.equal(bubble.includes("['accept_order', BadgeCheck"), false);

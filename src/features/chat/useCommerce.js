@@ -2,7 +2,8 @@ import { useChatStore } from '../../store/chatStore';
 import { db, patchMessage, saveMessage } from '../../db';
 import { scopedGet, scopedSet } from '../../lib/storage';
 import { addressSpokenFor, getOrderPaymentMethods, markConsumed, readConsumedLedger, readPaymentAddresses, txidSpokenFor } from '../../lib/vendorPayments';
-import { ORDER_STATUS, RECEIPT_OUTCOME, acceptAmount, acceptanceDemand, amountCovers, nextPaymentState, orderCoinAmount } from '../../lib/paymentState';
+import { ORDER_STATUS, RECEIPT_OUTCOME, acceptAmount, acceptanceDemand, amountCovers, coinUnits, nextPaymentState, orderCoinAmount } from '../../lib/paymentState';
+import { buildEscrowAcceptance, escrowRequestSlot, escrowSaltOf, orderEscrowKey } from '../../lib/escrowActions';
 import { checkPayment } from '../../lib/paymentWatch';
 import { activeUrl, entryById } from '../../lib/egress';
 import { publicReceipt, rememberPublicView, receiptBindsOrder, signPublicView, signReceipt } from '../../lib/proofOfTrade';
@@ -69,10 +70,99 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
     return true;
   };
   const handleOrderAction = async (action, msg) => {
-    if (!['accept_order', 'decline_order', 'cancel_order', 'confirm_payment', 'check_chain', 'mark_shipped', 'confirm_delivery', 'report_issue', 'mark_refunded', 'resume_order'].includes(action)) {
+    if (!['accept_order', 'accept_with_escrow', 'decline_order', 'cancel_order', 'confirm_payment', 'check_chain', 'mark_shipped', 'confirm_delivery', 'report_issue', 'mark_refunded', 'resume_order'].includes(action)) {
       return false;
     }
-  
+
+      // Escrow accept (docs/ESCROW.md): the 2-of-2 quote is built here from
+      // THIS vendor's derived keys and the FSM's own math, never from a
+      // number the buyer's card wrote. The deposit address is the escrow
+      // address; no paymentMethods line rides the acceptance, so the
+      // buyer's chain check keeps pointing at the 2-of-2.
+      if (action === 'accept_with_escrow') {
+        if (msg.data.orderId && String(msg.data.orderId) !== String(msg.id)) {
+          setToast({ type: 'error', message: 'This order card does not name its own order. Nothing was accepted.' });
+          setSelectedMessage(null);
+          return true;
+        }
+        const slot = escrowSaltOf(msg.data);
+        if (!slot) {
+          setToast({ type: 'error', message: 'This order carries no escrow slot. Nothing was accepted.' });
+          setSelectedMessage(null);
+          return true;
+        }
+        if (!identity?.sk) {
+          setToast({ type: 'error', message: 'Unlock the account to accept with escrow.' });
+          setSelectedMessage(null);
+          return true;
+        }
+        // F5 for escrow, the same lock the direct accept enforces: the
+        // amount starts from THIS menu — the buyer's card never prices
+        // it. (re-attack round @ 52cbdab: the wiring read the buyer's
+        // payload raw, and a cheap order could escrow expensive goods.)
+        const demand = acceptanceDemand(msg.data.product, readOwnMenu(), 'btc');
+        if (demand.kind === 'dollars') {
+          setToast({ type: 'error', message: 'Escrow needs a Bitcoin price. This item is priced in dollars, so it stays a direct deal.' });
+          setSelectedMessage(null);
+          return true;
+        }
+        if (demand.kind === 'unit') {
+          setToast({ type: 'error', message: 'Escrow is Bitcoin-only. Your menu prices this item in XMR, so it stays a direct deal.' });
+          setSelectedMessage(null);
+          return true;
+        }
+        if (demand.kind !== 'listing') {
+          setToast({ type: 'error', message: 'Your menu has no Bitcoin price for this item. Price the item in BTC for escrow, or accept it as a direct deal.' });
+          setSelectedMessage(null);
+          return true;
+        }
+        let priceSats;
+        try {
+          priceSats = coinUnits(demand.amount, 'btc');
+          if (priceSats == null) throw new Error('The menu price does not read as a BTC coin amount.');
+        } catch (error) {
+          setToast({ type: 'error', message: error?.message || 'The menu price does not read as a BTC coin amount.' });
+          setSelectedMessage(null);
+          return true;
+        }
+        try {
+          const { publicKeyHex } = await orderEscrowKey(identity.sk, slot);
+          const acceptance = buildEscrowAcceptance({
+            priceSats,
+            vendorPubHex: publicKeyHex,
+            buyerPubHex: msg.data.escrowPubKey,
+            issuedAt: Math.floor(Date.now() / 1000),
+          });
+          const payload = {
+            type: 'order_update',
+            orderId: msg.id,
+            productName: msg.data.product?.title || msg.data.productName,
+            status: ORDER_STATUS.ACCEPTED,
+            paymentState: 'address_issued',
+            escrow: acceptance.escrow,
+            coinAmount: acceptance.patch.coinAmount,
+            coinCurrency: 'btc',
+            issuedAt: acceptance.escrow.issuedAt,
+          };
+          const result = await sendDM(msg.pubkey, payload);
+          if (!result.success) {
+            setToast({ type: 'error', message: result.error || 'Could not send the escrow acceptance.' });
+            setSelectedMessage(null);
+            return true;
+          }
+          // The derived private key lives nowhere: not storage, not state.
+          // Only the quote the acceptance already carries is patched locally.
+          const saved = await updateLocalOrder(msg.pubkey, msg.id, acceptance.patch);
+          const acceptedText = result.queued ? 'Escrow acceptance queued; it will send when connected.' : 'Accepted with escrow';
+          setToast(saved ? { type: 'success', message: acceptedText } : { type: 'error', message: `${acceptedText} ${NOT_SAVED}` });
+          setSelectedMessage(null);
+        } catch (error) {
+          console.error('[orders] Escrow accept failed:', error);
+          setToast({ type: 'error', message: error?.message || 'The escrow acceptance was not built.' });
+          setSelectedMessage(null);
+        }
+        return true;
+      }
       if (action === 'accept_order') {
         // The order card is this vendor's own message, but its payload words
         // are the buyer's text. A card whose stated order ID differs from the
@@ -639,6 +729,23 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
     };
     const paymentMethod = scopedGet('preferred_payment_method', 'btc');
     const payload = { type: 'order_request', status: ORDER_STATUS.PENDING, paymentState: 'created', paymentMethod, product: orderProduct };
+    if (payload.product?.currency === 'btc' && identity?.sk) {
+      // The escrow slot rides the request: a public salt and the public
+      // half of a key derived from this account's secret (never the
+      // secret, never the private half). BTC-priced orders only — XMR
+      // escrow is parked by decision (docs/ESCROW.md).
+      try {
+        // escrowRequestSlot returns the salt AND the key in one pair —
+        // orderEscrowKey alone has no salt field, so the request went
+        // out keyless and the button never rendered. (re-attack round
+        // @ 52cbdab)
+        const slot = await escrowRequestSlot(identity.sk);
+        payload.escrowSalt = slot.salt;
+        payload.escrowPubKey = slot.publicKeyHex;
+      } catch (error) {
+        console.warn('[orders] No escrow slot on this order:', error);
+      }
+    }
     const tempId = `temp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const optimisticMessage = stampArrival({
       id: tempId,
