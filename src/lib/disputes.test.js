@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { DISPUTE_KIND, RIDER_WORDS, markOwnRider, ownRiderTaken, parseDispute, riderPairKey, ridersForReview } from './disputes.js';
+import { DISPUTE_KIND, RIDER_WORDS, markOwnRider, ownRiderTaken, parseDispute, riderPairKey, riderRefusal, ridersForReview } from './disputes.js';
 
 // The own-rider ledger lives in scoped localStorage; the browser fallback
 // (absent storage) makes writes a no-op, so tests hand it a fresh one.
@@ -100,4 +100,25 @@ test('the own-rider ledger: a word this device spent stays spent, through a relo
   assert.equal(markOwnRider(VENDOR, RECEIPT, REVIEW, 'vendor-flag', ''), false, 'an event with no id marks nothing');
   assert.equal(ownRiderTaken(VENDOR, RECEIPT, REVIEW, 'vendor-flag'), false, 'an id-less mark never hardened');
   assert.equal(key.includes(VENDOR) && key.includes(RECEIPT) && key.includes(REVIEW), true, 'the pair key spells the three bindings');
+});
+
+test('riderRefusal: the words a rider must pass before anything is signed', () => {
+  const R2 = 'd2'.repeat(32); // a fresh review pair, so the ledger tests above stay beside the point
+  const good = { author: VENDOR, vendor: VENDOR, receiptHash: RECEIPT, review: R2, rider: 'vendor-flag', text: 'never sent' };
+  assert.equal(riderRefusal(good), null, 'an honest vendor flag meets no wall');
+  assert.equal(riderRefusal({ ...good, rider: 'vendor-rebuttal' }), null, 'the vendor may also rebut');
+  assert.equal(riderRefusal({ ...good, author: BUYER, rider: 'buyer-supplement' }), null, 'the buyer may supplement');
+  assert.match(riderRefusal({ ...good, rider: 'shout' }), /not a rider word/, 'no rider word beyond the founder three');
+  assert.match(riderRefusal({ ...good, receiptHash: 'zz' }), /receipt/, 'the receipt binding comes first');
+  assert.match(riderRefusal({ ...good, review: 'no' }), /review event/, 'the rider names a review');
+  assert.match(riderRefusal({ ...good, text: '  ' }), /says something/, 'an empty rider is nothing');
+  assert.match(riderRefusal({ ...good, author: BUYER }), /vendor/, 'a stranger never flags or rebuts for the vendor');
+  assert.match(riderRefusal({ ...good, author: BUYER, rider: 'vendor-rebuttal' }), /vendor/, 'the rebuttal too');
+  assert.match(riderRefusal({ ...good, rider: 'buyer-supplement' }), /co-sign a buyer supplement/, 'a vendor never supplements for the buyer');
+  // one-shot on the composite pair: spend it, then refuse a second sign
+  assert.equal(markOwnRider(VENDOR, RECEIPT, R2, 'vendor-flag', 'e1'.repeat(32)), true);
+  assert.match(riderRefusal(good), /already spent its one word/, 'a spent word refuses the same sign');
+  // and the buyers side of one-shot
+  assert.equal(markOwnRider(VENDOR, RECEIPT, R2, 'buyer-supplement', 'e2'.repeat(32)), true);
+  assert.match(riderRefusal({ ...good, author: BUYER, rider: 'buyer-supplement' }), /already spent/, 'the buyer word spent is spent');
 });

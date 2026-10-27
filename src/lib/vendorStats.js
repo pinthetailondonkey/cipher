@@ -99,3 +99,37 @@ export function wordFor(rail) {
 export function phrasingFor(rail) {
   return CHAIN_PHRASING[ASSETS[String(rail || '').toLowerCase()]?.chain] || null;
 }
+
+// ————— the publisher's seam —————
+//
+// A vendor publishes their own bulletin (kind 10007, replaceable per rail
+// by the 'rail' tag convention this layer reads back). The count IS the
+// list: a bulletin carries txids and nothing else — no amounts on any rail
+// (BTC too: this wire never says how much a deal moved), no claimed totals,
+// no vendor-reported counts. The tag is written from the same constants the
+// reader demands, so a publisher cannot drift out of its own format.
+export function bulletinTags(rail) {
+  return [['rail', String(rail || '').toLowerCase()], ['bulletin', 'proven']];
+}
+
+// The bulletin content, and the pure guard the compose side runs before
+// signing. Fails closed with a word: not a rail the table knows, a txid
+// that is not 64 hex, duplicates in the hand-entered list, or an empty
+// list — a bulletin with no txids answers nothing.
+export function bulletinRefusal(rail, txids) {
+  const rows = Array.isArray(txids) ? txids : [];
+  const list = [];
+  for (const row of rows) {
+    const txid = String(row || '').toLowerCase().trim();
+    if (!HEX64.test(txid)) return 'A txid is 64 hex characters, or it is nothing.';
+    if (list.includes(txid)) return 'The same txid twice proves one deal, not two — drop the duplicate.';
+    list.push(txid);
+  }
+  if (!list.length) return 'A bulletin proves deals with the txids themselves — paste at least one.';
+  if (!phrasingFor(rail)) return 'This device does not know that chain, so it cannot speak a bulletin on it.';
+  return null;
+}
+
+export function bulletinContent(txids) {
+  return JSON.stringify({ txids });
+}
