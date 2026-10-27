@@ -3,6 +3,7 @@ import { ChevronLeft, MoreVertical, Phone } from 'lucide-react';
 import { useChatStore } from '../../store/chatStore';
 import { startCall } from '../../lib/voiceCall';
 import { haptic } from '../../lib/haptics';
+import { safetyNumberFor } from '../../lib/safetyNumber';
 import { shortNpub } from '../../lib/npub';
 import Picture from '../ui/Picture';
 
@@ -84,7 +85,11 @@ export default function ChatHeader({ mode }) {
   const someoneTyping = mode === 'dm'
     ? Boolean(typingAt && now - typingAt < 6000)
     : Object.values(groupTyping || {}).some((stamp) => now - stamp < 6000);
-  const subtitle = someoneTyping ? 'typing' : (mode === 'dm' ? 'encrypted' : 'group');
+  // The safety-engine flag, read per render: the 400ms clock below re-renders
+  // this header, so a real key change is led with within a beat of it
+  // landing — the flag is sticky in the safety record until re-verified.
+  const keyChanged = mode === 'dm' ? Boolean(safetyNumberFor(activeDm)?.changed) : false;
+  const subtitle = keyChanged ? 'key changed — re-verify' : (mode === 'dm' ? 'encrypted' : 'group');
 
   const placeCall = async () => {
     const result = await startCall({ peer: activeDm, name: title });
@@ -147,8 +152,8 @@ export default function ChatHeader({ mode }) {
           </button>
         </div>
       </div>
-      <p className={`pointer-events-none absolute bottom-1 left-1/2 -translate-x-1/2 text-[11px] ${someoneTyping ? 'text-accentText' : 'text-inkSubtle'}`}>
-        {someoneTyping ? (
+      <p className={`pointer-events-none absolute bottom-1 left-1/2 -translate-x-1/2 text-[11px] ${keyChanged ? 'text-danger' : someoneTyping ? 'text-accentText' : 'text-inkSubtle'}`}>
+        {someoneTyping && !keyChanged ? (
           <>
             typing
             <span className="ml-1 inline-flex gap-0.5 align-middle">
