@@ -16,7 +16,7 @@ const steps = [
   },
   {
     title: "Find the Menu",
-    desc: "Open Discover to find vendor menus and groups to join, or Shop for the current listings.",
+    desc: "Open Discover to find menus and groups to join, or Menus for the current listings.",
   },
   {
     title: "Voice Calls",

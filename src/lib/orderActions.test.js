@@ -91,7 +91,7 @@ test('a buyer cancel removes Accept from the vendor card, and buyer actions sit 
 
 test('every status an order message is written with is one the machine knows', () => {
   const read = (path) => fs.readFileSync(new URL(path, import.meta.url), 'utf8');
-  const sources = ['../features/chat/useCommerce.js', '../Shop.jsx', '../components/OneTapCheckout.jsx', './proofOfTrade.js'].map(read);
+  const sources = ['../features/chat/useCommerce.js', '../Menus.jsx', '../components/OneTapCheckout.jsx', './proofOfTrade.js'].map(read);
   for (const source of sources) {
     for (const [, literal] of source.matchAll(/status: '([a-z_]+)'/g)) assert.ok(ORDER_STATUSES.includes(literal), literal);
     for (const [, key] of source.matchAll(/ORDER_STATUS\.([A-Z_]+)/g)) assert.ok(key in ORDER_STATUS, key);

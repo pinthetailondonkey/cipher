@@ -20,7 +20,7 @@ test.describe.skip('Visual regression', () => {
     await page.waitForTimeout(1000);
 
     // Click explore tab if visible
-    const exploreBtn = page.locator('button:has-text("Shop")').or(page.locator('button:has-text("Explore")'));
+    const exploreBtn = page.locator('button:has-text("Menus")').or(page.locator('button:has-text("Explore")'));
     if (await exploreBtn.count() > 0) {
       await exploreBtn.first().click();
       await page.waitForTimeout(1000);
