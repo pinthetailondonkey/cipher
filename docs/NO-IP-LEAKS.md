@@ -26,7 +26,7 @@ This page is the law. The tests hold it up where words alone would bend. Deliver
 
 ## Leaks left open, worst first — founder decides, nothing ships without the card
 
-1. **Voice calls in the plain-browser build.** A direct call shows each side the other side's real IP, and three outside call-peg companies (Google, Twilio, metered) see both. The installed app has this closed.
+1. **Voice calls — CLOSED.** The founder turned calls off in every build (2026-10-27). There is no WebRTC engine left anywhere: a call offered to us is politely refused, and no call-routing host exists on the egress wall anymore. Nothing about a call can ever form, so nothing rides the wire.
 2. **Name lookups (name@site.com).** The browser visits site.com directly: your IP and the exact name you looked for, to whatever that site is.
 3. **Pictures.** A picture can point at any website. Everyone who SEES the picture hands their IP to whichever site the picture came from. The viewer has no say; the poster does.
 4. **The plain-browser build reaches the default relays over the open internet** with your IP attached. The installed app does not.
@@ -41,8 +41,19 @@ Earlier drafts said link previews tell the visited site that you clicked. **They
 
 ## Fix plan, ready on the founder's word (nothing above is shipped until then)
 
-- Voice: calls off by default in the web build, warning in plain words naming exactly who sees the IP.
+- Voice: DONE — calls off entirely (see above).
 - Name lookups: a consent card showing the exact site before the first visit to it.
 - Pictures: either a named proxy host (crosses the wall — founder gate) or refusing non-onion picture hosts in strict mode.
 - Onion twins for the clearnet front ends so the same service has a Tor door.
 - Done already: this page, the founder-gate test, the Deal zero-network test, a stale comment in `desktop/src/main.js` that pointed at a lock living elsewhere.
+
+## Calls — the shut door, and where the key would go back
+
+Calls are off everywhere because a direct call is a wire straight between two devices: it carries each side's address inside its setup messages, and the call-peg companies (the routing helpers) see both. There is no engine left — trying to call shows a plain note, and an old peer's incoming offer is refused with a courtesy reply so their phone stops ringing.
+
+If calls ever come back, they cannot come back as they were. What would satisfy this law:
+
+1. **Tor-routed relay only** — every call routed through a relay reachable over onion exactly like a relay, with direct device-to-device connection refused. The relay sees both addresses. It must be named and gated like any wall row.
+2. **Or a STUN-free design** — no routing helpers at all, which in a browser means both sides stay fully hidden to each other. Today there is no practical way to do that in a browser build, which is why the door stays shut.
+
+Until one of those two is built, named, and answered by the founder, the engine stays deleted. The buttons stay honest: tapping a call button says calls are off.
