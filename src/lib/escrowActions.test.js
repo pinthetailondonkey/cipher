@@ -188,3 +188,15 @@ test('the request slot and the escrow price are wired off the right tables', () 
   assert.match(escrowBlock, /acceptanceDemand\(msg\.data\.product, readOwnMenu\(\), 'btc'\)/);
   assert.doesNotMatch(escrowBlock, /orderCoinAmount\(msg\.data\.product/);
 });
+
+// Founder-approved voice lines, verbatim (2026-10-26). These are the
+// receipts' honesty law, so the words are pinned the way wiring is:
+// an escrow card promises only what escrow proves, and an unfunded
+// slotted deal says so before the buyer pays. It proves the vendor
+// ASSERTED delivery, never that atoms moved — every future escrow
+// surface inherits that line, it does not get softer.
+test('the receipts speak the approved honesty lines, verbatim', () => {
+  const bubble = fs.readFileSync(new URL('../components/MessageBubble.jsx', import.meta.url), 'utf8');
+  assert.match(bubble, /Money comes back if the deal can't be proven — it can't inspect the goods\./);
+  assert.match(bubble, /No escrow on this order\. If it goes wrong, the money is gone\./);
+});

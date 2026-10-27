@@ -107,8 +107,14 @@ function OrderReceipt({ content }) {
             <p className="mt-0.5 text-[13px] text-ink/75">
               Price {unitsToCoins(escrow.priceSats, 'btc')} BTC · deposit {unitsToCoins(escrow.depositSats, 'btc')} BTC · fee {unitsToCoins(escrow.feeOutSats, 'btc')} BTC (2.5% + 2.5%)
             </p>
-            <p className="mt-0.5 text-[13px] text-ink/50">{escrowDelayDays(escrow.delayBlocks)}-day timer. If nothing proves the deal, the whole deposit comes back.</p>
+            <p className="mt-0.5 text-[13px] text-ink/50">{escrowDelayDays(escrow.delayBlocks)}-day timer. Money comes back if the deal can't be proven — it can't inspect the goods.</p>
           </div>
+        )}
+        {content.escrowSalt && !escrow && content.status === 'accepted'
+          && ['created', 'address_issued'].includes(content.paymentState) && (
+          // Slotted but unfunded, accepted without escrow: the buyer is
+          // about to pay with no box. Founder-approved line, verbatim.
+          <p className="mt-1 text-[13px] text-amber-300">No escrow on this order. If it goes wrong, the money is gone.</p>
         )}
         {content.paymentSeenBy === 'vendor' && content.paymentState !== 'confirmed' && (
           <p className="mt-1 text-[13px] text-amber-300">Not checked on-chain.</p>
