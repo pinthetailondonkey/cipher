@@ -23,6 +23,7 @@ module.exports = {
         inkMuted: 'var(--text-muted)',
         inkSubtle: 'var(--text-subtle)',
         accent: 'var(--accent)',
+        accentText: 'var(--accent-text)',
         accentSoft: 'var(--accent-soft)',
         accentInk: 'var(--accent-ink)',
         success: 'var(--success)',
