@@ -87,9 +87,8 @@ export default function VendorDashboard({ identity, products = [], onBack, onCre
             <EmptyState
               icon={<Package size={20} />}
               title="Your menu is empty"
-            >
-              Tap List an item above and your first one lands here.
-            </EmptyState>
+              line="Tap List an item above and your first one lands here."
+            />
           ) : products.map((product) => (
             <div key={product.id || product.dTag || product.name} className="flex items-center gap-3 border-b border-line p-4 last:border-0">
               <Picture src={product.image} alt="" className="h-12 w-12 rounded-xl object-cover" fallback={<div className="flex h-12 w-12 items-center justify-center rounded-xl bg-panelAlt"><Package size={18} className="text-inkMuted" /></div>} />

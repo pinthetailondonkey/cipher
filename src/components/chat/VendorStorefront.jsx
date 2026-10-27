@@ -117,9 +117,8 @@ export default function VendorStorefront({ isOpen, onClose, vendorPubkey, profil
           <EmptyState
             icon={<Store size={20} />}
             title="Nothing on the menu yet"
-          >
-            Check back later, or tap Message vendor below.
-          </EmptyState>
+            line="Check back later, or tap Message vendor below."
+          />
         )}
         {!loading && products.length > 0 && (
           <div className="grid grid-cols-2 gap-3">
