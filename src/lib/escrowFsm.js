@@ -60,7 +60,9 @@ export function canEscrow(priceSats) {
 //   funded   : the deposit confirmed on chain. Money belongs to nobody.
 //   released : both keys signed; vendor paid, fee paid. Done and happy.
 //   refunded : money went home (vendor admitted, or the timer ran out).
-export const ESCROW_STATES = Object.freeze(['draft', 'funded', 'released', 'refunded']);
+//   claimed  : the vendor claimed delivery past the clock (day-20 rule,
+//              fee-free by founder order). Done, on the vendor's word.
+export const ESCROW_STATES = Object.freeze(['draft', 'funded', 'released', 'refunded', 'claimed']);
 export const REFUND_KINDS = Object.freeze(['admitted', 'timed']);
 
 // Blocks per DAY at 10-minute blocks; the timer is the chain's, not the

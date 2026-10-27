@@ -232,15 +232,15 @@ function decodeOp(payload) {
     case 'escrow_refund': {
       if (typeof payload.expectedRevision !== 'number') return { ok: false, reason: 'malformed' };
       if (typeof payload.txid !== 'string' || payload.txid.length < 32) return { ok: false, reason: 'malformed' };
-      if (payload.kind !== 'admitted' && payload.kind !== 'timed' && payload.kind !== 'overt') return { ok: false, reason: 'malformed' };
+      if (payload.kind !== 'admitted' && payload.kind !== 'timed' && payload.kind !== 'overt' && payload.kind !== 'claimed') return { ok: false, reason: 'malformed' };
       const height = Number(payload.height);
       if (!Number.isFinite(height) || height <= 0) return { ok: false, reason: 'malformed' };
-      // An overt claim is a claim about SPEND BYTES, so the report must
-      // carry them: the preimage the spend revealed (32 bytes), the
-      // output script, and the sats that went home. A word without
-      // facts to check never reaches the escrow state.
+      // An overt or clock-claim report is a claim about SPEND BYTES, so
+      // the report must carry them: the preimage the spend revealed
+      // (32 bytes), the output script, and the sats that went home. A
+      // word without facts to check never reaches the escrow state.
       let overtFacts = null;
-      if (payload.kind === 'overt') {
+      if (payload.kind === 'overt' || payload.kind === 'claimed') {
         // The wire carries the facts at top level; this decoder's own
         // canonical op nests them under `overt`, and the journal stores
         // that op — recovery re-decodes it (recovery replays through the
@@ -423,8 +423,34 @@ function checkOp(st, principal, op) {
           return { ok: false, reason: 'escrow_refused' };
         }
       }
+      if (op.kind === 'claimed') {
+        // The founder's day-20 clock (the Clock Box): buyer silence
+        // frees the vendor — the claim rides the SAME committed
+        // preimage the dead drop carries, but past the CSV clock and
+        // TO THE VENDOR'S KEY, fee-free. Four facts, checked against
+        // THIS escrow's own bytes: (1) the box itself carries a claim
+        // branch (a plain box or bare dead drop has no clock to fire);
+        // (2) the clock has run — the report's height is past funding
+        // plus the box's own claimBlocks, exactly how the chain reads
+        // the same input sequence; (3) the destination is the vendor
+        // key the release branch verifies, bare P2PK; (4) the preimage
+        // hashes to the spoken commitment. The fee is zero here — the
+        // 5% exists only on the cooperative release, by founder order.
+        if (!st.escrow.overtHashHex) return { ok: false, reason: 'escrow_refused' };
+        const box = decodeOrderScript(hexToScript(st.escrow.scriptHex));
+        if (!box || box.claimBlocks === null) return { ok: false, reason: 'escrow_refused' };
+        if (op.height < st.escrow.fundingHeight + box.claimBlocks) {
+          return { ok: false, reason: 'escrow_refused' };
+        }
+        if (op.overt.outScriptHex !== `21${scriptToHex(box.vendorPubKey)}ac`) {
+          return { ok: false, reason: 'escrow_refused' };
+        }
+        if (scriptToHex(sha256(hexToScript(op.overt.preimageHex))) !== st.escrow.overtHashHex) {
+          return { ok: false, reason: 'escrow_refused' };
+        }
+      }
       return { ok: true, changed: true, apply: (state) => {
-        state.escrow.state = 'refunded';
+        state.escrow.state = op.kind === 'claimed' ? 'claimed' : 'refunded';
         state.escrow.refundKind = op.kind;
         state.escrow.settleTxid = op.txid;
         if (op.kind === 'overt') {
@@ -433,7 +459,13 @@ function checkOp(st, principal, op) {
           state.escrow.returnedSats = op.overt.sats;
           state.escrow.deliveredPreimageHex = op.overt.preimageHex;
         }
-        state.status = ORDER_STATUS.REFUNDED;
+        if (op.kind === 'claimed') {
+          // the clock released to the vendor — what they took home,
+          // and the delivery word that rode the claim
+          state.escrow.claimedSats = op.overt.sats;
+          state.escrow.deliveredPreimageHex = op.overt.preimageHex;
+        }
+        state.status = op.kind === 'claimed' ? ORDER_STATUS.COMPLETED : ORDER_STATUS.REFUNDED;
       } };
     }
     case 'mark_shipped':

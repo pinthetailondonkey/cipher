@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { OrderMembrane, MemoryJournal, satsToCoins } from './orderMembrane.js';
-import { assembleOrderScript, assembleOvertOrderScript, scriptToHex } from './escrowScript.js';
+import { assembleOrderScript, assembleOvertOrderScript, assembleClockClaimScript, scriptToHex } from './escrowScript.js';
 import { MIN_ORDER_SATS } from './escrowFsm.js';
 import { sha256 } from '@noble/hashes/sha2.js';
 
@@ -23,9 +23,16 @@ const OVERT_HASH_HEX = scriptToHex(OVERT_HASH);
 const OVERT_SCRIPT_HEX = scriptToHex(assembleOvertOrderScript({
   vendorPubKey: PUB_V, buyerPubKey: PUB_B, delayBlocks: 2880, overtHash: OVERT_HASH,
 }));
+// The Clock Box: the same commitment, a fourth branch past the CSV
+// clock — the founder's day-20 rule. claimBlocks == delayBlocks.
+const CLOCK_SCRIPT_HEX = scriptToHex(assembleClockClaimScript({
+  vendorPubKey: PUB_V, buyerPubKey: PUB_B, delayBlocks: 2880, overtHash: OVERT_HASH,
+}));
 // The enforced money table facts the watcher reports (the same shape
 // the spend builder produces and the door re-checks): buyer P2PK.
 const BUYER_P2PK = `21${scriptToHex(PUB_B)}ac`;
+// and the claim's own table: vendor P2PK, fee-free.
+const VENDOR_P2PK = `21${scriptToHex(PUB_V)}ac`;
 const TX_FUND = 'aa'.repeat(32);
 const TX_SETTLE = 'bb'.repeat(32);
 const FUND_HEIGHT = 800_000;
@@ -402,6 +409,118 @@ test('nobody but the watcher says refund, and no refund talks before funding', (
   // fund it, and the honest path still walks: the walls only stop lies
   fundOrder(m, { sats: depositSats(m.summary()).toString() });
   assert.equal(settleOrder(m, 'escrow_refund', { id: 'overt-next', refundKind: 'overt', overt: overtFacts(m) }).status, 'accepted');
+});
+
+// The founder's day-20 rule at the membrane: the Clock Box's fourth
+// branch takes its seat. The claim is the dead drop's twin — the SAME
+// preimage, the SAME single-spigot byte law — but it fires only past
+// the CSV clock and pays THE VENDOR, fee-free.
+test('a clock box opens like any dead drop and the day-20 claim pays the vendor', () => {
+  const m = freshMembrane();
+  // the same open door, the same spoken commitment
+  assert.equal(openOrder(m, { id: 'clock-open', script: CLOCK_SCRIPT_HEX, overtHashHex: OVERT_HASH_HEX }).status, 'accepted');
+  fundOrder(m, { sats: depositSats(m.summary()).toString() });
+  // day one: the clock has not run — the early-fire lie is refused
+  assert.equal(settleOrder(m, 'escrow_refund', {
+    id: 'clock-early', height: FUND_HEIGHT + 1, refundKind: 'claimed', overt: overtFacts(m, { outScriptHex: VENDOR_P2PK }),
+  }).reason, 'escrow_refused');
+  assert.equal(m.summary().escrow.state, 'funded');
+  // day 20 (block 2880 past funding): the claim fires, all money home,
+  // fee-free, to the vendor key the release branch verifies
+  assert.equal(settleOrder(m, 'escrow_refund', {
+    id: 'clock-claim', height: FUND_HEIGHT + 2880, refundKind: 'claimed', overt: overtFacts(m, { outScriptHex: VENDOR_P2PK }),
+  }).status, 'accepted');
+  const st = m.summary();
+  assert.equal(st.escrow.state, 'claimed');
+  assert.equal(st.escrow.refundKind, 'claimed');
+  assert.equal(st.escrow.settleTxid, TX_SETTLE);
+  assert.equal(st.escrow.claimedSats, (depositSats(st) - 1440n).toString());
+  assert.equal(st.escrow.deliveredPreimageHex, DELIVERY_NONCE_HEX);
+  assert.equal(st.status, 'completed'); // the vendor delivered on their word; the deal is done
+  // the exact clock boundary: a block EARLY is refused, the boundary
+  // block itself is accepted (the chain's CSV is >=)
+  const mEdge = freshMembrane();
+  openOrder(mEdge, { id: 'clock-open', script: CLOCK_SCRIPT_HEX, overtHashHex: OVERT_HASH_HEX });
+  fundOrder(mEdge, { sats: depositSats(mEdge.summary()).toString() });
+  assert.equal(settleOrder(mEdge, 'escrow_refund', {
+    id: 'clock-2879', height: FUND_HEIGHT + 2879, refundKind: 'claimed', overt: overtFacts(mEdge, { outScriptHex: VENDOR_P2PK }),
+  }).reason, 'escrow_refused');
+  assert.equal(settleOrder(mEdge, 'escrow_refund', {
+    id: 'clock-2880', height: FUND_HEIGHT + 2880, refundKind: 'claimed', overt: overtFacts(mEdge, { outScriptHex: VENDOR_P2PK }),
+  }).status, 'accepted');
+
+  // the claim survives replay byte-exactly, delivery word included
+  // (the reload decode must read the journal's nested fact shape)
+  const journal = new MemoryJournal();
+  const m2 = new OrderMembrane('order-1', 'btc', journal);
+  openOrder(m2, { id: 'clock-open', script: CLOCK_SCRIPT_HEX, overtHashHex: OVERT_HASH_HEX });
+  fundOrder(m2, { sats: depositSats(m2.summary()).toString() });
+  settleOrder(m2, 'escrow_refund', { id: 'clock-claim', height: FUND_HEIGHT + 2880, refundKind: 'claimed', overt: overtFacts(m2, { outScriptHex: VENDOR_P2PK }) });
+  const fresh = new OrderMembrane('order-1', 'btc', journal);
+  const re = fresh.summary();
+  assert.equal(re.escrow.state, 'claimed');
+  assert.equal(re.escrow.refundKind, 'claimed');
+  assert.equal(re.escrow.claimedSats, (depositSats(re) - 1440n).toString());
+  assert.equal(re.escrow.deliveredPreimageHex, DELIVERY_NONCE_HEX);
+  assert.equal(re.status, 'completed');
+});
+
+// The claim's single-spigot law, twin to the overt door: every lie the
+// overt door refuses, the claim door refuses too, plus the two that
+// belong to the clock alone — firing early, and firing on a box with
+// no clock at all.
+test('the word claimed cannot ride past the door without its bytes', () => {
+  const funded = (m0) => {
+    openOrder(m0, { id: 'clock-open', script: CLOCK_SCRIPT_HEX, overtHashHex: OVERT_HASH_HEX });
+    fundOrder(m0, { sats: depositSats(m0.summary()).toString() });
+  };
+  // missing facts: malformed at the decode
+  const mMissing = freshMembrane();
+  funded(mMissing);
+  assert.equal(settleOrder(mMissing, 'escrow_refund', { id: 'no-facts', refundKind: 'claimed' }).reason, 'malformed');
+  assert.equal(mMissing.summary().escrow.state, 'funded');
+  // wrong preimage: hashes to the wrong thing -> escrow_refused
+  const mWrongWord = freshMembrane();
+  funded(mWrongWord);
+  assert.equal(settleOrder(mWrongWord, 'escrow_refund', {
+    id: 'wrong-word', refundKind: 'claimed', height: FUND_HEIGHT + 2880,
+    overt: overtFacts(mWrongWord, { outScriptHex: VENDOR_P2PK, preimageHex: 'ff'.repeat(32) }),
+  }).reason, 'escrow_refused');
+  // the BUYER key as the claim output: the claim pays THE vendor
+  const mBuyerOut = freshMembrane();
+  funded(mBuyerOut);
+  assert.equal(settleOrder(mBuyerOut, 'escrow_refund', {
+    id: 'buyer-out', refundKind: 'claimed', height: FUND_HEIGHT + 2880,
+    overt: overtFacts(mBuyerOut, { outScriptHex: BUYER_P2PK }),
+  }).reason, 'escrow_refused');
+  assert.equal(mBuyerOut.summary().escrow.state, 'funded');
+  // a box with no clock at all: the bare dead drop (overt branch, no
+  // claim branch) refuses the word — there is nothing to fire
+  const mDeadDrop = freshMembrane();
+  openOrder(mDeadDrop, { id: 'overt-open', script: OVERT_SCRIPT_HEX, overtHashHex: OVERT_HASH_HEX });
+  fundOrder(mDeadDrop, { sats: depositSats(mDeadDrop.summary()).toString() });
+  assert.equal(settleOrder(mDeadDrop, 'escrow_refund', {
+    id: 'no-clock', refundKind: 'claimed', height: FUND_HEIGHT + 2880,
+    overt: overtFacts(mDeadDrop, { outScriptHex: VENDOR_P2PK }),
+  }).reason, 'escrow_refused');
+  // and the plain box, the same
+  const mPlain = freshMembrane();
+  openOrder(mPlain);
+  fundOrder(mPlain, { sats: depositSats(mPlain.summary()).toString() });
+  assert.equal(settleOrder(mPlain, 'escrow_refund', {
+    id: 'plain-claim', refundKind: 'claimed', height: FUND_HEIGHT + 2880,
+    overt: overtFacts(mPlain, { outScriptHex: VENDOR_P2PK }),
+  }).reason, 'escrow_refused');
+  // the twin exit stays open: on a Clock Box, the vendor can still
+  // return everything overt, fee-free, any time — the claim never
+  // locks the honest close out
+  const mTwin = freshMembrane();
+  openOrder(mTwin, { id: 'clock-open', script: CLOCK_SCRIPT_HEX, overtHashHex: OVERT_HASH_HEX });
+  fundOrder(mTwin, { sats: depositSats(mTwin.summary()).toString() });
+  assert.equal(settleOrder(mTwin, 'escrow_refund', {
+    id: 'twin-overt', height: FUND_HEIGHT + 5, refundKind: 'overt', overt: overtFacts(mTwin),
+  }).status, 'accepted');
+  assert.equal(mTwin.summary().escrow.refundKind, 'overt');
 });
 
 test('a forged escrow_open by the buyer hits the authority wall, not the escrow', () => {
