@@ -179,7 +179,20 @@ export function useNIP44DM({ identity }) {
       ];
       for (const filter of dmFilters) {
         if (!mounted.current) break;
+        // The serving relay is the safety number's honest input (drill round
+        // three): a key first seen on a different relay set must derive a
+        // different code, or the relay-swap warning the derivation promises
+        // is dead. The library hands the relay to receivedEvent just before
+        // the event reaches onevent, so a per-id note is the whole wiring —
+        // no pool-wide relay tracking, no second subscription, dedup kept.
+        // A duplicate that loses the relay race leaves an entry nobody
+        // reads; the map clears itself long before that could matter.
+        const servingRelay = new Map();
         const sub = pool.subscribe(generalRelays, filter, {
+          receivedEvent: (relay, id) => {
+            if (servingRelay.size > 500) servingRelay.clear();
+            servingRelay.set(id, relay.url);
+          },
           onevent: async (event) => {
             if (!mounted.current) return;
             try {
@@ -187,9 +200,14 @@ export function useNIP44DM({ identity }) {
               const isSender = event.pubkey === identity.pk;
               const counterparty = isSender ? event.tags.find(t => t[0] === 'p')?.[1] : event.pubkey;
               if (!counterparty) return;
-              // Safety numbers: first time this key speaks to us, freeze where
-              // we saw it. Fire-and-forget — never blocks ingestion.
-              noteFirstSeen(counterparty).catch(() => {});
+              // Safety numbers: first time this key speaks to us, freeze
+              // where we actually saw it — the relay that served this event
+              // when the caller knows it, the configured set otherwise
+              // (the history arm has no per-event attribution). Fire-and-
+              // forget — never blocks ingestion.
+              const serving = servingRelay.get(event.id);
+              servingRelay.delete(event.id);
+              noteFirstSeen(counterparty, serving ? [serving] : null).catch(() => {});
               // Audit H8: drop messages from blocked users at ingestion
               const blocked = useChatStore.getState().blockedUsers || [];
               if (blocked.includes(counterparty)) return;
@@ -318,7 +336,9 @@ export function useNIP44DM({ identity }) {
         const isSender = ev.pubkey === identity.pk;
         const counterparty = isSender ? ev.tags.find(t => t[0] === 'p')?.[1] : ev.pubkey;
         if (!counterparty) continue;
-        // Safety numbers: same first-seen freeze on the history path.
+        // Safety numbers: same first-seen freeze on the history path. A
+        // merged history fetch has no per-event attribution, so the honest
+        // first-seen answer here is the set the query itself ran on.
         noteFirstSeen(counterparty).catch(() => {});
         const blocked = useChatStore.getState().blockedUsers || [];
         if (blocked.includes(counterparty)) continue;
