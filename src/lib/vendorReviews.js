@@ -195,8 +195,8 @@ function provenMapsForVendor(vendorPubkey) {
 // device countersigned that a signed public view names. The fallback's
 // count is those distinct receipts, not a bulletin length — the bulletin
 // count-is-txids rule is the data layer's, and it owns the real source.
-// The txids ride along (the receipts carry them) so the tap-through has
-// data when the banner learns to open it. Rails without proven deals stay
+// The txids ride along (the receipts carry them) so the banner's
+// tap-through has data. Rails without proven deals stay
 // absent keys, so the shape is exactly the data layer's.
 export function provenDealsForVendor(vendorPubkey) {
   const keyed = {};
@@ -240,25 +240,28 @@ export function provenBannerOf(entry) {
   return '';
 }
 
-// The stats band's lines: one per rail the contract object carries, btc
+// The stats band's entries: one per rail the contract object carries, btc
 // first, xmr second, then any further rail in the order the object hands
 // over (Deal publishes per-asset config; nothing here assumes exactly two
-// rails, and no line ever sums two rails together).
-export function provenLinesOf(proven) {
-  if (Array.isArray(proven)) {
-    return proven.map(provenBannerOf).filter(Boolean);
-  }
+// rails, and no line ever sums two rails together). The rows are the
+// banner's material: provenLinesOf speaks them, and the conductor's
+// tap-through reads the txids one entry carries.
+export function provenEntriesOf(proven) {
+  if (Array.isArray(proven)) return proven.filter((entry) => entry && typeof entry === 'object');
   if (!proven || typeof proven !== 'object') return [];
-  const keys = Object.keys(proven).sort((a, b) => railRank(a) - railRank(b));
-  return keys
+  return Object.keys(proven)
+    .sort((a, b) => railRank(a) - railRank(b))
     .map((rail) => {
       const value = proven[rail];
       if (value && typeof value === 'object') return { ...value, rail };
       const count = Number(value) || 0;
       return { count, rail, phrasing: KNOWN_RAILS[rail] || '' };
-    })
-    .map(provenBannerOf)
-    .filter(Boolean);
+    });
+}
+
+// The stats band's lines: one per rail, the entries spoken plain.
+export function provenLinesOf(proven) {
+  return provenEntriesOf(proven).map(provenBannerOf).filter(Boolean);
 }
 
 // Months active: whole months since this vendor's earliest bound receipt
