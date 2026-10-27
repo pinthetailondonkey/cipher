@@ -27,7 +27,7 @@ Layout source of truth for every LIST screen. Founder's drop, 2026-10-26:
 https://cdn.dribbble.com/userupload/45559651/file/bc4953358afc5d96fe1c46a14ace45dc.png?resize=1024x768&vertical=center
 It is a chat list, not a palette — the palette above wins; this section is structure.
 
-- Screen title at the left, a circular search affordance at the right of the same row.
+- Screen title at the left, a circular search affordance at the right of the same row. The Cipher mark (the Logo component) sits beside every screen title throughout the app — founder's rule: "keep cipher logo present throughout the app by 'chats' and shit like that". The mark is never restyled.
 - A full-radius segmented filter directly under the header, three segments, the active one accent-filled.
 - List rows, 64px: circular avatar at the left (groups show initials), name and right-aligned time on the top line, one-line preview below, unread badge at the right.
 - Live row states, all three: a preview that says a voice note was sent, a typing state in accent-text in place of the preview, and a preview that wraps to two lines. Rows are variable height.
