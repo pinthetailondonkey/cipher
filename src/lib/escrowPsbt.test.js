@@ -8,6 +8,7 @@ import {
   finalizeReleaseTx,
   finalizeTimedRefundTx,
   finalizeOvertRefundTx,
+  finalizeClockClaimTx,
   signSpend,
   verifySpendSignature,
   buildEscrowPsbt,
@@ -17,6 +18,7 @@ import {
 import {
   assembleOrderScript,
   assembleOvertOrderScript,
+  assembleClockClaimScript,
   scriptToHex,
   hexToScript,
 } from './escrowScript.js';
@@ -292,6 +294,92 @@ test('the partial-money lie is dead at the builder: one output, buyer key, or no
     outputs: [{ sats: Q.depositSats - 1440n, scriptHex: '76a914' + '55'.repeat(20) + '88ac' }],
     preimageBytes: NONCE, vendorKeyBytes: VENDOR_PRIV,
   }), /buyer key/);
+});
+
+// The Clock Box: the claim spends booked the way the chain will read it —
+// the vendor alone, the same preimage the dead drop carries, past the CSV
+// clock, all the money to the VENDOR's key, fee-free by founder order.
+const CLOCKS_SCRIPT_HEX = scriptToHex(assembleClockClaimScript({
+  vendorPubKey: PUB_V, buyerPubKey: PUB_B, delayBlocks: 2880, overtHash: DROPHASH,
+}));
+const VENDOR_P2PK = '21' + scriptToHex(PUB_V) + 'ac';
+
+test('the clock claim frees the vendor alone: the money table is vendor P2PK, fee-free', () => {
+  const result = finalizeClockClaimTx({
+    fundingTxid: FUNDING_TXID, fundingSats: Q.depositSats,
+    witnessScriptHex: CLOCKS_SCRIPT_HEX,
+    outputs: [{ sats: Q.depositSats - 1440n, scriptHex: VENDOR_P2PK }],
+    preimageBytes: NONCE,
+    vendorKeyBytes: VENDOR_PRIV,
+  });
+  // the input sequence IS the CSV clock: the claim cannot fire day one
+  assert.equal(result.tx.vin[0].sequence, 2880);
+  assert.equal(
+    verifySpendSignature({ signatureBytes: result.vendorSig, publicKeyBytes: secp256k1.getPublicKey(VENDOR_PRIV, true), digest: result.digest }),
+    true,
+  );
+  // conservation: outputs + miner fee == what the escrow held
+  assert.equal(result.tx.vout[0].sats + 1440n, Q.depositSats);
+});
+
+test('the clock claim refuses wrong keys, wrong shapes, and an early fire', () => {
+  const out = [{ sats: Q.depositSats - 1440n, scriptHex: VENDOR_P2PK }];
+  assert.throws(() => finalizeClockClaimTx({
+    fundingTxid: FUNDING_TXID, fundingSats: Q.depositSats, witnessScriptHex: CLOCKS_SCRIPT_HEX,
+    outputs: out, vendorKeyBytes: VENDOR_PRIV,
+  }), /delivery nonce/);
+  assert.throws(() => finalizeClockClaimTx({
+    fundingTxid: FUNDING_TXID, fundingSats: Q.depositSats, witnessScriptHex: CLOCKS_SCRIPT_HEX,
+    outputs: out, preimageBytes: Uint8Array.from({ length: 32 }, (_, i) => 0xd0 + i), vendorKeyBytes: VENDOR_PRIV,
+  }), /committed hash/);
+  // the plain 2-of-2 box and the dead drop WITHOUT the claim branch have
+  // no clock claim to open
+  assert.throws(() => finalizeClockClaimTx({
+    fundingTxid: FUNDING_TXID, fundingSats: Q.depositSats, witnessScriptHex: SCRIPT_HEX,
+    outputs: out, preimageBytes: NONCE, vendorKeyBytes: VENDOR_PRIV,
+  }), /Clock Box/);
+  assert.throws(() => finalizeClockClaimTx({
+    fundingTxid: FUNDING_TXID, fundingSats: Q.depositSats, witnessScriptHex: DROPPED_SCRIPT_HEX,
+    outputs: out, preimageBytes: NONCE, vendorKeyBytes: VENDOR_PRIV,
+  }), /Clock Box/);
+});
+
+test('the clock claim money table lies are dead at the builder, too', () => {
+  // two outputs = splitting the take = refused
+  assert.throws(() => finalizeClockClaimTx({
+    fundingTxid: FUNDING_TXID, fundingSats: Q.depositSats, witnessScriptHex: CLOCKS_SCRIPT_HEX,
+    outputs: [
+      { sats: Q.depositSats - 1440n - 5000n, scriptHex: VENDOR_P2PK },
+      { sats: 5000n, scriptHex: BUYER_P2PK },
+    ],
+    preimageBytes: NONCE, vendorKeyBytes: VENDOR_PRIV,
+  }), /exactly one output/);
+  // the BUYER key as the claim's output (the dead drop pays the buyer;
+  // the claim pays the vendor — swapped destinations are refused)
+  assert.throws(() => finalizeClockClaimTx({
+    fundingTxid: FUNDING_TXID, fundingSats: Q.depositSats, witnessScriptHex: CLOCKS_SCRIPT_HEX,
+    outputs: [{ sats: Q.depositSats - 1440n, scriptHex: BUYER_P2PK }],
+    preimageBytes: NONCE, vendorKeyBytes: VENDOR_PRIV,
+  }), /vendor key/);
+  // and a hostile P2PKH: refused along with every stranger shape
+  assert.throws(() => finalizeClockClaimTx({
+    fundingTxid: FUNDING_TXID, fundingSats: Q.depositSats, witnessScriptHex: CLOCKS_SCRIPT_HEX,
+    outputs: [{ sats: Q.depositSats - 1440n, scriptHex: '76a914' + '66'.repeat(20) + '88ac' }],
+    preimageBytes: NONCE, vendorKeyBytes: VENDOR_PRIV,
+  }), /vendor key/);
+});
+
+test('the dead drop refund still fires on the Clock Box, same stack, same word', () => {
+  // the overt branch lives above the claim branch: any-time refund on
+  // the clock box needs no extra witness frame
+  const buyerOut = { sats: Q.depositSats - 1440n, scriptHex: BUYER_P2PK };
+  const result = finalizeOvertRefundTx({
+    fundingTxid: FUNDING_TXID, fundingSats: Q.depositSats,
+    witnessScriptHex: CLOCKS_SCRIPT_HEX,
+    outputs: [buyerOut], preimageBytes: NONCE, vendorKeyBytes: VENDOR_PRIV,
+  });
+  assert.equal(result.tx.vin[0].sequence, 0xffffffff);
+  assert.equal(result.tx.vout[0].sats + 1440n, Q.depositSats);
 });
 
 test('signatures are DER with one SIGHASH_ALL byte, checked byte by byte', () => {

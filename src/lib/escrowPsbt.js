@@ -300,6 +300,47 @@ export function finalizeOvertRefundTx({ fundingTxid, fundingVout = 0, fundingSat
   return { tx, digest, vendorSig, bytes: hexOf(bytes), txid: txidOf(bytes) };
 }
 
+// The Clock Box claim: the founder's day-20 rule. Buyer silence at the
+// clock frees the vendor — alone, with the SAME delivery preimage the
+// dead drop refunds on, ALL the money home, fee-free by founder order
+// (the 5% exists only on the cooperative release). The money table is
+// ENFORCED here, exactly one output paying the vendor's key as bare
+// P2PK — the no-CTV law again: the script binds who may sign and what
+// is known, and this builder binds WHERE, for money this app mints.
+// A foreign wallet can craft different bytes, but the chain is public
+// and the membrane only admits the report when the same facts check
+// out. The honesty limit rides unchanged: the claim records the
+// vendor's ASSERTED delivery, not atoms.
+export function finalizeClockClaimTx({ fundingTxid, fundingVout = 0, fundingSats, witnessScriptHex, outputs, preimageBytes, vendorKeyBytes }) {
+  if (preimageBytes instanceof Uint8Array !== true || preimageBytes.length !== 32) {
+    throw new Error('The clock claim opens with the 32-byte delivery nonce.');
+  }
+  const decoded = decodeOrderScript(hexToBytes(witnessScriptHex));
+  if (!decoded || decoded.claimBlocks === null) {
+    throw new Error('A clock claim needs the Clock Box script, not the plain box or the dead drop.');
+  }
+  if (bytesToHex(sha256(preimageBytes)) !== bytesToHex(decoded.overtHash)) {
+    throw new Error('The preimage does not open this clock claim: its SHA-256 is not the committed hash.');
+  }
+  if (!Array.isArray(outputs) || outputs.length !== 1) {
+    throw new Error('The clock claim takes ALL the money: it spends into exactly one output.');
+  }
+  if (typeof outputs[0]?.sats !== 'bigint' || outputs[0].sats <= 0n || outputs[0].sats > fundingSats) {
+    throw new Error('The clock claim pays the vendor what the escrow holds (the miner fee is the only remainder).');
+  }
+  if (String(outputs[0]?.scriptHex ?? '') !== bytesToHex(P2PK(decoded.vendorPubKey))) {
+    throw new Error('The clock claim pays the vendor key named in the script — every sat home, fee-free.');
+  }
+  const tx = buildSpendTx({
+    fundingTxid, fundingVout, fundingSats, witnessScriptHex, outputs,
+    sequence: decoded.claimBlocks, // the input sequence IS the CSV clock
+  });
+  const digest = p2wshSignatureDigest({ tx, vinIndex: 0, witnessScriptHex, prevAmountSats: fundingSats });
+  const vendorSig = signSpend({ privateKeyBytes: vendorKeyBytes, digest });
+  const bytes = witnessTx(tx, [[vendorSig, preimageBytes, RELEASE_WITNESS_CONTROL, REFUND_WITNESS_CONTROL, REFUND_WITNESS_CONTROL]]);
+  return { tx, digest, vendorSig, bytes: hexOf(bytes), txid: txidOf(bytes) };
+}
+
 export function finalizeTimedRefundTx({ fundingTxid, fundingVout = 0, fundingSats, witnessScriptHex, outputs, delayBlocks, buyerKeyBytes }) {
   if (!delayBlocks) throw new Error('A timed refund needs the script delay.');
   const tx = buildSpendTx({
