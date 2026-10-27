@@ -188,7 +188,7 @@ function ChatRow({
           meta={(
             <span className="flex shrink-0 flex-col items-end gap-1">
               {unread > 0 ? (
-                <Badge title={`${unread} unread`}>{unread > 99 ? '99+' : unread}</Badge>
+                <Badge tone="unread" title={`${unread} unread`}>{unread > 99 ? '99+' : unread}</Badge>
               ) : (muted && <BellOff size={12} className="text-inkSubtle" />)}
             </span>
           )}

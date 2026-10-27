@@ -335,7 +335,19 @@ export default function Wallet({ identity, onOpenChat, startView = 'main' }) {
   }
 
   if (view === 'vendor') {
-    return <Suspense fallback={<div className="flex h-full items-center justify-center bg-scrim"><div className="h-7 w-7 animate-spin rounded-full border-2 border-ink/20 border-t-accentText" /></div>}><VendorDashboard identity={identity} products={JSON.parse(localStorage.getItem('cipher_my_products') || '[]')} onBack={() => setView('main')} onCreate={() => setView('product')} /></Suspense>;
+    // BACKLOG 16.5: the product table reads the cached menus everyone's
+    // device keeps, filtered to this account's pubkey — the same read the
+    // order matcher already does. cipher_my_products held every account's
+    // leftover rows, so a table could show menus this account never sold.
+    const ownCachedProducts = (() => {
+      try {
+        const rows = JSON.parse(localStorage.getItem('cipher_cached_products') || '[]');
+        return Array.isArray(rows) ? rows.filter((row) => row && row.vendorPubkey === identity.pk) : [];
+      } catch {
+        return [];
+      }
+    })();
+    return <Suspense fallback={<div className="flex h-full items-center justify-center bg-scrim"><div className="h-7 w-7 animate-spin rounded-full border-2 border-ink/20 border-t-accentText" /></div>}><VendorDashboard identity={identity} products={ownCachedProducts} onBack={() => setView('main')} onCreate={() => setView('product')} /></Suspense>;
   }
 
   if (view === 'vendor_setup') {

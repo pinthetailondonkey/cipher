@@ -1,10 +1,13 @@
-// Shimmer placeholder for every loading surface. The shimmer steps between
-// the hover-wash token and ink at 10% — no hex, no motion library needed;
-// prefers-reduced-motion flattens it in the stylesheet. Superset of both
-// landings: bare Skeleton plus Row / List / Grid presets.
-export default function Skeleton({ className = '', ...props }) {
+// Skeleton — loading placeholders that read every list's idle state. The
+// shimmer steps between the hover-wash token and ink at 10% — no hex, no
+// motion library; prefers-reduced-motion flattens it in the stylesheet.
+// Superset of the landings in flight: bare Skeleton (default and named) plus
+// Row / List / Grid / StatCard presets.
+export function Skeleton({ className = '', ...props }) {
   return <div aria-hidden="true" className={`skeleton ${className}`} {...props} />;
 }
+
+export default Skeleton;
 
 // One list row placeholder: 64px min, 40px avatar slot, two text lines.
 export function SkeletonRow({ className = '' }) {
@@ -19,9 +22,9 @@ export function SkeletonRow({ className = '' }) {
   );
 }
 
-export function SkeletonList({ rows = 3, className = '' }) {
+export function SkeletonList({ rows = 4, className = '' }) {
   return (
-    <div className={className}>
+    <div className={`space-y-1 ${className}`}>
       {Array.from({ length: rows }, (_, index) => (
         <SkeletonRow key={index} />
       ))}
@@ -30,16 +33,26 @@ export function SkeletonList({ rows = 3, className = '' }) {
 }
 
 // A card grid that fills as many columns as the width allows, so the skeleton
-// shows the real layout before the real cards arrive.
-export function SkeletonGrid({ items = 4, min = 172, itemClass = '', className = '' }) {
+// shows the real layout before the real cards arrive. `items`/`min` build the
+// auto-fill layout Shop and Discover settle into; `cols` is the simple
+// fixed-column variant.
+export function SkeletonGrid({ items, cols, min = 172, itemClass = '', className = '' }) {
+  const count = items ?? (cols ? cols * 2 : 4);
+  const style = cols ? undefined : { gridTemplateColumns: `repeat(auto-fill, minmax(${min}px, 1fr))` };
   return (
-    <div
-      className={`grid gap-3 ${className}`}
-      style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${min}px, 1fr))` }}
-    >
-      {Array.from({ length: items }, (_, index) => (
-        <Skeleton key={index} className={itemClass} />
+    <div className={`grid grid-cols-2 gap-3 ${className}`} style={style}>
+      {Array.from({ length: count }, (_, index) => (
+        <Skeleton key={index} className={itemClass || 'h-40'} />
       ))}
+    </div>
+  );
+}
+
+export function SkeletonStatCard({ className = '' }) {
+  return (
+    <div className={`rounded-2xl border border-line bg-panel p-4 ${className}`}>
+      <Skeleton className="h-3 w-16" />
+      <Skeleton className="mt-2 h-7 w-20" />
     </div>
   );
 }
