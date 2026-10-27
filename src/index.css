@@ -156,6 +156,36 @@ textarea::placeholder {
   .fab-menu-pos { bottom: calc(var(--nav-h) + var(--sab) + 6rem); right: var(--app-edge); }
   .touch-target { min-width: 44px; min-height: 44px; }
 
+  /* Elevation without arbitrary z-[...] literals (master §1). */
+  .z-fab { z-index: var(--z-fab); }
+  .z-sheet { z-index: var(--z-sheet); }
+  .z-call { z-index: var(--z-call); }
+  .z-toast { z-index: var(--z-toast); }
+
+  /* Typing indicator: Telegram's three bouncing dots.
+     Hold the base glyph in place so the row does not shift. */
+  .typing-dots span {
+    display: inline-block;
+    animation: typing-bounce 1.2s ease-in-out infinite;
+  }
+  .typing-dots span:nth-child(2) { animation-delay: 0.15s; }
+  .typing-dots span:nth-child(3) { animation-delay: 0.3s; }
+  @keyframes typing-bounce {
+    0%, 60%, 100% { transform: translateY(0); opacity: 0.5; }
+    30% { transform: translateY(-3px); opacity: 1; }
+  }
+
+  /* List skeletons: hover-wash to ink/10 and back. */
+  .shimmer {
+    background: linear-gradient(100deg, var(--hover-wash) 40%, var(--panel-alt) 60%, var(--hover-wash));
+    background-size: 200% 100%;
+    animation: shimmer-slide 1.4s ease infinite;
+  }
+  @keyframes shimmer-slide {
+    from { background-position: 100% 0; }
+    to { background-position: -100% 0; }
+  }
+
   .linear-glow {
     position: absolute;
     top: 0;
