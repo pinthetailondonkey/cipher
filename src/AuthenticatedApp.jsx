@@ -1,12 +1,14 @@
 import React, { lazy, Suspense, useCallback, useEffect, useState } from 'react';
 import { MessageSquare, Compass, Menu, User } from 'lucide-react';
 import TutorialModal from './components/TutorialModal';
+import Rail from './components/ui/Rail';
 import Drawer from './components/chat/Drawer';
 import GlobalDialog from './components/GlobalDialog';
 import CallOverlay from './components/chat/CallOverlay';
 import DeadDropModal from './components/chat/DeadDropModal';
 import Toast from './components/ui/Toast';
 import Segmented from './components/ui/Segmented';
+import CommandPalette from './components/ui/CommandPalette';
 import { requestNotificationPermission } from './lib/notifications';
 import { unreadTotalOf, useChatStore } from './store/chatStore';
 
@@ -37,6 +39,23 @@ export default function AuthenticatedApp({ identity }) {
     useChatStore.getState().openChat('dm', pubkey);
     setActiveTab('chat');
   }, []);
+  const openChatFromPalette = useCallback((type, id, group) => {
+    useChatStore.getState().openChat(type, id, group || null);
+    setActiveTab('chat');
+  }, []);
+  // ⌘K opens the command palette at md+ (master §2): the same command key a
+  // desktop keyboard expects, and no phone surface changes.
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  useEffect(() => {
+    const onKeyDown = (event) => {
+      if ((event.metaKey || event.ctrlKey) && !event.altKey && !event.shiftKey && String(event.key).toLowerCase() === 'k') {
+        event.preventDefault();
+        if (window.matchMedia('(min-width: 768px)').matches) setPaletteOpen((open) => !open);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
   const showTutorial = useChatStore((state) => state.showTutorial);
   // The vendor menu lives over the chat surface (it is the chat tab's own
   // pane on wide screens), so opening one — from Discover, the chat list,
@@ -55,6 +74,22 @@ export default function AuthenticatedApp({ identity }) {
       vendorMenuTabRef.current = '';
     }
   }, [vendorMenuPubkey, activeTab]);
+  // A saved product link (?product=&vendor=) resolves on boot and opens its
+  // checkout over the Menus pane (the explore tab's own shop section — the
+  // value name is the engineering key; the label the user reads is Menus).
+  // The checkout renders inside Menus, so this shell follows the checkout
+  // product the link sets. The move rides the store subscription: a Buy tap
+  // opens the checkout on a tab that already shows the menu, and closing
+  // one never moves the shell.
+  useEffect(() => {
+    return useChatStore.subscribe((state, previous) => {
+      const id = state.checkoutProduct?.id || null;
+      if (id && id !== (previous?.checkoutProduct?.id || null)) {
+        setExploreMode('shop');
+        setActiveTab('explore');
+      }
+    });
+  }, [setActiveTab]);
   useEffect(() => {
     // New accounts get the walkthrough once, and land on the Menus tab —
     // browsing the network's vendors is the front door. Presentation only:
@@ -94,6 +129,13 @@ export default function AuthenticatedApp({ identity }) {
       <DeadDropModal identity={identity} />
       <GlobalDialog />
       <CallOverlay />
+      <CommandPalette
+        open={paletteOpen}
+        onClose={() => setPaletteOpen(false)}
+        onOpenChat={openChatFromPalette}
+        onNavigateTab={setActiveTab}
+        activeTab={activeTab}
+      />
 
       <main className="relative z-fab h-[100dvh] w-full max-w-md overflow-hidden md:w-auto md:max-w-none md:flex-1">
         <div className={`absolute inset-0 md:left-[72px] ${activeTab === 'chat' ? '' : 'invisible pointer-events-none'}`}>
@@ -133,21 +175,15 @@ export default function AuthenticatedApp({ identity }) {
         )}
       </main>
 
-      <nav aria-label="Tabs" className="fixed bottom-0 left-0 top-0 z-fab hidden w-[72px] flex-col items-center gap-3 border-r border-line bg-panelStrong pt-4 md:flex">
-        <button onClick={() => setActiveTab('chat')} className={`relative flex w-16 flex-col items-center gap-1 rounded-2xl p-2 min-h-[52px] ${activeTab === 'chat' ? 'text-accent' : 'text-ink/40 hover:text-ink/60'}`}>
-          <MessageSquare size={22} strokeWidth={activeTab === 'chat' ? 2.5 : 2} />
-          {unreadTotal > 0 && <span className="absolute right-2 top-0 flex h-[16px] min-w-[16px] items-center justify-center rounded-full bg-accent px-1.5 text-[10px] font-bold text-accentInk">{unreadTotal > 99 ? '99+' : unreadTotal}</span>}
-          <span className="text-[10px] font-medium">Chats</span>
-        </button>
-        <button onClick={() => setActiveTab('explore')} className={`flex w-16 flex-col items-center gap-1 rounded-2xl p-2 min-h-[52px] ${activeTab === 'explore' ? 'text-accent' : 'text-ink/40 hover:text-ink/60'}`}>
-          <Compass size={22} strokeWidth={activeTab === 'explore' ? 2.5 : 2} />
-          <span className="text-[10px] font-medium">Menus</span>
-        </button>
-        <button onClick={() => setActiveTab('profile')} className={`relative flex w-16 flex-col items-center gap-1 rounded-2xl p-2 min-h-[52px] ${activeTab === 'profile' ? 'text-accent' : 'text-ink/40 hover:text-ink/60'}`}>
-          <User size={22} strokeWidth={activeTab === 'profile' ? 2.5 : 2} />
-          <span className="text-[10px] font-medium">Profile</span>
-        </button>
-      </nav>
+      <Rail
+        label="Tabs"
+        activeId={activeTab}
+        items={[
+          { id: 'chat', label: 'Chats', icon: MessageSquare, badge: unreadTotal, onSelect: () => setActiveTab('chat') },
+          { id: 'explore', label: 'Menus', icon: Compass, onSelect: () => setActiveTab('explore') },
+          { id: 'profile', label: 'Profile', icon: User, onSelect: () => setActiveTab('profile') },
+        ]}
+      />
     </div>
   );
 }

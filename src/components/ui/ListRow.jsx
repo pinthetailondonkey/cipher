@@ -1,7 +1,14 @@
+import { createElement, isValidElement } from 'react'
+
 // The 64px list row: 40px leading slot, 15px semibold title, 13px muted
 // subtitle, 11px subtle meta on the right, trailing slot for badge or kebab.
 // Renders a button when wired to a handler, a plain row otherwise.
 // `icon` is the component form of `leading` (icon={User} renders size 20).
+// Lucide icons are forwardRef objects, not functions, so a component is
+// detected by render callable, and only a real element may sit in JSX.
+const isComponent = (value) =>
+  typeof value === 'function' ||
+  (value != null && typeof value === 'object' && typeof value.render === 'function')
 export default function ListRow({
   leading = null,
   icon = null,
@@ -13,16 +20,16 @@ export default function ListRow({
   label,
   className = '',
 }) {
-  const lead = leading ?? (typeof icon === 'function' ? <icon size={20} aria-hidden="true" className="text-inkMuted" /> : icon);
+  const lead = leading ?? (isComponent(icon) ? createElement(icon, { size: 20, 'aria-hidden': 'true', className: 'text-inkMuted' }) : null)
   const body = (
     <>
-      {lead && typeof lead === 'object' ? <span className="shrink-0">{lead}</span> : lead}
+      {isValidElement(lead) && <span className="shrink-0">{lead}</span>}
       <span className="min-w-0 flex-1">
         <span className="block truncate text-[15px] font-semibold text-ink">{title}</span>
         {subtitle && <span className="mt-0.5 block truncate text-[13px] text-inkMuted">{subtitle}</span>}
       </span>
       {meta && <span className="shrink-0 text-[11px] text-inkSubtle">{meta}</span>}
-      {trailing && <span className="shrink-0">{trailing}</span>}
+      {isValidElement(trailing) && <span className="shrink-0">{trailing}</span>}
     </>
   );
 

@@ -181,7 +181,9 @@ test.describe('Persistence', () => {
     // Reload page and wait for the app shell, then require the rows both in
     // IndexedDB and in the app's read path.
     await page.reload();
-    await page.locator('nav').last().waitFor();
+    // The rail rides md+ now; the shell's own menu button is the phone
+    // landmark the reload reached past the lock.
+    await page.getByRole('button', { name: 'Open menu' }).waitFor();
 
     const reloaded = await readStoredMessage(page, { dbName, msgId: testMessage.id });
     expect(reloaded.msg, 'row survived the reload in IndexedDB').toBeDefined();
@@ -335,7 +337,9 @@ test('with the vault locked the app renders without crashing', async ({ page }) 
     sessionStorage.setItem('cipher_session_sk', JSON.stringify(Array(32).fill(170)));
   });
   await page.reload();
-  await page.locator('nav').last().waitFor();
+  // The rail rides md+ now; at phone width the shell's own menu button is
+  // the mounted landmark.
+  await page.getByRole('button', { name: 'Open menu' }).waitFor();
 
   // Dexie creates the database file lazily — wait for the app to open it.
   const deadline = Date.now() + 10_000;

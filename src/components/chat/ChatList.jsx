@@ -352,6 +352,12 @@ export default function ChatList({ onOpenChat, onRefresh }) {
     }
   };
 
+  // The early screens (loading skeleton, empty state) render BELOW the
+  // header, not instead of it: the header carries the drawer, bookmarks,
+  // notifications, QR, refresh and search doors, and an empty list is the
+  // moment a new account needs those doors most. Regression: the empty
+  // return used to sit above the header render, which stranded those
+  // buttons on exactly the screen where they matter.
   const dmList = Object.entries(dms).map(([pubkey, msgs]) => {
     const profile = profiles[pubkey];
     const safeProfile = (profile && profile.name && !/^[0-9a-f]{8,64}$/i.test(profile.name))
@@ -403,26 +409,6 @@ export default function ChatList({ onOpenChat, onRefresh }) {
   const nameOf = (chat) => (chat.type === 'dm'
     ? chat.profile.displayName
     : (chat.group.name && !chat.group.name.startsWith('Group ') ? chat.group.name : 'Unnamed Group'));
-
-  if (loading) {
-    return (
-      <div className="px-4 pb-4">
-        <SkeletonList rows={6} />
-      </div>
-    );
-  }
-
-  if (allChats.length === 0) {
-    return (
-      <div className="px-4 pb-4">
-        <EmptyState
-          icon={<MessageSquare size={24} />}
-          title="No chats yet — your first message starts the cipher"
-          action={<Button size="md" onClick={() => setView('search')}>New chat</Button>}
-        />
-      </div>
-    );
-  }
 
   const needle = query.trim().toLowerCase();
   const active = allChats.filter(c => !archivedChats.includes(c.id));
@@ -479,10 +465,9 @@ export default function ChatList({ onOpenChat, onRefresh }) {
   const pinnedRows = shownChats.filter(c => pinnedChats.includes(c.id));
   const regularRows = shownChats.filter(c => !pinnedChats.includes(c.id));
 
-  return (
-    <div className="px-4 pb-4">
-      {/* Header row: logo chip + title left, filter and kebab right. */}
-      <div className="mb-2 flex items-center justify-between gap-2 pt-3 md:px-3">
+  const listHeader = (
+    /* Header row: logo chip + title left, filter and kebab right. */
+    <div className="mb-2 flex items-center justify-between gap-2 pt-3 md:px-3">
         <div className="flex min-w-0 items-center gap-2">
           <Logo size={20} />
           <h2 className="text-xl font-bold tracking-tight text-ink">Chats</h2>
@@ -517,7 +502,7 @@ export default function ChatList({ onOpenChat, onRefresh }) {
             />
             <IconButton
               icon={<Bookmark size={20} />}
-              label="Bookmarks"
+              label="Saved messages"
               onClick={() => setShowBookmarks(true)}
             />
             <span className="relative">
@@ -587,6 +572,39 @@ export default function ChatList({ onOpenChat, onRefresh }) {
           </div>
         )}
       </div>
+  );
+
+  // The early screens (loading skeleton, empty state) render the header
+  // ABOVE their body, not instead of it: the header carries the drawer,
+  // bookmarks, notifications, QR, refresh and search doors, and an empty
+  // list is the moment a new account needs those doors most. Regression:
+  // the empty return used to sit above the header render, which stranded
+  // those buttons on exactly the screen where they matter.
+  if (loading) {
+    return (
+      <div className="px-4 pb-4">
+        {listHeader}
+        <SkeletonList rows={6} />
+      </div>
+    );
+  }
+
+  if (allChats.length === 0) {
+    return (
+      <div className="px-4 pb-4">
+        {listHeader}
+        <EmptyState
+          icon={<MessageSquare size={24} />}
+          title="No chats yet — your first message starts the cipher"
+          action={<Button size="md" onClick={() => setView('search')}>New chat</Button>}
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div className="px-4 pb-4">
+      {listHeader}
 
       <Segmented options={SEGMENTS} value={segment} onChange={setSegment} ariaLabel="Filter chats" className="mb-2" />
 

@@ -85,9 +85,11 @@ test.describe('Sheet-class a11y on the boot flow', () => {
   }
 
   test('New group sheet: dialog role, aria-modal, Escape closes', async ({ page }) => {
-    const fab = page.getByRole('button', { name: 'Open actions menu' });
-    await expect(fab).toBeVisible();
-    await fab.click();
+    // The floating actions FAB became the list header's kebab menu in the
+    // rebuild fold; the sheet under test is unchanged.
+    const kebab = page.getByRole('button', { name: 'Chat list menu' });
+    await expect(kebab).toBeVisible();
+    await kebab.click();
     await page.getByRole('button', { name: 'New Group' }).click();
     const dialog = page.getByRole('dialog');
     await expect(dialog).toBeVisible();

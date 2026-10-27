@@ -15,6 +15,7 @@ import { flushSecuringGroupSends } from '../../hooks/useNIP29Group';
 import { bindMemberBaselinePublisher, sealMemberBaseline } from '../../lib/crypto/memberBaseline';
 import { sortMessages } from './media';
 import { rowExpired } from '../../lib/disappearing';
+import { listingFromEvent, vendorListingFilter } from '../../lib/listing';
 import { activeUrl, entryById } from '../../lib/egress';
 import { isNativeShell, registerWithGateway, subscribeBrowser, subscribeNative } from '../../lib/pushGateway';
 
@@ -38,6 +39,7 @@ export function useChatBootstrap({
   const setDms = useChatStore((s) => s.setDms);
   const setProfiles = useChatStore((s) => s.setProfiles);
   const setLoading = useChatStore((s) => s.setLoading);
+  const loading = useChatStore((s) => s.loading);
   const setReactions = useChatStore((s) => s.setReactions);
   const setDeletedMsgs = useChatStore((s) => s.setDeletedMsgs);
   const setUnreadCounts = useChatStore((s) => s.setUnreadCounts);
@@ -515,13 +517,18 @@ export function useChatBootstrap({
     // Link shapes (user-specified): /note#<fragment> opens a burn note — the
     // fragment is the key, never sent to any server. /<groupid> joins a group,
     // same as the older ?g= / ?group= / ?join= shapes which keep working.
+    // ?product=&vendor= is a shared shop card: the listing id and the vendor
+    // that published it, copied by the Menus screen's link button.
     const path = window.location.pathname;
     const pathGroup = path.match(/^\/([0-9a-f]{64})\/?$/)?.[1] || null;
     const pathNote = path === '/note' || path === '/note/' ? window.location.hash.slice(1) : null;
     const directId = urlParams.get('g') || urlParams.get('group') || urlParams.get('join') || pathGroup;
     const naddr = urlParams.get('naddr');
     const noteFragment = pathNote;
-    if ((!directId && !naddr && !noteFragment) || !identity?.pk) return undefined;
+    const productParam = urlParams.get('product');
+    const vendorParam = urlParams.get('vendor');
+    const linkedProduct = !!productParam && !!vendorParam;
+    if ((!directId && !naddr && !noteFragment && !linkedProduct) || !identity?.pk) return undefined;
     let cancelled = false;
     (async () => {
       if (noteFragment) {
@@ -538,6 +545,38 @@ export function useChatBootstrap({
         } finally {
           // The link has done its one job; clean the address bar either way.
           window.history.replaceState(null, '', '/');
+        }
+        return;
+      }
+      if (linkedProduct) {
+        // The link names one listing this vendor published. The read is the
+        // storefront's own vendor-listing filter, shared through
+        // lib/listing.js; the id answers only against rows fetched under
+        // that vendor's key, so a link cannot aim another vendor's listing.
+        const miss = () => {
+          // The miss lands on the vendor's shop, not nowhere: their listings
+          // are at least reachable where the dead link was handed over.
+          if (/^[0-9a-f]{64}$/.test(String(vendorParam))) useChatStore.getState().setVendorStorefrontPubkey(vendorParam);
+        };
+        try {
+          const pool = await getAuthenticatedPool(identity);
+          const events = await queryWithTimeout(pool, generalRelays, vendorListingFilter(vendorParam));
+          if (cancelled) return;
+          const listing = events.map(listingFromEvent).find((row) => String(row.id) === String(productParam));
+          if (listing) {
+            useChatStore.getState().setCheckoutProduct(listing);
+          } else {
+            useChatStore.getState().setToast({ type: 'error', message: 'That product is no longer listed.' });
+            miss();
+          }
+        } catch (error) {
+          console.error('[product link] Could not load the listing:', error);
+          useChatStore.getState().setToast({ type: 'error', message: 'That product is no longer listed.' });
+          miss();
+        } finally {
+          // The link has done its one job; clean the address bar either way,
+          // the way the group join drops the search params when it lands.
+          if (window.location.search.length > 0) window.history.replaceState({}, document.title, window.location.pathname);
         }
         return;
       }
@@ -571,5 +610,45 @@ export function useChatBootstrap({
     })();
     return () => { cancelled = true; };
   }, [identity?.pk]);
+  // A shared chat link (?chat=<pubkey>) is resolved after the history fetch
+  // lands (master §2): the store's own openChat sets the view, and the read
+  // marker moves the way tapping the row would. The link has done its one
+  // job afterwards, so the search params drop from the address bar — the
+  // way the group join lands. Hex keys and npubs both resolve.
+  useEffect(() => {
+    if (loading || !identity?.pk) return undefined;
+    const urlParams = new URLSearchParams(window.location.search);
+    const chatParam = urlParams.get('chat');
+    if (!chatParam) return undefined;
+    let cancelled = false;
+    (async () => {
+      let peer = '';
+      if (/^[0-9a-f]{64}$/i.test(chatParam)) {
+        peer = chatParam.toLowerCase();
+      } else if (chatParam.startsWith('npub1')) {
+        try {
+          const { nip19 } = await import('nostr-tools');
+          const decoded = nip19.decode(chatParam);
+          if (decoded.type === 'npub') {
+            const data = decoded.data;
+            peer = typeof data === 'string' ? data : Array.from(data).map((byte) => byte.toString(16).padStart(2, '0')).join('');
+          }
+        } catch (error) {
+          console.warn('[chat link] Could not read the address:', error);
+        }
+      }
+      if (!peer || cancelled || peer === identity.pk) return;
+      try {
+        await db.chatReads.put({ chatId: peer, lastRead: Math.floor(Date.now() / 1000) });
+        setUnreadCounts((prev) => ({ ...prev, [peer]: 0 }));
+      } catch {}
+      useChatStore.getState().openChat('dm', peer);
+      if (window.location.search.length > 0) {
+        window.history.replaceState({}, document.title, window.location.pathname + window.location.hash);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [loading, identity?.pk]);
+
   return { fetchChats };
 }

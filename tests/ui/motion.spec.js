@@ -2,6 +2,11 @@ import { test, expect } from '@playwright/test';
 import { seedVault } from './fixtures.js';
 
 test.describe('Motion and accessibility', () => {
+  // The icon rail is the mounted nav the checks sample, and it shows only at
+  // md+ in the rebuild; the assertions read at any width, so the viewport
+  // goes desktop-sized for the rail to be visible.
+  test.use({ viewport: { width: 1440, height: 900 } });
+
   test.beforeEach(async ({ page }) => {
     await page.addInitScript(seedVault);
   });

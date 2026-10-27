@@ -28,10 +28,10 @@ function messagePayload(message) {
   }
 }
 
-// Telegram's GroupInfo, on a Sheet. The component stays mount-safe for the
-// future md+ docked pane: it renders into ui/Sheet and owns no layout of
-// its own beyond the scroll body. Not a banner anywhere — starts right at
-// the identity row. Every handler below is the pre-existing one.
+// Telegram's GroupInfo. Below md it walks on a Sheet; md+ docks it beside
+// the thread as a `docked` pane — same body, different shell. The component
+// owns no layout of its own beyond the scroll body. Not a banner anywhere —
+// starts right at the identity row. Every handler below is the pre-existing one.
 function MemberRowAvatar({ profile, pubkey, name, size = 40, className = '' }) {
   return (
     <Avatar
@@ -127,6 +127,7 @@ function MemberSheet({
 export default function GroupInfoSidebar({
   isOpen,
   onClose,
+  docked = false,
   identity,
   fetchGroupMembers,
   fetchPinnedMessage,
@@ -346,13 +347,8 @@ export default function GroupInfoSidebar({
     </button>
   );
 
-  return (
-    <Sheet
-      open={isOpen && Boolean(group)}
-      onClose={onClose}
-      stretch={false}
-      ariaLabel={`${group?.name || 'Group'} information`}
-    >
+  const body = (
+    <>
       {/* The identity row. Name carries the 22px scale, the count is a chip. */}
       <div className="flex items-center gap-3 px-4 pb-3 pt-2">
         <Avatar src={group?.picture} name={group?.name || 'Group'} size={44} />
@@ -486,6 +482,32 @@ export default function GroupInfoSidebar({
           onKick={kick}
         />
       )}
+    </>
+  );
+
+  // md+ docks the pane beside the thread instead of a Sheet, the same right
+  // pane the stack splits Chat into; the body above is unchanged either way.
+  if (docked && isOpen) {
+    return (
+      <aside
+        aria-label={`${group?.name || 'Group'} information`}
+        className="hidden h-full min-h-0 w-[340px] flex-none flex-col overflow-y-auto border-l border-line bg-panel md:flex"
+      >
+        <div className="pb-4 pt-3">{body}</div>
+      </aside>
+    );
+  }
+
+  if (!isOpen) return null;
+
+  return (
+    <Sheet
+      open={isOpen && Boolean(group)}
+      onClose={onClose}
+      stretch={false}
+      ariaLabel={`${group?.name || 'Group'} information`}
+    >
+      {body}
     </Sheet>
   );
 }

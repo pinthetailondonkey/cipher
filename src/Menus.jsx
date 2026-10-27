@@ -68,7 +68,13 @@ export default function Menus({ identity, setActiveTab }) {
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [checkoutProduct, setCheckoutProduct] = useState(null);
+  // Checkout lives in the chat store, not component state (fold from the
+  // desktop lane's Shop change): a saved product link (?product=&vendor=)
+  // sets it on boot, before this screen mounts, and the same field still
+  // holds the screen's own Buy taps. The store is presentation-only state
+  // here; no §0 selector was renamed.
+  const checkoutProduct = useChatStore((s) => s.checkoutProduct);
+  const setCheckoutProduct = useChatStore((s) => s.setCheckoutProduct);
   const profiles = useChatStore((state) => state.profiles);
   const { sendDM } = useNIP44DM({ identity });
 

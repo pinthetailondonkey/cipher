@@ -7,8 +7,10 @@ import { test, expect } from '@playwright/test';
 
 test.describe('Lock screen keypad', () => {
   test.beforeEach(async ({ page }) => {
-    // No seedVault here: with no vault on the device the app boots to the
-    // lock screen's create flow, where the keypad lives (§10).
+    // No seedVault here, but the create flow re-dressed the keypad away into
+    // a typed PIN box (PR10); the keypad itself lives on the unlock screen.
+    // A marker vault routes the boot there — locked, same floor.
+    await page.addInitScript(() => { localStorage.setItem('cipher_vault', 'x'); });
     await page.goto('/');
     await page.waitForTimeout(1500);
   });
@@ -42,7 +44,9 @@ test.describe('Lock screen keypad', () => {
       .toBe(1);
 
     await pad.getByRole('button', { name: 'Erase last digit' }).click();
-    await pad.getByRole('button', { name: 'Erase last digit' }).click(); // erasing empty is a no-op, must not throw
+    // Erasing empty re-dressed into a disabled-off key (PR10) — same no-op
+    // promise, the button simply sits disabled with nothing to take.
+    await expect(pad.getByRole('button', { name: 'Erase last digit' })).toBeDisabled();
     await expect
       .poll(() => dots.evaluateAll((els) => els.filter((el) => el.dataset.filled === 'true').length))
       .toBe(0);

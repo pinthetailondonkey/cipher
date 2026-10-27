@@ -21,6 +21,7 @@ export default function Sheet({
   labelledBy,
   label = null,
   ariaLabel = null,
+  closeLabel = 'Close',
   className = '',
   bodyClassName = '',
 }) {
@@ -106,7 +107,7 @@ export default function Sheet({
                 <button
                   type="button"
                   onClick={onClose}
-                  aria-label="Close"
+                  aria-label={closeLabel}
                   className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-full text-inkMuted hover:bg-ink/5 hover:text-ink"
                 >
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">

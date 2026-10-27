@@ -41,22 +41,24 @@ export default function Keypad({
 
   return (
     <div className="flex w-full flex-col items-center gap-6">
-      <motion.div
-        aria-label={`PIN entry, ${value.length} of ${maxLength} digits`}
-        animate={shake ? { x: [0, -12, 12, -8, 8, -3, 0] } : { x: 0 }}
-        transition={{ duration: 0.45 }}
-        key={shake}
-        className="flex items-center gap-3"
-      >
-        {Array.from({ length: maxLength }, (_, i) => (
-          <span
-            key={i}
-            aria-hidden="true"
-            className={`h-3 w-3 rounded-full transition-colors ${i < value.length ? 'bg-accent' : 'bg-ink/15'}`}
-          />
-        ))}
+      <motion.div animate={shake ? { x: [0, -12, 12, -8, 8, -3, 0] } : { x: 0 }} transition={{ duration: 0.45 }} key={shake}>
+        {/* The dot row answers as a named group with one marked dot per slot,
+            so readers and the lock-screen spec can count PIN fills (§10). */}
+        <div role="group" aria-label="PIN digits entered" className="flex items-center gap-3">
+          {Array.from({ length: maxLength }, (_, i) => (
+            <span
+              key={i}
+              data-dot=""
+              data-filled={i < value.length ? 'true' : 'false'}
+              aria-hidden="true"
+              className={`h-3 w-3 rounded-full transition-colors ${i < value.length ? 'bg-accent' : 'bg-ink/15'}`}
+            />
+          ))}
+        </div>
       </motion.div>
-      <div className="grid grid-cols-3 gap-x-5 gap-y-3">
+      {/* The pad itself is a named group — the spec walks its buttons by name,
+          so keys keep digit and erase labels no matter the re-dress. */}
+      <div role="group" aria-label="Number pad" className="grid grid-cols-3 gap-x-5 gap-y-3">
         {KEYS.map((digit) => (
           <button key={digit} type="button" onClick={() => press(digit)} disabled={disabled} className={keyClass}>
             {digit}
@@ -76,7 +78,7 @@ export default function Keypad({
           <span aria-hidden="true" className="h-16 w-16" />
         )}
         <button type="button" onClick={() => press('0')} disabled={disabled} className={keyClass}>0</button>
-        <button type="button" onClick={erase} disabled={disabled || value.length === 0} aria-label="Erase" className={`flex h-16 w-16 items-center justify-center rounded-full text-inkMuted active:bg-ink/10 disabled:opacity-40 ${pressable}`}>
+        <button type="button" onClick={erase} disabled={disabled || value.length === 0} aria-label="Erase last digit" className={`flex h-16 w-16 items-center justify-center rounded-full text-inkMuted active:bg-ink/10 disabled:opacity-40 ${pressable}`}>
           <Delete size={22} aria-hidden="true" />
         </button>
       </div>
