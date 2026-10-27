@@ -28,7 +28,7 @@ export default function BroadcastModal({ isOpen, onClose, product, groups = [], 
   };
 
   return (
-    <div className="fixed inset-0 z-[950] flex items-center justify-center bg-scrim/80 p-4" role="presentation">
+    <div className="fixed inset-0 z-sheet flex items-center justify-center bg-scrim/80 p-4" role="presentation">
       <section role="dialog" aria-modal="true" aria-label="Broadcast product" className="w-full max-w-sm rounded-3xl border border-line bg-panel p-5">
         <header className="mb-4 flex items-center gap-3">
           <Radio size={19} className="text-accentText" />

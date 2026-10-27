@@ -28,7 +28,7 @@ export default function CreateGroupModal({ isOpen, onClose, createGroup }) {
   };
 
   return (
-    <div className="fixed inset-0 z-[999] flex items-end justify-center bg-scrim/80 p-0 sm:items-center sm:p-4" role="presentation" onMouseDown={(event) => {
+    <div className="fixed inset-0 z-sheet flex items-end justify-center bg-scrim/80 p-0 sm:items-center sm:p-4" role="presentation" onMouseDown={(event) => {
       if (event.target === event.currentTarget) onClose();
     }}>
       <form onSubmit={submit} role="dialog" aria-modal="true" aria-labelledby="create-group-title" className="max-h-[calc(100dvh-env(safe-area-inset-top)-0.5rem)] w-full max-w-md overflow-y-auto rounded-t-3xl border border-line bg-panel p-5 pb-safe shadow-lg sm:rounded-3xl sm:p-6">

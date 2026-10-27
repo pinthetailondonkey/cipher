@@ -33,6 +33,13 @@ module.exports = {
       },
       fontFamily: {
         sans: ['Inter', 'system-ui', 'sans-serif'],
+      },
+      zIndex: {
+        // Layer tokens live in one place: the CSS variables in src/index.css.
+        fab: 'var(--z-fab)',
+        sheet: 'var(--z-sheet)',
+        call: 'var(--z-call)',
+        toast: 'var(--z-toast)',
       }
     },
   },

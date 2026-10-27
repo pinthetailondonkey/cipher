@@ -35,7 +35,7 @@ export default function OneTapCheckout({ product, onConfirmOrder, onClose }) {
   };
 
   return (
-    <div className="fixed inset-0 z-[999] flex items-center justify-center bg-scrim/80 p-4" role="dialog" aria-modal="true" aria-label="Checkout">
+    <div className="fixed inset-0 z-sheet flex items-center justify-center bg-scrim/80 p-4" role="dialog" aria-modal="true" aria-label="Checkout">
       <div className="max-h-[90vh] w-full max-w-sm overflow-y-auto rounded-3xl border border-line bg-panel p-6">
         <div className="mb-4 flex items-center justify-between">
           <div>

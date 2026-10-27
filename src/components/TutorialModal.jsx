@@ -50,7 +50,7 @@ export default function TutorialModal({ isOpen, onClose }) {
     <AnimatePresence>
       <motion.div 
         initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-        className="fixed inset-0 z-[999] flex items-center justify-center bg-scrim/80 p-6"
+        className="fixed inset-0 z-sheet flex items-center justify-center bg-scrim/80 p-6"
       >
         <motion.div 
           key={currentStep}

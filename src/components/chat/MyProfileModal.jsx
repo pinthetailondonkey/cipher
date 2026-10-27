@@ -33,7 +33,7 @@ export default function MyProfileModal({ identity }) {
   const name = noHexName(profile, identity?.pk);
 
   return (
-    <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-scrim/70 p-4" role="presentation" onMouseDown={(event) => {
+    <div className="fixed inset-0 z-sheet flex items-center justify-center bg-scrim/70 p-4" role="presentation" onMouseDown={(event) => {
       if (event.target === event.currentTarget) setShowMyProfile(false);
     }}>
       <section role="dialog" aria-modal="true" aria-label="My profile" className="relative w-full max-w-sm rounded-3xl border border-line bg-panel p-6">

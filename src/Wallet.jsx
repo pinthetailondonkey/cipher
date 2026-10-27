@@ -1,8 +1,8 @@
-import { lazy, Suspense, useState, useEffect, useLayoutEffect } from 'react'
+import { lazy, Suspense, useState, useEffect } from 'react'
 import {
   User, Plus, AlertCircle, RefreshCw,
   Lock, ChevronRight, ArrowLeft, Copy, CreditCard, Camera,
-  BarChart3, Package, KeyRound, Menu, ShieldAlert, Users, SlidersHorizontal, Shield, BookOpen, Moon
+  BarChart3, Package, KeyRound, Menu, ShieldAlert, Users, SlidersHorizontal, Shield, BookOpen
 } from 'lucide-react'
 import { uploadToBlossom } from '@nostr-wot/blossom'
 import { useProfiles, updateProfileCache } from './useProfiles'
@@ -28,35 +28,6 @@ import { blossomServers } from './lib/egress';
 
 const VendorDashboard = lazy(() => import('./components/chat/VendorDashboard'));
 const ProfileEditor = lazy(() => import('./components/chat/ProfileEditor'));
-
-// Two modes, one switch. The key is cipher_theme — the same key the old
-// theme registry wrote — but with exactly two values now: 'dark' (default)
-// and 'light'. Old registry values still saved on existing installs are
-// orphaned and coerced here: 'paper' meant the light skin, everything else
-// ('vault', 'lobby', 'chromerooms') meant dark.
-const THEME_KEY = 'cipher_theme';
-
-function readTheme() {
-  try {
-    const saved = globalThis.localStorage?.getItem(THEME_KEY);
-    if (saved === 'paper') return 'light';
-    return 'dark';
-  } catch {
-    return 'dark';
-  }
-}
-
-function writeTheme(mode) {
-  try {
-    globalThis.localStorage?.setItem(THEME_KEY, mode);
-  } catch { /* private mode */ }
-  return mode;
-}
-
-function applyTheme(mode) {
-  document.documentElement.dataset.theme = mode === 'light' ? 'light' : '';
-  return mode;
-}
 
 export default function Wallet({ identity, onOpenChat, startView = 'main' }) {
   const isVendor = useChatStore((state) => state.isVendor);
@@ -124,13 +95,6 @@ export default function Wallet({ identity, onOpenChat, startView = 'main' }) {
   const [uploadingImage, setUploadingImage] = useState(false)
   const [copied, setCopied] = useState(false)
   const [savingAdvanced, setSavingAdvanced] = useState(false)
-
-  // The look starts before first paint of this screen: read the persisted
-  // mode and pin the attribute in a layout effect so no themed surface
-  // flashes. Old registry values coerce on read (paper -> light, rest dark).
-  const [theme, setTheme] = useState(readTheme)
-  useLayoutEffect(() => { applyTheme(theme) }, [theme])
-  const toggleTheme = () => setTheme((current) => writeTheme(current === 'light' ? 'dark' : 'light'))
 
   useEffect(() => {
     if (myProfile.name) setUsername(myProfile.name)
@@ -461,7 +425,7 @@ export default function Wallet({ identity, onOpenChat, startView = 'main' }) {
   // --- MAIN PROFILE TAB ---
   return (
     <div className="animate-fade-in overflow-y-auto h-full pb-4 pb-[env(safe-area-inset-bottom)]">
-      {status && <div className="fixed left-1/2 top-[calc(5rem+env(safe-area-inset-top))] -translate-x-1/2 md:left-auto md:right-6 md:top-6 md:translate-x-0 bg-panelStrong border border-line text-ink px-4 py-2 rounded-xl text-xs font-bold z-50 animate-fade-in">{status}</div>}
+      {status && <div className="fixed left-1/2 top-[calc(5rem+env(safe-area-inset-top))] -translate-x-1/2 md:left-auto md:right-6 md:top-6 md:translate-x-0 bg-panelStrong border border-line text-ink px-4 py-2 rounded-xl text-xs font-bold z-toast animate-fade-in">{status}</div>}
 
       {/* HEADER PROFILE CARD */}
       <div className="flex flex-col items-center px-4 pb-2 pt-3 md:pt-8">
@@ -539,16 +503,6 @@ export default function Wallet({ identity, onOpenChat, startView = 'main' }) {
         </div>
 
         <div className="overflow-hidden rounded-2xl border border-line bg-panel">
-          <button type="button" role="switch" aria-checked={theme === 'light'} aria-label="Light mode" onClick={toggleTheme} className={`flex w-full items-center gap-3 p-4 text-left ${pressable}`}>
-            <Moon size={24} className="shrink-0 text-inkSubtle" />
-            <span className="min-w-0 flex-1"><span className="block text-[15px] font-semibold text-ink">Light mode</span><span className="block text-[13px] text-inkMuted">Warm paper instead of dark. Remembered on this device.</span></span>
-            <span aria-hidden="true" className={`relative h-6 w-11 shrink-0 rounded-full transition-colors ${theme === 'light' ? 'bg-accent' : 'bg-ink/15'}`}>
-              <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-ink transition-transform ${theme === 'light' ? 'translate-x-5' : 'translate-x-0.5'}`} />
-            </span>
-          </button>
-        </div>
-
-        <div className="overflow-hidden rounded-2xl border border-line bg-panel">
           <button onClick={() => setView('message_requests')} className="flex w-full items-center gap-3 border-b border-line p-4 text-left">
             <Users size={24} className="shrink-0 text-inkSubtle" />
             <span className="min-w-0 flex-1"><span className="block text-[15px] font-semibold text-ink">Message requests</span><span className="block text-[13px] text-inkMuted">People you have not answered</span></span>
@@ -604,7 +558,7 @@ export default function Wallet({ identity, onOpenChat, startView = 'main' }) {
 
       {/* PANIC CONFIRM MODAL */}
       {showPanicConfirm && (
-        <div className="fixed inset-0 z-[999] flex items-center justify-center bg-scrim/80 p-4 animate-fade-in">
+        <div className="fixed inset-0 z-sheet flex items-center justify-center bg-scrim/80 p-4 animate-fade-in">
           <div className="bg-panel border border-line rounded-2xl w-full max-w-sm p-6">
             <h2 className="text-xl font-bold text-ink mb-2">Panic Wipe</h2>
             <p className="text-sm text-ink/70 mb-6">This will instantly destroy all local data on this device. Make sure you have saved your 12-word recovery phrase!</p>

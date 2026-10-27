@@ -331,7 +331,7 @@ export default function MessageBubble({ message, data, onAction, senderName, isP
       </div>
     </motion.article>
     {open && (
-      <div className="fixed inset-0 z-[75] flex items-end justify-center bg-scrim/70 p-3" onPointerDown={(event) => { if (event.target === event.currentTarget) setOpen(false); }}>
+      <div className="fixed inset-0 z-sheet flex items-end justify-center bg-scrim/70 p-3" onPointerDown={(event) => { if (event.target === event.currentTarget) setOpen(false); }}>
         <div className="mb-safe w-full max-w-sm rounded-3xl border border-line bg-panel p-3" onPointerDown={(event) => event.stopPropagation()}>
           <div className="mb-2 flex justify-between rounded-2xl bg-ink/5 px-2 py-2">
             {REACTION_CHOICES.map((emoji) => (
@@ -350,7 +350,7 @@ export default function MessageBubble({ message, data, onAction, senderName, isP
       </div>
     )}
       {showReactors && (
-        <div className="fixed inset-0 z-[70] flex items-end justify-center bg-scrim/60 p-4" onClick={() => setShowReactors(false)}>
+        <div className="fixed inset-0 z-sheet flex items-end justify-center bg-scrim/60 p-4" onClick={() => setShowReactors(false)}>
           <div className="w-full max-w-sm rounded-2xl border border-line bg-panel p-4" onClick={(event) => event.stopPropagation()}>
             <p className="mb-3 text-[15px] font-semibold text-ink">{showReactors}</p>
             {(grouped.get(showReactors) || []).map((person) => (
