@@ -17,7 +17,7 @@ import { distributeGroupKey, epochsToBackfill } from '../lib/crypto/groupKeyDist
 import { enqueueNostrEvent, startOutboxSync } from '../lib/outbox';
 import { groupSocketUrl } from '../lib/egress';
 import { relaysForPeer } from '../lib/dmRelays';
-import { dropSecuringSend, forgetPendingKeyRequest, queueSecuringSend, resetKeyRequest, securingSendsFor } from '../lib/crypto/groupKeyRequest';
+import { dropSecuringSend, forgetPendingKeyRequest, queueSecuringSend, rememberPendingKeyRequest, resetKeyRequest, securingSendsFor } from '../lib/crypto/groupKeyRequest';
 import { sortMessages, stampArrival } from '../features/chat/media';
 import { isJoinDenied, denyPendingJoin, dropPendingJoin, clearJoinDenial, loadPendingJoins, queuePendingJoin, withoutDenied } from '../lib/groupJoinQueue.js';
 import { allowsGroupJoins } from '../lib/privacy.js';
@@ -620,6 +620,9 @@ export function useNIP29Group({ identity }) {
       const encoded = await encodeGroupPayload({ groupId, payload, senderPubkey: identity.pk, waitForKey: true });
       if (encoded.pending) {
         if (clientId) queueSecuringSend(identity.pk, { id: clientId, groupId, payload, replyId, since: Date.now() });
+        // Drills D4: the keyless install floor opens on this record — it is
+        // the evidence that this device itself asked for the key.
+        rememberPendingKeyRequest(identity.pk, groupId);
         try {
           const reqEvent = finalizeEvent({
             kind: 9,
@@ -657,6 +660,8 @@ export function useNIP29Group({ identity }) {
   }, [identity]);
 
   const requestGroupKey = useCallback(async (groupId) => {
+    // The floor reads this record before the request even clears the relay.
+    rememberPendingKeyRequest(identity.pk, groupId);
     try {
       const ev = finalizeEvent({
         kind: 9,
