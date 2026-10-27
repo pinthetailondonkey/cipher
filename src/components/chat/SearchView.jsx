@@ -73,7 +73,7 @@ export default function SearchView({ handleSearch, joinGroupById, openChat }) {
                   </span>
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-[15px] font-semibold text-ink">{result.name || noHexName(null, result.pubkey)}</span>
-                    <span className="block truncate text-[13px] text-inkMuted">{result.type === 'group' ? 'Group' : 'Person'}</span>
+                    <span className="block truncate text-[13px] text-inkMuted">{result.type === 'group' ? (result.isChannel ? 'Menu' : 'Group') : 'Person'}</span>
                   </span>
                   <span className="ml-3 shrink-0 rounded-full bg-accent px-3 py-1.5 text-[13px] font-bold text-accentInk">
                     {result.type === 'group' ? 'Join' : 'Message'}
