@@ -126,9 +126,12 @@ export function attachmentsFor(content) {
   if (content?.type === 'image' && content.url) return { layout: 'single', items: [item(content)] };
   if (content?.type === 'audio' && content.url) return { layout: 'audio', items: [item(content)] };
   if (content?.type === 'album') {
-    const entries = Array.isArray(content.media)
-      ? content.media.filter(isPrivateMedia)
-      : (Array.isArray(content.urls) ? content.urls.filter(Boolean).map((url) => ({ url })) : []);
+    // Album entries are private-shaped or nothing (1.121 candidate, on the
+    // founder card). The old legacy path accepted a plain `urls` list, which
+    // let any group member name the hosts every viewer's browser fetches —
+    // a beacon of who is in the group and when they looked. The old
+    // `urls` shape died with pre-encryption sends; nothing legitimate lost.
+    const entries = Array.isArray(content.media) ? content.media.filter(isPrivateMedia) : [];
     if (entries.length) return { layout: 'grid', items: entries.map(item) };
   }
   return { layout: null, items: [] };
