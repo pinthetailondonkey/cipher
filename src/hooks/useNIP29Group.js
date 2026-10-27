@@ -13,6 +13,7 @@ import { getAllGroupKeys, getCurrentGroupKey, putGroupKey } from '../lib/crypto/
 import { authorizeGroupControl, authorizeGroupPin, authorizeMemberSnapshot, groupRelayPubkey, groupTimelinePlans, isRestrictedRelayClose, pickMemberSnapshot, pinnedMessageOf, trustedGroupCreator } from '../lib/crypto/groupMembership';
 import { grantKeyRequest, loadMemberSnapshot, loadMemberSnapshotRecord, memberKey, patchMemberSnapshot, rememberMembers, rotateGroupEpoch } from '../lib/crypto/groupKeyRotation';
 import { generateGroupKey } from '../lib/crypto/groupCipher';
+import { heldGroupRow } from '../lib/groupJoin';
 import { distributeGroupKey, epochsToBackfill } from '../lib/crypto/groupKeyDistribution';
 import { enqueueNostrEvent, startOutboxSync } from '../lib/outbox';
 import { groupSocketUrl } from '../lib/egress';
@@ -123,14 +124,18 @@ export function parseGroupReference(value) {
   return { id: raw, relays: [], author: '' };
 }
 
-async function fetchGroupMetadata(identity, groupId) {
+// Group metadata off the relays, or null when the relays hold no metadata
+// event at all for the address — the difference a deep link has to prove
+// before it organizes a group row (drill residual: a forged address used
+// to silent-join and name itself from the URL with no relay evidence).
+export async function fetchGroupMetadata(identity, groupId) {
   const pool = await getAuthenticatedPool(identity);
   const [metadata, legacy] = await Promise.all([
     queryWithTimeout(pool, groupRelays, { kinds: [39000], '#d': [groupId], limit: 10 }, 4000).catch(() => []),
     queryWithTimeout(pool, groupRelays, { kinds: [9002], '#h': [groupId], limit: 10 }, 4000).catch(() => []),
   ]);
   const latest = [...metadata, ...legacy].sort((a, b) => (b.created_at || 0) - (a.created_at || 0))[0];
-  if (!latest) return {};
+  if (!latest) return null;
   const tag = (name) => latest.tags?.find((item) => item[0] === name)?.[1] || '';
   let content = {};
   try { content = JSON.parse(latest.content || '{}'); } catch { content = {}; }
@@ -138,9 +143,12 @@ async function fetchGroupMetadata(identity, groupId) {
     name: tag('name') || content.name || content.display_name || '',
     about: tag('about') || content.about || '',
     picture: tag('picture') || content.picture || '',
-    // F3: the event author is not the creator — it is who signed the newest
-    // metadata event. Nothing here draws a creator from forgeable metadata.
+    // F3: the event author is not the creator — it is who signed the
+    // newest metadata event. Nothing here draws a creator from forgeable
+    // metadata. The author is surfaced so a name claim can be weighed
+    // where it is adopted.
     creator: '',
+    author: latest.pubkey || '',
   };
 }
 
@@ -182,7 +190,7 @@ export async function loadGroupProfile(identity, rawId, passedName = null) {
   const groupId = parsed.id;
   if (!groupId) throw new Error('Missing group id');
   let meta = {};
-  try { meta = await fetchGroupMetadata(identity, groupId); }
+  try { meta = (await fetchGroupMetadata(identity, groupId)) || {}; }
   catch (error) { console.warn('[NIP29] Group metadata lookup failed:', error); }
   const name = meta.name || (passedName && passedName !== 'Unnamed Group' ? passedName : '') || groupId.slice(0, 12);
   return {
@@ -574,11 +582,16 @@ export function useNIP29Group({ identity }) {
     const localGroups = getMyGroups(identity.pk);
     const idx = localGroups.findIndex(g => g.id === newGroup.id);
     if (idx === -1) localGroups.push(newGroup);
-    else localGroups[idx] = { ...localGroups[idx], ...newGroup };
+    // A held row is named by this device's records, not by the metadata
+    // the join/refresh arrived with (drill residual).
+    else localGroups[idx] = heldGroupRow(localGroups[idx], newGroup);
     setMyGroups(identity.pk, localGroups);
-    setGroups(prev => [newGroup, ...(prev || []).filter(g => g.id !== newGroup.id)]);
+    setGroups(prev => [
+      heldGroupRow((prev || []).find((g) => g.id === newGroup.id), newGroup),
+      ...((prev || []).filter((g) => g.id !== newGroup.id)),
+    ]);
     const active = useChatStore.getState().activeGroup;
-    if (active?.id === newGroup.id) useChatStore.getState().setActiveGroup({ ...active, ...newGroup });
+    if (active?.id === newGroup.id) useChatStore.getState().setActiveGroup(heldGroupRow(active, newGroup));
     return newGroup;
   }, [identity, setGroups]);
 

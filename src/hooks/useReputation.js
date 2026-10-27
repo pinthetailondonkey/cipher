@@ -232,7 +232,16 @@ export function useReputation({ identity }) {
         tags: [['p', targetPubkey], ['rating', String(clampRating(rating))], ['receipt', binding]],
         content: text,
       }, identity.sk);
-      await Promise.allSettled(pool.publish(generalRelays, ev));
+      // The review rides the same queue as a vouch or a rider: a publish
+      // hiccup must not lose the event. It is signed, so the outbox
+      // re-attempts it; a locally-saved-only review that nobody re-sends
+      // is a review that never lands.
+      const results = await Promise.allSettled(pool.publish(generalRelays, ev));
+      if (!results.some((result) => result.status === 'fulfilled')) {
+        await enqueueNostrEvent(ev);
+        await fetchReputation(targetPubkey);
+        return { success: true, queued: true };
+      }
       await fetchReputation(targetPubkey);
       return { success: true };
     } catch (e) {

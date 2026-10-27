@@ -520,7 +520,6 @@ export function useChatBootstrap({
     const pathNote = path === '/note' || path === '/note/' ? window.location.hash.slice(1) : null;
     const directId = urlParams.get('g') || urlParams.get('group') || urlParams.get('join') || pathGroup;
     const naddr = urlParams.get('naddr');
-    const joinName = urlParams.get('name');
     const noteFragment = pathNote;
     if ((!directId && !naddr && !noteFragment) || !identity?.pk) return undefined;
     let cancelled = false;
@@ -552,8 +551,23 @@ export function useChatBootstrap({
         }
       }
       if (!joinId || cancelled) return;
-      // Groups are open, so an invite joins directly.
-      joinGroupById(joinId, joinName);
+      // The link must point at a group the relays know, and it carries no
+      // name: a forged address used to organize a group row this device
+      // never chose and name it out of the link's URL (drill residual).
+      // The words the row gets come from the group's own standing records,
+      // same as any other join. Groups stay open, so joining still needs
+      // no approval — it does need the group to exist.
+      try {
+        const { fetchGroupMetadata } = await import('../../hooks/useNIP29Group');
+        const evidence = (await fetchGroupMetadata(identity, joinId).catch(() => null));
+        if (!evidence) {
+          useChatStore.getState().setToast({ type: 'error', message: 'No group found at that address.' });
+          return;
+        }
+      } catch (error) {
+        console.warn('[join] Link did not point at a group:', error);
+      }
+      joinGroupById(joinId);
     })();
     return () => { cancelled = true; };
   }, [identity?.pk]);
