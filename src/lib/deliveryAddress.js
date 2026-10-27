@@ -75,3 +75,33 @@ export function deliveryMisses(form) {
   }
   return misses;
 }
+
+// ————— vendor side: the sealed text read back out —————
+
+// The note text sealedNoteText wrote ({name, lines, city, region, postal,
+// country}) mapped back onto the form, then run through the SAME local
+// shape checks — the vendor validates the address locally exactly like the
+// buyer did, no third-party lookup ever. A note that holds no readable
+// address is one miss on the note itself and is never guessed into a
+// delivery. The caller decides the order of save and burn; this only reads.
+export function deliveryFromNoteText(noteText) {
+  const NOTE_MISS = 'The note did not hold a readable address.';
+  let parsed;
+  try { parsed = JSON.parse(String(noteText || '')); } catch {
+    return { form: emptyDelivery(), misses: [{ field: 'note', message: NOTE_MISS }] };
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    return { form: emptyDelivery(), misses: [{ field: 'note', message: NOTE_MISS }] };
+  }
+  const read = (value) => (typeof value === 'string' ? value : '');
+  const lines = Array.isArray(parsed.lines) ? parsed.lines : (parsed.lines ? [parsed.lines] : []);
+  const form = {
+    name: read(parsed.name),
+    street: read(lines[0]),
+    city: read(parsed.city),
+    state: read(parsed.region),
+    postalCode: read(parsed.postal),
+    country: read(parsed.country),
+  };
+  return { form, misses: deliveryMisses(form) };
+}
