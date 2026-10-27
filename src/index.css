@@ -36,6 +36,11 @@
   --glass-header: rgba(10, 10, 10, 0.75);
   --glass-shadow: rgba(0, 0, 0, 0.37);
   --hover-wash: rgba(255, 255, 255, 0.06);
+  /* Stack order tokens: no component writes a raw z-index. */
+  --z-fab: 40;
+  --z-sheet: 60;
+  --z-call: 80;
+  --z-toast: 100;
 }
 
 /* The one light set. Paper's values from history, with the directional
