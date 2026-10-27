@@ -20,7 +20,7 @@ function walk(dir, out = []) {
 // which only lands after the founder names the host. Overriding the address
 // behind a grandfathered id counts as a new row and fails the gate.
 const GRANDFATHERED_CLEARNET = new Map([
-  ['group-relay', 'wss://groups.aegispayhq.com'],
+  ['group-relay', 'wss://groups.ciphertele.com'],
   ['dm-relay', 'wss://relay.primal.net'],
   ['profile-nos', 'wss://nos.lol'],
   ['profile-damus', 'wss://relay.damus.io'],
@@ -58,7 +58,7 @@ test('every outbound host is listed, and nowhere else', () => {
     try { return new URL(url).hostname; } catch { return ''; }
   };
   const hosts = new Set(EGRESS.map((entry) => hostOf(entry.url)).filter(Boolean));
-  assert.ok(hosts.has('groups.aegispayhq.com'));
+  assert.ok(hosts.has('groups.ciphertele.com'));
   assert.ok(hosts.has('api.microlink.io'));
   assert.ok(!hosts.has('stun.l.google.com'), 'call routing is off — no stun row may return');
   const re = /(?:(?:wss?|https?):\/\/|stuns?:)[a-z0-9.-]+/gi;
@@ -79,13 +79,13 @@ test('every outbound host is listed, and nowhere else', () => {
 test('defaults work with no config, and an onion replaces only that row', () => {
   const onion = 'ws://exampleexampleexampleexampleexampleexampleexampleex.onion';
   assert.equal(isOnionUrl(onion), true);
-  assert.deepEqual(urlsFor('group', { overrides: {}, lists: {} }), ['wss://groups.aegispayhq.com']);
+  assert.deepEqual(urlsFor('group', { overrides: {}, lists: {} }), ['wss://groups.ciphertele.com']);
   assert.deepEqual(urlsFor('general', { overrides: {}, lists: {} }), ['wss://relay.primal.net']);
   assert.deepEqual(urlsFor('profile', { overrides: {}, lists: {} }).includes('wss://nos.lol'), true);
   assert.deepEqual(urlsFor('group-only', { overrides: { 'group-relay': onion }, lists: {} }), [onion]);
   assert.equal(groupRelayHttp({ overrides: { 'group-relay': onion }, lists: {} }).startsWith('http://'), true);
   assert.deepEqual(urlsFor('general', { overrides: { 'group-relay': onion }, lists: {} }), ['wss://relay.primal.net']);
-  assert.deepEqual(urlsFor('group', { torOnly: true, overrides: {}, lists: {} }), ['wss://groups.aegispayhq.com']);
+  assert.deepEqual(urlsFor('group', { torOnly: true, overrides: {}, lists: {} }), ['wss://groups.ciphertele.com']);
   assert.deepEqual(urlsFor('general', {
     overrides: { 'dm-relay': 'off' },
     lists: { dm: ['wss://inbox.example'] },
@@ -120,7 +120,7 @@ test('the network snapshot stays the same object until storage changes', () => {
     assert.notEqual(changed, first);
     assert.equal(changed.torOnly, undefined);
     assert.equal(changed.onion, undefined);
-    assert.deepEqual(urlsFor('group', changed), ['wss://groups.aegispayhq.com']);
+    assert.deepEqual(urlsFor('group', changed), ['wss://groups.ciphertele.com']);
     assert.equal(readNetworkConfig(), changed);
   } finally {
     if (previous) globalThis.localStorage = previous;

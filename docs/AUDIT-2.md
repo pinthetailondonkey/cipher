@@ -361,7 +361,7 @@ Read: `public/sw.js`, `public/manifest.json`, `index.html`, `vite.config.js`, `v
 | Host | Learns |
 |---|---|
 | Message relay (`relay.primal.net`) | Your IP. Who you message and when (kind-4 authors and `p` tags). Whether each message is a message, an order or a call (t= tags, accepted in pass 2's documentation commit). When you open a chat (read events) and when you type (typing events), as separate kind-4 events. |
-| Group relay (`groups.aegispayhq.com`) | Your IP and key (AUTH). Every group you open and its member list. Message timing and size. **Your people-search text, signed by your key (P2).** |
+| Group relay (`groups.ciphertele.com`) | Your IP and key (AUTH). Every group you open and its member list. Message timing and size. **Your people-search text, signed by your key (P2).** |
 | Media hosts (Blossom) | **The plaintext of every photo and voice note you send, linked to your key (M1).** |
 | `api.microlink.io` | **Every URL in every chat you view (P1).** |
 | Google and Twilio STUN | Your real IP during a call. Disclosed in the app. |

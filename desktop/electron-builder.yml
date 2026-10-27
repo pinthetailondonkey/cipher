@@ -1,7 +1,7 @@
 # Cipher Desktop packaging. docs/DESKTOP.md (feat/desktop-shell): the v1
 # Linux target is the portable tar.gz bundle - it runs on Tails without any
 # FUSE/AppImage machinery. deb is deliberately deferred.
-appId: com.aegispayhq.cipher
+appId: com.ciphertele.cipher
 productName: Cipher
 executableName: cipher
 # TODO: no icon yet (docs/DESKTOP.md build order step 2). electron-builder
