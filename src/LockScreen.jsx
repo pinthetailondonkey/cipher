@@ -214,22 +214,22 @@ export default function LockScreen({ identity }) {
         <h1 className="text-2xl font-bold tracking-tight text-ink mb-2 text-center">
           {mode === 'verify_key' ? 'Verify Your Recovery Key' : mode === 'save_key' ? 'Save Your Recovery Key' : mode === 'setup_profile' ? 'Your Profile' : mode === 'create' ? 'Welcome to Cipher' : mode === 'unlock' ? 'Unlock Cipher' : mode === 'restore' ? 'Restore Account' : 'Restore with Recovery Phrase'}
         </h1>
-        <p className="text-[13px] text-ink/40 text-center mb-8 max-w-[280px] leading-relaxed">
+        <p className="text-[13px] text-inkMuted text-center mb-8 max-w-[280px] leading-relaxed">
           {mode === 'verify_key' ? 'Enter the words below to confirm you saved the phrase.' : mode === 'save_key' ? 'Write down these 12 words. You need them and your PIN to recover this account. Five wrong PINs delete the copy stored on this device.' : mode === 'setup_profile' ? 'Set up your profile and start messaging.' : mode === 'create' ? `Pick a handle and a PIN (${MIN_PIN_LENGTH}+ digits).` : mode === 'unlock' ? 'Enter your PIN, or use your saved device passkey. Five wrong PINs delete this account from the device, including the encrypted recovery phrase.' : mode === 'restore' ? 'Enter your handle and PIN.' : `Enter your 12-word phrase and a new PIN (${MIN_PIN_LENGTH}+ digits).`}
         </p>
 
-        <form onSubmit={mode === 'verify_key' ? handleVerifyKey : mode === 'save_key' ? handleSaveKeyContinue : mode === 'setup_profile' ? handleFinishSetup : handleSubmit} className="w-full flex flex-col gap-4 rounded-3xl border border-line bg-panel p-6 shadow-lg">
+        <form onSubmit={mode === 'verify_key' ? handleVerifyKey : mode === 'save_key' ? handleSaveKeyContinue : mode === 'setup_profile' ? handleFinishSetup : handleSubmit} className="w-full flex flex-col gap-4 rounded-3xl border border-line bg-panel p-6">
           
           {mode === 'save_key' ? (
             <div className="space-y-6 w-full">
               <div className="grid grid-cols-3 gap-2 w-full">
                 {(savedMnemonic || '').split(' ').map((word, i) => (
-                  <div key={i} className="border border-line bg-panelStrong shadow-lg rounded-xl p-3 text-center text-[13px] text-ink font-mono">
+                  <div key={i} className="border border-line bg-panelStrong rounded-xl p-3 text-center text-[13px] text-ink font-mono">
                     {word}
                   </div>
                 ))}
               </div>
-              <label className="flex items-center gap-3 text-gray-400 text-sm cursor-pointer hover:text-ink transition-colors">
+              <label className="flex items-center gap-3 text-inkMuted text-sm cursor-pointer hover:text-ink transition-colors">
                 <div className="relative flex items-center justify-center w-5 h-5">
                   <input type="checkbox" checked={mnemonicConfirmed} onChange={(e) => setMnemonicConfirmed(e.target.checked)} className="peer appearance-none w-5 h-5 border border-ink/20 rounded-md bg-ink/5 checked:bg-accent checked:border-accent transition-colors" />
                   <Check size={14} className="absolute text-ink pointer-events-none opacity-0 peer-checked:opacity-100 transition-opacity" strokeWidth={3} />
@@ -241,17 +241,17 @@ export default function LockScreen({ identity }) {
             <>
               <div className="relative mb-4 group cursor-pointer mx-auto">
                 <div className="w-24 h-24 rounded-full bg-ink/5 border-2 border-dashed border-ink/20 flex items-center justify-center overflow-hidden transition-all group-hover:border-accent">
-                  <Picture src={avatar} alt="avatar" className="w-full h-full object-cover" fallback={<Camera size={28} className="text-gray-500 group-hover:text-accent transition-colors" />} />
+                  <Picture src={avatar} alt="avatar" className="w-full h-full object-cover" fallback={<Camera size={28} className="text-inkMuted group-hover:text-accentText transition-colors" />} />
                 </div>
                 <input type="file" accept="image/*" onChange={handleAvatarUpload} className="absolute inset-0 opacity-0 cursor-pointer" />
                 {uploadingAvatar && <div className="absolute inset-0 bg-scrim/60 flex items-center justify-center rounded-full"><RefreshCw size={20} className="animate-spin text-ink" /></div>}
               </div>
 
-              <input type="text" placeholder="Display Name (optional)" value={displayName} onChange={(e) => setDisplayName(e.target.value)} className="w-full border border-line bg-panelStrong shadow-lg rounded-2xl px-5 py-4 text-[16px] text-ink placeholder-gray-600 focus:outline-none focus:border-accent transition-colors" />
+              <input type="text" placeholder="Display Name (optional)" value={displayName} onChange={(e) => setDisplayName(e.target.value)} className="w-full border border-line bg-panelStrong rounded-2xl px-5 py-4 text-[16px] text-ink placeholder:text-inkSubtle focus:outline-none focus:border-accent transition-colors" />
 
               <div className="w-full relative">
-                <AtSign size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500" />
-                <input type="text" placeholder="username" value={username} onChange={(e) => setUsername(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ''))} className="w-full border border-line bg-panelStrong shadow-lg rounded-2xl pl-11 pr-5 py-4 text-[16px] text-ink placeholder-gray-600 focus:outline-none focus:border-accent transition-colors" />
+                <AtSign size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-inkMuted" />
+                <input type="text" placeholder="username" value={username} onChange={(e) => setUsername(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ''))} className="w-full border border-line bg-panelStrong rounded-2xl pl-11 pr-5 py-4 text-[16px] text-ink placeholder:text-inkSubtle focus:outline-none focus:border-accent transition-colors" />
               </div>
             </>
           ) : (
@@ -259,35 +259,35 @@ export default function LockScreen({ identity }) {
               {mode === 'verify_key' && (
                 <div className="space-y-3 mb-2">
                   <div className="text-center mb-4">
-                    <p className="text-sm text-gray-400">Enter words #{verifyIndices.map(i => i + 1).join(', #')} from your recovery phrase</p>
+                    <p className="text-sm text-inkMuted">Enter words #{verifyIndices.map(i => i + 1).join(', #')} from your recovery phrase</p>
                   </div>
                   {verifyIndices.map((idx, i) => (
                     <div key={idx} className="w-full relative">
-                      <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500 font-mono text-sm pointer-events-none">Word #{idx + 1}</span>
-                      <input type="text" placeholder="..." value={verifyInputs[i] || ''} onChange={(e) => { const newInputs = [...verifyInputs]; newInputs[i] = e.target.value.toLowerCase().trim(); setVerifyInputs(newInputs); setVerifyError(''); }} className="w-full border border-line bg-panelStrong shadow-lg rounded-2xl pl-24 pr-5 py-4 text-[16px] text-ink placeholder-gray-600 focus:outline-none focus:border-accent transition-colors" autoCapitalize="none" autoCorrect="off" spellCheck="false" />
+                      <span className="absolute left-4 top-1/2 -translate-y-1/2 text-inkMuted font-mono text-sm pointer-events-none">Word #{idx + 1}</span>
+                      <input type="text" placeholder="..." value={verifyInputs[i] || ''} onChange={(e) => { const newInputs = [...verifyInputs]; newInputs[i] = e.target.value.toLowerCase().trim(); setVerifyInputs(newInputs); setVerifyError(''); }} className="w-full border border-line bg-panelStrong rounded-2xl pl-24 pr-5 py-4 text-[16px] text-ink placeholder:text-inkSubtle focus:outline-none focus:border-accent transition-colors" autoCapitalize="none" autoCorrect="off" spellCheck="false" />
                     </div>
                   ))}
-                  {verifyError && <p className="text-red-500 text-xs text-center mt-2">{verifyError}</p>}
+                  {verifyError && <p className="text-danger text-xs text-center mt-2">{verifyError}</p>}
                 </div>
               )}
 
               {isMnemonicMode && (
-                <textarea placeholder="apple banana cherry ..." value={mnemonic} onChange={(e) => { setMnemonic(e.target.value); setError(''); }} className="w-full border border-line bg-panelStrong shadow-lg rounded-2xl p-5 text-[15px] text-ink placeholder-gray-600 focus:outline-none focus:border-accent transition-colors resize-none" autoCapitalize="none" autoCorrect="off" spellCheck="false" rows={4} />
+                <textarea placeholder="apple banana cherry ..." value={mnemonic} onChange={(e) => { setMnemonic(e.target.value); setError(''); }} className="w-full border border-line bg-panelStrong rounded-2xl p-5 text-[15px] text-ink placeholder:text-inkSubtle focus:outline-none focus:border-accent transition-colors resize-none" autoCapitalize="none" autoCorrect="off" spellCheck="false" rows={4} />
               )}
 
               {(mode === 'create' || mode === 'restore') && (
                 <div className="w-full relative">
-                  <AtSign size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500" />
-                  <input type="text" placeholder="yourhandle" value={handle} onChange={(e) => { setHandle(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, '')); setError(''); }} className="w-full border border-line bg-panelStrong shadow-lg rounded-2xl pl-11 pr-5 py-4 text-[16px] text-ink placeholder-gray-600 focus:outline-none focus:border-accent transition-colors" />
+                  <AtSign size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-inkMuted" />
+                  <input type="text" placeholder="yourhandle" value={handle} onChange={(e) => { setHandle(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, '')); setError(''); }} className="w-full border border-line bg-panelStrong rounded-2xl pl-11 pr-5 py-4 text-[16px] text-ink placeholder:text-inkSubtle focus:outline-none focus:border-accent transition-colors" />
                 </div>
               )}
 
               {mode !== 'verify_key' && (
-                <input type="password" placeholder={mode === 'restore_mnemonic' ? `New PIN (${MIN_PIN_LENGTH}+ digits)` : `PIN (${MIN_PIN_LENGTH}+ digits)`} value={pin} onChange={(e) => { setPin(e.target.value.replace(/\D/g, '').slice(0, 8)); setError(''); }} className="w-full border border-line bg-panelStrong shadow-lg rounded-2xl px-5 py-4 text-[16px] text-ink placeholder-gray-600 focus:outline-none focus:border-accent transition-colors" maxLength={8} />
+                <input type="password" placeholder={mode === 'restore_mnemonic' ? `New PIN (${MIN_PIN_LENGTH}+ digits)` : `PIN (${MIN_PIN_LENGTH}+ digits)`} value={pin} onChange={(e) => { setPin(e.target.value.replace(/\D/g, '').slice(0, 8)); setError(''); }} className="w-full border border-line bg-panelStrong rounded-2xl px-5 py-4 text-[16px] text-ink placeholder:text-inkSubtle focus:outline-none focus:border-accent transition-colors" maxLength={8} />
               )}
 
               {mode === 'create' && (
-                <label className="flex items-center justify-center gap-3 text-gray-400 text-sm mt-1 cursor-pointer hover:text-ink transition-colors">
+                <label className="flex items-center justify-center gap-3 text-inkMuted text-sm mt-1 cursor-pointer hover:text-ink transition-colors">
                   <div className="relative flex items-center justify-center w-5 h-5">
                     <input type="checkbox" checked={enableBio} onChange={(e) => setEnableBio(e.target.checked)} className="peer appearance-none w-5 h-5 border border-ink/20 rounded-md bg-ink/5 checked:bg-accent checked:border-accent transition-colors" />
                     <Check size={14} className="absolute text-ink pointer-events-none opacity-0 peer-checked:opacity-100 transition-opacity" strokeWidth={3} />
@@ -298,14 +298,14 @@ export default function LockScreen({ identity }) {
             </>
           )}
 
-          {error && <p className="text-red-500 text-sm text-center mt-1 mb-1 font-medium">{error}</p>}
+          {error && <p className="text-danger text-sm text-center mt-1 mb-1 font-medium">{error}</p>}
 
           {/* SOLID BLUE BUTTON - Matches Logo, No Gradient */}
           <Button type="submit" disabled={submitDisabled} className="mt-2 flex w-full items-center justify-center gap-2">
             {loading ? <RefreshCw size={20} className="animate-spin" /> : mode === 'verify_key' ? 'Verify & Continue' : mode === 'save_key' ? (mnemonicConfirmed ? 'Continue' : 'Confirm you saved it') : mode === 'setup_profile' ? 'Finish Setup' : mode === 'unlock' ? 'Unlock' : 'Continue'}
           </Button>
           {biometricNotice && mode === 'save_key' && (
-            <p role="status" className="text-center text-xs leading-relaxed text-ink/70">{biometricNotice} You can still unlock with your PIN.</p>
+            <p role="status" className="rounded-xl border border-line px-3 py-2 text-center text-xs leading-relaxed text-ink/70">{biometricNotice} You can still unlock with your PIN.</p>
           )}
         </form>
 
@@ -313,24 +313,24 @@ export default function LockScreen({ identity }) {
           {mode === 'unlock' && (
             <>
               {identity?.hasBiometric && (
-                <button type="button" onClick={handleBiometricUnlock} disabled={biometricLoading || loading} className={`flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl border border-line bg-panelStrong shadow-lg px-4 text-[15px] font-semibold text-accent active:bg-ink/10 disabled:opacity-50 ${pressable}`}>
+                <button type="button" onClick={handleBiometricUnlock} disabled={biometricLoading || loading} className={`flex min-h-[44px] w-full items-center justify-center gap-2 rounded-2xl border border-line bg-panelStrong px-4 text-[15px] font-semibold text-accentText active:bg-ink/10 disabled:opacity-50 ${pressable}`}>
                   {biometricLoading ? <RefreshCw size={17} className="animate-spin" /> : <Fingerprint size={17} />}
                   Unlock or recover with Face ID / fingerprint
                 </button>
               )}
-              <button type="button" onClick={() => { setMode('restore'); setError(''); setPin('') }} className="text-gray-500 hover:text-ink text-sm font-medium transition-colors">
+              <button type="button" onClick={() => { setMode('restore'); setError(''); setPin('') }} className="text-inkMuted hover:text-ink text-sm font-medium transition-colors">
                 Forgot PIN? Restore account
               </button>
-              {identity?.hasBiometric && !identity?.hasVault && <p className="max-w-xs text-center text-xs text-ink/35">If this device no longer has a local vault, enter a new PIN above before recovering with your saved passkey. Passkey recovery restores account access, not the 12-word phrase; keep your phrase backup safe.</p>}
+              {identity?.hasBiometric && !identity?.hasVault && <p className="max-w-xs rounded-xl border border-line px-3 py-2 text-center text-xs text-inkMuted">If this device no longer has a local vault, enter a new PIN above before recovering with your saved passkey. Passkey recovery restores account access, not the 12-word phrase; keep your phrase backup safe.</p>}
             </>
           )}
 
           {mode === 'create' && (
             <div className="flex flex-col gap-4 mt-2 w-full items-center">
-              <button type="button" onClick={() => { setMode('restore'); setError(''); setPin(''); }} className="text-gray-400 hover:text-ink text-sm font-medium transition-colors">
+              <button type="button" onClick={() => { setMode('restore'); setError(''); setPin(''); }} className="text-inkMuted hover:text-ink text-sm font-medium transition-colors">
                 Restore account on this device
               </button>
-              <button type="button" onClick={() => { setMode('restore_mnemonic'); setError(''); setPin(''); setMnemonic('') }} className="text-accent hover:text-accent text-sm font-medium transition-colors">
+              <button type="button" onClick={() => { setMode('restore_mnemonic'); setError(''); setPin(''); setMnemonic('') }} className="text-accentText hover:text-accentText text-sm font-medium transition-colors">
                 Restore with 12-word recovery phrase
               </button>
             </div>
@@ -338,17 +338,17 @@ export default function LockScreen({ identity }) {
 
           {mode === 'restore' && (
             <>
-              <button type="button" onClick={() => { setMode('restore_mnemonic'); setError(''); setPin(''); }} className="text-gray-500 hover:text-ink text-sm font-medium transition-colors flex items-center gap-1">
+              <button type="button" onClick={() => { setMode('restore_mnemonic'); setError(''); setPin(''); }} className="text-inkMuted hover:text-ink text-sm font-medium transition-colors flex items-center gap-1">
                 <KeyRound size={14} /> Use Recovery Phrase
               </button>
-              <button type="button" onClick={() => { setMode('create'); setError(''); setPin('') }} className="text-gray-500 hover:text-ink text-sm font-medium transition-colors">
+              <button type="button" onClick={() => { setMode('create'); setError(''); setPin('') }} className="text-inkMuted hover:text-ink text-sm font-medium transition-colors">
                 Create a new account instead
               </button>
             </>
           )}
 
           {mode === 'restore_mnemonic' && (
-            <button type="button" onClick={() => { setMode('restore'); setError(''); setPin(''); }} className="text-gray-500 hover:text-ink text-sm font-medium transition-colors flex items-center gap-1">
+            <button type="button" onClick={() => { setMode('restore'); setError(''); setPin(''); }} className="text-inkMuted hover:text-ink text-sm font-medium transition-colors flex items-center gap-1">
               <ChevronLeft size={14} /> Back to handle restore
             </button>
           )}
