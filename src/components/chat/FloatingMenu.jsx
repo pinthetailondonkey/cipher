@@ -27,7 +27,7 @@ export default function FloatingMenu() {
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 20, scale: 0.9 }}
               transition={{ type: "spring", stiffness: 400, damping: 25 }}
-              className="fixed right-6 bottom-[calc(6rem+env(safe-area-inset-bottom))] z-50 flex flex-col gap-3 items-end md:absolute md:right-4 md:bottom-24"
+              className="fixed right-6 bottom-[calc(10rem+env(safe-area-inset-bottom))] z-50 flex flex-col gap-3 items-end md:absolute md:right-3 md:top-16"
             >
               <button 
                 onClick={() => { setShowMenu(false); setView('search'); }} 
@@ -65,10 +65,12 @@ export default function FloatingMenu() {
         )}
       </AnimatePresence>
 
+      {/* Phone-only FAB: on desktop the + lives in the list header
+          (Telegram has no floating compose button). */}
       <motion.button
         animate={{ rotate: showMenu ? 45 : 0 }}
         onClick={() => setShowMenu(!showMenu)}
-        className={`fixed right-6 bottom-[calc(1.25rem+env(safe-area-inset-bottom))] z-50 rounded-full bg-accent p-4 text-accentInk shadow-lg active:bg-accent md:absolute md:right-4 md:bottom-6 ${pressable}`}
+        className={`fixed right-6 bottom-[calc(6rem+env(safe-area-inset-bottom))] z-50 rounded-full bg-accent p-4 text-accentInk shadow-lg active:bg-accent md:hidden ${pressable}`}
       >
         <Plus size={24} strokeWidth={2.5} />
       </motion.button>
