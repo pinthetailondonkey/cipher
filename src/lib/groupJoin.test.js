@@ -48,7 +48,12 @@ test('invite links, search, and Discover all join the same way, and nobody sends
   const bootstrap = read('../features/chat/useChatBootstrap.js');
   assert.match(discover, /await joinGroup\(identity, group\.id/);
   assert.match(directory, /await joinGroup\(identity, groupId/);
-  assert.match(bootstrap, /joinGroupById\(joinId, joinName\);/);
+  // A deep link joins only on relay evidence and carries no name: a forged
+  // address used to silent-join a phantom row named out of the URL.
+  assert.match(bootstrap, /joinGroupById\(joinId\);/);
+  assert.match(bootstrap, /No group found at that address/);
+  assert.match(bootstrap, /fetchGroupMetadata/);
+  assert.doesNotMatch(bootstrap, /get\('name'\)/);
   for (const source of [discover, directory, bootstrap]) {
     assert.equal(source.includes('join_request'), false);
     assert.equal(source.includes('requestToJoinGroup'), false);
