@@ -55,6 +55,36 @@ export function dropPendingJoin(groupId, pubkey) {
   return true;
 }
 
+// The grant path reads the queue too (drill round D1-B/D1-D). A sender
+// still holding a pending row has never been approved by anyone: a open-join
+// relay writing them into its next 39002 used to let the grant path hand
+// them a key the moment a read succeeded — the queue row outvotes the
+// roster here, exactly like the deny list already does.
+export function hasPendingJoin(groupId, pubkey) {
+  const who = String(pubkey || '').toLowerCase();
+  return Boolean(who) && pendingJoinsFor(groupId).some((row) => row.pubkey === who);
+}
+
+// The re-add contract above ("a denied sender comes back only through an
+// owner-initiated add") was unreachable — nothing cleared the deny, so an
+// owner who deliberately re-added a member still could never grant them
+// keys (drills D1-E, and it is the way back after a kick). Owner action
+// clears it; the relay's word never does.
+export function clearJoinDenial(groupId, pubkey) {
+  const id = String(groupId || '').trim();
+  const who = String(pubkey || '').toLowerCase();
+  if (!id || !HEX_PUBKEY.test(who)) return false;
+  const all = loadDenied();
+  const rows = all[id] || {};
+  if (!rows[who]) return false;
+  delete rows[who];
+  if (Object.keys(rows).length) all[id] = rows;
+  else delete all[id];
+  scopedSet(DENIED_KEY, all);
+  notifyJoinRequests();
+  return true;
+}
+
 export function notifyJoinRequests() {
   try {
     if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent(JOIN_REQUESTS_EVENT));
