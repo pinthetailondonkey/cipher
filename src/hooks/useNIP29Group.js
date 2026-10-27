@@ -21,6 +21,7 @@ import { dropSecuringSend, forgetPendingKeyRequest, queueSecuringSend, resetKeyR
 import { sortMessages, stampArrival } from '../features/chat/media';
 import { isJoinDenied, denyPendingJoin, loadPendingJoins, queuePendingJoin, withoutDenied } from '../lib/groupJoinQueue.js';
 import { allowsGroupJoins } from '../lib/privacy.js';
+import { groupMetaAnnouncement } from '../lib/groupMetaAnnouncement.js';
 
 function currentGroupRelay() {
   return groupSocketUrl() || '';
@@ -73,6 +74,32 @@ async function controlContext(groupId, identityPk) {
   };
 }
 const groupSessions = new Map();
+
+// groupId -> created_at of the newest kind-9002 this session has applied.
+// The group timeline sub replays metadata events on every resync (around
+// sends), so the announcement decision needs a floor beyond the in-memory
+// sys-<event-id> list, which the bootstrap refresh rebuilds away. Layered
+// on the group record's persisted metaAt.
+const appliedGroupMetaAt = new Map();
+
+// Announcement state for a kind-9002 that changed something: the applied
+// name/about and the created_at mark ride the group record and the scoped
+// per-account group list, so the next replay of the same event compares
+// equal and stays silent — across resyncs and across reloads.
+function rememberAppliedGroupMeta(identityPk, groupId, updates, metaAt) {
+  const payload = { ...updates, metaAt };
+  useChatStore.getState().setGroups((prev) => (Array.isArray(prev) ? prev : []).map(
+    (group) => (group.id === groupId ? { ...group, ...payload } : group),
+  ));
+  const localGroups = getMyGroups(identityPk);
+  const idx = localGroups.findIndex((group) => group.id === groupId);
+  if (idx !== -1) {
+    localGroups[idx] = { ...localGroups[idx], ...payload };
+    setMyGroups(identityPk, localGroups);
+  }
+  const active = useChatStore.getState().activeGroup;
+  if (active?.id === groupId) useChatStore.getState().setActiveGroup({ ...active, ...payload });
+}
 
 export function parseGroupReference(value) {
   const raw = String(value || '').trim();
@@ -525,7 +552,9 @@ export function useNIP29Group({ identity }) {
     } catch (e) { console.warn('[createGroup] key bootstrap deferred', e); }
 
     appendSystemMessage(groupId, 'You created the group');
-    const newGroup = { id: groupId, name, about: about || '', isChannel, creator: identity.pk, members: [identity.pk] };
+    // metaAt marks the bootstrap 9002 as the applied metadata: a replayed
+    // older or equal metadata event must not announce a fake rename.
+    const newGroup = { id: groupId, name, about: about || '', isChannel, creator: identity.pk, members: [identity.pk], metaAt: metaEv.created_at };
 
     const localGroups = getMyGroups(identity.pk);
     if (!localGroups.find(g => g.id === groupId)) {
@@ -736,13 +765,17 @@ export function useNIP29Group({ identity }) {
       content: ''
     }, identity.sk);
     await Promise.allSettled(pool.publish(groupRelays, ev));
-    setGroups(prev => prev.map(g => g.id === groupId ? { ...g, ...updates } : g));
+    // The local edit is now the applied metadata: record the mark so a
+    // replayed older 9002 can neither announce a fake change nor roll the
+    // name back. (no group AAD touched — announcement dedup only)
+    appliedGroupMetaAt.set(groupId, ev.created_at);
+    rememberAppliedGroupMeta(identity.pk, groupId, updates, ev.created_at);
     if (updates.name) appendSystemMessage(groupId, `Group name changed to "${updates.name}"`, ev.id);
     else if (updates.avatar) appendSystemMessage(groupId, 'Group photo was updated', ev.id);
     else if (updates.requireApproval !== undefined) appendSystemMessage(groupId, updates.requireApproval ? 'Joining this group now requires admin approval' : 'This group is now open to join', ev.id);
     else if (updates.about !== undefined) appendSystemMessage(groupId, 'Group description was updated', ev.id);
     return { success: true };
-  }, [identity, setGroups, appendSystemMessage]);
+  }, [identity, appendSystemMessage]);
 
   const fetchGroupMembers = useCallback(async (groupId) => {
     try {
@@ -927,10 +960,33 @@ export function useNIP29Group({ identity }) {
         return;
       }
       if (event.kind === 9002) {
-        const name = event.tags.find(t => t[0] === 'name')?.[1];
-        const about = event.tags.find(t => t[0] === 'about')?.[1];
-        if (name) appendSystemMessage(groupId, `Group name was changed to "${name}"`, event.id);
-        else if (about) appendSystemMessage(groupId, 'Group description was updated', event.id);
+        // A replayed 9002 is not a rename. The timeline sub re-delivers the
+        // group's metadata around every send, and the bootstrap refresh
+        // rebuilds groupMessages from the database (system messages are not
+        // persisted), so the sys-<event-id> dedup alone cannot hold. The
+        // announcement must compare the event against the metadata this
+        // group already carries, and a genuine change must be applied so
+        // the next replay stays silent.
+        const state = useChatStore.getState();
+        const stored = (state.groups || []).find((g) => g.id === groupId)
+          || (state.activeGroup?.id === groupId ? state.activeGroup : null);
+        const createdAt = event.created_at || 0;
+        const appliedAt = Math.max(appliedGroupMetaAt.get(groupId) || 0, stored?.metaAt || 0);
+        appliedGroupMetaAt.set(groupId, Math.max(appliedAt, createdAt));
+        const decision = groupMetaAnnouncement({
+          current: stored || {},
+          name: event.tags.find(t => t[0] === 'name')?.[1] || '',
+          about: event.tags.find(t => t[0] === 'about')?.[1] || '',
+          createdAt,
+          appliedAt,
+        });
+        if (decision) {
+          appendSystemMessage(groupId, decision.text, event.id);
+          const updates = {};
+          if (decision.name) updates.name = decision.name;
+          if (decision.about) updates.about = decision.about;
+          rememberAppliedGroupMeta(identity.pk, groupId, updates, decision.appliedAt);
+        }
         return;
       }
       // (H4, round-three re-hack: the dead second 39002 arm was deleted —
