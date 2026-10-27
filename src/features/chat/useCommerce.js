@@ -2,6 +2,8 @@ import { useChatStore } from '../../store/chatStore';
 import { db, patchMessage, saveMessage } from '../../db';
 import { scopedGet, scopedSet } from '../../lib/storage';
 import { addressSpokenFor, getOrderPaymentMethods, markConsumed, readConsumedLedger, readPaymentAddresses, txidSpokenFor } from '../../lib/vendorPayments';
+import { getAuthenticatedPool } from '../../lib/pool';
+import { generalRelays } from '../../lib/relays';
 import { ORDER_STATUS, RECEIPT_OUTCOME, acceptAmount, acceptanceDemand, amountCovers, nextPaymentState, orderCoinAmount } from '../../lib/paymentState';
 import { checkPayment } from '../../lib/paymentWatch';
 import { activeUrl, entryById } from '../../lib/egress';
@@ -69,6 +71,55 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
     return true;
   };
   const handleOrderAction = async (action, msg) => {
+    // The delivery door: open the buyer's sealed note, check the address
+    // locally, save it into the order record, and only THEN burn the
+    // transit copy (deadDrop's hold-open exists for exactly this order —
+    // burning before the save would destroy the address on a save
+    // failure). An unreadable or incomplete note saves nothing and stays
+    // openable on this device; nothing here touches encryption of the
+    // chat itself.
+    if (action === 'open_delivery_note') {
+      const noteUrl = msg.data?.delivery?.note;
+      if (!noteUrl || msg.data?.delivery?.address) {
+        setSelectedMessage(null);
+        return true;
+      }
+      const fragment = String(noteUrl).split('#')[1] || '';
+      if (!fragment) {
+        setToast({ type: 'error', message: 'That note link is broken. Nothing was saved.' });
+        setSelectedMessage(null);
+        return true;
+      }
+      try {
+        const pool = await getAuthenticatedPool(identity);
+        const [{ openDeadDropNote }, { deliveryFromNoteText, addressFromForm }] = await Promise.all([
+          import('../../lib/deadDrop'),
+          import('../../lib/deliveryAddress'),
+        ]);
+        const opened = await openDeadDropNote({ identity, fragment, pool, relays: generalRelays, hold: true });
+        const { form, misses } = deliveryFromNoteText(opened.text);
+        if (misses.length) {
+          setToast({ type: 'error', message: `${misses[0].message} Nothing was saved, and the note is still open.` });
+          setSelectedMessage(null);
+          return true;
+        }
+        const saved = await updateLocalOrder(msg.pubkey, msg.id, {
+          delivery: { note: noteUrl, address: addressFromForm(form) },
+        });
+        if (!saved) {
+          setToast({ type: 'error', message: 'The address did not save. The note is still open — try again.' });
+          return true;
+        }
+        await opened.burn();
+        setToast({ type: 'success', message: 'Address saved. The note is burned.' });
+        setSelectedMessage(null);
+        return true;
+      } catch (error) {
+        console.error('[orders] The delivery note would not open:', error);
+        setToast({ type: 'error', message: error?.message || 'The note would not open. Nothing was saved.' });
+        return true;
+      }
+    }
     if (!['accept_order', 'decline_order', 'cancel_order', 'confirm_payment', 'check_chain', 'mark_shipped', 'confirm_delivery', 'report_issue', 'mark_refunded', 'resume_order'].includes(action)) {
       return false;
     }

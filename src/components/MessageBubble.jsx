@@ -141,6 +141,27 @@ function OrderActionButton({ action, label, target, message, content, activeDm, 
   );
 }
 
+// The delivery address, read out of the buyer's burned note and saved on
+// this device. Plain rows, selectable to copy — no third-party lookup,
+// no map, no autocomplete ever. The words stay blame-free.
+function DeliveryAddressRow({ address }) {
+  if (!address) return null;
+  const lines = (Array.isArray(address.lines) ? address.lines : []).filter(Boolean);
+  const region = [address.region, address.postal].filter(Boolean).join(' ');
+  return (
+    <div className="mb-1 rounded-xl bg-panelStrong p-3 text-[13px] text-inkMuted">
+      <p className="mb-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-inkSubtle">Delivery address</p>
+      {address.name ? <p className="select-all font-semibold text-ink">{address.name}</p> : null}
+      {lines.map((line, index) => <p key={index} className="select-all">{line}</p>)}
+      {[address.city, region].filter(Boolean).length > 0 && (
+        <p className="select-all">{[address.city, region].filter(Boolean).join(', ')}</p>
+      )}
+      {address.country ? <p className="select-all">{address.country}</p> : null}
+      <p className="mt-1 text-[12px] text-inkSubtle">Sealed by the buyer. The note burned after one open.</p>
+    </div>
+  );
+}
+
 // The payment block: the existing paidRows merge rendered as one card per
 // coin — pay line, QR, selectable address, then the address overflow row.
 function PaymentBlock({ rows }) {
@@ -402,6 +423,24 @@ export default function MessageBubble({ message, data, onAction, senderName, ide
           // itself claims — a received "confirmed" with no receipt behind it
           // reads back as its real state.
           <OrderReceipt content={{ ...content, ...orderState(chatMessages, message?.id, { data: content }, '', activeDm) }} />
+        )}
+        {content.delivery?.address && <DeliveryAddressRow address={content.delivery.address} />}
+        {!message.isSender && content.type === 'cipher_order' && content.delivery?.note && !content.delivery?.address && (
+          // The delivery door: only the vendor sees it, only while the
+          // address is not yet saved on this device. Opening checks the
+          // address locally, saves it into the order record, then burns
+          // the note; the button disappears once the address is down.
+          <OrderActionButton
+            key="open_delivery_note"
+            action="open_delivery_note"
+            label="Open the delivery note"
+            target="request"
+            message={message}
+            content={content}
+            activeDm={activeDm}
+            onAction={onAction}
+            toneByAction={{ open_delivery_note: 'text-accentText' }}
+          />
         )}
         {orderActionsFor({ ...message, data: content }, chatMessages, '', activeDm).map(({ action, label, target }) => (
           <OrderActionButton key={`o-${action}`} action={action} label={label} target={target} message={message} content={content} activeDm={activeDm} onAction={onAction} />
