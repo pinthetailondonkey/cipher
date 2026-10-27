@@ -36,7 +36,41 @@ export function isLocalWatcherHost(hostname) {
   return LOCAL_WATCHER_HOSTS.has(host);
 }
 
-export function paymentWatchUrl(watcherUrl, { address, currency } = {}) {
+// ————— per-order child token —————
+// A watcher answer is signed with the token, so whoever holds the token can
+// forge chain truth for ANY address on that watcher, forever. The pasted
+// watcher URL carries that base token, and anything that copies the URL
+// (a screen share, a synced backup) captures exactly that unbounded key.
+// The check now derives a child token bound to the exact payment asked
+// about: HMAC of the base secret over a version string, the currency and
+// the address. The watcher recomputes the child from its own secret and the
+// requested payment, so the base token never authenticates a check at all
+// — an open-ended token is dead on the wire — and a captured child answers
+// for one address and one currency only. Orders are checked on per-order
+// derived addresses (the shared-address case is refused before any check),
+// so a captured child holds nothing once its order is settled or dead,
+// wherever the base token still sits.
+const CHILD_TOKEN_VERSION = 'cipher-watch-v1';
+
+export async function childWatcherToken(baseToken, address, currency) {
+  const key = await crypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(String(baseToken || '')),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign'],
+  );
+  const mac = await crypto.subtle.sign(
+    'HMAC',
+    key,
+    new TextEncoder().encode(`${CHILD_TOKEN_VERSION}:${String(currency || '').trim().toLowerCase()}:${String(address || '').trim()}`),
+  );
+  let hex = '';
+  for (const byte of new Uint8Array(mac)) hex += byte.toString(16).padStart(2, '0');
+  return hex;
+}
+
+export function paymentWatchUrl(watcherUrl, { address, currency, token } = {}) {
   const raw = String(watcherUrl || '').trim();
   if (!raw) throw new Error('No payment watcher is set. This device does not check a block explorer.');
   if (isPublicExplorer(raw)) throw new Error('That host is a block explorer. This device will not call it. Paste a watcher you run.');
@@ -54,11 +88,13 @@ export function paymentWatchUrl(watcherUrl, { address, currency } = {}) {
   if (url.protocol === 'http:' && !isLocalWatcherHost(url.hostname)) {
     throw new Error('A payment watcher on the open internet must use HTTPS. Paste an https watcher, or run this one on this device.');
   }
-  const token = url.searchParams.get('token') || '';
-  if (!token) throw new Error('The payment watcher URL needs a token.');
+  // Callers that know the payment pass the child token; the pasted base
+  // token is only the fallback, and a check never sends it.
+  const watchToken = token || url.searchParams.get('token') || '';
+  if (!watchToken) throw new Error('The payment watcher URL needs a token.');
   url.searchParams.set('address', String(address || '').trim());
   url.searchParams.set('currency', String(currency || '').trim());
-  url.searchParams.set('token', token);
+  url.searchParams.set('token', watchToken);
   return url.href;
 }
 
@@ -231,7 +267,16 @@ export async function verifyWatcherResponse({ rawBody, sig, ts, token, nowSec } 
 }
 
 export async function checkPayment({ watcherUrl, address, currency, state, amount, issuedAt, fetchImpl = globalThis.fetch } = {}) {
-  const endpoint = paymentWatchUrl(watcherUrl, { address, currency });
+  // The paste itself is validated first — explorer, scheme, host, token
+  // presence — so a bad watcher fails with its own words, not a crypto
+  // error from deriving over an empty secret. Then the check walks out the
+  // door with the order's child token, never the base secret.
+  const paste = String(watcherUrl || '').trim();
+  paymentWatchUrl(paste, { address, currency });
+  let baseToken = '';
+  try { baseToken = new URL(paste).searchParams.get('token') || ''; } catch {}
+  const child = await childWatcherToken(baseToken, address, currency);
+  const endpoint = paymentWatchUrl(paste, { address, currency, token: child });
   if (!String(address || '').trim()) throw new Error('This order has no payment address to check.');
   const token = new URL(endpoint).searchParams.get('token');
   let response;

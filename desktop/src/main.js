@@ -173,8 +173,8 @@ app.whenReady().then(() => {
     // The policy is a webContents setting. Chromium's switch has no 'never':
     // disable_non_proxied_udp is the strictest, and because SOCKS carries no
     // UDP it leaves candidate gathering nowhere to go; TCP-only TURN through
-    // the proxy still exists in theory, which is why the page-level refusal
-    // in voiceCall.js stays the second lock. CIPHER_CALLS=1 is the dev hatch.
+    // the proxy still exists in theory, which is why this same file's refusal
+    // of the mic permission stays the second lock. CIPHER_CALLS=1 is the dev hatch.
     if (!devCalls) win.webContents.setWebRTCIPHandlingPolicy('disable_non_proxied_udp');
     win.loadURL(`http://127.0.0.1:${uiPort}/`);
     console.log(`[desktop] window up. Tor route: socks5://127.0.0.1:${socksPort}`

@@ -2,6 +2,7 @@ import { db } from '../../db';
 import { noHexName, shortNpub } from '../../lib/npub';
 import { getAuthenticatedPool } from '../../lib/pool';
 import { queryWithTimeout, profileRelays, groupOnlyRelays, searchRelays } from '../../lib/relays';
+import { pictureIsGated } from '../../lib/pictureGate.js';
 import { useChatStore } from '../../store/chatStore';
 import { parseGroupReference, loadGroupProfile } from '../../hooks/useNIP29Group';
 
@@ -167,6 +168,17 @@ export function usePeopleSearch({ identity }) {
 
       if (isNip05 && !isNpub) {
         const [name, domain] = rawQuery.split('@');
+        // The no-IP-leak law, the same gate the pictures got: a plain browser
+        // does not visit name@site.com to confirm who someone is — the visit
+        // itself hands that site the searcher's address and the name looked
+        // for. Desktop rides its bundled Tor and may look up freely. The
+        // refusal row tells the searcher the plain-words way they still reach
+        // this person: paste their full npub.
+        if (pictureIsGated(`https://${domain}`)) {
+          state.setSearchResults([{ type: 'nip05-off', name, domain, id: `nip05-off:${name}@${domain}` }]);
+          state.setIsSearching(false);
+          return;
+        }
         try {
           const res = await fetch(`https://${domain}/.well-known/nostr.json?name=${name}`);
           const data = await res.json();

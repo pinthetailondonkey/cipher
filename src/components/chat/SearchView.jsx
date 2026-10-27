@@ -48,6 +48,17 @@ export default function SearchView({ handleSearch, joinGroupById, openChat }) {
             </div>
           ) : (
             <div className="overflow-hidden rounded-2xl border border-line bg-panel">
+              {searchResults.filter((result) => result.type === 'nip05-off').map((result) => (
+                <div key={result.id} className="border-b border-line p-4 text-left last:border-0">
+                  <p className="text-[15px] font-semibold text-ink">{result.name}</p>
+                  <p className="mt-1 text-[13px] leading-snug text-inkMuted">
+                    {result.name}'s site is on the regular internet. Looking them up there tells the site you searched for this name.
+                  </p>
+                  <p className="mt-1 text-[13px] text-inkMuted">
+                    Paste their full key (it starts with npub1) to reach them without their site.
+                  </p>
+                </div>
+              ))}
               {searchResults.map((result, i) => (
                 <button
                   type="button"

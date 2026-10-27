@@ -2,6 +2,8 @@ import { toHex, fromHex } from './groupCipher';
 import { recordGrant, getGrantedEpochsFor, getCurrentGroupKey, putGroupKey } from './groupKeyStore';
 import { currentOwner } from '../../db';
 import { loadMemberSnapshot } from './groupKeyRotation';
+import { isJoinDenied } from '../groupJoinQueue';
+import { keyRequestRecord } from './groupKeyRequest';
 
 const KEY_HEX = /^[0-9a-f]{64}$/i;
 
@@ -75,6 +77,29 @@ export async function installReceivedGroupKey(payload, sender = null) {
   if (rows.some((row) => row.groupId !== groupId)) return false;
   const maxEpoch = Math.max(...rows.map((row) => row.epoch));
   const current = await getCurrentGroupKey(groupId);
+  // The receiver arm of the kick wall (drills D2): the owner says who is
+  // removed, but that ledger lives on the OWNER's device — the victim's own
+  // copy is what stops the re-arm. A device that read its own kick (kind 9001
+  // naming it, from an authorized admin) holds a self-removal record, and NO
+  // incoming key bundle re-arms it until that device's own add-back receipt
+  // (kind 9000) clears the record.
+  if (currentOwner() && isJoinDenied(groupId, currentOwner())) {
+    console.warn('[group-key] A key bundle was not installed: this device was removed from the group.', { groupId, epoch: maxEpoch });
+    return false;
+  }
+  // Drills D4: the rollback guard is keyed-device-only, so a keyless device —
+  // a fresh sync, exactly the window before its own gkey_req round-trip —
+  // adopted ANY epoch a member of record shipped as its current key and wrote
+  // its first outbound messages under a colluder-held key. The floor: this
+  // device accepts a first key only on evidence it asked for one. Nothing
+  // installs a group key unsolicited, so an empty request record means the
+  // bundle is not the reply to this device's own request. An exhausted record
+  // still counts — the ladder stopping does not unmake the ask, and the
+  // manual retry (resetKeyRequest) is what renews it.
+  if (!current && !keyRequestRecord(currentOwner(), groupId)) {
+    console.warn('[group-key] A key bundle was not installed: this device has not asked this group for a key.', { groupId, epoch: maxEpoch });
+    return false;
+  }
   const authorized = await senderMayInstallGroupKey({ sender, groupId, maxEpoch });
   if (!authorized) {
     console.warn('[group-key] A key bundle was not installed: sender is not authorized for this group.', { groupId, epoch: maxEpoch });
@@ -82,6 +107,15 @@ export async function installReceivedGroupKey(payload, sender = null) {
   }
   if (current && Number.isInteger(current.epoch) && maxEpoch < current.epoch) {
     console.warn('[group-key] A key bundle was not installed: it would roll the group back an epoch.', { groupId, have: current.epoch, offered: maxEpoch });
+    return false;
+  }
+  // Drills D2: a same-epoch bundle with different bytes is an overwrite, not
+  // a roll forward — the current key replaced by a colluder-known one under
+  // the same epoch number, which the rollback guard never sees. Honest
+  // backfills re-state the held epoch with the held bytes, so only a byte
+  // mismatch closes the whole bundle.
+  if (current && rows.some((row) => row.epoch === current.epoch && row.hex !== toHex(current.bytes))) {
+    console.warn('[group-key] A key bundle was not installed: it re-states the held epoch with different bytes.', { groupId, epoch: current.epoch });
     return false;
   }
   for (const row of rows) await putGroupKey(row.groupId, row.epoch, fromHex(row.hex));

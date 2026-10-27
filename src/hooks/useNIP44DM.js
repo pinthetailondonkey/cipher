@@ -1,6 +1,6 @@
 import { useCallback, useEffect } from 'react';
 import { db, openDBFor, saveMessage } from '../db';
-import { dmControlAction, installMemberGroupKey } from './useGroupKeyMember';
+import { dmControlAction, dmExpired, installMemberGroupKey } from './useGroupKeyMember';
 import { showNotification } from '../lib/notifications';
 import { useChatStore } from '../store/chatStore';
 import { getAuthenticatedPool } from '../lib/pool';
@@ -179,7 +179,20 @@ export function useNIP44DM({ identity }) {
       ];
       for (const filter of dmFilters) {
         if (!mounted.current) break;
+        // The serving relay is the safety number's honest input (drill round
+        // three): a key first seen on a different relay set must derive a
+        // different code, or the relay-swap warning the derivation promises
+        // is dead. The library hands the relay to receivedEvent just before
+        // the event reaches onevent, so a per-id note is the whole wiring —
+        // no pool-wide relay tracking, no second subscription, dedup kept.
+        // A duplicate that loses the relay race leaves an entry nobody
+        // reads; the map clears itself long before that could matter.
+        const servingRelay = new Map();
         const sub = pool.subscribe(generalRelays, filter, {
+          receivedEvent: (relay, id) => {
+            if (servingRelay.size > 500) servingRelay.clear();
+            servingRelay.set(id, relay.url);
+          },
           onevent: async (event) => {
             if (!mounted.current) return;
             try {
@@ -187,9 +200,14 @@ export function useNIP44DM({ identity }) {
               const isSender = event.pubkey === identity.pk;
               const counterparty = isSender ? event.tags.find(t => t[0] === 'p')?.[1] : event.pubkey;
               if (!counterparty) return;
-              // Safety numbers: first time this key speaks to us, freeze where
-              // we saw it. Fire-and-forget — never blocks ingestion.
-              noteFirstSeen(counterparty).catch(() => {});
+              // Safety numbers: first time this key speaks to us, freeze
+              // where we actually saw it — the relay that served this event
+              // when the caller knows it, the configured set otherwise
+              // (the history arm has no per-event attribution). Fire-and-
+              // forget — never blocks ingestion.
+              const serving = servingRelay.get(event.id);
+              servingRelay.delete(event.id);
+              noteFirstSeen(counterparty, serving ? [serving] : null).catch(() => {});
               // Audit H8: drop messages from blocked users at ingestion
               const blocked = useChatStore.getState().blockedUsers || [];
               if (blocked.includes(counterparty)) return;
@@ -221,6 +239,14 @@ export function useNIP44DM({ identity }) {
                 });
                 return;
               }
+              // Audit H9, moved ahead of the engines (drill round three): an
+              // expired message is dead on arrival. The drop used to sit
+              // AFTER this block, so a key bundle that aged out in flight
+              // still installed, and a stale receipt still countersigned.
+              if (dmExpired(data)) {
+                console.log('[DM] Dropping expired message', { from: counterparty.slice(0, 8), expires_at: data.expires_at });
+                return;
+              }
               if (dmControlAction(data) === 'gkey') {
                 openDBFor(identity.pk);
                 const installed = await installMemberGroupKey(data, event.pubkey);
@@ -242,11 +268,6 @@ export function useNIP44DM({ identity }) {
                     sendCountersign(sendDM, counterparty, data.orderId, accepted);
                   }
                 }
-              }
-              // Audit H9: drop messages that already expired (delivery lag)
-              if (data.expires_at && Math.floor(Date.now() / 1000) >= data.expires_at) {
-                console.log('[DM] Dropping expired message', { from: counterparty.slice(0, 8), expires_at: data.expires_at });
-                return;
               }
 
               const replyTag = event.tags.find(t => t[0] === 'e' && t[3] === 'reply');
@@ -315,7 +336,9 @@ export function useNIP44DM({ identity }) {
         const isSender = ev.pubkey === identity.pk;
         const counterparty = isSender ? ev.tags.find(t => t[0] === 'p')?.[1] : ev.pubkey;
         if (!counterparty) continue;
-        // Safety numbers: same first-seen freeze on the history path.
+        // Safety numbers: same first-seen freeze on the history path. A
+        // merged history fetch has no per-event attribution, so the honest
+        // first-seen answer here is the set the query itself ran on.
         noteFirstSeen(counterparty).catch(() => {});
         const blocked = useChatStore.getState().blockedUsers || [];
         if (blocked.includes(counterparty)) continue;
@@ -325,6 +348,10 @@ export function useNIP44DM({ identity }) {
         catch (e) { continue; }
         let data = {};
         try { data = JSON.parse(text); } catch (e) { data = { type: 'text', message: text }; }
+        // Audit H9, moved ahead of the engines (drill round three): same
+        // ordering as the live arm — an expired message runs no key install
+        // and countersigns no receipt, and it saves nowhere.
+        if (dmExpired(data)) continue;
         if (dmControlAction(data) === 'gkey') {
           openDBFor(identity.pk);
           const installed = await installMemberGroupKey(data, ev.pubkey);
@@ -348,7 +375,6 @@ export function useNIP44DM({ identity }) {
             }
           }
         }
-        if (data.expires_at && Math.floor(Date.now() / 1000) >= data.expires_at) continue;
         const replyTag = ev.tags.find(t => t[0] === 'e' && t[3] === 'reply');
         const clientId = ev.tags.find(t => t[0] === 'client')?.[1];
         if (isSender && clientId) {

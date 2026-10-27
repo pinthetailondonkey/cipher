@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
-import { EGRESS, groupRelayHttp, iceServers, isOnionUrl, listEgress, readNetworkConfig, urlsFor } from './egress.js';
+import { EGRESS, groupRelayHttp, isOnionUrl, listEgress, readNetworkConfig, urlsFor } from './egress.js';
 
 function walk(dir, out = []) {
   for (const name of fs.readdirSync(dir)) {
@@ -14,6 +14,44 @@ function walk(dir, out = []) {
   return out;
 }
 
+// The no-IP-leak law, half in the row and half here: a clearnet row the founder
+// never named does not ship. The rows below were on the wall before the law and
+// are frozen by id AND address; anything else clearnet needs gate: 'founder',
+// which only lands after the founder names the host. Overriding the address
+// behind a grandfathered id counts as a new row and fails the gate.
+const GRANDFATHERED_CLEARNET = new Map([
+  ['group-relay', 'wss://groups.aegispayhq.com'],
+  ['dm-relay', 'wss://relay.primal.net'],
+  ['profile-nos', 'wss://nos.lol'],
+  ['profile-damus', 'wss://relay.damus.io'],
+  ['profile-purple', 'wss://purplepag.es'],
+  ['search-vertex', 'wss://relay.vertexlab.io'],
+  ['search-noswhere', 'wss://relay.noswhere.com'],
+  ['blossom-primal', 'https://blossom.primal.net'],
+  ['blossom-nostr-build', 'https://nostr.build'],
+  ['blossom-band', 'https://blossom.band'],
+  ['link-preview', 'https://api.microlink.io'],
+  ['dead-drop', 'https://cipherlinkhere.com'],
+  ['app-host', 'https://sonic-cobalt-4m6q5vj.vercel.app'],
+]);
+
+test('a clearnet row the founder never named does not ship', () => {
+  for (const entry of EGRESS) {
+    if (entry.called === false) continue;
+    const url = String(entry.url || '').trim();
+    if (!url || entry.dynamic) continue;
+    if (isOnionUrl(url)) continue;
+    const grandfathered = GRANDFATHERED_CLEARNET.get(entry.id);
+    if (grandfathered) {
+      assert.equal(url, grandfathered,
+        `row ${entry.id} changed the address the founder reviewed (${grandfathered} -> ${url})`);
+      continue;
+    }
+    assert.equal(entry.gate, 'founder',
+      `${entry.id} reaches the clear internet without gate: 'founder'`);
+  }
+});
+
 test('every outbound host is listed, and nowhere else', () => {
   const hostOf = (url) => {
     if (/^stuns?:/i.test(url)) return url.replace(/^stuns?:/i, '').split(':')[0];
@@ -22,7 +60,7 @@ test('every outbound host is listed, and nowhere else', () => {
   const hosts = new Set(EGRESS.map((entry) => hostOf(entry.url)).filter(Boolean));
   assert.ok(hosts.has('groups.aegispayhq.com'));
   assert.ok(hosts.has('api.microlink.io'));
-  assert.ok(hosts.has('stun.l.google.com'));
+  assert.ok(!hosts.has('stun.l.google.com'), 'call routing is off — no stun row may return');
   const re = /(?:(?:wss?|https?):\/\/|stuns?:)[a-z0-9.-]+/gi;
   const leaked = [];
   for (const file of walk(path.resolve('src'))) {
@@ -44,12 +82,10 @@ test('defaults work with no config, and an onion replaces only that row', () => 
   assert.deepEqual(urlsFor('group', { overrides: {}, lists: {} }), ['wss://groups.aegispayhq.com']);
   assert.deepEqual(urlsFor('general', { overrides: {}, lists: {} }), ['wss://relay.primal.net']);
   assert.deepEqual(urlsFor('profile', { overrides: {}, lists: {} }).includes('wss://nos.lol'), true);
-  assert.ok(iceServers({ overrides: {}, lists: {} }).some((item) => String(item.urls).startsWith('stun:')));
   assert.deepEqual(urlsFor('group-only', { overrides: { 'group-relay': onion }, lists: {} }), [onion]);
   assert.equal(groupRelayHttp({ overrides: { 'group-relay': onion }, lists: {} }).startsWith('http://'), true);
   assert.deepEqual(urlsFor('general', { overrides: { 'group-relay': onion }, lists: {} }), ['wss://relay.primal.net']);
   assert.deepEqual(urlsFor('group', { torOnly: true, overrides: {}, lists: {} }), ['wss://groups.aegispayhq.com']);
-  assert.deepEqual(urlsFor('stun', { torOnly: true, overrides: {}, lists: {} }).length > 0, true);
   assert.deepEqual(urlsFor('general', {
     overrides: { 'dm-relay': 'off' },
     lists: { dm: ['wss://inbox.example'] },
@@ -60,31 +96,12 @@ test('defaults work with no config, and an onion replaces only that row', () => 
   }).includes('wss://inbox.example'), false);
   const removed = listEgress({ overrides: { 'blossom-primal': 'off' }, lists: {} }).find((row) => row.id === 'blossom-primal');
   assert.equal(removed.transport, 'off');
-  const turnRow = listEgress({ overrides: {}, lists: {} }).find((row) => row.id === 'turn');
-  assert.equal(turnRow.transport, 'clearnet');
-  const turnServer = iceServers({ overrides: {}, lists: {} }).find((item) => String(item.urls).startsWith('turn:'));
-  assert.equal(turnServer.username, 'openrelayproject');
-  assert.equal(String(turnServer.urls).includes('@'), false);
+  assert.equal(listEgress({ overrides: {}, lists: {} }).find((row) => row.id === 'turn'), undefined,
+    'the call-relay row is gone — calls are off');
   assert.equal(listEgress({ overrides: {}, lists: {} }).find((row) => row.id === 'explorer').transport, 'unset');
   const kept = listEgress({ overrides: { 'group-relay': onion }, lists: {} }).find((row) => row.id === 'group-relay');
   assert.equal(kept.transport, 'tor');
   assert.equal(kept.active, onion);
-});
-
-test('a pasted call relay keeps its login, and pictures are not blocked', () => {
-  const relay = 'turns://user:p%40ss@call.example:5349?transport=tcp';
-  const withRelay = iceServers({ overrides: { turn: relay }, lists: {} });
-  const turn = withRelay.find((item) => String(item.urls).startsWith('turns:'));
-  assert.equal(turn.username, 'user');
-  assert.equal(turn.credential, 'p@ss');
-  assert.equal(String(turn.urls).includes('user'), false);
-  assert.equal(String(turn.urls).includes('@'), false);
-  assert.ok(withRelay.some((item) => String(item.urls).startsWith('stun:')));
-  const onionTurn = 'turns://user:pass@abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrst.onion:5349';
-  const torCall = iceServers({ overrides: { turn: onionTurn }, lists: {} });
-  const onionServer = torCall.find((item) => String(item.urls).includes('.onion'));
-  assert.equal(onionServer.username, 'user');
-  assert.ok(torCall.some((item) => String(item.urls).startsWith('stun:')));
 });
 
 test('the network snapshot stays the same object until storage changes', () => {
@@ -115,6 +132,13 @@ test('the network snapshot stays the same object until storage changes', () => {
 test('people search publishes nothing, and its text goes only to the search rows', () => {
   const search = fs.readFileSync(new URL('../features/chat/usePeopleSearch.js', import.meta.url), 'utf8');
   assert.equal(/finalizeEvent|\.publish\(|5315/.test(search), false);
+  // The name-lookup gate sits before the fetch, same shape as the pictures:
+  // a plain browser never visits name@site.com for a record, because the
+  // visit tells that site the searcher's address and the name looked for.
+  assert.match(search, /pictureIsGated\(`https:\/\/\$\{domain\}`\)/);
+  assert.match(search, /'nip05-off'/);
+  assert.ok(search.indexOf('pictureIsGated') < search.indexOf('.well-known/nostr.json'),
+    'the gate must run before the site is ever contacted');
   const searchCalls = search.match(/\n[^\n]*\n[^\n]*search: (rawQuery|usernameToFind)/g) || [];
   assert.ok(searchCalls.length >= 2);
   for (const call of searchCalls) assert.match(call, /searchRelays|publicSearchRelays/);
