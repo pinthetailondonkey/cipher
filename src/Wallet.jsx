@@ -2,7 +2,7 @@ import { lazy, Suspense, useState, useEffect } from 'react'
 import {
   User, Plus, AlertCircle, RefreshCw,
   Lock, ChevronRight, ArrowLeft, Copy, CreditCard, Camera,
-  BarChart3, Package, KeyRound, Menu, ShieldAlert, Users, SlidersHorizontal, Shield, BookOpen, Palette
+  BarChart3, Package, KeyRound, Menu, ShieldAlert, Users, SlidersHorizontal, Shield, BookOpen
 } from 'lucide-react'
 import { uploadToBlossom } from '@nostr-wot/blossom'
 import { useProfiles, updateProfileCache } from './useProfiles'
@@ -25,7 +25,6 @@ import { copyText } from './lib/copyText';
 import { scopedGet, scopedSet } from './lib/storage';
 import { productRelays } from './lib/relays';
 import { blossomServers } from './lib/egress';
-import { THEMES, currentTheme, setTheme } from './lib/theme';
 
 const VendorDashboard = lazy(() => import('./components/chat/VendorDashboard'));
 const ProfileEditor = lazy(() => import('./components/chat/ProfileEditor'));
@@ -44,17 +43,6 @@ export default function Wallet({ identity, onOpenChat, startView = 'main' }) {
   // startView lets the phone drawer deep-link here (Orders, Connections);
   // AuthenticatedApp remounts this component when it changes.
   const [view, setView] = useState(startView)
-
-  // Appearance: taps walk the theme list and apply immediately; the choice
-  // is remembered per device.
-  const [themeId, setThemeId] = useState(currentTheme);
-  const cycleAppTheme = () => {
-    const next = THEMES[(THEMES.findIndex((theme) => theme.id === themeId) + 1) % THEMES.length];
-    setThemeId(next.id);
-    setTheme(next.id);
-  };
-  // The Appearance row shows the current theme's blurb (lib/theme.js).
-  const themeBlurb = THEMES.find((theme) => theme.id === themeId)?.blurb ?? THEMES[0].blurb;
 
   // Profile state
   const [username, setUsername] = useState('') 
@@ -360,7 +348,7 @@ export default function Wallet({ identity, onOpenChat, startView = 'main' }) {
             <input value={btcAddress} onChange={(event) => setBtcAddress(event.target.value)} autoComplete="off" spellCheck="false" placeholder="Bitcoin address" className="w-full border-b border-ink/5 bg-transparent px-4 py-4 text-[15px] text-ink outline-none placeholder:text-ink/30" />
             <input value={xmrAddress} onChange={(event) => setXmrAddress(event.target.value)} autoComplete="off" spellCheck="false" placeholder="Monero address" className="w-full bg-transparent px-4 py-4 text-[15px] text-ink outline-none placeholder:text-ink/30" />
           </div>
-          {status && <p role="status" className="text-[13px] text-amber-300">{status}</p>}
+          {status && <p role="status" className="text-[13px] text-accent">{status}</p>}
           <button type="submit" className="w-full rounded-2xl bg-accent py-3.5 font-bold text-accentInk hover:bg-accent">Save and turn on selling</button>
         </form>
       </div>
@@ -528,11 +516,6 @@ export default function Wallet({ identity, onOpenChat, startView = 'main' }) {
           <button onClick={() => setView('account_switcher')} className="flex w-full items-center gap-3 border-b border-ink/5 p-4 text-left">
             <RefreshCw size={18} className="text-ink/40" />
             <span className="min-w-0 flex-1"><span className="block text-[15px] font-semibold text-ink">Accounts</span><span className="block text-[13px] text-ink/40">Switch on this device</span></span>
-            <ChevronRight size={18} className="text-ink/30" />
-          </button>
-          <button onClick={cycleAppTheme} className="flex w-full items-center gap-3 border-b border-ink/5 p-4 text-left">
-            <Palette size={18} className="text-ink/40" />
-            <span className="min-w-0 flex-1"><span className="block text-[15px] font-semibold text-ink">Appearance</span><span className="block text-[13px] text-ink/40">Tap to switch: {themeBlurb}</span></span>
             <ChevronRight size={18} className="text-ink/30" />
           </button>
           <button onClick={identity.lockApp} className="flex w-full items-center gap-3 p-4 text-left">

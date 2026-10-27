@@ -1,6 +1,5 @@
 /** @type {import('tailwindcss').Config} */
 module.exports = {
-  darkMode: 'class',
   content: [
     "./index.html",
     "./src/**/*.{js,ts,jsx,tsx}",
@@ -8,9 +7,9 @@ module.exports = {
   theme: {
     extend: {
       colors: {
-        // Theme-aware tokens: every value reads the CSS variables set by the
-        // active theme in src/index.css, so swapping data-theme re-skins any
-        // component built on these without a code change. ink and scrim are
+        // Look-aware tokens: every value reads the CSS variables set once in
+        // src/index.css, so the whole app re-skins with the stylesheet and no
+        // component carries its own palette. ink and scrim are
         // rgb triplets so Tailwind opacity modifiers (text-ink/40) compose.
         base: 'var(--bg)',
         surface: 'var(--bg-soft)',

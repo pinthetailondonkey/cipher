@@ -305,7 +305,7 @@ export default function LockScreen({ identity }) {
             {loading ? <RefreshCw size={20} className="animate-spin" /> : mode === 'verify_key' ? 'Verify & Continue' : mode === 'save_key' ? (mnemonicConfirmed ? 'Continue' : 'Confirm you saved it') : mode === 'setup_profile' ? 'Finish Setup' : mode === 'unlock' ? 'Unlock' : 'Continue'}
           </Button>
           {biometricNotice && mode === 'save_key' && (
-            <p role="status" className="text-center text-xs leading-relaxed text-amber-300">{biometricNotice} You can still unlock with your PIN.</p>
+            <p role="status" className="text-center text-xs leading-relaxed text-ink/70">{biometricNotice} You can still unlock with your PIN.</p>
           )}
         </form>
 

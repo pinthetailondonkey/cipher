@@ -88,7 +88,7 @@ export default function PrivacySettings({ onBack }) {
           <Toggle icon={CheckCheck} label="Read receipts" hint="Let people know when you opened their chat." checked={privacy.readReceipts} onChange={(readReceipts) => update({ readReceipts })} />
           <Toggle icon={Keyboard} label="Typing" hint="Show when you are writing." checked={privacy.typing && privacy.lastSeen !== 'nobody'} onChange={(typing) => update({ typing })} />
           <Toggle icon={AlertTriangle} label="Shake to wipe" hint="Three hard shakes within a second erase every account, message and key on this device. There is no undo." checked={panicWipeEnabled === true} onChange={togglePanicWipe} />
-          {motionNote && <p role="status" className="px-4 pb-3 text-[13px] text-amber-300">{motionNote}</p>}
+          {motionNote && <p role="status" className="px-4 pb-3 text-[13px] text-ink/55">{motionNote}</p>}
           <Toggle icon={Link2} label="Link previews" hint="On sends every link in a chat you open to the preview host. Off keeps links plain." checked={privacy.linkPreviews === true} onChange={(linkPreviews) => update({ linkPreviews })} />
         </div>
         <div className="overflow-hidden rounded-2xl border border-line bg-panel shadow-lg">
