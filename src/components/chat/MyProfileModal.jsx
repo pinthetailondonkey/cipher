@@ -1,17 +1,9 @@
 import { useState } from 'react';
 import { Copy } from 'lucide-react';
-<<<<<<< HEAD
-import Sheet from '../ui/Sheet';
-=======
->>>>>>> origin/feat/rebuild-pr2
 import { useChatStore } from '../../store/chatStore';
 import Sheet from '../ui/Sheet';
 import Button from '../ui/Button';
 import Avatar from '../ui/Avatar';
-<<<<<<< HEAD
-import Button from '../ui/Button';
-=======
->>>>>>> origin/feat/rebuild-pr2
 import { copyText } from '../../lib/copyText';
 import { noHexName, shortNpub } from '../../lib/npub';
 
@@ -41,17 +33,10 @@ export default function MyProfileModal({ identity }) {
   const name = noHexName(profile, identity?.pk);
 
   return (
-<<<<<<< HEAD
-    <Sheet open={isOpen} onClose={() => setShowMyProfile(false)} label="My profile">
-      <div className="px-6 pt-5 pb-6">
-        <div className="flex items-center gap-4 pr-8">
-          <Avatar src={profile.picture} name={name} className="!h-16 !w-16 text-xl" />
-=======
     <Sheet open={isOpen} onClose={() => setShowMyProfile(false)} title="My profile">
       <div className="pb-4">
         <div className="flex items-center gap-4">
           <Avatar src={profile.picture} name={name} size="lg" />
->>>>>>> origin/feat/rebuild-pr2
           <div className="min-w-0">
             <h2 className="truncate text-[22px] font-bold tracking-tight text-ink">{name}</h2>
             <p className="truncate text-[13px] text-inkMuted">{identity?.pk ? shortNpub(identity.pk) : 'No key loaded'}</p>

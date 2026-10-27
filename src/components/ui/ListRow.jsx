@@ -1,47 +1,3 @@
-<<<<<<< HEAD
-// Local stand-in for the PR2 list row (master-prompt §1): 64px minimum,
-// avatar slot 40, title 15px semibold, subtitle 13px inkMuted, meta right,
-// trailing badge/kebab slot. Slots are free-rendered so dense rows —
-// relative time above an unread pill, blurred previews — compose without
-// styling the primitive.
-export default function ListRow({
-  leading,
-  title,
-  subtitle,
-  meta,
-  trailing,
-  dense = false,
-  onClick,
-  onPointerDown,
-  onPointerUp,
-  onPointerLeave,
-  onPointerCancel,
-  onContextMenu,
-  contentClassName = '',
-  className = '',
-}) {
-  return (
-    <div className={`relative flex items-stretch ${className}`}>
-      <button
-        type="button"
-        onClick={onClick}
-        onPointerDown={onPointerDown}
-        onPointerUp={onPointerUp}
-        onPointerLeave={onPointerLeave}
-        onPointerCancel={onPointerCancel}
-        onContextMenu={onContextMenu}
-        className={`flex min-w-0 flex-1 items-center gap-3 px-4 py-2 text-left active:bg-ink/5 ${dense ? 'min-h-[48px]' : 'min-h-[64px]'} ${contentClassName}`}
-      >
-        {leading && <span className="shrink-0">{leading}</span>}
-        <span className="min-w-0 flex-1">
-          {title}
-          {subtitle}
-        </span>
-        {meta}
-      </button>
-      {trailing}
-    </div>
-=======
 // The 64px list row: 40px leading slot, 15px semibold title, 13px muted
 // subtitle, 11px subtle meta on the right, trailing slot for badge or kebab.
 // Renders a button when wired to a handler, a plain row otherwise.
@@ -80,6 +36,5 @@ export default function ListRow({
     >
       {body}
     </button>
->>>>>>> origin/feat/rebuild-pr2
   );
 }
