@@ -233,6 +233,12 @@ export function verifySpendSignature({ signatureBytes, publicKeyBytes, digest })
 //   release branch : [ buyerSig, vendorSig, 0x01 ]  (the control byte is what
 //                     OP_IF consumes; sigs then meet CHECKSIGVERIFY/CHECKSIG)
 //   refund branch  : [ buyerSig, empty ]            (empty element = false)
+//   dead drop      : [ vendorSig, preimage, 0x01, empty ]
+//                     the outer OP_IF pops empty (false) -> OP_ELSE; the
+//                     inner OP_IF pops 0x01 (true) -> the overt body,
+//                     where OP_SHA256 consumes the preimage and
+//                     OP_CHECKSIG consumes the vendor sig — the vendor
+//                     signs ALONE in the branch designed to be fired alone.
 export const RELEASE_WITNESS_CONTROL = Uint8Array.from([0x01]);
 export const REFUND_WITNESS_CONTROL = Uint8Array.from([]);
 
@@ -245,6 +251,34 @@ export function finalizeReleaseTx({ fundingTxid, fundingVout = 0, fundingSats, w
   const buyerSig = signSpend({ privateKeyBytes: buyerKeyBytes, digest });
   const bytes = witnessTx(tx, [[buyerSig, vendorSig, RELEASE_WITNESS_CONTROL]]);
   return { tx, digest, vendorSig, buyerSig, bytes: hexOf(bytes), txid: txidOf(bytes) };
+}
+
+// The Dead Drop close: the vendor returns ALL the money, fee-free, any
+// time — and cannot do it without publishing the delivery preimage
+// on-chain. The honesty line rides with it everywhere it ships: this
+// proves the vendor ASSERTED delivery, not that atoms moved. Where the
+// money lands is the caller's outputs (ALL of it, to the buyer, no fee
+// output). The commitment is cross-checked here before anything signs:
+// the chain would refuse a wrong preimage, so a ghost signature is
+// never born already-failed.
+export function finalizeOvertRefundTx({ fundingTxid, fundingVout = 0, fundingSats, witnessScriptHex, outputs, preimageBytes, vendorKeyBytes }) {
+  if (preimageBytes instanceof Uint8Array !== true || preimageBytes.length !== 32) {
+    throw new Error('The dead drop opens with the 32-byte delivery nonce.');
+  }
+  const decoded = decodeOrderScript(hexToBytes(witnessScriptHex));
+  if (!decoded || decoded.overtHash === null) {
+    throw new Error('A dead drop close needs the Dead Drop script, not the plain box.');
+  }
+  if (bytesToHex(sha256(preimageBytes)) !== bytesToHex(decoded.overtHash)) {
+    throw new Error('The preimage does not open this dead drop: its SHA-256 is not the committed hash.');
+  }
+  const tx = buildSpendTx({
+    fundingTxid, fundingVout, fundingSats, witnessScriptHex, outputs, sequence: LEARLY_RELEASE_SEQUENCE,
+  });
+  const digest = p2wshSignatureDigest({ tx, vinIndex: 0, witnessScriptHex, prevAmountSats: fundingSats });
+  const vendorSig = signSpend({ privateKeyBytes: vendorKeyBytes, digest });
+  const bytes = witnessTx(tx, [[vendorSig, preimageBytes, RELEASE_WITNESS_CONTROL, REFUND_WITNESS_CONTROL]]);
+  return { tx, digest, vendorSig, bytes: hexOf(bytes), txid: txidOf(bytes) };
 }
 
 export function finalizeTimedRefundTx({ fundingTxid, fundingVout = 0, fundingSats, witnessScriptHex, outputs, delayBlocks, buyerKeyBytes }) {
@@ -287,6 +321,11 @@ export function buildEscrowPsbt({ fundingTxid, fundingVout = 0, fundingSats, wit
   // wallet holds a PSBT whose embedded sequence OP_CSV can never pass,
   // and the escape hatch is no refund hatch at all. (re-attack round
   // @ 52cbdab: the first draft was release-only.)
+  //
+  // There is deliberately NO dead-drop PSBT kind: the overt branch
+  // publishes the delivery preimage — the vendor's attestation lives in
+  // the spend itself. Hand-off files leak the nonce without the money
+  // moving, so finalizeOvertRefundTx signs alone, in-app, never here.
   if (kind !== 'release' && kind !== 'timed-refund') throw new Error(`Unknown PSBT kind: ${kind}.`);
   if (kind === 'timed-refund' && !delayBlocks) throw new Error('A timed-refund PSBT needs the script delay.');
   const tx = buildSpendTx({

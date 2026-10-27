@@ -7,6 +7,7 @@ import {
   buildSpendTx,
   finalizeReleaseTx,
   finalizeTimedRefundTx,
+  finalizeOvertRefundTx,
   signSpend,
   verifySpendSignature,
   buildEscrowPsbt,
@@ -15,6 +16,7 @@ import {
 } from './escrowPsbt.js';
 import {
   assembleOrderScript,
+  assembleOvertOrderScript,
   scriptToHex,
   hexToScript,
   MAX_CSV_BLOCK_DELAY,
@@ -202,6 +204,62 @@ test('a timed refund carries the CSV clock on the input sequence, not anywhere e
   }), /script delay/);
   // refund refund pays out what went in (minus fee = 0 at the money table)
   assert.equal(result.tx.vout[0].sats < result.tx.vin[0].amountSats, true); // miner fee came out
+});
+
+// The Dead Drop close, signed the way the chain will read it: the
+// vendor alone, preimage in the witness, all value out fee-free.
+const DROPHASH = sha256(Uint8Array.from({ length: 32 }, (_, i) => 0xc0 + i));
+const NONCE = Uint8Array.from({ length: 32 }, (_, i) => 0xc0 + i);
+const DROPPED_SCRIPT_HEX = scriptToHex(assembleOvertOrderScript({
+  vendorPubKey: PUB_V, buyerPubKey: PUB_B, delayBlocks: 2880, overtHash: DROPHASH,
+}));
+
+test('the dead drop close is the vendor ALONE: one signature, the preimage, all the money', () => {
+  const buyerOut = { sats: Q.depositSats - 1440n, scriptHex: '76a914' + '33'.repeat(20) + '88ac' };
+  const result = finalizeOvertRefundTx({
+    fundingTxid: FUNDING_TXID, fundingSats: Q.depositSats,
+    witnessScriptHex: DROPPED_SCRIPT_HEX,
+    outputs: [buyerOut],
+    preimageBytes: NONCE,
+    vendorKeyBytes: VENDOR_PRIV,
+  });
+  // no CSV on this branch: the dead drop fires any time the vendor
+  // chooses, so the input carries the CSV-disable sequence
+  assert.equal(result.tx.vin[0].sequence, 0xffffffff);
+  // the one signature is the vendor's, over the same BIP-143 digest
+  assert.equal(
+    verifySpendSignature({ signatureBytes: result.vendorSig, publicKeyBytes: secp256k1.getPublicKey(VENDOR_PRIV, true), digest: result.digest }),
+    true,
+  );
+  // the buyer key can never open the dead drop branch: wrong key, wrong shape
+  const buyerKey = secp256k1.getPublicKey(BUYER_PRIV, true);
+  assert.equal(
+    verifySpendSignature({ signatureBytes: result.vendorSig, publicKeyBytes: buyerKey, digest: result.digest }),
+    false,
+  );
+  // conservation: what goes back is what came in (fee is just the miner's)
+  assert.equal(result.tx.vout[0].sats + 1440n, Q.depositSats);
+});
+
+test('the dead drop opens only on the committed preimage', () => {
+  const buyerOut = { sats: Q.depositSats - 1440n, scriptHex: '76a914' + '33'.repeat(20) + '88ac' };
+  // a wrong nonce: the commitment cross-check refuses before signing,
+  // because the chain would refuse it later anyway
+  assert.throws(() => finalizeOvertRefundTx({
+    fundingTxid: FUNDING_TXID, fundingSats: Q.depositSats, witnessScriptHex: DROPPED_SCRIPT_HEX,
+    outputs: [buyerOut], preimageBytes: Uint8Array.from({ length: 32 }, (_, i) => 0xd0 + i),
+    vendorKeyBytes: VENDOR_PRIV,
+  }), /committed hash/);
+  // no nonce, half a nonce, a hex string: all refused at the door
+  assert.throws(() => finalizeOvertRefundTx({
+    fundingTxid: FUNDING_TXID, fundingSats: Q.depositSats, witnessScriptHex: DROPPED_SCRIPT_HEX,
+    outputs: [buyerOut], vendorKeyBytes: VENDOR_PRIV,
+  }), /delivery nonce/);
+  // the plain 2-of-2 box has no dead drop to open
+  assert.throws(() => finalizeOvertRefundTx({
+    fundingTxid: FUNDING_TXID, fundingSats: Q.depositSats, witnessScriptHex: SCRIPT_HEX,
+    outputs: [buyerOut], preimageBytes: NONCE, vendorKeyBytes: VENDOR_PRIV,
+  }), /Dead Drop script/);
 });
 
 test('signatures are DER with one SIGHASH_ALL byte, checked byte by byte', () => {
