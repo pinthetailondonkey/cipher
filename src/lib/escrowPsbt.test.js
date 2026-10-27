@@ -213,9 +213,12 @@ const NONCE = Uint8Array.from({ length: 32 }, (_, i) => 0xc0 + i);
 const DROPPED_SCRIPT_HEX = scriptToHex(assembleOvertOrderScript({
   vendorPubKey: PUB_V, buyerPubKey: PUB_B, delayBlocks: 2880, overtHash: DROPHASH,
 }));
+// The enforced money table: ONE output, the buyer's key, bare P2PK —
+// the same shape the refund branch names and the membrane re-checks.
+const BUYER_P2PK = '21' + scriptToHex(PUB_B) + 'ac';
 
 test('the dead drop close is the vendor ALONE: one signature, the preimage, all the money', () => {
-  const buyerOut = { sats: Q.depositSats - 1440n, scriptHex: '76a914' + '33'.repeat(20) + '88ac' };
+  const buyerOut = { sats: Q.depositSats - 1440n, scriptHex: BUYER_P2PK };
   const result = finalizeOvertRefundTx({
     fundingTxid: FUNDING_TXID, fundingSats: Q.depositSats,
     witnessScriptHex: DROPPED_SCRIPT_HEX,
@@ -242,7 +245,7 @@ test('the dead drop close is the vendor ALONE: one signature, the preimage, all 
 });
 
 test('the dead drop opens only on the committed preimage', () => {
-  const buyerOut = { sats: Q.depositSats - 1440n, scriptHex: '76a914' + '33'.repeat(20) + '88ac' };
+  const buyerOut = { sats: Q.depositSats - 1440n, scriptHex: BUYER_P2PK };
   // a wrong nonce: the commitment cross-check refuses before signing,
   // because the chain would refuse it later anyway
   assert.throws(() => finalizeOvertRefundTx({
@@ -260,6 +263,36 @@ test('the dead drop opens only on the committed preimage', () => {
     fundingTxid: FUNDING_TXID, fundingSats: Q.depositSats, witnessScriptHex: SCRIPT_HEX,
     outputs: [buyerOut], preimageBytes: NONCE, vendorKeyBytes: VENDOR_PRIV,
   }), /Dead Drop script/);
+});
+
+test('the partial-money lie is dead at the builder: one output, buyer key, or nothing', () => {
+  // (re-attack round 2, vector 3: the overt branch binds WHO signs and
+  // WHAT is known, never WHERE money lands — no CTV. So the builder
+  // itself is the enforcement point for our own app's table, and the
+  // membrane re-checks the same facts on the watcher's report.)
+  // two outputs = the money table split = refused
+  assert.throws(() => finalizeOvertRefundTx({
+    fundingTxid: FUNDING_TXID, fundingSats: Q.depositSats, witnessScriptHex: DROPPED_SCRIPT_HEX,
+    outputs: [
+      { sats: Q.depositSats - 1440n - 7000n, scriptHex: BUYER_P2PK },
+      { sats: 7000n, scriptHex: '76a914' + '44'.repeat(20) + '88ac' },
+    ],
+    preimageBytes: NONCE, vendorKeyBytes: VENDOR_PRIV,
+  }), /exactly one output/);
+  // the vendor's own key as the output = the fee-free promise in
+  // reverse = refused
+  assert.throws(() => finalizeOvertRefundTx({
+    fundingTxid: FUNDING_TXID, fundingSats: Q.depositSats, witnessScriptHex: DROPPED_SCRIPT_HEX,
+    outputs: [{ sats: Q.depositSats - 1440n, scriptHex: '21' + scriptToHex(PUB_V) + 'ac' }],
+    preimageBytes: NONCE, vendorKeyBytes: VENDOR_PRIV,
+  }), /buyer key/);
+  // a hostile P2PKH (hash of something, not the key named by the
+  // branch) = refused the same way
+  assert.throws(() => finalizeOvertRefundTx({
+    fundingTxid: FUNDING_TXID, fundingSats: Q.depositSats, witnessScriptHex: DROPPED_SCRIPT_HEX,
+    outputs: [{ sats: Q.depositSats - 1440n, scriptHex: '76a914' + '55'.repeat(20) + '88ac' }],
+    preimageBytes: NONCE, vendorKeyBytes: VENDOR_PRIV,
+  }), /buyer key/);
 });
 
 test('signatures are DER with one SIGHASH_ALL byte, checked byte by byte', () => {

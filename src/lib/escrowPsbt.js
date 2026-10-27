@@ -256,11 +256,18 @@ export function finalizeReleaseTx({ fundingTxid, fundingVout = 0, fundingSats, w
 // The Dead Drop close: the vendor returns ALL the money, fee-free, any
 // time — and cannot do it without publishing the delivery preimage
 // on-chain. The honesty line rides with it everywhere it ships: this
-// proves the vendor ASSERTED delivery, not that atoms moved. Where the
-// money lands is the caller's outputs (ALL of it, to the buyer, no fee
-// output). The commitment is cross-checked here before anything signs:
-// the chain would refuse a wrong preimage, so a ghost signature is
-// never born already-failed.
+// proves the vendor ASSERTED delivery, not that atoms moved. The
+// outputs here are ENFORCED, not caller-chosen: exactly one output,
+// paying the buyer's key the way the refund branch names it — bare
+// P2PK of the script's buyer key. A vendor with a foreign wallet can
+// craft different bytes, since no script binds destinations without
+// CTV, but the chain is public and the membrane only admits the
+// report when the same two facts check out there (orderMembrane).
+// The commitment is cross-checked before anything signs: the chain
+// would refuse a wrong preimage, so a ghost signature is never born
+// already-failed.
+const P2PK = (pubkeyBytes) => Uint8Array.from([0x21, ...pubkeyBytes, 0xac]);
+
 export function finalizeOvertRefundTx({ fundingTxid, fundingVout = 0, fundingSats, witnessScriptHex, outputs, preimageBytes, vendorKeyBytes }) {
   if (preimageBytes instanceof Uint8Array !== true || preimageBytes.length !== 32) {
     throw new Error('The dead drop opens with the 32-byte delivery nonce.');
@@ -271,6 +278,18 @@ export function finalizeOvertRefundTx({ fundingTxid, fundingVout = 0, fundingSat
   }
   if (bytesToHex(sha256(preimageBytes)) !== bytesToHex(decoded.overtHash)) {
     throw new Error('The preimage does not open this dead drop: its SHA-256 is not the committed hash.');
+  }
+  // (re-attack round 2: the partial-money lie — this builder could
+  // mint an overt spend paying anywhere. It now has exactly one way
+  // to build the money table: all of it, to the buyer, fee-free.)
+  if (!Array.isArray(outputs) || outputs.length !== 1) {
+    throw new Error('The dead drop returns ALL the money: it spends into exactly one output.');
+  }
+  if (typeof outputs[0]?.sats !== 'bigint' || outputs[0].sats <= 0n || outputs[0].sats > fundingSats) {
+    throw new Error('The dead drop pays the buyer what the escrow holds (the miner fee is the only remainder).');
+  }
+  if (String(outputs[0]?.scriptHex ?? '') !== bytesToHex(P2PK(decoded.buyerPubKey))) {
+    throw new Error('The dead drop pays the buyer key named in the script — every sat home, fee-free.');
   }
   const tx = buildSpendTx({
     fundingTxid, fundingVout, fundingSats, witnessScriptHex, outputs, sequence: LEARLY_RELEASE_SEQUENCE,
