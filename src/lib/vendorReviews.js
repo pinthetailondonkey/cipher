@@ -42,6 +42,12 @@ export const REVIEW_WIRING_LANDED = false;
 // Publisher swaps to Deal-lane kind-10005 publisher on fold. Nothing on
 // this branch publishes a review; the stub refuses so no code path can
 // send while the gate is down.
+//
+// Compose-side one-shot guard for the fold, per Deal's 610294d: the dispute
+// riders check BOTH ridersForReview (the wire's parsed rider of record) AND
+// ownRiderTaken(vendor, receipt, review, rider) in disputes.js — the local
+// ledger covers the word the device already spent before its own rider
+// event has come back through the fetch.
 export function createReviewPublisher() {
   if (!REVIEW_WIRING_LANDED) return null;
   return null;
