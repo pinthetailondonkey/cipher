@@ -20,8 +20,8 @@ export default function SearchView({ handleSearch, joinGroupById, openChat }) {
       <div className="relative z-10 flex min-h-0 flex-1 flex-col">
         <ScreenHeader title="Search" onBack={() => setView('list')} />
         <div className="px-4 pb-3">
-          <div className="flex items-center gap-2 rounded-2xl border border-line bg-panel px-4 py-3 shadow-lg">
-            <Search size={18} className="text-ink/40" />
+          <div className="flex items-center gap-2 rounded-2xl border border-line bg-panel px-4 py-3">
+            <Search size={24} className="shrink-0 text-inkSubtle" />
             <input
               autoFocus
               type="text"
@@ -31,28 +31,28 @@ export default function SearchView({ handleSearch, joinGroupById, openChat }) {
               onKeyDown={(e) => {
                 if (e.key === 'Enter') handleSearch();
               }}
-              className="w-full bg-transparent text-[15px] text-ink placeholder-ink/40 outline-none"
+              className="w-full bg-transparent text-[15px] text-ink placeholder-inkSubtle outline-none"
             />
           </div>
         </div>
         <div className="mx-auto min-h-0 w-full max-w-3xl flex-1 overflow-y-auto px-4 pb-8">
           {isSearching ? (
             <div className="mt-10 flex justify-center">
-              <div className="h-6 w-6 animate-spin rounded-full border-2 border-accent border-t-transparent" />
+              <div className="h-6 w-6 animate-spin rounded-full border-2 border-accentText border-t-transparent" />
             </div>
           ) : searchResults.length === 0 ? (
-            <div className="rounded-2xl border border-line bg-panel px-4 py-16 text-center shadow-lg">
+            <div className="rounded-2xl border border-line bg-panel px-4 py-16 text-center">
               <p className="text-[15px] font-semibold text-ink">{searchQuery ? 'No results' : 'Find someone'}</p>
-              <p className="mt-1 text-[13px] text-ink/40">{searchQuery ? 'Try another name.' : 'Search a name or a group.'}</p>
+              <p className="mt-1 text-[13px] text-inkMuted">{searchQuery ? 'Try another name.' : 'Search a name or a group.'}</p>
             </div>
           ) : (
-            <div className="overflow-hidden rounded-2xl border border-line bg-panel shadow-lg">
+            <div className="overflow-hidden rounded-2xl border border-line bg-panel">
               {searchResults.map((result, i) => (
                 <button
                   type="button"
                   key={result.id || result.pubkey || i}
                   disabled={result.type === 'user' ? !result.pubkey : !result.id}
-                  className="flex w-full items-center justify-between border-b border-ink/5 p-4 text-left last:border-0 active:bg-ink/5 disabled:opacity-50"
+                  className="flex w-full items-center justify-between border-b border-line p-4 text-left last:border-0 active:bg-ink/5 disabled:opacity-50"
                   onClick={() => {
                     if (result.type === 'user') {
                       openChat('dm', result.pubkey);
@@ -62,7 +62,7 @@ export default function SearchView({ handleSearch, joinGroupById, openChat }) {
                   }}
                 >
                   <span className="flex min-w-0 items-center gap-3">
-                    <span className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-full border border-ink/10 bg-ink/5 text-accent">
+                    <span className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-full border border-line bg-panelStrong text-accentText">
                       <Picture
                         src={result.picture}
                         alt=""
@@ -73,7 +73,7 @@ export default function SearchView({ handleSearch, joinGroupById, openChat }) {
                     </span>
                     <span className="min-w-0">
                       <span className="block truncate text-[15px] font-semibold text-ink">{result.name || noHexName(null, result.pubkey)}</span>
-                      <span className="block text-[13px] text-ink/40">{result.type === 'group' ? 'Group' : 'Person'}</span>
+                      <span className="block text-[13px] text-inkMuted">{result.type === 'group' ? 'Group' : 'Person'}</span>
                     </span>
                   </span>
                   <span className="ml-3 shrink-0 rounded-2xl bg-accent px-3 py-1.5 text-[13px] font-bold text-accentInk">
