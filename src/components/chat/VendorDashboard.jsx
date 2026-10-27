@@ -1,14 +1,28 @@
 import { useEffect, useState } from 'react';
-import { Package, Plus } from 'lucide-react';
+import { Package, Plus, Stamp } from 'lucide-react';
 import ScreenHeader from '../ui/ScreenHeader';
 import Picture from '../ui/Picture';
 import Badge from '../ui/Badge';
 import Button from '../ui/Button';
 import EmptyState from '../ui/EmptyState';
 import Skeleton from '../ui/Skeleton';
+import Chip from '../ui/Chip';
+import Textarea from '../ui/Textarea';
+import Sheet from '../ui/Sheet';
+import { pushToast } from '../ui/toast';
+import ProvenBanner from './ProvenBanner';
 import { useVendorStats } from '../../hooks/useVendorStats';
+import { useVendorReviews } from '../../hooks/useVendorReviews';
 import { rankVolumeByStanding, readPublicViews } from '../../lib/proofOfTrade';
 import { haptic } from '../../lib/haptics';
+
+// The rails the bulletin composer offers, with the plain words their
+// banners speak (src/lib/vendorStats.js owns the sentence law; the chip
+// here only names the rail).
+const RAILS = [
+  { id: 'btc', label: 'BTC' },
+  { id: 'xmr', label: 'XMR' },
+];
 
 function StatCard({ label, value, sub = null, loading = false }) {
   return (
@@ -41,8 +55,47 @@ function VolumeList({ title, rows }) {
 // published, then the standing ledgers. Data stays in useVendorStats —
 // presentation only.
 export default function VendorDashboard({ identity, products = [], onBack, onCreate }) {
-  const { stats, loading, fetchStats } = useVendorStats({ identity });
+  const { stats, loading, fetchStats, publishBulletin } = useVendorStats({ identity });
   const [standing, setStanding] = useState({ countersigned: [], vendor: [] });
+  // The desk reads the same standing the public door reads — the vendor's
+  // own published bulletin wins when fetch finds one, the device's own
+  // countersigned receipts cover a rail without one. Nothing invented here;
+  // ProvenBanner speaks the contract's exact words.
+  const ownStanding = useVendorReviews({ vendorPubkey: identity?.pk || null, identity });
+
+  // The bulletin composer: one rail at a time, one txid per line. The
+  // refusal words come straight from the data layer's guard, and a queued
+  // publish answers with the outbox's own words — a publish that is saving,
+  // not an answer, is not a publish that happened.
+  const [composerOpen, setComposerOpen] = useState(false);
+  const [rail, setRail] = useState('btc');
+  const [txidText, setTxidText] = useState('');
+  const [publishing, setPublishing] = useState(false);
+  const [error, setError] = useState('');
+
+  const openComposer = () => {
+    haptic('light');
+    setTxidText('');
+    setError('');
+    setComposerOpen(true);
+  };
+
+  const publish = async () => {
+    if (publishing) return;
+    const txids = txidText.split(/\n+/).map((row) => row.trim()).filter(Boolean);
+    setPublishing(true);
+    setError('');
+    const result = await publishBulletin(rail, txids);
+    if (result?.success) {
+      pushToast({ type: 'success', message: result.queued ? 'Saved and will send.' : 'Published.' });
+      haptic('light');
+      setComposerOpen(false);
+      setTxidText('');
+    } else {
+      setError(result?.error || 'The bulletin could not be published.');
+    }
+    setPublishing(false);
+  };
 
   useEffect(() => {
     fetchStats();
@@ -69,6 +122,24 @@ export default function VendorDashboard({ identity, products = [], onBack, onCre
         )}
         <VolumeList title="Countersigned" rows={standing.countersigned} />
         <VolumeList title="Vendor signature only" rows={standing.vendor} />
+        <section aria-label="Deals proven">
+          <ProvenBanner proven={ownStanding.proven} />
+          <div className="mt-3 rounded-2xl border border-line bg-panel p-4">
+            <p className="text-[13px] text-inkMuted">Deals proven</p>
+            <p className="mt-1 text-[12px] leading-relaxed text-inkSubtle">
+              Publish the txids so anyone can check one. No amounts go out — the count is the list. The newest bulletin you publish stands for that rail.
+            </p>
+            <Button
+              size="md"
+              leadingIcon={<Stamp size={16} />}
+              className="mt-3"
+              onClick={openComposer}
+              disabled={!identity?.pk}
+            >
+              Publish a bulletin
+            </Button>
+          </div>
+        </section>
         {onCreate && (
           <Button
             size="lg"
@@ -101,6 +172,51 @@ export default function VendorDashboard({ identity, products = [], onBack, onCre
           ))}
         </div>
       </div>
+      <Sheet
+        open={composerOpen}
+        onClose={() => setComposerOpen(false)}
+        heading="Publish the txids"
+        ariaLabel="Publish the txids"
+      >
+        <form
+          onSubmit={(event) => { event.preventDefault(); publish(); }}
+          className="pb-4"
+        >
+          {error && (
+            <p role="alert" className="rounded-xl border border-line bg-panelStrong px-3 py-2 text-[13px] text-danger">
+              {error}
+            </p>
+          )}
+            <div className="mt-1 flex gap-2">
+              {RAILS.map((option) => (
+                <Chip
+                  key={option.id}
+                  selected={option.id === rail}
+                  onClick={() => { setRail(option.id); setError(''); }}
+                >
+                  {option.label}
+                </Chip>
+              ))}
+            </div>
+          <p className="mt-2 text-[12px] text-inkSubtle">
+            One txid per line, copied from this vendor's own wallet or watcher. Anyone who wants to checks one on their own terms.
+          </p>
+          <div className="mt-3">
+            <Textarea
+              label="One txid per line"
+              value={txidText}
+              maxLength={4000}
+              rows={5}
+              className="mono"
+              onChange={(event) => setTxidText(event.target.value)}
+              placeholder="64 hex characters each"
+            />
+          </div>
+          <Button type="submit" size="lg" fullWidth disabled={!txidText.trim()} className="mt-4">
+            {publishing ? 'Publishing…' : 'Publish'}
+          </Button>
+        </form>
+      </Sheet>
     </div>
   );
 }
