@@ -1,12 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
 import { CameraOff, Check, Copy, Scan } from 'lucide-react';
 import ScreenHeader from '../ui/ScreenHeader';
+import useDialogA11y from '../ui/dialogA11y';
 import { writeClipboard } from '../../lib/copyText';
 
 export default function QRScanner({ onClose }) {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const decodedRef = useRef('');
+  useDialogA11y(true, () => onClose?.());
   const [error, setError] = useState('');
   const [decodedValue, setDecodedValue] = useState('');
   const [copied, setCopied] = useState(false);
@@ -111,11 +113,11 @@ export default function QRScanner({ onClose }) {
   };
 
   return (
-    <div className="fixed inset-0 z-[999] flex flex-col bg-scrim pt-safe pb-safe md:items-center md:justify-center md:bg-scrim/70" role="dialog" aria-modal="true" aria-label="Scan QR code">
+    <div className="fixed inset-0 z-call flex flex-col bg-scrim pt-safe pb-safe md:items-center md:justify-center md:bg-scrim/70" role="dialog" aria-modal="true" aria-label="Scan QR code">
       <div className="pointer-events-none absolute inset-0" style={{
         background: 'radial-gradient(ellipse 55% 38% at 12% 0%, var(--glow-a), transparent 65%), radial-gradient(ellipse 50% 30% at 92% 100%, var(--glow-b), transparent 70%)',
       }} />
-      <div className="relative z-10 flex min-h-0 flex-1 flex-col md:w-[420px] md:max-h-[80vh] md:flex-none md:rounded-2xl md:border md:border-line md:bg-panel md:overflow-hidden">
+      <div className="relative flex min-h-0 flex-1 flex-col md:w-[420px] md:max-h-[80vh] md:flex-none md:rounded-2xl md:border md:border-line md:bg-panel md:overflow-hidden">
         <ScreenHeader title="Scan" onBack={onClose} />
         <div className="flex flex-1 flex-col items-center justify-center gap-5 overflow-y-auto p-4">
           {error ? (
@@ -126,7 +128,7 @@ export default function QRScanner({ onClose }) {
             </div>
           ) : (
             <>
-              <div className="relative aspect-square w-full max-w-xs overflow-hidden rounded-3xl border border-line bg-[#0A0A0A]/60">
+              <div className="relative aspect-square w-full max-w-xs overflow-hidden rounded-3xl border border-line bg-scrim/60">
                 <video ref={videoRef} className="h-full w-full object-cover" muted playsInline />
                 <canvas ref={canvasRef} className="hidden" />
                 <div className="pointer-events-none absolute inset-0 flex items-center justify-center">

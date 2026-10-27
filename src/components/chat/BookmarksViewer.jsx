@@ -1,5 +1,6 @@
 import { Bookmark } from 'lucide-react';
 import ScreenHeader from '../ui/ScreenHeader';
+import useDialogA11y from '../ui/dialogA11y';
 import { useChatStore } from '../../store/chatStore';
 
 export default function BookmarksViewer({ onClose, onJump }) {
@@ -7,6 +8,7 @@ export default function BookmarksViewer({ onClose, onJump }) {
   const dms = useChatStore((state) => state.dms);
   const groups = useChatStore((state) => state.groupMessages);
   const groupList = useChatStore((state) => state.groups);
+  useDialogA11y(true, () => onClose?.());
 
   const items = (Array.isArray(bookmarks) ? bookmarks : []).map(({ chatId, msgId: messageId }) => {
     const isGroup = groupList.some((group) => group.id === chatId);
@@ -20,11 +22,11 @@ export default function BookmarksViewer({ onClose, onJump }) {
   }).filter((item) => item.message);
 
   return (
-    <div className="fixed inset-0 z-[999] flex flex-col bg-scrim md:right-auto md:left-[72px] md:top-0 md:bottom-0 md:w-[340px] md:bg-base md:border-r md:border-line md:shadow-2xl" role="dialog" aria-modal="true" aria-label="Saved">
+    <div className="fixed inset-0 z-sheet flex flex-col bg-scrim md:right-auto md:left-[72px] md:top-0 md:bottom-0 md:w-[340px] md:bg-base md:border-r md:border-line md:shadow-2xl" role="dialog" aria-modal="true" aria-label="Saved">
       <div className="pointer-events-none absolute inset-0" style={{
         background: 'radial-gradient(ellipse 55% 38% at 12% 0%, var(--glow-a), transparent 65%), radial-gradient(ellipse 50% 30% at 92% 100%, var(--glow-b), transparent 70%)',
       }} />
-      <div className="relative z-10 mx-auto flex min-h-0 w-full max-w-md flex-1 flex-col">
+      <div className="relative mx-auto flex min-h-0 w-full max-w-md flex-1 flex-col">
         <ScreenHeader title="Saved" onBack={onClose} />
         <div className="min-h-0 flex-1 overflow-y-auto p-4">
           {items.length === 0 ? (

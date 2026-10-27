@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { AlertTriangle, Check, X } from 'lucide-react';
 import { useChatStore } from '../store/chatStore';
+import useDialogA11y from './ui/dialogA11y';
 
 export default function GlobalDialog() {
   const dialog = useChatStore((state) => state.dialog);
@@ -15,15 +16,14 @@ export default function GlobalDialog() {
     setValue(dialog?.inputDefault || '');
     setError('');
     setBusy(false);
+  }, [dialog]);
+  useDialogA11y(Boolean(dialog), closeDialog, panelRef);
+  useEffect(() => {
     if (!dialog) return undefined;
-    const onKey = (event) => {
-      if (event.key === 'Escape') closeDialog();
-    };
-    window.addEventListener('keydown', onKey);
     const focusable = panelRef.current?.querySelector('textarea, button');
     focusable?.focus();
-    return () => window.removeEventListener('keydown', onKey);
-  }, [dialog, closeDialog]);
+    return undefined;
+  }, [dialog]);
 
   if (!dialog) return null;
 
@@ -44,7 +44,7 @@ export default function GlobalDialog() {
   };
 
   return (
-    <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-scrim/80 p-4" role="presentation">
+    <div className="fixed inset-0 z-call flex items-center justify-center bg-scrim/80 p-4" role="presentation">
       <form ref={panelRef} onSubmit={confirm} role="dialog" aria-modal="true" aria-labelledby="global-dialog-title" className="w-full max-w-sm rounded-3xl border border-line bg-panel p-6">
         <div className="flex items-start gap-3">
           {dialog.type === 'danger' && <AlertTriangle size={21} className="mt-1 shrink-0 text-danger" />}

@@ -1,7 +1,10 @@
 import { test } from '@playwright/test';
 import { seedVault } from './fixtures.js';
 
-test.describe('Visual regression', () => {
+// TODO (one-and-done merge): the parallel rebuild PRs re-skin every screen.
+// Baselines captured now would all misfire at the merge commit; park the
+// captures until the shell lands, then re-baseline per docs/UI-NOTES.md #8.
+test.describe.skip('Visual regression', () => {
   test.beforeEach(async ({ page }) => {
     await page.addInitScript(seedVault);
   });

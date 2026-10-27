@@ -5,6 +5,7 @@ import { useChatStore } from "./store/chatStore";
 import { compressImage } from './lib/imageCompression';
 import Button from './components/ui/Button';
 import { pressable } from './components/ui/Button';
+import Keypad from './components/ui/Keypad';
 import { MIN_PIN_LENGTH } from './lib/vaultLockout';
 import { usernameRelays } from './lib/relays';
 import { blossomServers } from './lib/egress';
@@ -284,6 +285,18 @@ export default function LockScreen({ identity }) {
 
               {mode !== 'verify_key' && (
                 <input type="password" placeholder={mode === 'restore_mnemonic' ? `New PIN (${MIN_PIN_LENGTH}+ digits)` : `PIN (${MIN_PIN_LENGTH}+ digits)`} value={pin} onChange={(e) => { setPin(e.target.value.replace(/\D/g, '').slice(0, 8)); setError(''); }} className="w-full border border-line bg-panelStrong rounded-2xl px-5 py-4 text-[16px] text-ink placeholder:text-inkSubtle focus:outline-none focus:border-accent transition-colors" maxLength={8} />
+              )}
+
+              {/* Keypad floor for every PIN surface; PR10's lock-screen rebuild
+                  re-dresses it. The typed field above keeps keyboard access. */}
+              {mode !== 'verify_key' && (
+                <Keypad
+                  value={pin}
+                  max={8}
+                  onDigit={(digit) => { setPin((prev) => (prev + digit).replace(/\D/g, '').slice(0, 8)); setError(''); }}
+                  onErase={() => setPin((prev) => prev.slice(0, -1))}
+                  onBiometric={mode === 'unlock' && identity?.hasBiometric ? handleBiometricUnlock : undefined}
+                />
               )}
 
               {mode === 'create' && (
