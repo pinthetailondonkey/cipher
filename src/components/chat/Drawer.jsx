@@ -26,7 +26,7 @@ export default function Drawer({ identity, open, onClose, onNavigate }) {
   return (
     <AnimatePresence>
       {open && (
-        <motion.div key="drawer" className="fixed inset-0 z-40 md:hidden">
+        <motion.div key="drawer" className="fixed inset-0 z-[100] md:hidden">
           <motion.button
             type="button"
             aria-label="Close menu"
