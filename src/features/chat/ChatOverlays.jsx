@@ -12,6 +12,7 @@ const VendorStorefront = lazy(() => import('../../components/chat/VendorStorefro
 export default function ChatOverlays({
   identity,
   openChat,
+  joinGroupById,
   startOrderWithVendor,
   handleSaveEditedProduct,
   handleBroadcastSubmit,
@@ -70,7 +71,7 @@ export default function ChatOverlays({
           }}
         />
       )}
-      {showQRScanner && <QRScanner onClose={() => setShowQRScanner(false)} />}
+      {showQRScanner && <QRScanner onClose={() => setShowQRScanner(false)} openChat={openChat} joinGroupById={joinGroupById} />}
       <BroadcastModal isOpen={!!broadcastProduct} onClose={() => setBroadcastProduct(null)} product={broadcastProduct} groups={groups} onBroadcast={handleBroadcastSubmit} />
       <ProductEditModal editingProduct={editingProduct} onClose={() => setEditingProduct(null)} onSubmit={handleSaveEditedProduct} identity={identity} />
       <VendorStorefront

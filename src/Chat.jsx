@@ -142,6 +142,7 @@ export default function Chat({ identity }) {
       <ChatOverlays
         identity={identity}
         openChat={directory.openChat}
+        joinGroupById={directory.joinGroupById}
         startOrderWithVendor={commerce.startOrderWithVendor}
         handleSaveEditedProduct={commerce.handleSaveEditedProduct}
         handleBroadcastSubmit={commerce.handleBroadcastSubmit}
