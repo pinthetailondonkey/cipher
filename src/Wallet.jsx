@@ -1,8 +1,8 @@
-import { lazy, Suspense, useState, useEffect, useLayoutEffect } from 'react'
+import { lazy, Suspense, useRef, useState, useEffect } from 'react'
 import {
-  User, Plus, AlertCircle, RefreshCw,
-  Lock, ChevronRight, ArrowLeft, Copy, CreditCard, Camera,
-  BarChart3, Package, KeyRound, Menu, ShieldAlert, Users, SlidersHorizontal, Shield, BookOpen, Moon
+  User, AlertCircle, RefreshCw,
+  Lock, ArrowLeft, Copy, CreditCard, Camera,
+  BarChart3, Package, KeyRound, Menu, Users, SlidersHorizontal, Shield, BookOpen, Globe
 } from 'lucide-react'
 import { uploadToBlossom } from '@nostr-wot/blossom'
 import { useProfiles, updateProfileCache } from './useProfiles'
@@ -20,6 +20,10 @@ import Connections from './components/chat/Connections';
 import Avatar from './components/ui/Avatar';
 import Picture from './components/ui/Picture';
 import ScreenHeader from './components/ui/ScreenHeader';
+import Sheet from './components/ui/Sheet';
+import Dialog from './components/ui/Dialog';
+import Switch from './components/ui/Switch';
+import ListRow, { Card } from './components/ui/ListRow';
 import { pressable } from './components/ui/Button';
 import { copyText } from './lib/copyText';
 import { scopedGet, scopedSet } from './lib/storage';
@@ -28,35 +32,6 @@ import { blossomServers } from './lib/egress';
 
 const VendorDashboard = lazy(() => import('./components/chat/VendorDashboard'));
 const ProfileEditor = lazy(() => import('./components/chat/ProfileEditor'));
-
-// Two modes, one switch. The key is cipher_theme — the same key the old
-// theme registry wrote — but with exactly two values now: 'dark' (default)
-// and 'light'. Old registry values still saved on existing installs are
-// orphaned and coerced here: 'paper' meant the light skin, everything else
-// ('vault', 'lobby', 'chromerooms') meant dark.
-const THEME_KEY = 'cipher_theme';
-
-function readTheme() {
-  try {
-    const saved = globalThis.localStorage?.getItem(THEME_KEY);
-    if (saved === 'paper') return 'light';
-    return 'dark';
-  } catch {
-    return 'dark';
-  }
-}
-
-function writeTheme(mode) {
-  try {
-    globalThis.localStorage?.setItem(THEME_KEY, mode);
-  } catch { /* private mode */ }
-  return mode;
-}
-
-function applyTheme(mode) {
-  document.documentElement.dataset.theme = mode === 'light' ? 'light' : '';
-  return mode;
-}
 
 export default function Wallet({ identity, onOpenChat, startView = 'main' }) {
   const isVendor = useChatStore((state) => state.isVendor);
@@ -124,13 +99,8 @@ export default function Wallet({ identity, onOpenChat, startView = 'main' }) {
   const [uploadingImage, setUploadingImage] = useState(false)
   const [copied, setCopied] = useState(false)
   const [savingAdvanced, setSavingAdvanced] = useState(false)
-
-  // The look starts before first paint of this screen: read the persisted
-  // mode and pin the attribute in a layout effect so no themed surface
-  // flashes. Old registry values coerce on read (paper -> light, rest dark).
-  const [theme, setTheme] = useState(readTheme)
-  useLayoutEffect(() => { applyTheme(theme) }, [theme])
-  const toggleTheme = () => setTheme((current) => writeTheme(current === 'light' ? 'dark' : 'light'))
+  const [showUploadSheet, setShowUploadSheet] = useState(false)
+  const avatarInput = useRef(null)
 
   useEffect(() => {
     if (myProfile.name) setUsername(myProfile.name)
@@ -334,13 +304,11 @@ export default function Wallet({ identity, onOpenChat, startView = 'main' }) {
             <button type="submit" className="w-full border-t border-line bg-transparent py-3 text-[14px] font-bold text-accentText active:bg-ink/5">Save counts</button>
           </form>
           <div className="overflow-hidden rounded-2xl border border-line bg-panel">
-            <button type="button" onClick={toggleAutoVouch} aria-pressed={autoVouch} className="flex w-full items-center gap-3 p-4 text-left">
+            <div className="flex w-full items-center gap-3 p-4 text-left">
               <Shield size={24} className="shrink-0 text-inkSubtle" />
               <span className="min-w-0 flex-1"><span className="block text-[15px] font-semibold text-ink">Auto-vouch on delivery</span><span className="block text-[13px] text-inkMuted">After you deliver, vouch the trade automatically.</span></span>
-              <span aria-hidden="true" className={`relative h-6 w-10 shrink-0 rounded-full transition-colors ${autoVouch ? 'bg-accent' : 'bg-ink/15'}`}>
-                <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-accentInk transition-all ${autoVouch ? 'left-[18px]' : 'left-0.5'}`} />
-              </span>
-            </button>
+              <Switch checked={autoVouch} onChange={toggleAutoVouch} ariaLabel="Auto-vouch on delivery" />
+            </div>
           </div>
         </div>
       </div>
@@ -365,10 +333,6 @@ export default function Wallet({ identity, onOpenChat, startView = 'main' }) {
 
   if (view === 'privacy') return <PrivacySettings onBack={() => setView('main')} />;
   if (view === 'connections') return <Connections onBack={() => setView('main')} />;
-
-  if (view === 'profile_editor') {
-    return <Suspense fallback={<div className="flex h-full items-center justify-center bg-scrim"><div className="h-7 w-7 animate-spin rounded-full border-2 border-ink/20 border-t-accentText" /></div>}><ProfileEditor identity={identity} onClose={() => setView('main')} /></Suspense>;
-  }
 
   if (view === 'vendor') {
     return <Suspense fallback={<div className="flex h-full items-center justify-center bg-scrim"><div className="h-7 w-7 animate-spin rounded-full border-2 border-ink/20 border-t-accentText" /></div>}><VendorDashboard identity={identity} products={JSON.parse(localStorage.getItem('cipher_my_products') || '[]')} onBack={() => setView('main')} onCreate={() => setView('product')} /></Suspense>;
@@ -460,7 +424,7 @@ export default function Wallet({ identity, onOpenChat, startView = 'main' }) {
 
   // --- MAIN PROFILE TAB ---
   return (
-    <div className="animate-fade-in overflow-y-auto h-full pb-4 pb-[env(safe-area-inset-bottom)]">
+    <div className="animate-fade-in h-full overflow-y-auto pb-4 pb-[env(safe-area-inset-bottom)]">
       {status && <div className="fixed left-1/2 top-[calc(5rem+env(safe-area-inset-top))] -translate-x-1/2 md:left-auto md:right-6 md:top-6 md:translate-x-0 bg-panelStrong border border-line text-ink px-4 py-2 rounded-xl text-xs font-bold z-50 animate-fade-in">{status}</div>}
 
       {/* HEADER PROFILE CARD */}
@@ -469,10 +433,10 @@ export default function Wallet({ identity, onOpenChat, startView = 'main' }) {
           <button type="button" onClick={() => useChatStore.getState().setShowDrawer(true)} aria-label="Open menu" className="-ml-1 touch-target p-2 text-inkMuted hover:text-ink"><Menu size={20} /></button>
         </div>
         <div className="relative mb-4">
-          <input type="file" accept="image/*" onChange={(e) => handleImageUpload(e, 'profile')} className="hidden" id="main-avatar-upload" />
-          <label htmlFor="main-avatar-upload" className="relative block cursor-pointer">
+          <input type="file" accept="image/*" onChange={(e) => { setShowUploadSheet(false); handleImageUpload(e, 'profile'); }} className="hidden" id="main-avatar-upload" ref={avatarInput} />
+          <button type="button" onClick={() => setShowUploadSheet(true)} aria-label="Change profile photo" className={`relative block rounded-full ${pressable}`}>
             <Picture src={myProfile.picture} alt="" className="h-20 w-20 rounded-full border border-line object-cover" fallback={<Avatar name={myProfile.displayName || myProfile.name} className="!h-20 !w-20 text-2xl" />} />
-          </label>
+          </button>
         </div>
         <h2 className="text-2xl font-bold tracking-tight text-ink">{myProfile.displayName}</h2>
         <p className="mb-3 text-[13px] text-inkMuted">@{myProfile.name}</p>
@@ -483,146 +447,101 @@ export default function Wallet({ identity, onOpenChat, startView = 'main' }) {
         </button>
       </div>
 
-      <div className="space-y-4 p-4">
-        <div className="overflow-hidden rounded-2xl border border-line bg-panel">
-          <button onClick={() => setView('orders')} className={`flex w-full items-center gap-3 border-b border-line p-4 text-left ${pressable}`}>
-            <Package size={24} className="shrink-0 text-inkSubtle" />
-            <span className="min-w-0 flex-1"><span className="block text-[15px] font-semibold text-ink">My Orders</span><span className="block text-[13px] text-inkMuted">Purchases and shipping</span></span>
-            <ChevronRight size={18} className="shrink-0 text-inkSubtle" />
-          </button>
-          <button onClick={() => setView('profile_editor')} className={`flex w-full items-center gap-3 border-b border-line p-4 text-left ${pressable}`}>
-            <User size={24} className="shrink-0 text-inkSubtle" />
-            <span className="min-w-0 flex-1"><span className="block text-[15px] font-semibold text-ink">Edit Profile</span><span className="block text-[13px] text-inkMuted">Name, bio, and photo</span></span>
-            <ChevronRight size={18} className="shrink-0 text-inkSubtle" />
-          </button>
-          <button onClick={() => useChatStore.getState().setShowTutorial(true)} className={`flex w-full items-center gap-3 border-b border-line p-4 text-left ${pressable}`}>
-            <BookOpen size={24} className="shrink-0 text-inkSubtle" />
-            <span className="min-w-0 flex-1"><span className="block text-[15px] font-semibold text-ink">How to use</span><span className="block text-[13px] text-inkMuted">A walkthrough of the app</span></span>
-            <ChevronRight size={18} className="shrink-0 text-inkSubtle" />
-          </button>
-          <button onClick={() => setView('privacy')} className="flex w-full items-center gap-3 p-4 text-left">
-            <Shield size={24} className="shrink-0 text-inkSubtle" />
-            <span className="min-w-0 flex-1"><span className="block text-[15px] font-semibold text-ink">Privacy</span><span className="block text-[13px] text-inkMuted">Calls, last seen, blocked</span></span>
-            <ChevronRight size={18} className="shrink-0 text-inkSubtle" />
-          </button>
-        </div>
+      <div className="space-y-5 p-4">
+        <Card label="Account">
+          <ListRow icon={User} title="Edit Profile" subtitle="Name, bio, and photo" onClick={() => setView('profile_editor')} />
+          <ListRow icon={RefreshCw} title="Accounts" subtitle="Switch on this device" onClick={() => setView('account_switcher')} />
+          <ListRow icon={KeyRound} title="Backup" subtitle="Secret key and recovery phrase" onClick={() => setView('identity_backup')} />
+        </Card>
 
-        <div className="overflow-hidden rounded-2xl border border-line bg-panel">
+        <Card label="Trading">
+          <ListRow icon={Package} title="My Orders" subtitle="Purchases and shipping" onClick={() => setView('orders')} />
+          <ListRow icon={Users} title="Message requests" subtitle="People you have not answered" onClick={() => setView('message_requests')} />
           {!isVendor ? (
-            <button type="button" onClick={() => { setStatus(''); setView('vendor_setup'); }} className="flex w-full items-center gap-3 p-4 text-left">
-              <CreditCard size={24} className="shrink-0 text-inkSubtle" />
-              <span className="min-w-0 flex-1"><span className="block text-[15px] font-semibold text-ink">Start selling</span><span className="block text-[13px] text-inkMuted">Take payment directly</span></span>
-              <ChevronRight size={18} className="shrink-0 text-inkSubtle" />
-            </button>
+            <ListRow icon={CreditCard} title="Start selling" subtitle="Take payment directly" onClick={() => { setStatus(''); setView('vendor_setup'); }} />
           ) : (
             <>
-              <button type="button" onClick={() => setView('vendor')} className="flex w-full items-center gap-3 border-b border-line p-4 text-left">
-                <BarChart3 size={24} className="shrink-0 text-inkSubtle" />
-                <span className="min-w-0 flex-1"><span className="block text-[15px] font-semibold text-ink">Vendor</span><span className="block text-[13px] text-inkMuted">Orders and listings</span></span>
-                <ChevronRight size={18} className="shrink-0 text-inkSubtle" />
-              </button>
-              <button type="button" onClick={() => setView('advanced')} className="flex w-full items-center gap-3 p-4 text-left">
-                <SlidersHorizontal size={24} className="shrink-0 text-inkSubtle" />
-                <span className="min-w-0 flex-1"><span className="block text-[15px] font-semibold text-ink">Payment settings</span><span className="block text-[13px] text-inkMuted">Addresses for each order</span></span>
-                <ChevronRight size={18} className="shrink-0 text-inkSubtle" />
-              </button>
+              <ListRow icon={BarChart3} title="Vendor" subtitle="Orders and listings" onClick={() => setView('vendor')} />
+              <ListRow icon={SlidersHorizontal} title="Payment settings" subtitle="Addresses for each order" onClick={() => setView('advanced')} />
+              <ListRow
+                title="Switch to buyer mode"
+                onClick={async () => {
+                  setIsVendor(false);
+                  // Leaving vendor mode clears what the mode saved: the leftover
+                  // receiving addresses were the bug — they stuck around on this
+                  // device and made the app bounce like a stuck error.
+                  setBtcAddress('');
+                  setXmrAddress('');
+                  // The advanced-payment form state would otherwise still hold the
+                  // old keys and save them right back on the next Save.
+                  setBtcXpub('');
+                  setXmrPrivateViewKey('');
+                  setBtcNetwork('bc');
+                  savePaymentAddresses({ btc: '', xmr: '' });
+                  try {
+                    await saveVendorPaymentConfig(identity, { btcXpub: '', xmrPrivateViewKey: '', btcNetwork: 'bc' });
+                  } catch (wipeError) {
+                    useChatStore.getState().setToast({ type: 'error', message: `Could not clear vendor payment settings. ${wipeError?.message || ''}`.trim() });
+                  }
+                  useChatStore.getState().setToast({ type: 'success', message: 'Switched to buyer mode. Payment details were cleared from this device.' });
+                }}
+              />
             </>
           )}
-        </div>
+          <ListRow icon={Package} title="Order settings" subtitle="Preferred coin, confirmation count, auto-vouch" onClick={() => setView('order_settings')} />
+        </Card>
 
-        <div className="overflow-hidden rounded-2xl border border-line bg-panel">
-          <button onClick={() => setView('order_settings')} className="flex w-full items-center gap-3 p-4 text-left">
-            <Package size={24} className="shrink-0 text-inkSubtle" />
-            <span className="min-w-0 flex-1"><span className="block text-[15px] font-semibold text-ink">Order settings</span><span className="block text-[13px] text-inkMuted">Preferred coin, confirmation count, auto-vouch</span></span>
-            <ChevronRight size={18} className="shrink-0 text-inkSubtle" />
-          </button>
-        </div>
+        <Card label="Security & Privacy">
+          <ListRow icon={BookOpen} title="How to use" subtitle="A walkthrough of the app" onClick={() => useChatStore.getState().setShowTutorial(true)} />
+          <ListRow icon={Shield} title="Privacy" subtitle="Calls, last seen, blocked" onClick={() => setView('privacy')} />
+          <ListRow icon={Globe} title="Connections" subtitle="Tor and proxy" onClick={() => setView('connections')} />
+        </Card>
 
-        <div className="overflow-hidden rounded-2xl border border-line bg-panel">
-          <button type="button" role="switch" aria-checked={theme === 'light'} aria-label="Light mode" onClick={toggleTheme} className={`flex w-full items-center gap-3 p-4 text-left ${pressable}`}>
-            <Moon size={24} className="shrink-0 text-inkSubtle" />
-            <span className="min-w-0 flex-1"><span className="block text-[15px] font-semibold text-ink">Light mode</span><span className="block text-[13px] text-inkMuted">Warm paper instead of dark. Remembered on this device.</span></span>
-            <span aria-hidden="true" className={`relative h-6 w-11 shrink-0 rounded-full transition-colors ${theme === 'light' ? 'bg-accent' : 'bg-ink/15'}`}>
-              <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-ink transition-transform ${theme === 'light' ? 'translate-x-5' : 'translate-x-0.5'}`} />
-            </span>
-          </button>
-        </div>
-
-        <div className="overflow-hidden rounded-2xl border border-line bg-panel">
-          <button onClick={() => setView('message_requests')} className="flex w-full items-center gap-3 border-b border-line p-4 text-left">
-            <Users size={24} className="shrink-0 text-inkSubtle" />
-            <span className="min-w-0 flex-1"><span className="block text-[15px] font-semibold text-ink">Message requests</span><span className="block text-[13px] text-inkMuted">People you have not answered</span></span>
-            <ChevronRight size={18} className="shrink-0 text-inkSubtle" />
-          </button>
-          <button onClick={() => setView('identity_backup')} className="flex w-full items-center gap-3 border-b border-line p-4 text-left">
-            <KeyRound size={24} className="shrink-0 text-inkSubtle" />
-            <span className="min-w-0 flex-1"><span className="block text-[15px] font-semibold text-ink">Backup</span><span className="block text-[13px] text-inkMuted">Secret key and recovery phrase</span></span>
-            <ChevronRight size={18} className="shrink-0 text-inkSubtle" />
-          </button>
-          <button onClick={() => setView('account_switcher')} className="flex w-full items-center gap-3 border-b border-line p-4 text-left">
-            <RefreshCw size={24} className="shrink-0 text-inkSubtle" />
-            <span className="min-w-0 flex-1"><span className="block text-[15px] font-semibold text-ink">Accounts</span><span className="block text-[13px] text-inkMuted">Switch on this device</span></span>
-            <ChevronRight size={18} className="shrink-0 text-inkSubtle" />
-          </button>
-          <button onClick={identity.lockApp} className="flex w-full items-center gap-3 p-4 text-left">
-            <Lock size={24} className="shrink-0 text-inkSubtle" />
-            <span className="min-w-0 flex-1 text-[15px] font-semibold text-ink">Lock</span>
-          </button>
-        </div>
-
-        <div className="overflow-hidden rounded-2xl border border-line bg-panel">
-          {isVendor && (
-            <button onClick={async () => {
-              setIsVendor(false);
-              // Leaving vendor mode clears what the mode saved: the leftover
-              // receiving addresses were the bug — they stuck around on this
-              // device and made the app bounce like a stuck error.
-              setBtcAddress('');
-              setXmrAddress('');
-              // The advanced-payment form state would otherwise still hold the
-              // old keys and save them right back on the next Save.
-              setBtcXpub('');
-              setXmrPrivateViewKey('');
-              setBtcNetwork('bc');
-              savePaymentAddresses({ btc: '', xmr: '' });
-              try {
-                await saveVendorPaymentConfig(identity, { btcXpub: '', xmrPrivateViewKey: '', btcNetwork: 'bc' });
-              } catch (wipeError) {
-                useChatStore.getState().setToast({ type: 'error', message: `Could not clear vendor payment settings. ${wipeError?.message || ''}`.trim() });
-              }
-              useChatStore.getState().setToast({ type: 'success', message: 'Switched to buyer mode. Payment details were cleared from this device.' });
-            }} className="flex w-full items-center gap-3 border-b border-line p-4 text-left">
-              <span className="text-[15px] font-semibold text-accentText">Switch to buyer mode</span>
-            </button>
-          )}
-          <button onClick={() => setShowPanicConfirm(true)} className="flex w-full items-center gap-3 p-4 text-left">
-            <AlertCircle size={24} className="shrink-0 text-danger" />
-            <span><span className="block text-[15px] font-semibold text-danger">Panic wipe</span><span className="block text-[13px] text-inkSubtle">Erase this device</span></span>
-          </button>
-        </div>
+        <Card label="Danger zone">
+          <ListRow icon={Lock} title="Lock now" onClick={identity.lockApp} />
+          <ListRow icon={AlertCircle} title="Panic wipe" subtitle="Erase this device" danger onClick={() => setShowPanicConfirm(true)} />
+        </Card>
       </div>
 
-      {/* PANIC CONFIRM MODAL */}
-      {showPanicConfirm && (
-        <div className="fixed inset-0 z-[999] flex items-center justify-center bg-scrim/80 p-4 animate-fade-in">
-          <div className="bg-panel border border-line rounded-2xl w-full max-w-sm p-6">
-            <h2 className="text-xl font-bold text-ink mb-2">Panic Wipe</h2>
-            <p className="text-sm text-ink/70 mb-6">This will instantly destroy all local data on this device. Make sure you have saved your 12-word recovery phrase!</p>
-            <div className="flex gap-3">
-              <button onClick={() => setShowPanicConfirm(false)} className="flex-1 py-3 border border-line bg-panelStrong rounded-xl font-bold text-ink transition-colors">Cancel</button>
-              <button onClick={async () => {
-                setShowPanicConfirm(false);
-                try {
-                  await db.messages.clear();
-                } catch (error) {
-                  console.error('[Wallet] Could not clear active message table before full wipe:', error);
-                }
-                await identity.panicWipe();
-              }} className="flex-1 py-3 bg-danger text-accentInk rounded-xl font-bold transition-colors">Wipe It</button>
-            </div>
-          </div>
-        </div>
+      {/* AVATAR UPLOAD SHEET — the Blossom signer path below is untouched */}
+      <Sheet open={showUploadSheet} onClose={() => setShowUploadSheet(false)} title="Profile photo">
+        <button
+          type="button"
+          onClick={() => avatarInput.current?.click()}
+          className="w-full rounded-2xl bg-accent py-3.5 font-bold text-accentInk hover:bg-accent"
+        >
+          {uploadingImage ? 'Uploading via Blossom...' : 'Choose Photo'}
+        </button>
+      </Sheet>
+
+      {/* EDIT PROFILE — the editor wears a Sheet now, not a page */}
+      {view === 'profile_editor' && (
+        <Sheet open onClose={() => setView('main')}>
+          <Suspense fallback={<div className="flex h-48 items-center justify-center"><div className="h-7 w-7 animate-spin rounded-full border-2 border-ink/20 border-t-accentText" /></div>}>
+            <ProfileEditor identity={identity} onClose={() => setView('main')} />
+          </Suspense>
+        </Sheet>
       )}
+
+      {/* PANIC WIPE — centered Confirm Dialog, existing copy verbatim */}
+      <Dialog
+        open={showPanicConfirm}
+        onClose={() => setShowPanicConfirm(false)}
+        title="Panic Wipe"
+        confirmLabel="Wipe It"
+        danger
+        onConfirm={async () => {
+          setShowPanicConfirm(false);
+          try {
+            await db.messages.clear();
+          } catch (error) {
+            console.error('[Wallet] Could not clear active message table before full wipe:', error);
+          }
+          await identity.panicWipe();
+        }}
+      >
+        This will instantly destroy all local data on this device. Make sure you have saved your 12-word recovery phrase!
+      </Dialog>
     </div>
   )
 }
