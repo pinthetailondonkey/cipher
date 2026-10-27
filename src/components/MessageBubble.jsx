@@ -28,6 +28,8 @@ const ESCROW_WIRING_LANDED = false;
 import EscrowTimeline from './chat/EscrowTimeline';
 import EscrowDormantRow from './chat/EscrowDormantRow';
 import { noHexName } from '../lib/npub';
+import { scopedGet } from '../lib/storage';
+import ReceiptInspect from './chat/ReceiptInspect';
 import { forwardableContent } from './chat/useThreadActions';
 import { orderPriceLabel } from '../lib/listing';
 import VoiceNote from './chat/VoiceNote';
@@ -126,6 +128,30 @@ function OrderReceipt({ content }) {
         {address && <p className="mt-1 text-[13px] text-ink/40">Ship to {address}</p>}
       </div>
     </div>
+  );
+}
+
+// The receipt door on an order card. The id the receipt is filed under is
+// the order's own event id — an order_update carries it inline in the
+// payload, the original order IS that id. The door prefers the receipt the
+// sender actually attached, then the copy this device stored; ReceiptInspect
+// decides whether either deserves the word.
+function ReceiptDoor({ message, content }) {
+  const [open, setOpen] = useState(false);
+  const orderId = content.type === 'order_update' ? (content.orderId || message.id) : message.id;
+  const receipt = content.receipt || scopedGet(`receipt_${orderId}`, null);
+  if (!receipt) return null;
+  return (
+    <>
+      <button
+        type="button"
+        onClick={(event) => { event.stopPropagation(); setOpen(true); }}
+        className="mb-1 block min-h-11 text-left text-[15px] font-semibold text-accentText"
+      >
+        View receipt
+      </button>
+      <ReceiptInspect receipt={receipt} open={open} onClose={() => setOpen(false)} />
+    </>
   );
 }
 
@@ -423,6 +449,9 @@ export default function MessageBubble({ message, data, onAction, senderName, ide
           // itself claims — a received "confirmed" with no receipt behind it
           // reads back as its real state.
           <OrderReceipt content={{ ...content, ...orderState(chatMessages, message?.id, { data: content }, '', activeDm) }} />
+        )}
+        {(content.type === 'cipher_order' || content.type === 'order_update') && (
+          <ReceiptDoor message={message} content={content} />
         )}
         {content.delivery?.address && <DeliveryAddressRow address={content.delivery.address} />}
         {!message.isSender && content.type === 'cipher_order' && content.delivery?.note && !content.delivery?.address && (
