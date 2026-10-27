@@ -1,6 +1,7 @@
 import React, { lazy, Suspense, useCallback, useEffect, useState } from 'react';
 import { MessageSquare, Compass, Menu, User } from 'lucide-react';
 import TutorialModal from './components/TutorialModal';
+import Rail from './components/ui/Rail';
 import Drawer from './components/chat/Drawer';
 import GlobalDialog from './components/GlobalDialog';
 import CallOverlay from './components/chat/CallOverlay';
@@ -113,21 +114,15 @@ export default function AuthenticatedApp({ identity }) {
         )}
       </main>
 
-      <nav aria-label="Tabs" className="fixed bottom-0 left-0 top-0 z-fab hidden w-[72px] flex-col items-center gap-3 border-r border-line bg-panelStrong pt-4 md:flex">
-        <button onClick={() => setActiveTab('chat')} className={`relative flex w-16 flex-col items-center gap-1 rounded-2xl p-2 min-h-[52px] ${activeTab === 'chat' ? 'text-accent' : 'text-ink/40 hover:text-ink/60'}`}>
-          <MessageSquare size={22} strokeWidth={activeTab === 'chat' ? 2.5 : 2} />
-          {unreadTotal > 0 && <span className="absolute right-2 top-0 flex h-[16px] min-w-[16px] items-center justify-center rounded-full bg-accent px-1.5 text-[10px] font-bold text-accentInk">{unreadTotal > 99 ? '99+' : unreadTotal}</span>}
-          <span className="text-[10px] font-medium">Chats</span>
-        </button>
-        <button onClick={() => setActiveTab('explore')} className={`flex w-16 flex-col items-center gap-1 rounded-2xl p-2 min-h-[52px] ${activeTab === 'explore' ? 'text-accent' : 'text-ink/40 hover:text-ink/60'}`}>
-          <Compass size={22} strokeWidth={activeTab === 'explore' ? 2.5 : 2} />
-          <span className="text-[10px] font-medium">Shop</span>
-        </button>
-        <button onClick={() => setActiveTab('profile')} className={`relative flex w-16 flex-col items-center gap-1 rounded-2xl p-2 min-h-[52px] ${activeTab === 'profile' ? 'text-accent' : 'text-ink/40 hover:text-ink/60'}`}>
-          <User size={22} strokeWidth={activeTab === 'profile' ? 2.5 : 2} />
-          <span className="text-[10px] font-medium">Profile</span>
-        </button>
-      </nav>
+      <Rail
+        label="Tabs"
+        activeId={activeTab}
+        items={[
+          { id: 'chat', label: 'Chats', icon: MessageSquare, badge: unreadTotal, onSelect: () => setActiveTab('chat') },
+          { id: 'explore', label: 'Shop', icon: Compass, onSelect: () => setActiveTab('explore') },
+          { id: 'profile', label: 'Profile', icon: User, onSelect: () => setActiveTab('profile') },
+        ]}
+      />
     </div>
   );
 }
