@@ -13,6 +13,7 @@ import { getAllGroupKeys, getCurrentGroupKey, putGroupKey } from '../lib/crypto/
 import { authorizeGroupControl, authorizeGroupPin, authorizeMemberSnapshot, groupRelayPubkey, groupTimelinePlans, isRestrictedRelayClose, pickMemberSnapshot, pinnedMessageOf, trustedGroupCreator } from '../lib/crypto/groupMembership';
 import { grantKeyRequest, loadMemberSnapshot, loadMemberSnapshotRecord, memberKey, patchMemberSnapshot, rememberMembers, rotateGroupEpoch } from '../lib/crypto/groupKeyRotation';
 import { generateGroupKey } from '../lib/crypto/groupCipher';
+import { heldGroupRow } from '../lib/groupJoin';
 import { distributeGroupKey, epochsToBackfill } from '../lib/crypto/groupKeyDistribution';
 import { enqueueNostrEvent, startOutboxSync } from '../lib/outbox';
 import { groupSocketUrl } from '../lib/egress';
@@ -581,11 +582,16 @@ export function useNIP29Group({ identity }) {
     const localGroups = getMyGroups(identity.pk);
     const idx = localGroups.findIndex(g => g.id === newGroup.id);
     if (idx === -1) localGroups.push(newGroup);
-    else localGroups[idx] = { ...localGroups[idx], ...newGroup };
+    // A held row is named by this device's records, not by the metadata
+    // the join/refresh arrived with (drill residual).
+    else localGroups[idx] = heldGroupRow(localGroups[idx], newGroup);
     setMyGroups(identity.pk, localGroups);
-    setGroups(prev => [newGroup, ...(prev || []).filter(g => g.id !== newGroup.id)]);
+    setGroups(prev => [
+      heldGroupRow((prev || []).find((g) => g.id === newGroup.id), newGroup),
+      ...((prev || []).filter((g) => g.id !== newGroup.id)),
+    ]);
     const active = useChatStore.getState().activeGroup;
-    if (active?.id === newGroup.id) useChatStore.getState().setActiveGroup({ ...active, ...newGroup });
+    if (active?.id === newGroup.id) useChatStore.getState().setActiveGroup(heldGroupRow(active, newGroup));
     return newGroup;
   }, [identity, setGroups]);
 
