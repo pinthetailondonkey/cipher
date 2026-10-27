@@ -26,6 +26,7 @@ import {
 } from './paymentState.js';
 import { quoteEscrow, canEscrow } from './escrowFsm.js';
 import { decodeOrderScript, hexToScript, scriptToHex } from './escrowScript.js';
+import { sha256 } from '@noble/hashes/sha2.js';
 
 const SCHEMA_VERSION = 1;
 
@@ -234,7 +235,28 @@ function decodeOp(payload) {
       if (payload.kind !== 'admitted' && payload.kind !== 'timed' && payload.kind !== 'overt') return { ok: false, reason: 'malformed' };
       const height = Number(payload.height);
       if (!Number.isFinite(height) || height <= 0) return { ok: false, reason: 'malformed' };
-      return { ok: true, op: { type: 'escrow_refund', expectedRevision: payload.expectedRevision, txid: payload.txid, kind: payload.kind, height } };
+      // An overt claim is a claim about SPEND BYTES, so the report must
+      // carry them: the preimage the spend revealed (32 bytes), the
+      // output script, and the sats that went home. A word without
+      // facts to check never reaches the escrow state.
+      let overtFacts = null;
+      if (payload.kind === 'overt') {
+        // The wire carries the facts at top level; this decoder's own
+        // canonical op nests them under `overt`, and the journal stores
+        // that op — recovery re-decodes it (recovery replays through the
+        // same decode, CLAUDE.md's reload rule). So the decoder reads
+        // BOTH spellings of one fact set: the envelope bytes fix the
+        // digest either way, the same way the spend fixed it on-chain.
+        const spoken = payload.overt && isPlainObject(payload.overt) ? payload.overt : payload;
+        const preimageHex = String(spoken.preimageHex ?? '').trim().toLowerCase();
+        const outScriptHex = String(spoken.outScriptHex ?? '').trim().toLowerCase();
+        const returnedSats = satsFromString(spoken.sats);
+        if (!/^[0-9a-f]{64}$/.test(preimageHex)) return { ok: false, reason: 'malformed' };
+        if (!/^21[0-9a-f]{66}ac$/.test(outScriptHex)) return { ok: false, reason: 'malformed' };
+        if (returnedSats === null || returnedSats <= 0n) return { ok: false, reason: 'malformed' };
+        overtFacts = { preimageHex, outScriptHex, sats: returnedSats.toString() };
+      }
+      return { ok: true, op: { type: 'escrow_refund', expectedRevision: payload.expectedRevision, txid: payload.txid, kind: payload.kind, height, ...(overtFacts ? { overt: overtFacts } : {}) } };
     }
     default:
       return { ok: false, reason: 'unknown_op' };
@@ -371,19 +393,46 @@ function checkOp(st, principal, op) {
       // admitted any time after funding; timed only past the script's
       // OWN timer, counted in blocks from the funding height -- the
       // chain reads the script, not the phone. The overt refund is the
-      // Dead Drop: the vendor opens it ALONE, also any time after
-      // funding, and the spend carries the delivery preimage (the
-      // commitment is already in the script, so the door needs only
-      // kinds and heights here). The fee is zero in all three; that
-      // lives in the PSBT path, not here.
+      // Dead Drop: the vendor fires the spend ALONE, also any time
+      // after funding, and the WATCHER reports the chain's own facts
+      // about it. The fee is zero in all three; that lives in the PSBT
+      // path, not here.
       if (!st.escrow || st.escrow.state !== 'funded') return { ok: false, reason: 'invalid_transition' };
       if (op.kind === 'timed' && op.height < st.escrow.fundingHeight + st.escrow.delayBlocks) {
         return { ok: false, reason: 'escrow_refused' };
+      }
+      if (op.kind === 'overt') {
+        // The byte-level binding (re-attack round 2, vectors 5 and 6:
+        // the membrane-spoof and the phantom replay). The wire word
+        // 'overt' is admitted only when three facts hold against THIS
+        // escrow's own bytes: (1) the escrow the buyer funded really is
+        // a Dead Drop box — it committed an overt hash at the open
+        // door; (2) the spend went to the refund branch's key, bare
+        // P2PK — the same key the buyer's slot named, the same output
+        // the spend builder enforces; (3) the preimage revealed
+        // on-chain hashes to that commitment. One-spigot truth: a
+        // cooperative release or a stranger-key spend cannot be
+        // renamed 'overt' past this door.
+        if (!st.escrow.overtHashHex) return { ok: false, reason: 'escrow_refused' };
+        const box = decodeOrderScript(hexToScript(st.escrow.scriptHex));
+        if (!box) return { ok: false, reason: 'escrow_refused' };
+        if (op.overt.outScriptHex !== `21${scriptToHex(box.buyerPubKey)}ac`) {
+          return { ok: false, reason: 'escrow_refused' };
+        }
+        if (scriptToHex(sha256(hexToScript(op.overt.preimageHex))) !== st.escrow.overtHashHex) {
+          return { ok: false, reason: 'escrow_refused' };
+        }
       }
       return { ok: true, changed: true, apply: (state) => {
         state.escrow.state = 'refunded';
         state.escrow.refundKind = op.kind;
         state.escrow.settleTxid = op.txid;
+        if (op.kind === 'overt') {
+          // the attestation survives in trusted state: what was
+          // returned, and the delivery word now public on-chain
+          state.escrow.returnedSats = op.overt.sats;
+          state.escrow.deliveredPreimageHex = op.overt.preimageHex;
+        }
         state.status = ORDER_STATUS.REFUNDED;
       } };
     }

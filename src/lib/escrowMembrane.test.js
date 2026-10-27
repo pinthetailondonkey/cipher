@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { OrderMembrane, MemoryJournal, satsToCoins } from './orderMembrane.js';
 import { assembleOrderScript, assembleOvertOrderScript, scriptToHex } from './escrowScript.js';
 import { MIN_ORDER_SATS } from './escrowFsm.js';
+import { sha256 } from '@noble/hashes/sha2.js';
 
 // The escrow ops walk the SAME admission door every other order fact
 // walks: decode -> dedup -> revision -> authority -> one journal record.
@@ -13,11 +14,18 @@ const PRICE = 50_000_000n; // 0.5 BTC
 const PUB_V = Uint8Array.from({ length: 33 }, (_, i) => 0x11 + i);
 const PUB_B = Uint8Array.from({ length: 33 }, (_, i) => 0x2a + i);
 const SCRIPT_HEX = scriptToHex(assembleOrderScript({ vendorPubKey: PUB_V, buyerPubKey: PUB_B, delayBlocks: 2880 }));
-const OVERT_HASH = Uint8Array.from({ length: 32 }, (_, i) => 0x5a + i);
+// The delivery nonce and its commitment: the nonce is what the vendor
+// alone holds; the hash is what the script fixes before funding.
+const DELIVERY_NONCE = Uint8Array.from({ length: 32 }, (_, i) => 0xbc + i);
+const DELIVERY_NONCE_HEX = scriptToHex(DELIVERY_NONCE);
+const OVERT_HASH = sha256(DELIVERY_NONCE);
 const OVERT_HASH_HEX = scriptToHex(OVERT_HASH);
 const OVERT_SCRIPT_HEX = scriptToHex(assembleOvertOrderScript({
   vendorPubKey: PUB_V, buyerPubKey: PUB_B, delayBlocks: 2880, overtHash: OVERT_HASH,
 }));
+// The enforced money table facts the watcher reports (the same shape
+// the spend builder produces and the door re-checks): buyer P2PK.
+const BUYER_P2PK = `21${scriptToHex(PUB_B)}ac`;
 const TX_FUND = 'aa'.repeat(32);
 const TX_SETTLE = 'bb'.repeat(32);
 const FUND_HEIGHT = 800_000;
@@ -67,7 +75,7 @@ function confirmOrder(m, { revision, id = 'confirm-1', confirmations = 3 } = {})
   });
 }
 
-function settleOrder(m, kind, { revision, id = kind, height = FUND_HEIGHT, refundKind = 'admitted' } = {}) {
+function settleOrder(m, kind, { revision, id = kind, height = FUND_HEIGHT, refundKind = 'admitted', overt } = {}) {
   const st = m.summary();
   return m.admit({
     schemaVersion: 1,
@@ -76,8 +84,22 @@ function settleOrder(m, kind, { revision, id = kind, height = FUND_HEIGHT, refun
     payload: {
       type: kind, expectedRevision: revision ?? st.revision,
       txid: TX_SETTLE, ...(kind === 'escrow_refund' ? { kind: refundKind } : {}), height,
+      ...(kind === 'escrow_refund' && overt ? { ...overt } : {}),
     },
   });
+}
+
+// The exact facts a Dead Drop close reports (round 2 card): the
+// revealed preimage, the buyer P2PK output, the sats that went home.
+// feeSats = the miner's cut; keptSats = how much the spend left
+// behind for anyone but the buyer (the lie under test).
+function overtFacts(m, { feeSats = 1440n, keptSats = 0n, outScriptHex = BUYER_P2PK, preimageHex = DELIVERY_NONCE_HEX } = {}) {
+  const funded = BigInt(m.summary().escrow.fundedSats);
+  return {
+    preimageHex,
+    outScriptHex,
+    sats: (funded - feeSats - keptSats).toString(),
+  };
 }
 
 function depositSats(summary) {
@@ -279,22 +301,107 @@ test('a dead drop box opens with the spoken commitment and refunds overt, fee-fr
   fundOrder(m, { sats: depositSats(st).toString() });
   // the dead drop fires ANY time after funding — day zero, hours in:
   // overt refund at funding height + 1, like an admitted one
-  assert.equal(settleOrder(m, 'escrow_refund', { id: 'overt-refund', height: FUND_HEIGHT + 1, refundKind: 'overt' }).status, 'accepted');
+  assert.equal(settleOrder(m, 'escrow_refund', {
+    id: 'overt-refund', height: FUND_HEIGHT + 1, refundKind: 'overt', overt: overtFacts(m),
+  }).status, 'accepted');
   st = m.summary();
   assert.equal(st.escrow.state, 'refunded');
   assert.equal(st.escrow.refundKind, 'overt');
   assert.equal(st.escrow.settleTxid, TX_SETTLE);
+  // the attestation survives in trusted state: the word now on-chain
+  assert.equal(st.escrow.deliveredPreimageHex, DELIVERY_NONCE_HEX);
+  assert.equal(st.escrow.returnedSats, (depositSats(st) - 1440n).toString()); // the helper reports funded minus the miner fee
 
   // and the ghost signature survives replay byte-exactly: the journal
-  // puts the same box back, commitment and refund kind included
+  // puts the same box back, commitment, refund kind and delivery word
+  // included
   const journal = new MemoryJournal();
   const m2 = new OrderMembrane('order-1', 'btc', journal);
   openOrder(m2, { id: 'overt-open', script: OVERT_SCRIPT_HEX, overtHashHex: OVERT_HASH_HEX });
   fundOrder(m2, { sats: depositSats(m2.summary()).toString() });
-  settleOrder(m2, 'escrow_refund', { id: 'overt-refund', height: FUND_HEIGHT + 1, refundKind: 'overt' });
+  settleOrder(m2, 'escrow_refund', { id: 'overt-refund', height: FUND_HEIGHT + 1, refundKind: 'overt', overt: overtFacts(m2) });
   const fresh = new OrderMembrane('order-1', 'btc', journal);
   assert.equal(fresh.summary().escrow.refundKind, 'overt');
   assert.equal(fresh.summary().escrow.overtHashHex, OVERT_HASH_HEX);
+  assert.equal(fresh.summary().escrow.deliveredPreimageHex, DELIVERY_NONCE_HEX);
+});
+
+// Round-2 card, vector 5 (membrane spoof) + 6 (phantom replay): the
+// word 'overt' is bound to three byte facts held against THIS escrow,
+// and every one of them refuses the rename.
+test('the word overt cannot ride past the door without its bytes', () => {
+  const funded = (m0) => {
+    openOrder(m0, { id: 'overt-open', script: OVERT_SCRIPT_HEX, overtHashHex: OVERT_HASH_HEX });
+    fundOrder(m0, { sats: depositSats(m0.summary()).toString() });
+  };
+  // missing facts: malformed at the decode, before anything applies
+  const mMissing = freshMembrane();
+  funded(mMissing);
+  assert.equal(settleOrder(mMissing, 'escrow_refund', { id: 'no-facts', refundKind: 'overt' }).reason, 'malformed');
+  assert.equal(mMissing.summary().escrow.state, 'funded');
+  // wrong preimage: hashes to the wrong thing -> escrow_refused
+  const mWrongWord = freshMembrane();
+  funded(mWrongWord);
+  assert.equal(settleOrder(mWrongWord, 'escrow_refund', {
+    id: 'wrong-word', refundKind: 'overt',
+    overt: overtFacts(mWrongWord, { preimageHex: 'ff'.repeat(32) }),
+  }).reason, 'escrow_refused');
+  assert.equal(mWrongWord.summary().escrow.state, 'funded');
+  assert.equal(mWrongWord.summary().escrow.settleTxid, null);
+  // a stranger's key as the output: the refund branch pays THE buyer
+  const mStranger = freshMembrane();
+  funded(mStranger);
+  assert.equal(settleOrder(mStranger, 'escrow_refund', {
+    id: 'stranger-out', refundKind: 'overt',
+    overt: overtFacts(mStranger, { outScriptHex: `21${'f0'.repeat(33)}ac` }),
+  }).reason, 'escrow_refused');
+  // a cooperative release renamed 'overt': the output it pays is a
+  // P2PKH of something, not the buyer key the branch names. The output
+  // SHAPE is refused even earlier, at the decode.
+  const mRelease = freshMembrane();
+  funded(mRelease);
+  assert.equal(settleOrder(mRelease, 'escrow_refund', {
+    id: 'rename-release', refundKind: 'overt',
+    overt: overtFacts(mRelease, { outScriptHex: '76a914' + '55'.repeat(20) + '88ac' }),
+  }).reason, 'malformed');
+  // the escrow itself was never a Dead Drop: the plain box refuses the
+  // word outright, however complete the facts
+  const mPlain = freshMembrane();
+  openOrder(mPlain);
+  fundOrder(mPlain, { sats: depositSats(mPlain.summary()).toString() });
+  assert.equal(settleOrder(mPlain, 'escrow_refund', { id: 'plain-overt', refundKind: 'overt', overt: overtFacts(mPlain) }).reason, 'escrow_refused');
+});
+// No "returned S must equal funded" gate, on purpose: the destination
+// check is the anti-theft wall (only the buyer's key may be paid), and
+// a smaller buyer output is the vendor BURNING the difference to
+// miners — spite that costs the vendor, never steals for them. The
+// sats go home as the watcher's read, same trust escrow_fund rides.
+// The spend builder's own one-output buyer-P2PK table is the tight
+// version of this rule for money built by this app.
+
+test('nobody but the watcher says refund, and no refund talks before funding', () => {
+  // vector 6's phantom: a vendor-crafted overt refund on an order that
+  // never funded. Two doors stop it before the chain is even asked.
+  const m = freshMembrane();
+  openOrder(m, { id: 'overt-open', script: OVERT_SCRIPT_HEX, overtHashHex: OVERT_HASH_HEX });
+  const st = m.summary();
+  const fakeFacts = { preimageHex: DELIVERY_NONCE_HEX, outScriptHex: BUYER_P2PK, sats: '100' };
+  // the vendor cannot SAY refund at all — the authority wall
+  const vendorClaim = m.admit({
+    schemaVersion: 1, operationId: 'vend-claims', principal: 'vendor',
+    payload: { type: 'escrow_refund', expectedRevision: st.revision, txid: TX_SETTLE, kind: 'overt', height: FUND_HEIGHT + 1, ...fakeFacts },
+  });
+  assert.equal(vendorClaim.reason, 'authority');
+  // even the watcher cannot say it of unfunded money — the box state wall
+  assert.equal(
+    m.admit({
+      schemaVersion: 1, operationId: 'phantom-refund', principal: 'watcher',
+      payload: { type: 'escrow_refund', expectedRevision: st.revision, txid: TX_SETTLE, kind: 'overt', height: FUND_HEIGHT + 1, ...fakeFacts },
+    }).reason, 'invalid_transition',
+  );
+  // fund it, and the honest path still walks: the walls only stop lies
+  fundOrder(m, { sats: depositSats(m.summary()).toString() });
+  assert.equal(settleOrder(m, 'escrow_refund', { id: 'overt-next', refundKind: 'overt', overt: overtFacts(m) }).status, 'accepted');
 });
 
 test('a forged escrow_open by the buyer hits the authority wall, not the escrow', () => {
