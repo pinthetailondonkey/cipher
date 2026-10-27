@@ -16,11 +16,26 @@
 // a number without published txids is structurally incapable of entering
 // the proven count — excluded by shape, not by convention.
 
+import { ASSETS, CHAIN_WORD } from './paymentState.js';
+
 export const BULLETIN_KIND = 10007;
 export const VENDOR_REPORT_KIND = 10008;
 
 const HEX64 = /^[0-9a-f]{64}$/;
-const RAILS = new Set(['btc', 'xmr']);
+// The rails the stats law speaks for come from the asset table itself, so a
+// new coin row is pulled in by the same config that declares it — rails are
+// never counted here in hand.
+const RAILS = new Set(Object.keys(ASSETS));
+
+// The phrasing law, generalized the way the law generalizes: a transparent
+// chain self-attests, so its word is "proven" with the txids one tap away;
+// a chain that hides its own amounts proves existence, not value, so its
+// word is "recorded" — view keys are never published on either. A rail the
+// asset table does not know has no banner at all.
+const CHAIN_PHRASING = {
+  transparent: 'N deals proven. One tap shows the txids.',
+  'hidden-amount': 'N deals recorded on chain.',
+};
 
 // One vendor's bulletin, newest valid event per rail wins (single source of
 // truth per p+rail). Returns null when the event is not a bulletin for the
@@ -64,15 +79,23 @@ export function dealsProvenFor(vendorPubkey, events) {
   for (const rail of RAILS) {
     const bulletin = newest.get(rail);
     if (!bulletin) continue;
-    out[rail] = { count: bulletin.txids.length, txids: bulletin.txids, phrasing: rail === 'btc' ? 'proven' : 'recorded' };
+    out[rail] = { count: bulletin.txids.length, txids: bulletin.txids, phrasing: wordFor(rail) };
   }
   return out;
 }
 
+// The short tag inside a proved entry: proven on a chain that shows its
+// amounts, recorded on a chain that hides them — read off the asset table
+// so a new coin row carries its own word. A rail the table does not know
+// has no word.
+export function wordFor(rail) {
+  return CHAIN_WORD[ASSETS[String(rail || '').toLowerCase()]?.chain] || null;
+}
+
 // The verbatim banner strings. phrasingFor tells the screen which one speaks
-// for the rail; the exact words live here so data and screens never drift.
+// for the rail — read off the asset table's chain class, so adding a coin
+// configures its banner instead of editing this law. The exact words live
+// here so data and screens never drift.
 export function phrasingFor(rail) {
-  if (rail === 'btc') return 'N deals proven. One tap shows the txids.';
-  if (rail === 'xmr') return 'N deals recorded on chain.';
-  return null;
+  return CHAIN_PHRASING[ASSETS[String(rail || '').toLowerCase()]?.chain] || null;
 }
