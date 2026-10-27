@@ -34,11 +34,11 @@ function GroupStorefront({ items, pinnedId, canList, onBuy, onList, pendingLists
       key={item.message.id}
       type="button"
       onClick={() => onBuy(item)}
-      className={`flex w-full items-center gap-3 border-b border-ink/5 p-4 text-left last:border-0 active:bg-ink/5 ${featuredCard ? 'bg-amber-300/[0.07]' : ''}`}
+      className={`flex w-full items-center gap-3 border-b border-ink/5 p-4 text-left last:border-0 active:bg-ink/5 ${featuredCard ? 'bg-ink/[0.06]' : ''}`}
     >
       <Picture src={item.product.image} alt="" className="h-12 w-12 object-cover" fallback={<span className="flex h-12 w-12 items-center justify-center bg-ink/5 text-[11px] text-ink/30">Item</span>} />
       <span className="min-w-0 flex-1">
-        {featuredCard && <span className="block text-[11px] font-semibold uppercase tracking-wide text-amber-200">Pinned</span>}
+        {featuredCard && <span className="block text-[11px] font-semibold uppercase tracking-wide text-accent">Pinned</span>}
         <span className="block truncate text-[15px] font-semibold text-ink">{item.product.title || item.product.name || 'Item'}</span>
         <span className="block text-[13px] font-bold text-accent">{money(item.product)}</span>
       </span>

@@ -56,8 +56,8 @@ export default function App() {
         <div className="relative min-h-[100dvh] bg-base">
           {/* One shell glow for the whole app, pre-baked as gradients instead
               of live blur (WebKit re-rasterizes a 120px blur every frame).
-              Colors come from the theme (var(--glow-a/b)), so it follows the
-              theme switcher; screens must not draw their own copies. */}
+              Colors come from the one look (var(--glow-a/b)) in index.css;
+              screens must not draw their own copies. */}
           <div className="pointer-events-none fixed inset-0" style={{
             background: 'radial-gradient(ellipse 55% 38% at 12% 0%, var(--glow-a), transparent 65%), radial-gradient(ellipse 50% 30% at 92% 100%, var(--glow-b), transparent 70%)',
           }} />

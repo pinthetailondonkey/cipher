@@ -269,7 +269,7 @@ export default function GroupInfoSidebar({
               <div className="overflow-hidden rounded-2xl border border-line bg-panelStrong shadow-lg">
                 <p className="flex items-center gap-2 border-b border-ink/5 px-4 py-3 text-[13px] text-ink/40"><Store size={16} /> Shop</p>
                 {pinnedId && (
-                  <div className="flex items-center gap-2 border-b border-ink/5 px-4 py-3 text-[13px] text-amber-200">
+                  <div className="flex items-center gap-2 border-b border-ink/5 px-4 py-3 text-[13px] text-ink/55">
                     <BadgeCheck size={16} /> Pinned
                     {canManage && <button type="button" onClick={removePin} disabled={pending} className="ml-auto text-accent disabled:opacity-50">Unpin</button>}
                   </div>
