@@ -45,15 +45,6 @@ Items 2 and 3 were reclassified by the founder on purpose, with the reasoning na
 
 Earlier drafts said link previews tell the visited site that you clicked. **They do not** — the preview company fetches the page from its own machines. Name lookups DO visit the target directly. Two different shapes, opposite fixes. Recorded so the fix plan is not built on the wrong shape.
 
-## The encrypted letter, the readable envelope (2026-10-27, the founder's question)
-
-The founder asked: replace clear-text IP leaks with encrypted ones. The honest shape of that question:
-
-- **The letter is already encrypted everywhere it can be.** Messages and group chat travel as ciphertext (NIP-44). Chat photos and voice notes travel as ciphertext under a throwaway key. Burn-note bodies are ciphertext; the key rides in the link fragment, which no server receives. Intercept the letter and you have noise.
-- **The envelope cannot be encrypted, for two separate reasons.** Delivery: the receiver needs an address to send anything back. Transit: every router between here and there needs the address to know where the packet goes next. Either one alone is enough — even a magic receiver-side encryption would leave the middle of the road reading envelopes. No app, no toggle, no key changes this; it is how the internet delivers anything.
-- **The clear strings that travel at all are named ones.** The site named in a name lookup, each picture's host, the relay addresses — all on the Connections screen. HTTPS already protects the path text of each request; the envelope is what still shows. And the payload audit (2026-10-27, done module by module — dead drop, push, profile, relay list, reactions, reputation) found nothing clear riding inside anything encrypted: what is public is public on purpose and marked as such.
-- **The way to hide an envelope is substitution, not encryption** — hand your letter to someone who re-sends it from their own address. That is the standing stack: a VPN for plain-browser users (advice only, never a gate — the load-all ruling supersedes warnings inside the app), the desktop app's bundled Tor (automatic), and the founder's onion relays as the doors are built. The letter's encryption was finished work; sealing the envelope is the work in progress.
-
 ## Fix plan — decided 2026-10-27, shipped
 
 - Voice: DONE — calls off entirely (see below).

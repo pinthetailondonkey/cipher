@@ -3,11 +3,13 @@
 @tailwind utilities;
 
 /* The one look, worn everywhere: pure black ground, blue accent, charcoal
-   panels. Two modes — this dark set is the default; the single light set
-   below applies when data-theme="light". No theme registry, no picker:
-   one switch, two value sets. */
+   panels. Dark only — no light set, no theme registry, no picker. */
 :root {
   color-scheme: dark;
+  --z-fab: 40;
+  --z-sheet: 60;
+  --z-call: 80;
+  --z-toast: 100;
   --sat: env(safe-area-inset-top, 0px);
   --sab: env(safe-area-inset-bottom, 0px);
   --nav-h: 4rem;
@@ -29,44 +31,22 @@
   --accent-soft: rgba(37, 99, 235, 0.14);
   --accent-ink: #ffffff;
   --success: #10b981;
+  --success-rgb: 16 185 129;
   --danger: #ef4444;
+  --danger-rgb: 239 68 68;
   --glow-a: rgba(37, 99, 235, 0.13);
   --glow-b: rgba(37, 99, 235, 0.06);
   --glass-panel: rgba(28, 28, 30, 0.7);
   --glass-header: rgba(10, 10, 10, 0.75);
   --glass-shadow: rgba(0, 0, 0, 0.37);
   --hover-wash: rgba(255, 255, 255, 0.06);
-}
-
-/* The one light set. Paper's values from history, with the directional
-   tokens corrected for white surfaces: accent-text must darken (#60a5fa
-   is 2.3:1 on white) and ink-subtle lightens past its dark value. */
-[data-theme='light'] {
-  color-scheme: light;
-  --bg: #f7f5f0;
-  --bg-soft: #efece5;
-  --panel: #ffffff;
-  --panel-strong: #fbf9f5;
-  --panel-alt: #f2efe8;
-  --border: rgba(28, 27, 24, 0.10);
-  --border-strong: rgba(28, 27, 24, 0.28);
-  --text: #1c1b18;
-  --text-rgb: 28 27 24;
-  --scrim-rgb: 28 27 24;
-  --text-muted: #56544e;
-  --text-subtle: #5f6875;
-  --accent: #2563eb;
-  --accent-text: #1d4ed8;
-  --accent-soft: rgba(37, 99, 235, 0.12);
-  --accent-ink: #ffffff;
-  --success: #0f9d6f;
-  --danger: #dc2626;
-  --glow-a: rgba(37, 99, 235, 0.10);
-  --glow-b: rgba(37, 99, 235, 0.04);
-  --glass-panel: rgba(255, 255, 255, 0.78);
-  --glass-header: rgba(247, 245, 240, 0.82);
-  --glass-shadow: rgba(28, 27, 24, 0.14);
-  --hover-wash: rgba(28, 27, 24, 0.05);
+  /* Layer tokens: the only z values any component may use. fab floats over
+     content, sheet overlays content and chrome, call takes the phone,
+     toast answers to no one. */
+  --z-fab: 40;
+  --z-sheet: 60;
+  --z-call: 80;
+  --z-toast: 100;
 }
 
 html, body, #root {
@@ -133,7 +113,7 @@ select:focus-visible {
     width: 100%;
     max-width: none;
     max-height: calc(100dvh - var(--sat) - 0.5rem);
-    border-radius: 1.5rem 1.5rem 0 0;
+    border-radius: 1.75rem 1.75rem 0 0;
     padding-bottom: calc(1.5rem + var(--sab));
   }
 
@@ -148,7 +128,7 @@ select:focus-visible {
     max-height: calc(100dvh - var(--sat) - 0.5rem);
     overflow-y: auto;
     overscroll-behavior: contain;
-    border-radius: 1.5rem 1.5rem 0 0;
+    border-radius: 1.75rem 1.75rem 0 0;
     padding-bottom: calc(1.5rem + var(--sab));
   }
 }
@@ -184,6 +164,36 @@ textarea::placeholder {
   .fab-pos { bottom: calc(var(--nav-h) + var(--sab) + 1.25rem); right: var(--app-edge); }
   .fab-menu-pos { bottom: calc(var(--nav-h) + var(--sab) + 6rem); right: var(--app-edge); }
   .touch-target { min-width: 44px; min-height: 44px; }
+
+  /* Elevation without arbitrary z-[...] literals (master §1). */
+  .z-fab { z-index: var(--z-fab); }
+  .z-sheet { z-index: var(--z-sheet); }
+  .z-call { z-index: var(--z-call); }
+  .z-toast { z-index: var(--z-toast); }
+
+  /* Typing indicator: Telegram's three bouncing dots.
+     Hold the base glyph in place so the row does not shift. */
+  .typing-dots span {
+    display: inline-block;
+    animation: typing-bounce 1.2s ease-in-out infinite;
+  }
+  .typing-dots span:nth-child(2) { animation-delay: 0.15s; }
+  .typing-dots span:nth-child(3) { animation-delay: 0.3s; }
+  @keyframes typing-bounce {
+    0%, 60%, 100% { transform: translateY(0); opacity: 0.5; }
+    30% { transform: translateY(-3px); opacity: 1; }
+  }
+
+  /* List skeletons: hover-wash to ink/10 and back. */
+  .shimmer {
+    background: linear-gradient(100deg, var(--hover-wash) 40%, var(--panel-alt) 60%, var(--hover-wash));
+    background-size: 200% 100%;
+    animation: shimmer-slide 1.4s ease infinite;
+  }
+  @keyframes shimmer-slide {
+    from { background-position: 100% 0; }
+    to { background-position: -100% 0; }
+  }
 
   .linear-glow {
     position: absolute;
@@ -245,7 +255,98 @@ textarea::placeholder {
     -webkit-backdrop-filter: blur(24px);
     border-bottom: 1px solid var(--border);
   }
+
+  /* Skeleton shimmer: hover-wash to ink at 10%, on a small loop. */
+  @keyframes skeleton-shimmer {
+    0% { background-color: var(--hover-wash); }
+    55%, 100% { background-color: rgb(var(--text-rgb) / 0.10); }
+  }
+
+  .skeleton {
+    background-color: var(--hover-wash);
+    border-radius: 0.75rem;
+    animation: skeleton-shimmer 1.8s ease-in-out infinite;
+  }
 }
+
+  /* Escrow timeline (§4): a 5-beat rail with its connector line. Pulse
+     and shimmer ride the global prefers-reduced-motion kill below, and
+     this pair repeats it per-animation for completeness. */
+  .escrow-beat {
+    align-items: flex-start;
+    gap: 0.5rem;
+    padding-bottom: 10px;
+    position: relative;
+  }
+
+  .escrow-beat:last-child {
+    padding-bottom: 0;
+  }
+
+  .escrow-beat:not(:last-child)::before {
+    background: var(--border);
+    border-radius: 1px;
+    bottom: -2px;
+    content: '';
+    left: 5px;
+    position: absolute;
+    top: 14px;
+    width: 2px;
+  }
+
+  .escrow-beat .escrow-dot {
+    flex: none;
+    height: 12px;
+    width: 12px;
+    border: 2px solid var(--border-strong);
+    border-radius: 9999px;
+    background: transparent;
+    margin-top: 3px;
+  }
+
+  .escrow-beat .escrow-dot[data-state='done'] {
+    background: var(--success);
+    border-color: var(--success);
+  }
+
+  .escrow-beat .escrow-dot[data-state='current'] {
+    background: var(--accent);
+    border-color: var(--accent);
+  }
+
+  .escrow-beat .escrow-dot[data-state='unknown'] {
+    background: var(--panel-alt);
+    border-color: var(--border-strong);
+  }
+
+  .escrow-pulse {
+    animation: escrow-pulse 1.4s ease-in-out infinite;
+  }
+
+  .escrow-shimmer {
+    background-image: linear-gradient(90deg, var(--hover-wash), rgba(255, 255, 255, 0.1), var(--hover-wash));
+    background-size: 200% 100%;
+    animation: escrow-shimmer 1.6s linear infinite;
+  }
+
+  @keyframes escrow-pulse {
+    0%,
+    100% {
+      box-shadow: 0 0 0 0 var(--accent-soft);
+    }
+    50% {
+      box-shadow: 0 0 0 5px var(--accent-soft);
+    }
+  }
+
+  @keyframes escrow-shimmer {
+    from {
+      background-position: 200% 0;
+    }
+    to {
+      background-position: -200% 0;
+    }
+  }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {

@@ -1,7 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ChevronLeft, MoreVertical, Phone } from 'lucide-react';
 import { useChatStore } from '../../store/chatStore';
 import { startCall } from '../../lib/voiceCall';
+import { haptic } from '../../lib/haptics';
+import { safetyNumberFor } from '../../lib/safetyNumber';
 import { shortNpub } from '../../lib/npub';
 import Picture from '../ui/Picture';
 
@@ -47,6 +49,25 @@ export default function ChatHeader({ mode }) {
   });
   const [showTimer, setShowTimer] = useState(false);
   const [now, setNow] = useState(() => Date.now());
+  // Long avatar hold in a group opens the group information Sheet without
+  // fishing in the kebab. A plain tap keeps its existing behavior.
+  const holdRef = useRef(null);
+  const cancelHold = () => {
+    if (holdRef.current) {
+      clearTimeout(holdRef.current);
+      holdRef.current = null;
+    }
+  };
+  const startGroupInfoHold = () => {
+    if (mode !== 'group') return;
+    cancelHold();
+    holdRef.current = setTimeout(() => {
+      holdRef.current = null;
+      haptic('medium');
+      setMenuOpen(false);
+      setShowGroupInfo(true);
+    }, 450);
+  };
 
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 400);
@@ -64,7 +85,11 @@ export default function ChatHeader({ mode }) {
   const someoneTyping = mode === 'dm'
     ? Boolean(typingAt && now - typingAt < 6000)
     : Object.values(groupTyping || {}).some((stamp) => now - stamp < 6000);
-  const subtitle = someoneTyping ? 'typing' : (mode === 'dm' ? 'encrypted' : 'group');
+  // The safety-engine flag, read per render: the 400ms clock below re-renders
+  // this header, so a real key change is led with within a beat of it
+  // landing — the flag is sticky in the safety record until re-verified.
+  const keyChanged = mode === 'dm' ? Boolean(safetyNumberFor(activeDm)?.changed) : false;
+  const subtitle = keyChanged ? 'key changed — re-verify' : (mode === 'dm' ? 'encrypted' : 'group');
 
   const placeCall = async () => {
     const result = await startCall({ peer: activeDm, name: title });
@@ -81,7 +106,7 @@ export default function ChatHeader({ mode }) {
   };
 
   return (
-    <div className="sticky top-0 z-40 border-b border-line bg-base pt-[env(safe-area-inset-top)]">
+    <div className="sticky top-0 z-fab border-b border-line bg-base pt-[env(safe-area-inset-top)]">
       <div className="relative flex h-14 items-center px-3">
         <button onClick={() => setView('list')} className="touch-target -ml-2 flex items-center justify-center text-ink" aria-label="Back">
           <ChevronLeft size={24} />
@@ -90,6 +115,17 @@ export default function ChatHeader({ mode }) {
           type="button"
           className="absolute left-1/2 flex min-w-0 -translate-x-1/2 flex-col items-center gap-0.5"
           onClick={() => mode === 'dm' && setProfilePubkey(activeDm)}
+          onPointerDown={startGroupInfoHold}
+          onPointerUp={cancelHold}
+          onPointerLeave={cancelHold}
+          onPointerCancel={cancelHold}
+          onContextMenu={(event) => {
+            if (mode === 'group') {
+              event.preventDefault();
+              setMenuOpen(false);
+              setShowGroupInfo(true);
+            }
+          }}
         >
           <Picture
             src={picture}
@@ -116,8 +152,8 @@ export default function ChatHeader({ mode }) {
           </button>
         </div>
       </div>
-      <p className={`pointer-events-none absolute bottom-1 left-1/2 -translate-x-1/2 text-[11px] ${someoneTyping ? 'text-accentText' : 'text-inkSubtle'}`}>
-        {someoneTyping ? (
+      <p className={`pointer-events-none absolute bottom-1 left-1/2 -translate-x-1/2 text-[11px] ${keyChanged ? 'text-danger' : someoneTyping ? 'text-accentText' : 'text-inkSubtle'}`}>
+        {someoneTyping && !keyChanged ? (
           <>
             typing
             <span className="ml-1 inline-flex gap-0.5 align-middle">
@@ -129,7 +165,7 @@ export default function ChatHeader({ mode }) {
         ) : subtitle}
       </p>
       {menuOpen && activeChatId && (
-        <div className="absolute right-2 top-full z-50 mt-1 w-56 rounded-2xl border border-line bg-panel p-1">
+        <div className="absolute right-2 top-full z-fab mt-1 w-56 rounded-2xl border border-line bg-panel p-1">
           <button
             type="button"
             onClick={openTimer}

@@ -1,29 +1,285 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Archive, ArchiveRestore, Bell, BellOff, MoreVertical } from 'lucide-react';
-import { useChatStore } from '../../store/chatStore';
-import Avatar from '../ui/Avatar';
-import { pressable } from '../ui/Button';
+import { motion, useMotionValue, useTransform, animate } from 'framer-motion';
+import {
+  Archive,
+  ArchiveRestore,
+  ArrowLeft,
+  Bell,
+  BellOff,
+  Ban,
+  Bookmark,
+  ChevronDown,
+  ChevronUp,
+  Flame,
+  Menu,
+  MessageSquare,
+  MoreVertical,
+  Pin,
+  PinOff,
+  QrCode,
+  RefreshCw,
+  Search,
+  Store,
+  Users,
+  X,
+} from 'lucide-react';
+import { notifTotalOf, useChatStore } from '../../store/chatStore';
+import { haptic } from '../../lib/haptics';
 import { noHexName } from '../../lib/npub';
+import Logo from '../Logo';
+import Avatar from '../ui/Avatar';
+import Button from '../ui/Button';
+import IconButton from '../ui/IconButton';
+import Segmented from '../ui/Segmented';
+import ListRow from '../ui/ListRow';
+import Badge from '../ui/Badge';
+import EmptyState from '../ui/EmptyState';
+import { SkeletonList } from '../ui/Skeleton';
+import { formatRelativeTime } from './relativeTime';
 
-// The anchor's segmented filter: All / Menus / Vendors. A client-side filter
-// over the same list — the drawer stays navigation, this only narrows rows.
-// A menu is a channel-type space; a vendor is a chat where commerce happened
-// (an order crossed it, or the peer sent a product — their storefront
-// speaking in the thread). The store carries no per-peer vendor flag.
+// The segmented filter: All / Menus / Vendors. A client-side filter over the
+// same list — a menu is a channel-type space; a vendor is a chat where
+// commerce happened (an order crossed it, or the peer sent a product). The
+// store carries no per-peer vendor flag.
 const SEGMENTS = [
   { key: 'all', label: 'All' },
   { key: 'menus', label: 'Menus' },
   { key: 'vendors', label: 'Vendors' },
 ];
 
+// Mute durations for the swipe-left and kebab submenu, mapped onto the
+// store's setMuteDuration values: 0 clears, -1 is forever, otherwise a
+// timed mutedUntil timestamp.
+const MUTE_DURATIONS = [
+  { label: '8 hours', ms: 8 * 60 * 60 * 1000 },
+  { label: '1 day', ms: 24 * 60 * 60 * 1000 },
+  { label: '1 week', ms: 7 * 24 * 60 * 60 * 1000 },
+  { label: 'Forever', ms: -1 },
+];
+
+const SWIPE_TRIGGER = 72;
+
 const initialsOf = (name) => name.split(/\s+/).filter(Boolean).slice(0, 2)
   .map((word) => word[0].toUpperCase()).join('') || '?';
 
-// One row = one tap target plus a kebab (mute / archive, persisted by the
-// store). The preview line is blurred until the row is long-pressed; the
-// reveal holds until you leave the list — opening a chat unmounts this
-// component, which resets it.
-export default function ChatList({ onOpenChat }) {
+function MenuItem({ icon, children, onClick, danger = false }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`flex min-h-[44px] w-full items-center gap-2.5 px-3 py-2.5 text-left text-[14px] font-medium active:bg-ink/5 ${danger ? 'text-danger' : 'text-ink'}`}
+    >
+      {icon}
+      {children}
+    </button>
+  );
+}
+
+// One chat row. Swipe right pins, swipe left opens the mute durations;
+// both also live in the row kebab. The preview line is blurred until the
+// row is long-pressed; the reveal holds until you leave the list.
+function ChatRow({
+  chat,
+  name,
+  previewText,
+  typing,
+  unread,
+  muted,
+  pinned,
+  archived,
+  blocked,
+  isRevealed,
+  menuOpen,
+  menuPanel,
+  onOpen,
+  onPressStart,
+  onPressCancel,
+  onMenuToggle,
+  onMenuClose,
+  onMenuBack,
+  onOpenMuteMenu,
+  onMute,
+  onUnmute,
+  onTogglePin,
+  onToggleArchive,
+  onViewShop,
+  onToggleBlock,
+}) {
+  const x = useMotionValue(0);
+  const lastDragAt = useRef(0);
+  const pinOpacity = useTransform(x, [12, SWIPE_TRIGGER], [0, 1]);
+  const muteOpacity = useTransform(x, [-SWIPE_TRIGGER, -12], [1, 0]);
+  const isDm = chat.type === 'dm';
+
+  const commitSwipe = (info) => {
+    const offset = info.offset.x;
+    animate(x, 0, { type: 'spring', stiffness: 420, damping: 34 });
+    if (Math.abs(offset) > 10) lastDragAt.current = Date.now();
+    if (Math.abs(offset) < SWIPE_TRIGGER) return;
+    haptic('light');
+    if (offset > 0) onTogglePin();
+    else onOpenMuteMenu();
+  };
+
+  const timeLabel = formatRelativeTime(chat.lastMsg?.timestamp);
+  const avatar = isDm ? (
+    <Avatar src={chat.profile.picture} name={name} className="!h-10 !w-10 !text-[13px]" />
+  ) : (
+    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-line bg-panelAlt text-[13px] font-semibold text-accentText">
+      {initialsOf(name)}
+    </span>
+  );
+
+  return (
+    <div className="relative">
+      <motion.div style={{ opacity: pinOpacity }} className="pointer-events-none absolute inset-0 flex items-center gap-2 bg-accentSoft pl-5 text-accentText">
+        {pinned ? <PinOff size={16} /> : <Pin size={16} />}
+        <span className="text-[13px] font-semibold">{pinned ? 'Unpin' : 'Pin'}</span>
+      </motion.div>
+      <motion.div style={{ opacity: muteOpacity }} className="pointer-events-none absolute inset-0 flex items-center justify-end gap-2 bg-accentSoft pr-5 text-accentText">
+        <span className="text-[13px] font-semibold">{muted ? 'Unmute' : 'Mute'}</span>
+        <BellOff size={16} />
+      </motion.div>
+      <motion.div
+        style={{ x }}
+        drag="x"
+        dragDirectionLock
+        dragConstraints={{ left: -110, right: 110 }}
+        dragElastic={0.25}
+        onDragEnd={(e, info) => commitSwipe(info)}
+      >
+        <ListRow
+          className="border-b border-line last:border-b-0"
+          dense={pinned}
+          leading={avatar}
+          onClick={() => {
+            if (Date.now() - lastDragAt.current < 300) return;
+            onOpen();
+          }}
+          onPointerDown={onPressStart}
+          onPointerUp={onPressCancel}
+          onPointerLeave={onPressCancel}
+          onPointerCancel={onPressCancel}
+          onContextMenu={(e) => e.preventDefault()}
+          title={(
+            <span className="flex items-baseline justify-between gap-2">
+              <span className="truncate text-[15px] font-semibold text-ink">{name}</span>
+              <span className="flex shrink-0 items-center gap-1">
+                {timeLabel && <span className="text-[11px] font-medium text-inkSubtle">{timeLabel}</span>}
+                {pinned && <Pin size={12} className="text-inkSubtle" />}
+              </span>
+            </span>
+          )}
+          subtitle={(
+            <span className="mt-0.5 flex items-center justify-between gap-2">
+              <span
+                aria-label={typing ? 'typing' : undefined}
+                className={`block truncate text-[13px] transition-all duration-200 select-none ${typing ? 'text-accentText' : 'text-inkMuted'} ${previewText && !isRevealed ? 'blur-[5px]' : ''}`}
+              >
+                {typing ? (
+                  <span className="inline-flex items-center gap-1">
+                    typing
+                    <span className="typing-dots inline-flex items-center gap-0.5 text-[15px] leading-none" aria-hidden="true">
+                      <span>·</span><span>·</span><span>·</span>
+                    </span>
+                  </span>
+                ) : (previewText || (isDm ? 'Tap to chat' : (chat.group.isChannel ? 'Channel' : 'Public group')))}
+              </span>
+              {chat.vendor && !typing && (
+                <span className="shrink-0 text-[12px] font-semibold text-accentText">Menu</span>
+              )}
+            </span>
+          )}
+          meta={(
+            <span className="flex shrink-0 flex-col items-end gap-1">
+              {unread > 0 ? (
+                <Badge tone="unread" title={`${unread} unread`}>{unread > 99 ? '99+' : unread}</Badge>
+              ) : (muted && <BellOff size={12} className="text-inkSubtle" />)}
+            </span>
+          )}
+          trailing={(
+            <span className="relative shrink-0">
+              <IconButton
+                icon={<MoreVertical size={16} />}
+                label="Chat options"
+                aria-expanded={menuOpen}
+                aria-haspopup="menu"
+                className="h-11 w-11"
+                onClick={onMenuToggle}
+              />
+              {menuOpen && (
+                <>
+                  <button
+                    type="button"
+                    aria-label="Close options"
+                    onClick={onMenuClose}
+                    className="fixed inset-0 z-fab cursor-default"
+                  />
+                  <div
+                    role="menu"
+                    onKeyDown={(e) => { if (e.key === 'Escape') onMenuClose(); }}
+                    className="absolute right-2 top-2 z-fab w-44 overflow-hidden rounded-xl border border-lineStrong bg-panelStrong shadow-lg"
+                  >
+                    {menuPanel === 'mute' ? (
+                      <>
+                        <MenuItem icon={<ArrowLeft size={14} className="text-inkMuted" />} onClick={onMenuBack}>
+                          Mute for
+                        </MenuItem>
+                        {MUTE_DURATIONS.map((duration) => (
+                          <MenuItem key={duration.label} onClick={() => { onMute(duration.ms); onMenuClose(); }}>
+                            {duration.label}
+                          </MenuItem>
+                        ))}
+                        {muted && <MenuItem icon={<Bell size={14} className="text-inkMuted" />} onClick={() => { onUnmute(); onMenuClose(); }}>Unmute</MenuItem>}
+                      </>
+                    ) : (
+                      <>
+                        <MenuItem
+                          icon={muted ? <Bell size={14} className="text-inkMuted" /> : <BellOff size={14} className="text-inkMuted" />}
+                          onClick={() => { if (muted) { onUnmute(); onMenuClose(); } else onOpenMuteMenu(); }}
+                        >
+                          {muted ? 'Unmute' : 'Mute'}
+                        </MenuItem>
+                        <MenuItem
+                          icon={pinned ? <PinOff size={14} className="text-inkMuted" /> : <Pin size={14} className="text-inkMuted" />}
+                          onClick={() => { onTogglePin(); onMenuClose(); }}
+                        >
+                          {pinned ? 'Unpin' : 'Pin'}
+                        </MenuItem>
+                        <MenuItem
+                          icon={archived ? <ArchiveRestore size={14} className="text-inkMuted" /> : <Archive size={14} className="text-inkMuted" />}
+                          onClick={() => { onToggleArchive(); onMenuClose(); }}
+                        >
+                          {archived ? 'Unarchive' : 'Archive'}
+                        </MenuItem>
+                        {chat.vendor && isDm && (
+                          <MenuItem icon={<Store size={14} className="text-inkMuted" />} onClick={() => { onViewShop(); onMenuClose(); }}>
+                            Their menu
+                          </MenuItem>
+                        )}
+                        {isDm && (
+                          <MenuItem danger icon={<Ban size={14} className="text-danger" />} onClick={() => { onToggleBlock(); onMenuClose(); }}>
+                            {blocked ? 'Unblock peer' : 'Block peer'}
+                          </MenuItem>
+                        )}
+                      </>
+                    )}
+                  </div>
+                </>
+              )}
+            </span>
+          )}
+        />
+      </motion.div>
+    </div>
+  );
+}
+
+// The chat list, Telegram anatomy with the cipher skin: logo chip + title,
+// in-place filter, kebab (New chat / New group / Burn note — the same
+// actions the floating menu wires), segmented filter, PINNED section,
+// 64px rows, archived section.
+export default function ChatList({ onOpenChat, onRefresh }) {
   const dms = useChatStore((s) => s.dms);
   const groups = useChatStore((s) => s.groups);
   const groupMessages = useChatStore((s) => s.groupMessages);
@@ -32,14 +288,31 @@ export default function ChatList({ onOpenChat }) {
   const mutedChats = useChatStore((s) => s.mutedChats);
   const mutedUntil = useChatStore((s) => s.mutedUntil);
   const archivedChats = useChatStore((s) => s.archivedChats);
+  const pinnedChats = useChatStore((s) => s.pinnedChats);
+  const blockedUsers = useChatStore((s) => s.blockedUsers);
   const typingUsers = useChatStore((s) => s.typingUsers);
+  const loading = useChatStore((s) => s.loading);
+  const setView = useChatStore((s) => s.setView);
+  const setShowCreateGroup = useChatStore((s) => s.setShowCreateGroup);
+  const setShowDeadDrop = useChatStore((s) => s.setShowDeadDrop);
+  const setVendorStorefrontPubkey = useChatStore((s) => s.setVendorStorefrontPubkey);
+  const togglePinChat = useChatStore((s) => s.togglePinChat);
+  const setShowDrawer = useChatStore((s) => s.setShowDrawer);
+  const setShowBookmarks = useChatStore((s) => s.setShowBookmarks);
+  const setShowNotifCenter = useChatStore((s) => s.setShowNotifCenter);
+  const setShowQRScanner = useChatStore((s) => s.setShowQRScanner);
+  const notifTotal = useChatStore(notifTotalOf);
 
   const [segment, setSegment] = useState('all');
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [query, setQuery] = useState('');
   const [revealed, setRevealed] = useState(() => new Set());
   const [menuFor, setMenuFor] = useState(null);
+  const [menuPanel, setMenuPanel] = useState('main');
+  const [headerMenuOpen, setHeaderMenuOpen] = useState(false);
+  const [archivedOpen, setArchivedOpen] = useState(true);
   const [now, setNow] = useState(() => Date.now());
   const pressTimer = useRef(null);
-  const suppressClick = useRef(false);
 
   useEffect(() => {
     const tick = window.setInterval(() => setNow(Date.now()), 1000);
@@ -48,9 +321,7 @@ export default function ChatList({ onOpenChat }) {
 
   const startPress = (id) => {
     cancelPress();
-    suppressClick.current = false;
     pressTimer.current = window.setTimeout(() => {
-      suppressClick.current = true;
       setRevealed((prev) => {
         const next = new Set(prev);
         next.add(id);
@@ -72,6 +343,21 @@ export default function ChatList({ onOpenChat }) {
     || mutedUntil[id] === 'forever'
     || (typeof mutedUntil[id] === 'number' && mutedUntil[id] > now);
 
+  // Durations land as timed mutedUntil values; unmute clears both the
+  // timed map and the legacy boolean list.
+  const muteFor = (id, durationMs = 0) => {
+    useChatStore.getState().setMuteDuration(id, durationMs);
+    if (durationMs === 0 && mutedChats.includes(id)) {
+      useChatStore.getState().toggleMuteChat(id);
+    }
+  };
+
+  // The early screens (loading skeleton, empty state) render BELOW the
+  // header, not instead of it: the header carries the drawer, bookmarks,
+  // notifications, QR, refresh and search doors, and an empty list is the
+  // moment a new account needs those doors most. Regression: the empty
+  // return used to sit above the header render, which stranded those
+  // buttons on exactly the screen where they matter.
   const dmList = Object.entries(dms).map(([pubkey, msgs]) => {
     const profile = profiles[pubkey];
     const safeProfile = (profile && profile.name && !/^[0-9a-f]{8,64}$/i.test(profile.name))
@@ -98,8 +384,8 @@ export default function ChatList({ onOpenChat }) {
 
   // Typing state, per row. DMs key by the peer in the store, so they light
   // truthfully. Group typing is one set for every group (the store keys it
-  // by member, not group), so it cannot be attributed to a row — it stays a
-  // follow-up until the store keys it per group.
+  // by member, not group), so it cannot be attributed to a row — it stays
+  // DM-only until the store keys it per group.
   const typingFor = (chat) => {
     if (chat.type !== 'dm') return false;
     const at = typingUsers[chat.id];
@@ -120,139 +406,239 @@ export default function ChatList({ onOpenChat }) {
     return text;
   };
 
-  if (allChats.length === 0) {
-    return <p className="mx-4 mt-6 rounded-2xl border border-line bg-panel px-4 py-10 text-center text-[13px] text-inkMuted">No chats yet. Tap + to start.</p>;
-  }
+  const nameOf = (chat) => (chat.type === 'dm'
+    ? chat.profile.displayName
+    : (chat.group.name && !chat.group.name.startsWith('Group ') ? chat.group.name : 'Unnamed Group'));
 
+  const needle = query.trim().toLowerCase();
   const active = allChats.filter(c => !archivedChats.includes(c.id));
   const archived = allChats.filter(c => archivedChats.includes(c.id));
   const shownChats = active.filter((chat) => {
     if (segment === 'menus') return chat.type === 'group' && chat.menu === true;
     if (segment === 'vendors') return chat.vendor === true;
     return true;
+  }).filter((chat) => {
+    if (!needle) return true;
+    const name = nameOf(chat).toLowerCase();
+    const preview = (previewOf(chat) || '').toLowerCase();
+    return name.includes(needle) || preview.includes(needle);
+  });
+  const shownArchived = archived.filter((chat) => {
+    if (!needle) return true;
+    return nameOf(chat).toLowerCase().includes(needle) || (previewOf(chat) || '').toLowerCase().includes(needle);
   });
 
-  const renderRow = (chat) => {
-    const isDm = chat.type === 'dm';
-    const name = isDm
-      ? chat.profile.displayName
-      : (chat.group.name && !chat.group.name.startsWith('Group ') ? chat.group.name : 'Unnamed Group');
-    const previewText = previewOf(chat);
-    const isRevealed = revealed.has(chat.id);
-    const unread = unreadCounts[chat.id] || 0;
-    const typing = typingFor(chat);
+  const renderRow = (chat, { pinned = false } = {}) => (
+    <ChatRow
+      key={chat.id}
+      chat={chat}
+      name={nameOf(chat)}
+      previewText={previewOf(chat)}
+      typing={typingFor(chat)}
+      unread={unreadCounts[chat.id] || 0}
+      muted={isMuted(chat.id)}
+      pinned={pinned}
+      archived={archivedChats.includes(chat.id)}
+      blocked={chat.type === 'dm' && blockedUsers.includes(chat.id)}
+      isRevealed={revealed.has(chat.id)}
+      menuOpen={menuFor === chat.id}
+      menuPanel={menuPanel}
+      onOpen={() => open(chat.type, chat.id, chat.group)}
+      onPressStart={() => startPress(chat.id)}
+      onPressCancel={cancelPress}
+      onMenuToggle={() => {
+        setMenuPanel('main');
+        setMenuFor(menuFor === chat.id ? null : chat.id);
+      }}
+      onMenuClose={() => { setMenuFor(null); setMenuPanel('main'); }}
+      onMenuBack={() => setMenuPanel('main')}
+      onOpenMuteMenu={() => { setMenuPanel('mute'); setMenuFor(chat.id); }}
+      onMute={(durationMs) => muteFor(chat.id, durationMs)}
+      onUnmute={() => muteFor(chat.id, 0)}
+      onTogglePin={() => { haptic('light'); togglePinChat(chat.id); }}
+      onToggleArchive={() => useChatStore.getState().toggleArchiveChat(chat.id)}
+      onViewShop={() => setVendorStorefrontPubkey(chat.id)}
+      onToggleBlock={() => useChatStore.getState().toggleBlockUser(chat.id)}
+    />
+  );
 
-    return (
-      <div key={chat.id} className="relative flex items-stretch border-b border-line last:border-0">
-        <button
-          type="button"
-          onClick={() => {
-            if (suppressClick.current) { suppressClick.current = false; return; }
-            open(chat.type, chat.id, chat.group);
-          }}
-          onPointerDown={() => startPress(chat.id)}
-          onPointerUp={cancelPress}
-          onPointerLeave={cancelPress}
-          onPointerCancel={cancelPress}
-          onContextMenu={(e) => e.preventDefault()}
-          className={`flex min-h-[64px] min-w-0 flex-1 items-center gap-3 px-4 py-2 text-left active:bg-ink/5 ${pressable}`}
-        >
-          {isDm ? (
-            <Avatar src={chat.profile.picture} name={name} className="!h-10 !w-10 !text-[13px]" />
-          ) : (
-            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-line bg-panelAlt text-[13px] font-semibold text-accentText">
-              {initialsOf(name)}
-            </span>
-          )}
-          <span className="min-w-0 flex-1">
-            <span className="flex items-baseline justify-between gap-2">
-              <span className="truncate text-[15px] font-semibold text-ink">{name}</span>
-              {chat.lastMsg?.timestamp && (
-                <span className="shrink-0 text-[11px] font-medium text-inkSubtle">
-                  {new Date(chat.lastMsg.timestamp * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+  const pinnedRows = shownChats.filter(c => pinnedChats.includes(c.id));
+  const regularRows = shownChats.filter(c => !pinnedChats.includes(c.id));
+
+  const listHeader = (
+    /* Header row: logo chip + title left, filter and kebab right. */
+    <div className="mb-2 flex items-center justify-between gap-2 pt-3 md:px-3">
+        <div className="flex min-w-0 items-center gap-2">
+          <Logo size={20} />
+          <h2 className="text-xl font-bold tracking-tight text-ink">Chats</h2>
+        </div>
+        {searchOpen ? (
+          <div className="flex min-w-0 flex-1 items-center gap-1">
+            <input
+              type="text"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Escape') { setSearchOpen(false); setQuery(''); }
+              }}
+              placeholder="Filter chats"
+              aria-label="Filter chats"
+              autoFocus
+              className="h-11 min-w-0 flex-1 rounded-full border border-line bg-panel px-4 text-[14px] text-ink outline-none focus:border-accent"
+            />
+            <IconButton
+              icon={<X size={18} />}
+              label="Close filter"
+              onClick={() => { setSearchOpen(false); setQuery(''); }}
+            />
+          </div>
+        ) : (
+          <div className="flex items-center">
+            <IconButton
+              icon={<Menu size={20} />}
+              label="Open menu"
+              className="md:hidden"
+              onClick={() => setShowDrawer(true)}
+            />
+            <IconButton
+              icon={<Bookmark size={20} />}
+              label="Saved messages"
+              onClick={() => setShowBookmarks(true)}
+            />
+            <span className="relative">
+              <IconButton
+                icon={<Bell size={20} />}
+                label="Notifications"
+                onClick={() => setShowNotifCenter(true)}
+              />
+              {notifTotal > 0 && (
+                <span className="pointer-events-none absolute right-0.5 top-0.5 flex h-[14px] min-w-[14px] items-center justify-center rounded-full bg-accent px-1 text-[9px] font-bold text-accentInk">
+                  {notifTotal > 99 ? '99+' : notifTotal}
                 </span>
               )}
             </span>
-            <span className="mt-0.5 flex items-center justify-between gap-2">
-              <span
-                className={`block truncate text-[13px] transition-all duration-200 select-none ${typing ? 'text-accentText' : 'text-inkMuted'} ${previewText && !isRevealed ? 'blur-[5px]' : ''}`}
-              >
-                {typing ? 'typing…' : (previewText || (isDm ? 'Tap to chat' : (chat.group.isChannel ? 'Channel' : 'Public group')))}
-              </span>
-              {unread > 0 ? (
-                <span className="flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-accent px-1 text-[10px] font-bold text-accentInk">
-                  {unread}
-                </span>
-              ) : (isMuted(chat.id) && <BellOff size={13} className="shrink-0 text-inkSubtle" />)}
+            <IconButton
+              icon={<QrCode size={20} />}
+              label="Scan QR code"
+              onClick={() => setShowQRScanner(true)}
+            />
+            {onRefresh && (
+              <IconButton
+                icon={<RefreshCw size={20} className={loading ? 'animate-spin' : undefined} />}
+                label="Refresh chats"
+                onClick={onRefresh}
+              />
+            )}
+            <IconButton
+              icon={<Search size={20} />}
+              label="Search chats"
+              onClick={() => setSearchOpen(true)}
+            />
+            <span className="relative">
+              <IconButton
+                icon={<MoreVertical size={20} />}
+                label="Chat list menu"
+                aria-expanded={headerMenuOpen}
+                aria-haspopup="menu"
+                onClick={() => setHeaderMenuOpen(!headerMenuOpen)}
+              />
+              {headerMenuOpen && (
+                <>
+                  <button
+                    type="button"
+                    aria-label="Close menu"
+                    onClick={() => setHeaderMenuOpen(false)}
+                    className="fixed inset-0 z-fab cursor-default"
+                  />
+                  <div
+                    role="menu"
+                    onKeyDown={(e) => { if (e.key === 'Escape') setHeaderMenuOpen(false); }}
+                    className="absolute right-0 top-11 z-fab w-44 overflow-hidden rounded-xl border border-lineStrong bg-panelStrong shadow-lg"
+                  >
+                    {/* Same actors the floating menu wires — this kebab is the primary door. */}
+                    <MenuItem icon={<MessageSquare size={14} className="text-inkMuted" />} onClick={() => { setHeaderMenuOpen(false); setView('search'); }}>
+                      New chat
+                    </MenuItem>
+                    <MenuItem icon={<Users size={14} className="text-inkMuted" />} onClick={() => { setHeaderMenuOpen(false); setShowCreateGroup(true); }}>
+                      New group
+                    </MenuItem>
+                    <MenuItem icon={<Flame size={14} className="text-inkMuted" />} onClick={() => { setHeaderMenuOpen(false); setShowDeadDrop(true); }}>
+                      Burn note
+                    </MenuItem>
+                  </div>
+                </>
+              )}
             </span>
-          </span>
-        </button>
-        <button
-          type="button"
-          aria-label="Chat options"
-          onClick={() => setMenuFor(menuFor === chat.id ? null : chat.id)}
-          className="flex w-11 shrink-0 items-center justify-center text-inkMuted hover:text-ink active:bg-ink/5"
-        >
-          <MoreVertical size={16} />
-        </button>
-        {menuFor === chat.id && (
-          <>
-            <button type="button" aria-label="Close options" onClick={() => setMenuFor(null)} className="fixed inset-0 z-10 cursor-default" />
-            <div className="absolute right-2 top-2 z-20 w-40 overflow-hidden rounded-xl border border-lineStrong bg-panelStrong">
-              <button
-                type="button"
-                onClick={() => { useChatStore.getState().toggleMuteChat(chat.id); setMenuFor(null); }}
-                className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-[14px] font-medium text-ink active:bg-ink/5"
-              >
-                {isMuted(chat.id) ? <BellOff size={14} className="text-inkMuted" /> : <Bell size={14} className="text-inkMuted" />}
-                {isMuted(chat.id) ? 'Unmute' : 'Mute'}
-              </button>
-              <button
-                type="button"
-                onClick={() => { useChatStore.getState().toggleArchiveChat(chat.id); setMenuFor(null); }}
-                className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-[14px] font-medium text-ink active:bg-ink/5"
-              >
-                {archivedChats.includes(chat.id) ? <ArchiveRestore size={14} className="text-inkMuted" /> : <Archive size={14} className="text-inkMuted" />}
-                {archivedChats.includes(chat.id) ? 'Unarchive' : 'Archive'}
-              </button>
-            </div>
-          </>
+          </div>
         )}
       </div>
+  );
+
+  // The early screens (loading skeleton, empty state) render the header
+  // ABOVE their body, not instead of it: the header carries the drawer,
+  // bookmarks, notifications, QR, refresh and search doors, and an empty
+  // list is the moment a new account needs those doors most. Regression:
+  // the empty return used to sit above the header render, which stranded
+  // those buttons on exactly the screen where they matter.
+  if (loading) {
+    return (
+      <div className="px-4 pb-4">
+        {listHeader}
+        <SkeletonList rows={6} />
+      </div>
     );
-  };
+  }
+
+  if (allChats.length === 0) {
+    return (
+      <div className="px-4 pb-4">
+        {listHeader}
+        <EmptyState
+          icon={<MessageSquare size={24} />}
+          title="No chats yet — your first message starts the cipher"
+          action={<Button size="md" onClick={() => setView('search')}>New chat</Button>}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="px-4 pb-4">
-      <div className="flex gap-1 rounded-full bg-panel p-1" role="group" aria-label="Filter chats">
-        {SEGMENTS.map((seg) => (
-          <button
-            key={seg.key}
-            type="button"
-            aria-pressed={segment === seg.key}
-            onClick={() => setSegment(seg.key)}
-            className={`min-h-[36px] flex-1 rounded-full px-3 py-1.5 text-[13px] font-bold ${segment === seg.key ? 'bg-accent text-accentInk' : 'text-inkMuted'} active:bg-ink/5 ${pressable}`}
-          >
-            {seg.label}
-          </button>
-        ))}
-      </div>
-      {shownChats.length > 0 && (
-        <div className="overflow-hidden">
-          {shownChats.map(renderRow)}
-        </div>
+      {listHeader}
+
+      <Segmented options={SEGMENTS} value={segment} onChange={setSegment} ariaLabel="Filter chats" className="mb-2" />
+
+      {pinnedRows.length > 0 && (
+        <>
+          <p className="px-1 pb-1 pt-3 text-[11px] font-semibold uppercase tracking-wider text-inkSubtle">Pinned</p>
+          <div className="overflow-hidden">{pinnedRows.map((chat) => renderRow(chat, { pinned: true }))}</div>
+        </>
       )}
-      {shownChats.length === 0 && segment !== 'all' && (
+
+      {regularRows.length > 0 && (
+        <div className={pinnedRows.length > 0 ? 'pt-2' : 'pt-3'}>{regularRows.map((chat) => renderRow(chat))}</div>
+      )}
+
+      {shownChats.length === 0 && (
         <p className="px-4 py-10 text-center text-[13px] text-inkMuted">
-          {segment === 'menus' ? 'No menus here yet.' : 'No vendor chats yet.'}
+          {needle
+            ? 'No chats match that filter.'
+            : segment === 'menus' ? 'No menus here yet.' : 'No vendor chats yet.'}
         </p>
       )}
-      {archived.length > 0 && (
+
+      {shownArchived.length > 0 && (
         <>
-          <p className="px-1 pb-1 pt-4 text-[11px] font-semibold uppercase tracking-wide text-inkSubtle">Archived</p>
-          <div className="overflow-hidden">
-            {archived.map(renderRow)}
-          </div>
+          <button
+            type="button"
+            aria-expanded={archivedOpen}
+            onClick={() => setArchivedOpen(!archivedOpen)}
+            className="mt-3 flex min-h-[44px] w-full items-center gap-1 px-1 text-[11px] font-semibold uppercase tracking-wider text-inkSubtle hover:text-inkMuted"
+          >
+            {archivedOpen ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+            Archived
+          </button>
+          {archivedOpen && <div className="overflow-hidden">{shownArchived.map((chat) => renderRow(chat))}</div>}
         </>
       )}
     </div>

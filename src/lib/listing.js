@@ -30,6 +30,13 @@ export function listingFromEvent(event) {
   };
 }
 
+// The relay filter every read of one vendor's kind-30402 listings shares:
+// the storefront fetches it to draw the shop, and a ?product=&vendor= link
+// fetches it to reach a single listing on boot (backlog item 16.3).
+export function vendorListingFilter(vendorPubkey) {
+  return { kinds: [30402], authors: [vendorPubkey], '#t': ['cipher_marketplace'], limit: 50 };
+}
+
 // The product block an order carries. A coin price stays a coin price.
 export function orderProduct(listing) {
   const currency = String(listing?.currency || (listing?.priceUsd ? 'USD' : '')).toUpperCase() || 'USD';

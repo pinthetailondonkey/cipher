@@ -3,7 +3,7 @@ import { pressable } from './Button';
 
 export default function ScreenHeader({ title, subtitle, onBack }) {
   return (
-    <header className="sticky top-0 z-10 flex items-center gap-2 border-b border-line bg-base px-2 py-3 shadow-lg pt-[env(safe-area-inset-top)]">
+    <header className="sticky top-0 z-fab flex items-center gap-2 border-b border-line bg-base px-2 py-3 shadow-lg pt-[env(safe-area-inset-top)]">
       {onBack && (
         <button type="button" onClick={onBack} aria-label="Back" className={`p-2 text-ink ${pressable}`}>
           <ArrowLeft size={22} />

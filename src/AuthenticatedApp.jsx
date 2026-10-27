@@ -1,14 +1,18 @@
 import React, { lazy, Suspense, useCallback, useEffect, useState } from 'react';
 import { MessageSquare, Compass, Menu, User } from 'lucide-react';
 import TutorialModal from './components/TutorialModal';
+import Rail from './components/ui/Rail';
 import Drawer from './components/chat/Drawer';
 import GlobalDialog from './components/GlobalDialog';
 import CallOverlay from './components/chat/CallOverlay';
 import DeadDropModal from './components/chat/DeadDropModal';
+import Toast from './components/ui/Toast';
+import Segmented from './components/ui/Segmented';
+import CommandPalette from './components/ui/CommandPalette';
 import { requestNotificationPermission } from './lib/notifications';
 import { unreadTotalOf, useChatStore } from './store/chatStore';
 
-const Shop = lazy(() => import('./Shop'));
+const Menus = lazy(() => import('./Menus'));
 const Discover = lazy(() => import('./Discover'));
 const Chat = lazy(() => import('./Chat'));
 const Wallet = lazy(() => import('./Wallet'));
@@ -35,10 +39,63 @@ export default function AuthenticatedApp({ identity }) {
     useChatStore.getState().openChat('dm', pubkey);
     setActiveTab('chat');
   }, []);
-  const showTutorial = useChatStore((state) => state.showTutorial);
+  const openChatFromPalette = useCallback((type, id, group) => {
+    useChatStore.getState().openChat(type, id, group || null);
+    setActiveTab('chat');
+  }, []);
+  // ⌘K opens the command palette at md+ (master §2): the same command key a
+  // desktop keyboard expects, and no phone surface changes.
+  const [paletteOpen, setPaletteOpen] = useState(false);
   useEffect(() => {
-    // New accounts get the walkthrough once; Profile opens it any time after.
+    const onKeyDown = (event) => {
+      if ((event.metaKey || event.ctrlKey) && !event.altKey && !event.shiftKey && String(event.key).toLowerCase() === 'k') {
+        event.preventDefault();
+        if (window.matchMedia('(min-width: 768px)').matches) setPaletteOpen((open) => !open);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
+  const showTutorial = useChatStore((state) => state.showTutorial);
+  // The vendor menu lives over the chat surface (it is the chat tab's own
+  // pane on wide screens), so opening one — from Discover, the chat list,
+  // or the Menus browse — lands on the chat tab first, menu on top. Where
+  // the drill-down came from is remembered once, so closing the menu puts
+  // the user back where they were — the Menus browse, say — instead of
+  // stranding them in a tab they never chose.
+  const vendorMenuPubkey = useChatStore((state) => state.vendorStorefrontPubkey);
+  const vendorMenuTabRef = React.useRef('');
+  React.useEffect(() => {
+    if (vendorMenuPubkey) {
+      if (!vendorMenuTabRef.current) vendorMenuTabRef.current = activeTab;
+      if (activeTab !== 'chat') setActiveTab('chat');
+    } else if (vendorMenuTabRef.current) {
+      if (vendorMenuTabRef.current !== 'chat') setActiveTab(vendorMenuTabRef.current);
+      vendorMenuTabRef.current = '';
+    }
+  }, [vendorMenuPubkey, activeTab]);
+  // A saved product link (?product=&vendor=) resolves on boot and opens its
+  // checkout over the Menus pane (the explore tab's own shop section — the
+  // value name is the engineering key; the label the user reads is Menus).
+  // The checkout renders inside Menus, so this shell follows the checkout
+  // product the link sets. The move rides the store subscription: a Buy tap
+  // opens the checkout on a tab that already shows the menu, and closing
+  // one never moves the shell.
+  useEffect(() => {
+    return useChatStore.subscribe((state, previous) => {
+      const id = state.checkoutProduct?.id || null;
+      if (id && id !== (previous?.checkoutProduct?.id || null)) {
+        setExploreMode('shop');
+        setActiveTab('explore');
+      }
+    });
+  }, [setActiveTab]);
+  useEffect(() => {
+    // New accounts get the walkthrough once, and land on the Menus tab —
+    // browsing the network's vendors is the front door. Presentation only:
+    // the tab state is this component's own, no store selector changes.
     if (identity?.pk && localStorage.getItem('cipher_new_account') === 'true') {
+      setActiveTab('explore');
       useChatStore.getState().setShowTutorial(true);
     }
   }, [identity?.pk]);
@@ -62,12 +119,25 @@ export default function AuthenticatedApp({ identity }) {
     <div className="relative flex h-[100dvh] w-full justify-center overflow-hidden bg-base text-ink md:justify-start">
       {/* The shell glow is drawn once by App.jsx; screens add no own copies
           — a 120px live blur re-rasterizes per frame and stung Safari. */}
+      {/* Drawer first so the shaded sheets later in the DOM keep painting
+          above it — all of them share the z-sheet token now. */}
+      <Drawer identity={identity} open={showDrawer} onClose={() => useChatStore.getState().setShowDrawer(false)} onNavigate={openDrawerSection} />
+      {/* The one toast queue for the whole app: setToast, pushToast and every
+          old status pill route through this render. */}
+      <Toast />
       <TutorialModal isOpen={showTutorial} onClose={() => { useChatStore.getState().setShowTutorial(false); localStorage.removeItem('cipher_new_account'); }} />
       <DeadDropModal identity={identity} />
       <GlobalDialog />
       <CallOverlay />
+      <CommandPalette
+        open={paletteOpen}
+        onClose={() => setPaletteOpen(false)}
+        onOpenChat={openChatFromPalette}
+        onNavigateTab={setActiveTab}
+        activeTab={activeTab}
+      />
 
-      <main className="relative z-10 h-[100dvh] w-full max-w-md overflow-hidden md:w-auto md:max-w-none md:flex-1">
+      <main className="relative z-fab h-[100dvh] w-full max-w-md overflow-hidden md:w-auto md:max-w-none md:flex-1">
         <div className={`absolute inset-0 md:left-[72px] ${activeTab === 'chat' ? '' : 'invisible pointer-events-none'}`}>
           <Suspense fallback={tabFallback}>
             <Chat identity={identity} />
@@ -78,16 +148,19 @@ export default function AuthenticatedApp({ identity }) {
             <Suspense fallback={tabFallback}>
               {activeTab === 'explore' && (
                 <div className="relative mx-auto flex h-full w-full max-w-md flex-col md:border-x md:border-line">
-                  <div className="relative z-10 flex items-center px-4 pb-1 pt-3">
+                  <div className="relative z-fab flex items-center px-4 pb-1 pt-3">
                     <button type="button" onClick={() => useChatStore.getState().setShowDrawer(true)} aria-label="Open menu" className="-ml-1 touch-target p-2 text-ink/50 hover:text-ink md:hidden"><Menu size={20} /></button>
-                    <div className="grid flex-1 grid-cols-2 rounded-2xl border border-ink/15 bg-panelStrong p-1 shadow-lg">
-                      <button type="button" onClick={() => setExploreMode('shop')} className={`min-h-[44px] rounded-xl py-2.5 text-[13px] font-bold ${exploreMode === 'shop' ? 'bg-accent text-accentInk shadow-lg' : 'text-ink/60'}`}>Shop</button>
-                      <button type="button" onClick={() => setExploreMode('groups')} className={`min-h-[44px] rounded-xl py-2.5 text-[13px] font-bold ${exploreMode === 'groups' ? 'bg-accent text-accentInk shadow-lg' : 'text-ink/60'}`}>Groups</button>
-                    </div>
+                    <Segmented
+                      ariaLabel="Discover sections"
+                      className="flex-1"
+                      value={exploreMode}
+                      onChange={setExploreMode}
+                      options={[{ value: 'shop', label: 'Menus' }, { value: 'groups', label: 'Groups' }]}
+                    />
                   </div>
-                  <div className="relative z-10 min-h-0 flex-1">
+                  <div className="relative z-fab min-h-0 flex-1">
                     {exploreMode === 'shop'
-                      ? <Shop identity={identity} setActiveTab={setActiveTab} />
+                      ? <Menus identity={identity} setActiveTab={setActiveTab} />
                       : <Discover identity={identity} onJoined={() => setActiveTab('chat')} />}
                   </div>
                 </div>
@@ -102,23 +175,15 @@ export default function AuthenticatedApp({ identity }) {
         )}
       </main>
 
-      <Drawer identity={identity} open={showDrawer} onClose={() => useChatStore.getState().setShowDrawer(false)} onNavigate={openDrawerSection} />
-
-      <nav aria-label="Tabs" className="fixed bottom-0 left-0 top-0 z-20 hidden w-[72px] flex-col items-center gap-3 border-r border-line bg-panelStrong pt-4 md:flex">
-        <button onClick={() => setActiveTab('chat')} className={`relative flex w-16 flex-col items-center gap-1 rounded-2xl p-2 min-h-[52px] ${activeTab === 'chat' ? 'text-accent' : 'text-ink/40 hover:text-ink/60'}`}>
-          <MessageSquare size={22} strokeWidth={activeTab === 'chat' ? 2.5 : 2} />
-          {unreadTotal > 0 && <span className="absolute right-2 top-0 flex h-[16px] min-w-[16px] items-center justify-center rounded-full bg-accent px-1.5 text-[10px] font-bold text-accentInk">{unreadTotal > 99 ? '99+' : unreadTotal}</span>}
-          <span className="text-[10px] font-medium">Chats</span>
-        </button>
-        <button onClick={() => setActiveTab('explore')} className={`flex w-16 flex-col items-center gap-1 rounded-2xl p-2 min-h-[52px] ${activeTab === 'explore' ? 'text-accent' : 'text-ink/40 hover:text-ink/60'}`}>
-          <Compass size={22} strokeWidth={activeTab === 'explore' ? 2.5 : 2} />
-          <span className="text-[10px] font-medium">Shop</span>
-        </button>
-        <button onClick={() => setActiveTab('profile')} className={`relative flex w-16 flex-col items-center gap-1 rounded-2xl p-2 min-h-[52px] ${activeTab === 'profile' ? 'text-accent' : 'text-ink/40 hover:text-ink/60'}`}>
-          <User size={22} strokeWidth={activeTab === 'profile' ? 2.5 : 2} />
-          <span className="text-[10px] font-medium">Profile</span>
-        </button>
-      </nav>
+      <Rail
+        label="Tabs"
+        activeId={activeTab}
+        items={[
+          { id: 'chat', label: 'Chats', icon: MessageSquare, badge: unreadTotal, onSelect: () => setActiveTab('chat') },
+          { id: 'explore', label: 'Menus', icon: Compass, onSelect: () => setActiveTab('explore') },
+          { id: 'profile', label: 'Profile', icon: User, onSelect: () => setActiveTab('profile') },
+        ]}
+      />
     </div>
   );
 }

@@ -202,3 +202,42 @@ test('oversized notes are refused at create', async () => {
     /too long/,
   );
 });
+
+// ————— hold: the vendor's delivery carrier —————
+
+test('hold returns the text, burns nothing yet, and burn completes the one-open promise', async () => {
+  const pool = fakePool();
+  const relays = ['wss://relay.test'];
+  const { url, hash } = await createDeadDropNote({ identity, text: 'address inside', pool, relays });
+  const before = pool.published.length;
+  const opened = await openDeadDropNote({ identity, fragment: url.split('#')[1], pool, relays, hold: true });
+  assert.equal(opened.text, 'address inside');
+  assert.equal(opened.hash, hash);
+  assert.equal(typeof opened.burn, 'function');
+  // Held open: no local burn, no delete request.
+  assert.equal(deadDropConsumed(hash), false);
+  assert.equal(pool.published.length, before);
+  // A second hold on the same device still opens — nothing was spent.
+  const again = await openDeadDropNote({ identity, fragment: url.split('#')[1], pool, relays, hold: true });
+  assert.equal(again.text, 'address inside');
+  // Save happened; burn now spends it.
+  await opened.burn();
+  assert.equal(deadDropConsumed(hash), true);
+  await assert.rejects(
+    () => openDeadDropNote({ identity, fragment: url.split('#')[1], pool, relays }),
+    /already opened/,
+  );
+});
+
+test('held-open and discarded leaves the note as it was — a failed save can retry', async () => {
+  const pool = fakePool();
+  const relays = ['wss://relay.test'];
+  const { url, hash } = await createDeadDropNote({ identity, text: 'survives the failed save', pool, relays });
+  await openDeadDropNote({ identity, fragment: url.split('#')[1], pool, relays, hold: true });
+  assert.equal(deadDropConsumed(hash), false);
+  const later = await openDeadDropNote({ identity, fragment: url.split('#')[1], pool, relays, hold: true });
+  await later.burn();
+  await new Promise((r) => setTimeout(r, 10));
+  const del = pool.published.find((e) => e.kind === 5);
+  assert.ok(del, 'the burn still publishes the delete request');
+});

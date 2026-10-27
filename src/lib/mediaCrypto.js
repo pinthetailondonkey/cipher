@@ -76,6 +76,7 @@ export async function uploadCiphertext(bytes, { servers = [], fetchImpl = global
       const response = await fetchImpl(`${server.href.replace(/\/$/, '')}/upload`, {
         method: 'PUT',
         redirect: 'error',
+        // not UI copy: the Blossom upload auth header scheme is wire format.
         headers: { Authorization: `Nostr ${base64Url(JSON.stringify(auth))}`, 'Content-Type': 'application/octet-stream', 'X-SHA-256': hash },
         body: bytes,
       });

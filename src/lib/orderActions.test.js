@@ -91,7 +91,7 @@ test('a buyer cancel removes Accept from the vendor card, and buyer actions sit 
 
 test('every status an order message is written with is one the machine knows', () => {
   const read = (path) => fs.readFileSync(new URL(path, import.meta.url), 'utf8');
-  const sources = ['../features/chat/useCommerce.js', '../Shop.jsx', '../components/OneTapCheckout.jsx', './proofOfTrade.js'].map(read);
+  const sources = ['../features/chat/useCommerce.js', '../Menus.jsx', '../components/OneTapCheckout.jsx', './proofOfTrade.js'].map(read);
   for (const source of sources) {
     for (const [, literal] of source.matchAll(/status: '([a-z_]+)'/g)) assert.ok(ORDER_STATUSES.includes(literal), literal);
     for (const [, key] of source.matchAll(/ORDER_STATUS\.([A-Z_]+)/g)) assert.ok(key in ORDER_STATUS, key);
@@ -113,16 +113,23 @@ test('the action table and the handlers name the same actions, with nothing left
 test('every message action has a way in from the UI, and every menu item has a handler', () => {
   const read = (path) => fs.readFileSync(new URL(path, import.meta.url), 'utf8');
   const bubble = read('../components/MessageBubble.jsx');
+  // The context menu lives on the shared Sheet now; reactions offer there.
+  const menuSheet = read('../components/chat/MessageContextMenu.jsx');
   const commands = read('../features/chat/useMessageCommands.js');
   const handled = new Set([...commands.matchAll(/action === '([a-z_]+)'/g)].map((m) => m[1]));
-  const menu = new Set([...bubble.matchAll(/\['([a-z_]+)', [A-Z][A-Za-z0-9]+, '[^']+'\]/g)].map((m) => m[1]));
-  const direct = new Set([...bubble.matchAll(/(?:onAction\?\.|\bact)\('([a-z_]+)'/g)].map((m) => m[1]));
-  const offered = new Set([...menu, ...direct]);
+  const menu = new Set([
+    ...[bubble, menuSheet].flatMap((source) => [...source.matchAll(/\{ action: '([a-z_]+)', label: '[^']+'/g)].map((m) => m[1])),
+    ...[bubble, menuSheet].flatMap((source) => [...source.matchAll(/(?:onAction\?\.|\bact)\('([a-z_]+)'/g)].map((m) => m[1])),
+  ]);
+  const offered = menu;
   for (const action of handled) assert.ok(offered.has(action), `${action} is handled but nothing offers it`);
-  for (const action of menu) assert.ok(handled.has(action), `${action} is offered but not handled`);
+  // Forward and Select are the thread shell's own actions, wired through the
+  // existing sendDM actor in useThreadActions — never the command handler.
+  const threadHandled = new Set(['forward', 'select']);
+  for (const action of menu) assert.ok(handled.has(action) || threadHandled.has(action), `${action} is offered but not handled`);
   assert.ok(menu.has('view_vendor') && menu.has('edit_product'));
   const overlays = read('../features/chat/ChatOverlays.jsx');
-  assert.match(overlays, /<VendorStorefront\s+isOpen=\{!!vendorStorefrontPubkey\}/);
+  assert.match(overlays, /<VendorMenuHome\s+open=\{!!vendorStorefrontPubkey\}/);
   assert.match(overlays, /<ProductEditModal editingProduct=\{editingProduct\}[^\n]*onSubmit=\{handleSaveEditedProduct\}/);
 });
 

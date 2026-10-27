@@ -6,15 +6,30 @@ import { seedVault } from './fixtures.js';
 // the same way so the run is identical no matter which tab is home.
 const TABS = [
   { key: 'chat', label: 'Chats' },
-  { key: 'explore', label: 'Shop' },
+  { key: 'explore', label: 'Menus' },
   { key: 'profile', label: 'Profile' },
 ];
 
 async function openTab(page, tab) {
   await page.goto('/');
   await page.waitForTimeout(1000);
-  await page.locator('nav').last().locator(`button:has-text("${tab.label}")`).click();
-  await page.waitForTimeout(500);
+  // The rebuilt phone shell opens destinations through the side drawer; the
+  // old bottom tab bar now rides the md+ rail only. Same three screens, same
+  // door: the drawer's menu button, then the matching row.
+  await page.getByRole('button', { name: 'Open menu' }).click();
+  await page.waitForTimeout(700);
+  const drawer = page.locator('aside', { hasText: 'Connections' }).first();
+  if (tab.key === 'profile') {
+    // Profile is the drawer's profile card, up top.
+    await drawer.locator('button').first().click();
+  } else {
+    const rows = { chat: 'Chats', explore: 'Menus' };
+    await drawer.locator('nav').locator(`button:has-text("${rows[tab.key]}")`).click();
+  }
+  await page.waitForTimeout(600);
+  // Picking a row closes the drawer itself; give the exit spring its beat.
+  await expect(drawer).toHaveCount(0, { timeout: 3000 });
+  await page.waitForTimeout(400);
   // Explore pulls listings from relays with its own 4s timeout; let the fetch
   // settle so the measured screen is the loaded one, not the spinner.
   if (tab.key === 'explore') {
@@ -27,7 +42,11 @@ test.describe('Safe area and viewport', () => {
     await page.addInitScript(seedVault);
   });
 
-  test('main height is at least 80px shorter than viewport', async ({ page }) => {
+  // The rebuild's shell is full-bleed: main spans the whole window and every
+  // pane scrolls inside it, while the bottom tab bar rides the md+ rail.
+  // The old 80px-short check measured that bar; keep the subject (main owns
+  // the phone window) without the bar's size.
+  test('main spans the window and the panes scroll inside it', async ({ page }) => {
     await page.goto('/');
     await page.waitForTimeout(1000);
 
@@ -36,7 +55,8 @@ test.describe('Safe area and viewport', () => {
     const box = await main.boundingBox();
 
     expect(box).toBeTruthy();
-    expect(viewport.height - box.height).toBeGreaterThanOrEqual(80);
+    expect(Math.abs(viewport.height - box.height)).toBeLessThanOrEqual(1);
+    await expect(main).toHaveCSS('overflow', 'hidden');
   });
 
   // Clipping per tab. Only elements the reader cannot reach or see count:
@@ -138,8 +158,12 @@ test.describe('Safe area and viewport', () => {
     await page.goto('/');
     await page.waitForTimeout(1000);
 
-    const nav = await page.locator('nav').last();
-    const box = await nav.boundingBox();
+    // The brief with the old bottom nav is gone on phone; the drawer carries
+    // the same destination buttons, so taps land on its menu rows.
+    await page.getByRole('button', { name: 'Open menu' }).click();
+    await page.waitForTimeout(700);
+    const drawerNav = page.locator('aside', { hasText: 'Connections' }).first().locator('nav').first();
+    const box = await drawerNav.boundingBox();
 
     expect(box).toBeTruthy();
 
@@ -147,7 +171,7 @@ test.describe('Safe area and viewport', () => {
     await page.touchscreen.tap(box.x + box.width / 2, box.y + box.height / 2);
     await page.waitForTimeout(300);
 
-    // Tap 4px from bottom edge
+    // Tap 4px above the row list's bottom edge
     await page.touchscreen.tap(box.x + box.width / 2, box.y + box.height - 4);
     await page.waitForTimeout(300);
 

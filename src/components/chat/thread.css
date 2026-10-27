@@ -1,0 +1,26 @@
+/* Thread-scoped utilities. This file stays beside the thread components
+   because src/index.css is PR1's file; when PR1 lands its z tokens
+   (--z-fab, --z-sheet) take over the fallbacks below directly. */
+
+.z-fab { z-index: var(--z-fab, 40); }
+.z-sheet { z-index: var(--z-sheet, 60); }
+
+/* Reply tap: the target bubble wears a glow ring for 2 s, ring color from
+   the accent-soft token. */
+@keyframes msg-jump-ring {
+  0%, 100% { box-shadow: 0 0 0 0 transparent; }
+  20%, 70% { box-shadow: 0 0 0 3px var(--accent-soft); }
+}
+.msg-jump { animation: msg-jump-ring 2s ease; }
+
+/* Long threads (>50 bubbles): the browser paints only rows near the
+   viewport. contain-intrinsic-size is the estimated row box so the
+   scrollbar stays honest. */
+.msg-cv {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 72px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .msg-jump { animation: none; }
+}

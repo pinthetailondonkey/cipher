@@ -7,7 +7,7 @@ import BroadcastModal from '../../components/chat/BroadcastModal';
 import ProductEditModal from '../../components/chat/ProductEditModal';
 
 const ProfileModal = lazy(() => import('../../components/ProfileModal'));
-const VendorStorefront = lazy(() => import('../../components/chat/VendorStorefront'));
+const VendorMenuHome = lazy(() => import('../../components/chat/VendorMenuHome'));
 
 export default function ChatOverlays({
   identity,
@@ -73,8 +73,8 @@ export default function ChatOverlays({
       {showQRScanner && <QRScanner onClose={() => setShowQRScanner(false)} />}
       <BroadcastModal isOpen={!!broadcastProduct} onClose={() => setBroadcastProduct(null)} product={broadcastProduct} groups={groups} onBroadcast={handleBroadcastSubmit} />
       <ProductEditModal editingProduct={editingProduct} onClose={() => setEditingProduct(null)} onSubmit={handleSaveEditedProduct} identity={identity} />
-      <VendorStorefront
-        isOpen={!!vendorStorefrontPubkey}
+      <VendorMenuHome
+        open={!!vendorStorefrontPubkey}
         onClose={() => setVendorStorefrontPubkey(null)}
         vendorPubkey={vendorStorefrontPubkey}
         profiles={profiles}

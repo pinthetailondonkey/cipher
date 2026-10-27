@@ -79,14 +79,6 @@ buzz stays the gateway's job, unchanged.
    ritual documented as words in the app, not as a wiki page.
 5. Polish, then the promised desktop asks from the founder vision.
 
-## The download page — copy for the site (the founder's own hands paste it)
-
-The static download page lives on the app-host site, outside this repo. Copy:
-
-> Cipher is a messenger and a shop. Your messages, payments and pictures travel encrypted, and nothing here reports back to us.
-> The desktop app routes everything through Tor, built in — your address never rides the envelope in the clear.
-> Prefer the browser version? Run a VPN alongside it — it keeps your IP address harder to see.
-
 ## Honest costs
 
 - One heavier download: the bundled Tor.

@@ -26,13 +26,20 @@ module.exports = {
         accentText: 'var(--accent-text)',
         accentSoft: 'var(--accent-soft)',
         accentInk: 'var(--accent-ink)',
-        success: 'var(--success)',
-        danger: 'var(--danger)',
+        success: 'rgb(var(--success-rgb) / <alpha-value>)',
+        danger: 'rgb(var(--danger-rgb) / <alpha-value>)',
         scrim: 'rgb(var(--scrim-rgb) / <alpha-value>)',
         borderDark: 'var(--border-strong)',
       },
       fontFamily: {
         sans: ['Inter', 'system-ui', 'sans-serif'],
+      },
+      zIndex: {
+        // Layer tokens live in one place: the CSS variables in src/index.css.
+        fab: 'var(--z-fab)',
+        sheet: 'var(--z-sheet)',
+        call: 'var(--z-call)',
+        toast: 'var(--z-toast)',
       }
     },
   },

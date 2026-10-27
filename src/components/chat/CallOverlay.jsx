@@ -55,7 +55,7 @@ export default function CallOverlay() {
   };
 
   return (
-    <div className="fixed inset-0 z-[80] flex flex-col bg-scrim">
+    <div className="fixed inset-0 z-call flex flex-col bg-scrim">
       <div className="pointer-events-none absolute inset-0" style={{
         background: 'radial-gradient(ellipse 55% 38% at 12% 0%, var(--glow-a), transparent 65%), radial-gradient(ellipse 50% 30% at 92% 100%, var(--glow-b), transparent 70%)',
       }} />
