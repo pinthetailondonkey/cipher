@@ -62,6 +62,9 @@ export default function AuthenticatedApp({ identity }) {
     <div className="relative flex h-[100dvh] w-full justify-center overflow-hidden bg-base text-ink md:justify-start">
       {/* The shell glow is drawn once by App.jsx; screens add no own copies
           — a 120px live blur re-rasterizes per frame and stung Safari. */}
+      {/* Drawer first so the shaded sheets later in the DOM keep painting
+          above it — all of them share the z-sheet token now. */}
+      <Drawer identity={identity} open={showDrawer} onClose={() => useChatStore.getState().setShowDrawer(false)} onNavigate={openDrawerSection} />
       <TutorialModal isOpen={showTutorial} onClose={() => { useChatStore.getState().setShowTutorial(false); localStorage.removeItem('cipher_new_account'); }} />
       <DeadDropModal identity={identity} />
       <GlobalDialog />
@@ -101,8 +104,6 @@ export default function AuthenticatedApp({ identity }) {
           </div>
         )}
       </main>
-
-      <Drawer identity={identity} open={showDrawer} onClose={() => useChatStore.getState().setShowDrawer(false)} onNavigate={openDrawerSection} />
 
       <nav aria-label="Tabs" className="fixed bottom-0 left-0 top-0 z-20 hidden w-[72px] flex-col items-center gap-3 border-r border-line bg-panelStrong pt-4 md:flex">
         <button onClick={() => setActiveTab('chat')} className={`relative flex w-16 flex-col items-center gap-1 rounded-2xl p-2 min-h-[52px] ${activeTab === 'chat' ? 'text-accent' : 'text-ink/40 hover:text-ink/60'}`}>

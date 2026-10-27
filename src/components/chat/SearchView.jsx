@@ -14,7 +14,7 @@ export default function SearchView({ handleSearch, joinGroupById, openChat }) {
   const isSearching = useChatStore((s) => s.isSearching);
 
   return (
-    <div className="absolute inset-0 z-50 flex h-full w-full flex-col bg-scrim">
+    <div className="absolute inset-0 z-sheet flex h-full w-full flex-col bg-scrim">
       <div className="pointer-events-none absolute inset-0" style={{
         background: 'radial-gradient(ellipse 55% 38% at 12% 0%, var(--glow-a), transparent 65%), radial-gradient(ellipse 50% 30% at 92% 100%, var(--glow-b), transparent 70%)',
       }} />

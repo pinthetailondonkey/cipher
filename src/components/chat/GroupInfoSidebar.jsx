@@ -190,7 +190,7 @@ export default function GroupInfoSidebar({
     <AnimatePresence>
       {isOpen && group && (
         <motion.div
-          className="fixed inset-0 z-[980] flex justify-end bg-scrim/50"
+          className="fixed inset-0 z-sheet flex justify-end bg-scrim/50"
           style={{ paddingRight: 'max(env(safe-area-inset-right), 0px)' }}
           role="presentation"
           initial={{ opacity: 0 }}

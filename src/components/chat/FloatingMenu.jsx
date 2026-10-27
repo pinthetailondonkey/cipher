@@ -19,7 +19,7 @@ export default function FloatingMenu() {
           <>
             <motion.div 
               initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-              className="fixed inset-0 z-40 bg-scrim/60"
+              className="fixed inset-0 z-fab bg-scrim/60"
               onClick={() => setShowMenu(false)}
             />
             <motion.div
@@ -27,7 +27,7 @@ export default function FloatingMenu() {
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 20, scale: 0.9 }}
               transition={{ type: "spring", stiffness: 400, damping: 25 }}
-              className="fixed right-6 bottom-[calc(6rem+env(safe-area-inset-bottom))] z-50 flex flex-col gap-3 items-end md:absolute md:right-4 md:bottom-24"
+              className="fixed right-6 bottom-[calc(6rem+env(safe-area-inset-bottom))] z-fab flex flex-col gap-3 items-end md:absolute md:right-4 md:bottom-24"
             >
               <button 
                 onClick={() => { setShowMenu(false); setView('search'); }} 
@@ -68,7 +68,7 @@ export default function FloatingMenu() {
       <motion.button
         animate={{ rotate: showMenu ? 45 : 0 }}
         onClick={() => setShowMenu(!showMenu)}
-        className={`fixed right-6 bottom-[calc(1.25rem+env(safe-area-inset-bottom))] z-50 rounded-full bg-accent p-4 text-accentInk shadow-lg active:bg-accent md:absolute md:right-4 md:bottom-6 ${pressable}`}
+        className={`fixed right-6 bottom-[calc(1.25rem+env(safe-area-inset-bottom))] z-fab rounded-full bg-accent p-4 text-accentInk shadow-lg active:bg-accent md:absolute md:right-4 md:bottom-6 ${pressable}`}
       >
         <Plus size={24} strokeWidth={2.5} />
       </motion.button>

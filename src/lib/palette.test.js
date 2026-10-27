@@ -39,12 +39,12 @@ test('the theme registry stays retired', () => {
   assert.equal(fs.existsSync(path.join(SRC, 'lib', 'theme.js')), false);
 });
 
-test('the stylesheet carries exactly two modes: one light selector, no other per-theme selector', () => {
-  // Two modes, one token set: bare :root (dark, default) and exactly one
-  // light value set. A third selector is a theme registry sneaking back.
+test('the stylesheet is dark only: zero data-theme selectors', () => {
+  // Dark only, one token set in bare :root. Any [data-theme] selector is a
+  // light skin or theme registry sneaking back in.
   const css = fs.readFileSync(path.join(SRC, 'index.css'), 'utf8');
   const selectors = css.match(/\[data-theme[^\]]*\]/g) || [];
-  assert.deepEqual(selectors, ["[data-theme='light']"]);
+  assert.deepEqual(selectors, []);
 });
 
 test('the class-based dark strategy stays retired in the tailwind config', () => {

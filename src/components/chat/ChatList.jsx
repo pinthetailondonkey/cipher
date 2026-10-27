@@ -197,8 +197,8 @@ export default function ChatList({ onOpenChat }) {
         </button>
         {menuFor === chat.id && (
           <>
-            <button type="button" aria-label="Close options" onClick={() => setMenuFor(null)} className="fixed inset-0 z-10 cursor-default" />
-            <div className="absolute right-2 top-2 z-20 w-40 overflow-hidden rounded-xl border border-lineStrong bg-panelStrong">
+            <button type="button" aria-label="Close options" onClick={() => setMenuFor(null)} className="fixed inset-0 z-fab cursor-default" />
+            <div className="absolute right-2 top-2 z-fab w-40 overflow-hidden rounded-xl border border-lineStrong bg-panelStrong">
               <button
                 type="button"
                 onClick={() => { useChatStore.getState().toggleMuteChat(chat.id); setMenuFor(null); }}

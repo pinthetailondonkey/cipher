@@ -111,7 +111,7 @@ export default function QRScanner({ onClose }) {
   };
 
   return (
-    <div className="fixed inset-0 z-[999] flex flex-col bg-scrim pt-safe pb-safe md:items-center md:justify-center md:bg-scrim/70" role="dialog" aria-modal="true" aria-label="Scan QR code">
+    <div className="fixed inset-0 z-call flex flex-col bg-scrim pt-safe pb-safe md:items-center md:justify-center md:bg-scrim/70" role="dialog" aria-modal="true" aria-label="Scan QR code">
       <div className="pointer-events-none absolute inset-0" style={{
         background: 'radial-gradient(ellipse 55% 38% at 12% 0%, var(--glow-a), transparent 65%), radial-gradient(ellipse 50% 30% at 92% 100%, var(--glow-b), transparent 70%)',
       }} />

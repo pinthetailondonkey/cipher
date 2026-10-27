@@ -66,7 +66,7 @@ export default function VendorStorefront({ isOpen, onClose, vendorPubkey, profil
   if (!isOpen || !vendorPubkey) return null;
 
   return (
-    <div className="fixed inset-0 z-[900] flex items-end justify-center bg-scrim/80 p-0 sm:items-center sm:p-4" role="presentation">
+    <div className="fixed inset-0 z-sheet flex items-end justify-center bg-scrim/80 p-0 sm:items-center sm:p-4" role="presentation">
       <section role="dialog" aria-modal="true" aria-label="Vendor storefront" className="max-h-[90dvh] w-full max-w-md overflow-y-auto rounded-t-3xl border border-line bg-panel pb-[env(safe-area-inset-bottom)] sm:rounded-3xl">
         <header className="sticky top-0 z-10 flex items-center gap-3 border-b border-line bg-base px-4 py-4 pt-[env(safe-area-inset-top)]">
           <Picture src={profile.picture} alt="" className="h-12 w-12 rounded-full border border-line object-cover" fallback={<div className="flex h-12 w-12 items-center justify-center rounded-full border border-line bg-panelAlt text-inkMuted"><Store size={20} /></div>} />

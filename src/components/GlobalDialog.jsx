@@ -44,7 +44,7 @@ export default function GlobalDialog() {
   };
 
   return (
-    <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-scrim/80 p-4" role="presentation">
+    <div className="fixed inset-0 z-sheet flex items-center justify-center bg-scrim/80 p-4" role="presentation">
       <form ref={panelRef} onSubmit={confirm} role="dialog" aria-modal="true" aria-labelledby="global-dialog-title" className="w-full max-w-sm rounded-3xl border border-line bg-panel p-6">
         <div className="flex items-start gap-3">
           {dialog.type === 'danger' && <AlertTriangle size={21} className="mt-1 shrink-0 text-danger" />}

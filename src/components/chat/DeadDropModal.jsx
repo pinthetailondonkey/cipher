@@ -55,7 +55,7 @@ export default function DeadDropModal({ identity }) {
   };
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-end justify-center bg-scrim/70 p-4 pb-[calc(1.5rem+env(safe-area-inset-bottom))]" onClick={close}>
+    <div className="fixed inset-0 z-sheet flex items-end justify-center bg-scrim/70 p-4 pb-[calc(1.5rem+env(safe-area-inset-bottom))]" onClick={close}>
       <div
         className="w-full max-w-md rounded-3xl border border-line bg-panelStrong p-5 shadow-2xl"
         onClick={(e) => e.stopPropagation()}
