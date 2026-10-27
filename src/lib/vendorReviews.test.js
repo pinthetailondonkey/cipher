@@ -12,15 +12,20 @@ import {
   provenDealsForVendor,
   provenLinesOf,
   createReviewPublisher,
+  boundReceiptsByHash,
+  parseReviewEvent,
+  reviewsFromWire,
   REVIEW_WIRING_LANDED,
   reviewEligibility,
   reviewOfferForOrder,
   reviewSummaryOf,
   reviewsForVendor,
+  ridersOfRow,
   saveReview,
   wholeMonthsBetween,
 } from './vendorReviews.js';
 import { publicReceipt, rememberPublicView, signPublicView, signReceipt, verifyPublicView } from './proofOfTrade.js';
+import { RIDER_WORDS } from './disputes.js';
 
 
 function hex(bytes) {
@@ -316,4 +321,121 @@ test('the fuse is up and the publisher is main\'s sendReview, promising { succes
   const wordless = await createReviewPublisher({ sendReview: async () => ({ success: false }) })({});
   assert.equal(wordless.success, false);
   assert.ok(wordless.error);
+});
+
+const WIRE_VENDOR = 'b'.repeat(64);
+const WIRE_BUYER = 'cc'.repeat(32);
+const WIRE_HASH = 'de'.repeat(32);
+const STRANGER_HASH = 'fa'.repeat(32);
+const REVIEW_EVENT_ID = 'd4'.repeat(32);
+
+function wireEvent({ id = REVIEW_EVENT_ID, author = WIRE_BUYER, vendor = WIRE_VENDOR, receipt = WIRE_HASH, rating = '4', text = 'Fine deal.', created_at = 1_700_200_000, kind = 10005 } = {}) {
+  return { kind, id, pubkey: author, created_at, tags: [['p', vendor], ['rating', rating], ['receipt', receipt]], content: text };
+}
+
+test('a wire review parses only a vendor-bound, receipt-bound, self-review-free row', () => {
+  const parsed = parseReviewEvent(wireEvent(), WIRE_VENDOR);
+  assert.equal(parsed.source, 'wire');
+  assert.equal(parsed.author, WIRE_BUYER);
+  assert.equal(parsed.stars, 4);
+  assert.equal(parsed.verdict, 'Fine deal.');
+  assert.equal(parsed.receiptHash, WIRE_HASH);
+  assert.equal(parsed.createdAt, 1_700_200_000);
+  // A wrong kind, a stranger vendor tag, a loose hash, a blank rating, a
+  // self-review, or a wordless row answer nothing.
+  assert.equal(parseReviewEvent({ ...wireEvent(), kind: 10004 }, WIRE_VENDOR), null);
+  assert.equal(parseReviewEvent(wireEvent({ vendor: '9'.repeat(64) }), WIRE_VENDOR), null);
+  assert.equal(parseReviewEvent(wireEvent({ receipt: 'zz' }), WIRE_VENDOR), null);
+  assert.equal(parseReviewEvent(wireEvent({ rating: '' }), WIRE_VENDOR), null);
+  assert.equal(parseReviewEvent(wireEvent({ text: '   ' }), WIRE_VENDOR), null);
+  assert.equal(parseReviewEvent(wireEvent({ author: WIRE_VENDOR }), WIRE_VENDOR), null);
+  assert.equal(parseReviewEvent(null, WIRE_VENDOR), null);
+  assert.equal(parseReviewEvent(wireEvent(), ''), null);
+});
+
+test('the display reads the live thread: wire rows preferred for their own signer, local-only rows kept, transplants refused', () => {
+  memoryStorage();
+  const { buyer, vendor, receipt } = boundDeal({ orderId: 'order-w' });
+  const localRow = {
+    vendorPubkey: vendor,
+    buyerPubkey: buyer,
+    stars: 3,
+    verdict: 'Local words.',
+    receiptHash: receipt.hash,
+    createdAt: 900,
+    orderId: 'order-w',
+    orderMonth: '2023-11',
+    receipt,
+  };
+  // A stranger's review naming this device's receipt hash: a transplant —
+  // the wire signer is not the receipt's buyer, so the local row stands.
+  const transplantOccasion = reviewsFromWire({
+    vendorPubkey: vendor,
+    wireEvents: [wireEvent({ vendor, receipt: receipt.hash, author: WIRE_BUYER, text: 'I was not even there.' })],
+    localRows: [localRow],
+    receiptsByHash: {},
+  });
+  assert.equal(transplantOccasion.length, 1);
+  assert.equal(transplantOccasion[0].verdict, 'Local words.');
+  assert.equal(transplantOccasion[0].source, 'local');
+  // The buyer's own wire copy is the same review: the wire row wins; the
+  // month and the receipt evidence stay this device's, from the receipt.
+  const own = reviewsFromWire({
+    vendorPubkey: vendor,
+    wireEvents: [wireEvent({ vendor, receipt: receipt.hash, author: buyer, text: 'Wire words.', created_at: 1_700_200_000 })],
+    localRows: [localRow],
+    receiptsByHash: boundReceiptsByHash(),
+  });
+  assert.equal(own.length, 1);
+  assert.equal(own[0].verdict, 'Wire words.', 'the wire row is preferred');
+  assert.equal(own[0].stars, 4);
+  assert.equal(own[0].source, 'wire');
+  assert.equal(own[0].orderMonth, '2023-11', 'the month still derives from the local receipt evidence');
+  assert.equal(own[0].id, REVIEW_EVENT_ID, 'the wire event id is kept for the rider thread');
+  assert.equal(own[0].createdAt, 1_700_200_000);
+  // Local-only rows stay visible, newest first.
+  const localOnly = reviewsFromWire({ vendorPubkey: vendor, wireEvents: [], localRows: [localRow], receiptsByHash: {} });
+  assert.equal(localOnly.length, 1);
+  assert.equal(localOnly[0].orderId, 'order-w');
+  // A wire-only deal this device holds a bound receipt for: month derived,
+  // nothing about the order invented. One this device does not: no month,
+  // no chip evidence, and the buyer is the wire author.
+  const secondDeal = boundDeal({ orderId: 'order-w2', at: 1_700_100_000 });
+  const rows = reviewsFromWire({
+    vendorPubkey: vendor,
+    wireEvents: [
+      wireEvent({ vendor, receipt: secondDeal.receipt.hash, author: secondDeal.buyer, text: 'Two deals fine.', id: 'e2', created_at: 1_700_300_000 }),
+      wireEvent({ vendor, receipt: STRANGER_HASH, author: WIRE_BUYER, text: 'Who is this?', id: 'e3', created_at: 1_700_400_000 }),
+    ],
+    localRows: [],
+    receiptsByHash: boundReceiptsByHash(),
+  });
+  assert.equal(rows.length, 2, 'the transplanted-shape pair is gone: both wire rows name hashes no local row holds');
+  const known = rows.find((row) => row.receiptHash === secondDeal.receipt.hash);
+  assert.equal(known.orderMonth, orderMonthOf(1_700_100_000), 'the month derives from the bound receipt this device holds');
+  assert.equal(known.buyerPubkey, secondDeal.buyer, 'the buyer is the wire author');
+  assert.deepEqual(known.receipt, secondDeal.receipt, 'the row keeps the receipt it derived its evidence from');
+  const unknown = rows.find((row) => row.receiptHash === STRANGER_HASH);
+  assert.equal(unknown.orderMonth, '', 'no receipt evidence, no month — nothing invented');
+  assert.ok(unknown.buyerPubkey);
+  // Newest first across wire rows.
+  assert.equal(rows[0].receiptHash, STRANGER_HASH);
+});
+
+test('riders of record ride a wire row through its own pair', () => {
+  const row = { source: 'wire', id: REVIEW_EVENT_ID, vendorPubkey: WIRE_VENDOR, receiptHash: WIRE_HASH, buyerPubkey: WIRE_BUYER };
+  const flagEvent = {
+    kind: 10006, id: 'ff1', pubkey: WIRE_VENDOR, created_at: 2000,
+    tags: [['p', WIRE_VENDOR], ['receipt', WIRE_HASH], ['review', REVIEW_EVENT_ID], ['rider', 'vendor-flag']],
+    content: 'This deal never happened.',
+  };
+  const ridersArray = ridersOfRow(row, [flagEvent]);
+  assert.equal(ridersArray.length, 1);
+  assert.equal(ridersArray[0].rider, 'vendor-flag');
+  assert.equal(ridersArray[0].text, 'This deal never happened.');
+  // A row with no wire id has nothing to ride — no riders.
+  assert.deepEqual(ridersOfRow({ vendorPubkey: WIRE_VENDOR, receiptHash: WIRE_HASH }, [flagEvent]), []);
+  // RIDER_WORDS stays the founder three: vendor riders are the vendor's, a
+  // supplement is never the vendor's, and each word lands once per pair.
+  assert.deepEqual([...RIDER_WORDS].sort(), ['buyer-supplement', 'vendor-flag', 'vendor-rebuttal']);
 });
