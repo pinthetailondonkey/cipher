@@ -3,12 +3,34 @@ import Badge from '../ui/Badge';
 import { noHexName } from '../../lib/npub';
 import { monthLabelOf } from '../../lib/vendorReviews';
 
+// A rider's plain label, per VOICE: no invented legal copy, just who said
+// it and what kind of word it was.
+const RIDER_LABELS = {
+  'vendor-flag': 'The vendor flagged this',
+  'vendor-rebuttal': 'The vendor rebutted',
+  'buyer-supplement': 'The buyer added',
+};
+
+// The compose affordance's own label per word, plain.
+const COMPOSE_LABELS = {
+  'vendor-flag': 'Flag this review',
+  'vendor-rebuttal': 'Rebut this review',
+  'buyer-supplement': 'Add to your review',
+};
+
 // One review row on the vendor's identity page. The reviewer's display
 // name, the stars, a one-line verdict, and the order month — never the
 // item, never the amount. The receipt chip rides only when the bound
-// receipt reads confirmed on chain.
-export default function ReviewRow({ review, profile = {}, verified = false }) {
+// receipt reads confirmed on chain. A wire rider of record (the vendor's
+// flag or rebuttal, the buyer's supplement) renders as a plain line under
+// the row it rides. Compose affordances (the owner's flag and rebuttal,
+// the buyer's supplement) come in with `composeWords` — already gated
+// riderComposeOf's way, so a spent word shows taken and a viewer with no
+// words never sees an affordance.
+export default function ReviewRow({ review, profile = {}, verified = false, composeWords = null, onCompose }) {
   const name = noHexName(profile, review.buyerPubkey);
+  const riders = Array.isArray(review.riders) ? review.riders : [];
+  const words = Array.isArray(composeWords) ? composeWords : [];
   return (
     <div className="border-b border-line px-4 py-3 last:border-0">
       <div className="flex items-center justify-between gap-2">
@@ -26,6 +48,35 @@ export default function ReviewRow({ review, profile = {}, verified = false }) {
         </span>
       </div>
       {review.verdict && <p className="mt-1 text-[14px] leading-snug text-ink/75">{review.verdict}</p>}
+      {riders.map((rider) => (
+        <p
+          key={rider.id || `${rider.rider}-${rider.text}`}
+          className="mt-1.5 rounded-xl bg-panelAlt px-3 py-2 text-[13px] leading-snug text-ink/75"
+        >
+          <span className="font-semibold text-ink">{RIDER_LABELS[rider.rider] || 'A rider'}</span>
+          <span>: {rider.text}</span>
+        </p>
+      ))}
+      {words.length > 0 && (
+        <div className="mt-1.5 flex flex-wrap items-center gap-2">
+          {words.map(({ rider, taken }) => (
+            taken ? (
+              <span key={rider} className="text-[11px] text-inkSubtle">
+                {COMPOSE_LABELS[rider] || rider} — already spent
+              </span>
+            ) : (
+              <button
+                key={rider}
+                type="button"
+                onClick={() => onCompose?.(rider)}
+                className="rounded-lg border border-line px-2.5 py-1 text-[12px] font-semibold text-accentText active:bg-ink/5"
+              >
+                {COMPOSE_LABELS[rider] || rider}
+              </button>
+            )
+          ))}
+        </div>
+      )}
       <div className="mt-1.5 flex items-center gap-2">
         {verified && (
           <Badge tone="success" aria-label="Receipt on chain">

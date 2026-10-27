@@ -6,8 +6,9 @@ import ReviewCompose from './ReviewCompose';
 // The "Review this deal" door on an order card. The offer arrives already
 // gated (a bound receipt on this device, the buyer's key, the deal
 // completed), so with no offer this renders nothing. Once this deal has a
-// review, the door stays down — one review per receipt.
-export default function ReviewPrompt({ offer, vendorProfile = {} }) {
+// review, the door stays down — one review per receipt. The identity rides
+// along so the composer can sign what it publishes.
+export default function ReviewPrompt({ offer, vendorProfile = {}, identity = null }) {
   const [alreadyReviewed, setAlreadyReviewed] = useState(false);
   const [open, setOpen] = useState(false);
 
@@ -34,7 +35,7 @@ export default function ReviewPrompt({ offer, vendorProfile = {} }) {
         <Star size={15} aria-hidden="true" />
         Review this deal
       </button>
-      <ReviewCompose offer={offer} vendorProfile={vendorProfile} open={open} onClose={() => setOpen(false)} />
+      <ReviewCompose offer={offer} vendorProfile={vendorProfile} identity={identity} open={open} onClose={() => setOpen(false)} />
     </>
   );
 }

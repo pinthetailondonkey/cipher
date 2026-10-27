@@ -8,15 +8,17 @@
 // rewrites their rules: eligibility, display and the menu counters all
 // re-derive from the receipt this device holds, so a review is never a
 // claim a stranger could invent — and never a per-order number a menu
-// could publish. Reviews themselves stay local to the reviewer's account
-// database (db.js, the vendorReviews table); nothing here sends.
+// could publish. Reviews stay local to the reviewer's account database
+// (db.js, the vendorReviews table) AND publish to the vendor's live thread
+// — the publisher is useReputation's sendReview on main, handed to
+// createReviewPublisher; the local record stays so the one-per-receipt
+// door and offline history hold.
 //
-// This file is strictly screen-side. The vendor data layer — review
-// events, the txid bulletin, dispute records — is owned by the Deal lane
-// on main. Nothing here names kinds on the wire, publishes, or structures
-// bulletin records; the display consumes those contracts by swapping the
-// proven-count provider and the review reader in useVendorReviews, never
-// by widening this file.
+// The vendor data layer — review events (10005), the txid bulletin (10007),
+// dispute records (10006) — is owned by the Deal lane on main. This file
+// never publishes or structures those records; the display reads them
+// through Deal's reader contract (vendorShopReaders) and merges them with
+// the device's own rows, keyed by receipt hash.
 import { scopedGet, getActivePubkey } from './storage';
 import {
   readPublicViews,
@@ -26,31 +28,42 @@ import {
 } from './proofOfTrade';
 import { ORDER_STATUS } from './paymentState';
 import { orderState } from './orderActions';
+import { clampRating, receiptBindingOf } from './reputation';
+import { RIDER_WORDS, ownRiderTaken, ridersForReview } from './disputes';
 
 const HEX64 = /^[0-9a-f]{64}$/;
 
-// The review publisher gate. Deal's kind-10005 ( review post) publisher
-// does not exist on this branch — it ships on main. Until it folds:
-//   - review rows render only from Deal's reader contract, so the vendor
-//     profile's review list stays empty (its own "No reviews yet." state);
-//   - a compose saves locally to this account's database and publishes
-//     nothing.
-// Flipping this true is the fold: the publisher below gains its real body
-// in that same change.
-export const REVIEW_WIRING_LANDED = false;
+// The review publisher gate. Deal's kind-10005 publisher — sendReview in
+// useReputation on main (8a36b9a) — has folded under the stack, so the fuse
+// is true: a compose is sign-and-publish, and the local record stays beside
+// the publication so the one-per-receipt door and the offline history keep
+// working. The display side reads the same contract's fetch
+// (vendorShopReaders.fetchVendorThread) and the same rider ledger.
+export const REVIEW_WIRING_LANDED = true;
 
-// Publisher swaps to Deal-lane kind-10005 publisher on fold. Nothing on
-// this branch publishes a review; the stub refuses so no code path can
-// send while the gate is down.
-//
-// Compose-side one-shot guard for the fold, per Deal's 610294d: the dispute
-// riders check BOTH ridersForReview (the wire's parsed rider of record) AND
-// ownRiderTaken(vendor, receipt, review, rider) in disputes.js — the local
-// ledger covers the word the device already spent before its own rider
-// event has come back through the fetch.
-export function createReviewPublisher() {
+// The publisher IS useReputation's sendReview; the stub is gone. sendReview
+// arrives bound to this device's identity (see the compose below, which
+// reads it off its own useReputation call), so the closure here stays pure
+// policy: it takes the four fields a review publishes — vendor pubkey,
+// stars, one-line verdict, receipt hash — and hands back { success, error }
+// exactly as sendReview does. Only those four ride the publish; the order
+// month is NEVER submitted — display derives it from the bound receipt
+// evidence.
+export function createReviewPublisher(options) {
   if (!REVIEW_WIRING_LANDED) return null;
-  return null;
+  const { sendReview } = options || {};
+  if (typeof sendReview !== 'function') return null;
+  return async ({ vendorPubkey, stars, verdict, receiptHash } = {}) => {
+    try {
+      const result = await sendReview(vendorPubkey, stars, verdict, receiptHash);
+      if (!result?.success) {
+        return { success: false, error: result?.error || 'The review could not be published.' };
+      }
+      return { success: true, queued: result.queued === true };
+    } catch (error) {
+      return { success: false, error: error?.message || 'The review could not be published.' };
+    }
+  };
 }
 const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
@@ -185,8 +198,8 @@ function provenMapsForVendor(vendorPubkey) {
 // device countersigned that a signed public view names. The fallback's
 // count is those distinct receipts, not a bulletin length — the bulletin
 // count-is-txids rule is the data layer's, and it owns the real source.
-// The txids ride along (the receipts carry them) so the tap-through has
-// data when the banner learns to open it. Rails without proven deals stay
+// The txids ride along (the receipts carry them) so the banner's
+// tap-through has data. Rails without proven deals stay
 // absent keys, so the shape is exactly the data layer's.
 export function provenDealsForVendor(vendorPubkey) {
   const keyed = {};
@@ -230,25 +243,28 @@ export function provenBannerOf(entry) {
   return '';
 }
 
-// The stats band's lines: one per rail the contract object carries, btc
+// The stats band's entries: one per rail the contract object carries, btc
 // first, xmr second, then any further rail in the order the object hands
 // over (Deal publishes per-asset config; nothing here assumes exactly two
-// rails, and no line ever sums two rails together).
-export function provenLinesOf(proven) {
-  if (Array.isArray(proven)) {
-    return proven.map(provenBannerOf).filter(Boolean);
-  }
+// rails, and no line ever sums two rails together). The rows are the
+// banner's material: provenLinesOf speaks them, and the conductor's
+// tap-through reads the txids one entry carries.
+export function provenEntriesOf(proven) {
+  if (Array.isArray(proven)) return proven.filter((entry) => entry && typeof entry === 'object');
   if (!proven || typeof proven !== 'object') return [];
-  const keys = Object.keys(proven).sort((a, b) => railRank(a) - railRank(b));
-  return keys
+  return Object.keys(proven)
+    .sort((a, b) => railRank(a) - railRank(b))
     .map((rail) => {
       const value = proven[rail];
       if (value && typeof value === 'object') return { ...value, rail };
       const count = Number(value) || 0;
       return { count, rail, phrasing: KNOWN_RAILS[rail] || '' };
-    })
-    .map(provenBannerOf)
-    .filter(Boolean);
+    });
+}
+
+// The stats band's lines: one per rail, the entries spoken plain.
+export function provenLinesOf(proven) {
+  return provenEntriesOf(proven).map(provenBannerOf).filter(Boolean);
 }
 
 // Months active: whole months since this vendor's earliest bound receipt
@@ -397,6 +413,157 @@ export async function reviewsForVendor(vendorPubkey, table) {
   const rows = table || (await import('../db')).db.vendorReviews;
   const stored = await rows.where('vendorPubkey').equals(vendor).toArray();
   return stored.filter(canDisplayReview).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+}
+
+// ————— the wire side of the display —————
+//
+// One kind-10005 review off the vendor's fetched thread, parsed plainly.
+// The checks a reader can make without any private state: right kind,
+// published under the vendor's key, bound to a 64-hex receipt hash, a whole
+// rating 0..5, a verdict of some words, a 64-hex author who is not the
+// vendor (self-review counts nothing). The receipt stays private, so a
+// wire row never claims the receipt's contents — the month and the chip
+// are only ever derived from receipt evidence this device holds.
+export function parseReviewEvent(event, vendorPubkey) {
+  const vendor = lower(vendorPubkey);
+  if (!vendor || !event || Number(event.kind) !== 10005) return null;
+  const vendorTag = lower(event.tags?.find((tag) => tag[0] === 'p')?.[1]);
+  if (vendorTag !== vendor) return null;
+  const receiptHash = receiptBindingOf(event);
+  if (!receiptHash) return null;
+  const stars = clampRating(event.tags?.find((tag) => tag[0] === 'rating')?.[1]);
+  if (!Number.isFinite(stars) || String(event.tags?.find((tag) => tag[0] === 'rating')?.[1] || '').trim() === '') return null;
+  const author = String(event.pubkey || '').toLowerCase();
+  if (!HEX64.test(author) || author === vendor) return null;
+  const verdict = String(event.content || '').trim();
+  if (!verdict) return null;
+  return {
+    source: 'wire',
+    id: String(event.id || ''),
+    vendorPubkey: vendor,
+    author,
+    stars,
+    verdict,
+    receiptHash,
+    createdAt: Number(event.created_at) || 0,
+  };
+}
+
+// The receipt evidence this device holds, keyed by hash: the month a
+// wire-only review shows and the "Receipt on chain" chip are derived from
+// these, never from anything the wire row claims.
+export function boundReceiptsByHash() {
+  const byHash = {};
+  for (const { receipt } of boundReceipts()) byHash[receipt.hash] = receipt;
+  return byHash;
+}
+
+// The display rows for one vendor page: the wire's review rows merged with
+// the rows this device saved, keyed by receipt hash.
+//   - A hash named by both: the wire row is preferred (the device's own
+//     event may not have come back through the fetch), but only when the
+//     wire signer IS the local row's buyer — a stranger naming a receipt
+//     hash it overheard is a transplant, and the local row stands. The
+//     hybrid keeps the local row's receipt evidence (orderId, receipt,
+//     the derived month, the chip) — that is this device's knowledge, and
+//     the wire row carries none.
+//   - A hash named only on the wire: a wire-only row, month and chip
+//     derived from whatever bound receipt this device happens to hold for
+//     that hash, and buyer = the wire author. Nothing invented.
+//   - A hash named only locally: the local row, untouched.
+// Rows come out newest first.
+export function reviewsFromWire({ vendorPubkey, wireEvents = [], localRows = [], receiptsByHash = {} } = {}) {
+  const vendor = lower(vendorPubkey);
+  const byHash = new Map();
+  if (!vendor) return [];
+  for (const row of Array.isArray(localRows) ? localRows : []) {
+    const hash = lower(row?.receiptHash);
+    if (!hash || lower(row.vendorPubkey) !== vendor) continue;
+    byHash.set(hash, { ...row, receiptHash: hash, source: row.source || 'local' });
+  }
+  for (const event of Array.isArray(wireEvents) ? wireEvents : []) {
+    const wire = parseReviewEvent(event, vendor);
+    if (!wire) continue;
+    const held = byHash.get(wire.receiptHash);
+    if (held) {
+      if (lower(wire.author) !== lower(held.buyerPubkey)) continue;
+      byHash.set(wire.receiptHash, {
+        ...held,
+        stars: wire.stars,
+        verdict: wire.verdict,
+        createdAt: wire.createdAt || held.createdAt,
+        id: wire.id,
+        source: 'wire',
+      });
+      continue;
+    }
+    const receipt = receiptsByHash[wire.receiptHash];
+    const row = {
+      source: 'wire',
+      id: wire.id,
+      vendorPubkey: vendor,
+      buyerPubkey: wire.author,
+      stars: wire.stars,
+      verdict: wire.verdict,
+      receiptHash: wire.receiptHash,
+      createdAt: wire.createdAt,
+      orderId: '',
+      orderMonth: '',
+      receipt: null,
+      riders: [],
+    };
+    if (receipt?.body && receipt.hash === wire.receiptHash) {
+      row.receipt = receipt;
+      row.orderMonth = orderMonthOf(receipt.body.at);
+    }
+    byHash.set(wire.receiptHash, row);
+  }
+  return [...byHash.values()]
+    .filter((row) => row.source !== 'local' || canDisplayReview(row))
+    .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+}
+
+// The riders of record for one display row: the fetched dispute set is
+// read through ridersForReview against the row's own (vendor, receipt,
+// review) pair — so a rider's word taken on the wire is spent for display.
+// The row must have a wire event id; a local-only row has nothing to ride.
+export function ridersOfRow(row, disputeEvents) {
+  if (!row?.id || !row.receiptHash || !row.vendorPubkey) return [];
+  const words = ridersForReview({ vendor: row.vendorPubkey, receipt: row.receiptHash, review: row.id }, disputeEvents);
+  return RIDER_WORDS
+    .filter((word) => words[word])
+    .map((word) => ({ rider: word, text: words[word].text, author: words[word].author, id: words[word].id }));
+}
+
+// The rider words ONE viewer may still compose on one review row — the
+// compose-side gate, reading the same two checks riders read:
+// ridersForReview (the wire's rider of record) AND ownRiderTaken (the
+// local ledger covering a word this device already signed before its
+// rider event fetched back). Authorship is the law: only the vendor
+// flags or rebuts on their own thread; the buyer supplements their own
+// review; the vendor never co-signs a supplement; anyone else gets
+// nothing — null, no affordance at all. Each word list entry carries
+// taken (the word is spent for this pair, so the compose refuses it),
+// and free words ride. A row without a wire event id has nothing to
+// ride on — a rider is posted against a review event, and a local-only
+// row's event has not fetched back.
+export function riderComposeOf(row, { authorPubkey = null, disputeEvents = [] } = {}) {
+  const vendor = lower(row?.vendorPubkey);
+  const author = lower(authorPubkey);
+  if (!vendor || !row?.id || !row.receiptHash || !author) return null;
+  let words;
+  if (author === vendor) {
+    words = ['vendor-flag', 'vendor-rebuttal'];
+  } else if (author === lower(row.buyerPubkey)) {
+    words = ['buyer-supplement'];
+  } else {
+    return null;
+  }
+  const ofRecord = ridersForReview({ vendor, receipt: row.receiptHash, review: row.id }, disputeEvents);
+  return words.map((rider) => ({
+    rider,
+    taken: Boolean(ofRecord[rider]) || ownRiderTaken(vendor, row.receiptHash, row.id, rider),
+  }));
 }
 
 // The summary band: count and average on the displayed rows. The average
