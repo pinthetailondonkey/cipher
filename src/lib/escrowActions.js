@@ -263,6 +263,24 @@ export const OVERT_REFUND_LINE = 'The vendor said they delivered. The money went
 export const CLOCK_CLAIM_TITLE = 'Settled by the clock';
 export const CLOCK_CLAIM_LINE = 'The buyer went quiet past the timer, so the clock freed the money to the vendor. Silence is not an inspection.';
 
+// The escrow a vendor already issued on a card (security S5): the local
+// patch is this device's own write from the earlier acceptance — the
+// quote, the address, the delivery commitment, all of it frozen there.
+// The reuse law the direct accept holds for payment addresses moves
+// here: a re-accept serves the FIRST escrow, never a fresh nonce, so a
+// buyer funding the first address is never strafed by a newer card.
+// Null while this device issued nothing. A stale or corrupt freeze
+// reads as nothing issued (the quote re-proves itself through
+// escrowForCard) and a fresh one mints — a buyer never pays nothing.
+// Money state never un-freezes it: the patch may have raised past
+// address_issued, and the whole point is that money can already sit on
+// the first address.
+export function issuedEscrowPatch(localPatch) {
+  if (!localPatch || typeof localPatch !== 'object') return null;
+  if (localPatch.status !== ORDER_STATUS.ACCEPTED) return null;
+  return escrowForCard(localPatch) ? localPatch : null;
+}
+
 // The one payment row an accepted escrow card shows: the deposit, to the
 // 2-of-2 address, through the same bitcoin: URI rail a direct deal pays.
 export function escrowPaymentRow(quote) {

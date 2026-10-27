@@ -11,6 +11,7 @@ import {
   escrowPaymentRow,
   escrowRequestSlot,
   escrowRowsFor,
+  issuedEscrowPatch,
   newDeliveryNonce,
   newEscrowSalt,
   orderEscrowKey,
@@ -160,8 +161,50 @@ test('the card binds the spoken commitment to the script’s own bytes', () => {
   assert.equal(plainQuote.overtHashHex, null);
 });
 
-test('the vendor’s delivery nonce is written to the local patch, never the wire payload', () => {
-  // Source law (CLAUDE.md reload rule): the nonce must survive a history
+// S5 for escrow, the freeze the direct accept holds: an escrow this
+// device issued is frozen on its own patch, and a re-accept serves the
+// first one — a fresh nonce on money a buyer may already be funding is
+// the paid-then-readdressed scam, and it starts at the freeze.
+test('an issued escrow freezes on its card; a corrupt one reads as nothing issued', () => {
+  const { escrow, patch } = acceptance();
+  // the patch this device wrote freezes whole — quote, address, commitment
+  const frozen = issuedEscrowPatch(patch);
+  assert.notEqual(frozen, null);
+  assert.equal(frozen, patch);
+  assert.deepEqual(frozen.escrow, escrow);
+  // not accepted yet, nothing issued
+  assert.equal(issuedEscrowPatch({ ...patch, status: 'pending' }), null);
+  assert.equal(issuedEscrowPatch({}), null);
+  assert.equal(issuedEscrowPatch(), null);
+  // money state raised past address_issued: still frozen — money may
+  // already sit on the first address, that is the point of the freeze
+  assert.notEqual(issuedEscrowPatch({ ...patch, paymentState: 'seen' }), null);
+  // a hand-broken escrow on an accepted card reads as nothing issued:
+  // the quote re-proves itself before anything is served from it
+  const broken = { ...patch, escrow: { ...escrow, address: 'bc1qnot--mine----' } };
+  assert.equal(issuedEscrowPatch(broken), null);
+  // a lying fee or price, the same (escrowForCard refuses hand-tuned fees)
+  assert.equal(issuedEscrowPatch({ ...patch, escrow: { ...escrow, priceSats: '1000' } }), null);
+});
+
+test('the escrow accept freeze is wired before the mint, reuse never a fresh nonce', () => {
+  const commerce = fs.readFileSync(new URL('../features/chat/useCommerce.js', import.meta.url), 'utf8');
+  // the freeze read and its reuse path exist
+  assert.match(commerce, /const prior = issuedEscrowPatch\(msg\.localPatch\)/);
+  // and the freeze read comes BEFORE the mint — the fresh nonce line.
+  const prior = commerce.indexOf('const prior = issuedEscrowPatch(msg.localPatch)');
+  const freshNonce = commerce.indexOf('const deliveryNonceHex = newDeliveryNonce()');
+  assert.notEqual(prior, -1);
+  assert.notEqual(freshNonce, -1);
+  assert.ok(prior < freshNonce, 'the freeze must be read before a fresh nonce can mint');
+  // the reuse path and the mint are different branches: the reuse path
+  // sits entirely inside its `if (prior)` block, which never names the
+  // nonce call
+  const reuseBlock = commerce.slice(prior, commerce.indexOf('}', commerce.indexOf("message: `Accepted with escrow ${NOT_SAVED}`")));
+  assert.equal(reuseBlock.includes('newDeliveryNonce()'), false, 'the reuse path mints nothing');
+});
+
+test('the vendor’s delivery nonce is written to the local patch, never the wire payload', () => {  // Source law (CLAUDE.md reload rule): the nonce must survive a history
   // fetch, so it is written into the order's local patch via the same
   // updateLocalOrder the acceptance patch already rides. The wire payload
   // is built from acceptance.escrow alone, which never carries it (pinned

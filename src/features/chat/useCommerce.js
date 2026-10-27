@@ -3,7 +3,7 @@ import { db, patchMessage, saveMessage } from '../../db';
 import { scopedGet, scopedSet } from '../../lib/storage';
 import { addressSpokenFor, getOrderPaymentMethods, markConsumed, readConsumedLedger, readPaymentAddresses, txidSpokenFor } from '../../lib/vendorPayments';
 import { ORDER_STATUS, RECEIPT_OUTCOME, acceptAmount, acceptanceDemand, amountCovers, coinUnits, nextPaymentState, orderCoinAmount } from '../../lib/paymentState';
-import { buildEscrowAcceptance, escrowRequestSlot, escrowSaltOf, newDeliveryNonce, orderEscrowKey, overtHashHexOf } from '../../lib/escrowActions';
+import { buildEscrowAcceptance, escrowRequestSlot, escrowSaltOf, issuedEscrowPatch, newDeliveryNonce, orderEscrowKey, overtHashHexOf } from '../../lib/escrowActions';
 import { checkPayment } from '../../lib/paymentWatch';
 import { activeUrl, entryById } from '../../lib/egress';
 import { publicReceipt, rememberPublicView, receiptBindsOrder, signPublicView, signReceipt } from '../../lib/proofOfTrade';
@@ -93,6 +93,40 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
         }
         if (!identity?.sk) {
           setToast({ type: 'error', message: 'Unlock the account to accept with escrow.' });
+          setSelectedMessage(null);
+          return true;
+        }
+        // S5 for escrow, the freeze the direct accept holds (frozenIssued-
+        // Methods): an escrow THIS device issued for this order stays issued.
+        // A re-accept serves the same script, the same address, the same
+        // delivery commitment — it never mints a fresh nonce, so a buyer
+        // funding the first address is never strafed by a newer card. The
+        // demand checks below never re-price a deal this device already
+        // issued.
+        const prior = issuedEscrowPatch(msg.localPatch);
+        if (prior) {
+          const payload = {
+            type: 'order_update',
+            orderId: msg.id,
+            productName: msg.data.product?.title || msg.data.productName,
+            status: ORDER_STATUS.ACCEPTED,
+            paymentState: 'address_issued',
+            escrow: prior.escrow,
+            coinAmount: prior.coinAmount,
+            coinCurrency: 'btc',
+            issuedAt: prior.issuedAt ?? prior.escrow.issuedAt,
+          };
+          const result = await sendDM(msg.pubkey, payload);
+          if (!result.success) {
+            setToast({ type: 'error', message: result.error || 'Could not send the escrow acceptance.' });
+            setSelectedMessage(null);
+            return true;
+          }
+          // The patch re-saves itself verbatim: same escrow, same delivery
+          // nonce, nothing recomputed. (The nonce is patch-local and never
+          // rides the wire — the payload above carries the escrow alone.)
+          const saved = await updateLocalOrder(msg.pubkey, msg.id, prior);
+          setToast(saved ? { type: 'success', message: 'Accepted with escrow' } : { type: 'error', message: `Accepted with escrow ${NOT_SAVED}` });
           setSelectedMessage(null);
           return true;
         }
