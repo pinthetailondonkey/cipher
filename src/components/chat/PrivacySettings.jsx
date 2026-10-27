@@ -91,6 +91,7 @@ export default function PrivacySettings({ onBack }) {
           {motionNote && <p role="status" className="px-4 pb-3 text-[13px] text-inkMuted">{motionNote}</p>}
           <Toggle icon={Link2} label="Link previews" hint="On sends every link in a chat you open to the preview host. Off keeps links plain." checked={privacy.linkPreviews === true} onChange={(linkPreviews) => update({ linkPreviews })} />
         </div>
+        <p className="px-2 pt-1 text-[13px] text-inkMuted">A VPN keeps your IP address harder to see when you load pictures or look up names.</p>
         <div className="overflow-hidden rounded-2xl border border-line bg-panel">
           {(blocked || []).length === 0 ? (
             <p className="flex items-center gap-3 p-4 text-[15px] text-inkMuted"><Ban size={24} className="shrink-0 text-inkSubtle" /> No blocked people</p>
