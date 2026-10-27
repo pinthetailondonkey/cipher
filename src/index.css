@@ -22,8 +22,9 @@
   --text-rgb: 245 245 245;
   --scrim-rgb: 0 0 0;
   --text-muted: #9ca3af;
-  --text-subtle: #6b7280;
+  --text-subtle: #8b93a0;
   --accent: #2563eb;
+  --accent-text: #60a5fa;
   --accent-soft: rgba(37, 99, 235, 0.14);
   --accent-ink: #ffffff;
   --success: #10b981;
