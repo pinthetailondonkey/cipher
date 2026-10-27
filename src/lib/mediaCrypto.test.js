@@ -161,12 +161,26 @@ test('a pre-encryption message still renders, and the new shape is decrypted', (
   assert.deepEqual(attachmentsFor({ type: 'image', url: 'https://old.example/a.jpg' }), {
     layout: 'single', items: [{ shape: 'plain', entry: { type: 'image', url: 'https://old.example/a.jpg' } }],
   });
-  assert.deepEqual(attachmentsFor({ type: 'album', urls: ['https://old.example/a.jpg', ''] }).items, [{ shape: 'plain', entry: { url: 'https://old.example/a.jpg' } }]);
+  // The old plain-URL album shape is refused — see the beacon test below.
+  assert.equal(attachmentsFor({ type: 'album', urls: ['https://old.example/a.jpg', ''] }).layout, null);
   assert.equal(attachmentsFor({ type: 'audio', url: 'https://old.example/v.webm' }).items[0].shape, 'plain');
   const entry = { url: 'https://new.example/x', key: 'k', iv: 'i', mime: 'image/jpeg' };
   assert.deepEqual(attachmentsFor({ type: 'album', media: [entry] }), { layout: 'grid', items: [{ shape: 'private', entry }] });
   assert.equal(attachmentsFor({ type: 'audio', ...entry }).items[0].shape, 'private');
   assert.deepEqual(attachmentsFor({ type: 'text', message: 'hi' }), { layout: null, items: [] });
+});
+
+test('a plain-URL album renders nothing — the browser must never fetch a sender-named host', () => {
+  // 1.121 candidate, on the founder card: the legacy album `urls` list let
+  // any group member name the hosts every viewer's browser would fetch, so
+  // the album was a beacon of who is in the group and when they looked.
+  assert.deepEqual(attachmentsFor({ type: 'album', urls: ['https://trap.example/beacon.jpg'] }), { layout: null, items: [] });
+  assert.deepEqual(attachmentsFor({ type: 'album', urls: '' }), { layout: null, items: [] });
+  // A mixed album keeps only its private entries.
+  const entry = { url: 'https://new.example/x', key: 'k', iv: 'i', mime: 'image/jpeg' };
+  assert.deepEqual(attachmentsFor({ type: 'album', urls: ['https://trap.example/beacon.jpg'], media: [entry] }), {
+    layout: 'grid', items: [{ shape: 'private', entry }],
+  });
 });
 
 test('the blob URL is revoked when the last viewer lets go', async () => {
