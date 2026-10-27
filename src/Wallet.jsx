@@ -21,6 +21,7 @@ import Avatar from './components/ui/Avatar';
 import Picture from './components/ui/Picture';
 import ScreenHeader from './components/ui/ScreenHeader';
 import { pressable } from './components/ui/Button';
+import { pushToast } from './components/ui/toast';
 import { copyText } from './lib/copyText';
 import { scopedGet, scopedSet } from './lib/storage';
 import { productRelays } from './lib/relays';
@@ -105,9 +106,11 @@ export default function Wallet({ identity, onOpenChat, startView = 'main' }) {
 
   // Status pills are toasts, not signs: every message dismisses itself, so no
   // error state (including a mount-time unlock failure) can stick around and
-  // bounce over the screen indefinitely.
+  // bounce over the screen indefinitely. The banner itself is the shared
+  // ui/Toast queue — this screen only feeds it.
   useEffect(() => {
     if (!status) return undefined;
+    pushToast({ type: status.startsWith('Error') || status.startsWith('Could not') ? 'error' : 'info', message: status });
     const timer = window.setTimeout(() => setStatus(''), 6000);
     return () => window.clearTimeout(timer);
   }, [status]);
@@ -360,7 +363,7 @@ export default function Wallet({ identity, onOpenChat, startView = 'main' }) {
             <input value={btcAddress} onChange={(event) => setBtcAddress(event.target.value)} autoComplete="off" spellCheck="false" placeholder="Bitcoin address" className="w-full border-b border-line bg-transparent px-4 py-4 text-[15px] text-ink outline-none placeholder:text-inkSubtle" />
             <input value={xmrAddress} onChange={(event) => setXmrAddress(event.target.value)} autoComplete="off" spellCheck="false" placeholder="Monero address" className="w-full bg-transparent px-4 py-4 text-[15px] text-ink outline-none placeholder:text-inkSubtle" />
           </div>
-          {status && <p role="status" className="text-[13px] text-accentText">{status}</p>}
+          {/* status renders through the shared ui/Toast queue; no local sign */}
           <button type="submit" className="w-full rounded-2xl bg-accent py-3.5 font-bold text-accentInk hover:bg-accent">Save and turn on selling</button>
         </form>
       </div>
@@ -394,7 +397,7 @@ export default function Wallet({ identity, onOpenChat, startView = 'main' }) {
           <button type="submit" disabled={savingAdvanced} className="w-full rounded-2xl bg-accent py-3.5 font-bold text-accentInk disabled:opacity-40">
             {savingAdvanced ? 'Saving…' : 'Save'}
           </button>
-          {status && <p role="status" className={`text-center text-sm ${status.startsWith('Could not') || status.startsWith('Error') ? 'text-danger' : 'text-success'}`}>{status}</p>}
+          {/* status renders through the shared ui/Toast queue; no local sign */}
         </form>
       </div>
     );
@@ -437,7 +440,11 @@ export default function Wallet({ identity, onOpenChat, startView = 'main' }) {
   // --- MAIN PROFILE TAB ---
   return (
     <div className="animate-fade-in overflow-y-auto h-full pb-4 pb-[env(safe-area-inset-bottom)]">
+<<<<<<< HEAD
       {status && <div className="fixed left-1/2 top-[calc(5rem+env(safe-area-inset-top))] -translate-x-1/2 md:left-auto md:right-6 md:top-6 md:translate-x-0 bg-panelStrong border border-line text-ink px-4 py-2 rounded-xl text-xs font-bold z-toast animate-fade-in">{status}</div>}
+=======
+      {/* status renders through the shared ui/Toast queue; no local pill */}
+>>>>>>> origin/feat/rebuild-pr2
 
       {/* HEADER PROFILE CARD */}
       <div className="flex flex-col items-center px-4 pb-2 pt-3 md:pt-8">

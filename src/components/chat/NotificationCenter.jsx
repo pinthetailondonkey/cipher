@@ -1,6 +1,9 @@
 import { useEffect } from 'react';
 import { Bell, Users } from 'lucide-react';
 import ScreenHeader from '../ui/ScreenHeader';
+import ListRow from '../ui/ListRow';
+import Badge from '../ui/Badge';
+import EmptyState from '../ui/EmptyState';
 import { useChatStore } from '../../store/chatStore';
 import { db } from '../../db';
 
@@ -67,25 +70,25 @@ export default function NotificationCenter({ onClose, onJump }) {
       <div className="relative z-10 mx-auto flex min-h-0 w-full max-w-md flex-1 flex-col">
       <ScreenHeader title="Notifications" onBack={onClose} />
       {notifications.length === 0 ? (
-        <div className="m-4 rounded-2xl border border-line bg-panel px-4 py-16 text-center">
-          <Bell size={28} className="mx-auto mb-3 text-accentText" />
-          <p className="text-[15px] font-semibold text-ink">You're caught up</p>
-          <p className="mt-1 text-[13px] text-ink/40">New messages show up here.</p>
+        <div className="m-4">
+          <EmptyState icon={<Bell size={22} className="text-accentText" />} title="You're caught up" line="New messages show up here." />
         </div>
       ) : (
         <div className="min-h-0 flex-1 overflow-y-auto p-4">
           <div className="overflow-hidden rounded-2xl border border-line bg-panel">
           {notifications.map((item) => (
-            <button key={item.id} type="button" onClick={() => openNotification(item)} className="flex w-full items-center gap-3 border-b border-line p-4 text-left last:border-0 active:bg-ink/5">
-              <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-line bg-ink/5 text-accentText">
-                {item.type === 'group' ? <Users size={20} /> : <Bell size={20} />}
-              </span>
-              <span className="min-w-0 flex-1">
-                <span className="block truncate text-[15px] font-semibold text-ink">{item.title}</span>
-                <span className="mt-1 block truncate text-[13px] text-ink/40">{item.preview}</span>
-              </span>
-              <span className="flex h-[16px] min-w-[16px] items-center justify-center rounded-full bg-accent px-1.5 text-[10px] font-bold text-accentInk">{item.count}</span>
-            </button>
+            <ListRow
+              key={item.id}
+              onClick={() => openNotification(item)}
+              leading={(
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-line bg-ink/5 text-accentText">
+                  {item.type === 'group' ? <Users size={18} /> : <Bell size={18} />}
+                </span>
+              )}
+              title={item.title}
+              subtitle={item.preview}
+              trailing={<Badge tone="accent">{item.count}</Badge>}
+            />
           ))}
           </div>
         </div>

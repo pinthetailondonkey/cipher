@@ -7,19 +7,23 @@ import {
   Bell,
   BellOff,
   Ban,
+  Bookmark,
   ChevronDown,
   ChevronUp,
   Flame,
+  Menu,
   MessageSquare,
   MoreVertical,
   Pin,
   PinOff,
+  QrCode,
+  RefreshCw,
   Search,
   Store,
   Users,
   X,
 } from 'lucide-react';
-import { useChatStore } from '../../store/chatStore';
+import { notifTotalOf, useChatStore } from '../../store/chatStore';
 import { haptic } from '../../lib/haptics';
 import { noHexName } from '../../lib/npub';
 import Logo from '../Logo';
@@ -274,7 +278,7 @@ function ChatRow({
 // in-place filter, kebab (New chat / New group / Burn note — the same
 // actions the floating menu wires), segmented filter, PINNED section,
 // 64px rows, archived section.
-export default function ChatList({ onOpenChat }) {
+export default function ChatList({ onOpenChat, onRefresh }) {
   const dms = useChatStore((s) => s.dms);
   const groups = useChatStore((s) => s.groups);
   const groupMessages = useChatStore((s) => s.groupMessages);
@@ -292,6 +296,11 @@ export default function ChatList({ onOpenChat }) {
   const setShowDeadDrop = useChatStore((s) => s.setShowDeadDrop);
   const setVendorStorefrontPubkey = useChatStore((s) => s.setVendorStorefrontPubkey);
   const togglePinChat = useChatStore((s) => s.togglePinChat);
+  const setShowDrawer = useChatStore((s) => s.setShowDrawer);
+  const setShowBookmarks = useChatStore((s) => s.setShowBookmarks);
+  const setShowNotifCenter = useChatStore((s) => s.setShowNotifCenter);
+  const setShowQRScanner = useChatStore((s) => s.setShowQRScanner);
+  const notifTotal = useChatStore(notifTotalOf);
 
   const [segment, setSegment] = useState('all');
   const [searchOpen, setSearchOpen] = useState(false);
@@ -500,6 +509,41 @@ export default function ChatList({ onOpenChat }) {
           </div>
         ) : (
           <div className="flex items-center">
+            <IconButton
+              icon={<Menu size={20} />}
+              label="Open menu"
+              className="md:hidden"
+              onClick={() => setShowDrawer(true)}
+            />
+            <IconButton
+              icon={<Bookmark size={20} />}
+              label="Bookmarks"
+              onClick={() => setShowBookmarks(true)}
+            />
+            <span className="relative">
+              <IconButton
+                icon={<Bell size={20} />}
+                label="Notifications"
+                onClick={() => setShowNotifCenter(true)}
+              />
+              {notifTotal > 0 && (
+                <span className="pointer-events-none absolute right-0.5 top-0.5 flex h-[14px] min-w-[14px] items-center justify-center rounded-full bg-accent px-1 text-[9px] font-bold text-accentInk">
+                  {notifTotal > 99 ? '99+' : notifTotal}
+                </span>
+              )}
+            </span>
+            <IconButton
+              icon={<QrCode size={20} />}
+              label="Scan QR code"
+              onClick={() => setShowQRScanner(true)}
+            />
+            {onRefresh && (
+              <IconButton
+                icon={<RefreshCw size={20} className={loading ? 'animate-spin' : undefined} />}
+                label="Refresh chats"
+                onClick={onRefresh}
+              />
+            )}
             <IconButton
               icon={<Search size={20} />}
               label="Search chats"
