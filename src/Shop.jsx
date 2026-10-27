@@ -119,15 +119,17 @@ export default function Shop({ identity, setActiveTab }) {
 
   return (
     <div className="flex h-full w-full flex-col bg-transparent">
-      <div className="px-4 pb-3 pt-2">
-        <div className="flex items-center gap-2 rounded-2xl border border-ink/15 bg-panelStrong px-4 py-3 shadow-lg">
-          <Search size={16} className="text-ink/40" />
+      {/* Desktop search bar: a flat full-width field like the chat list's,
+          not a floating phone pill. */}
+      <div className="px-3 pb-2 pt-3">
+        <div className="flex items-center gap-2.5 rounded-lg bg-panelAlt px-3 py-2.5">
+          <Search size={18} className="flex-none text-ink/40" />
           <input
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search"
-            className="flex-1 bg-transparent text-[15px] text-ink placeholder-ink/30 focus:outline-none"
+            placeholder="Search the shop"
+            className="flex-1 bg-transparent text-[14px] text-ink placeholder-ink/30 focus:outline-none"
           />
         </div>
       </div>
@@ -139,33 +141,52 @@ export default function Shop({ identity, setActiveTab }) {
             <p className="text-sm">Fetching products from the network...</p>
           </div>
         ) : error ? (
-          <div className="mx-4 rounded-2xl border border-line bg-panel px-4 py-16 text-center shadow-lg">
-            <p className="text-[15px] font-semibold text-ink">Shop unavailable</p>
-            <p className="mt-1 text-[13px] text-ink/40">{error}</p>
+          <div className="px-3">
+            <p className="pt-10 text-center text-[15px] font-semibold text-ink">Shop unavailable</p>
+            <p className="mt-1 pb-10 text-center text-[13px] text-ink/40">{error}</p>
           </div>
         ) : displayProducts.length === 0 ? (
-          <div className="mx-4 rounded-2xl border border-line bg-panel px-4 py-16 text-center shadow-lg">
-            <ShoppingBag size={28} className="mx-auto mb-3 text-ink/30" />
-            <p className="text-[15px] font-semibold text-ink">No products</p>
+          <div className="px-3">
+            <p className="pt-10 pb-10 text-center text-[13px] text-ink/40">No products</p>
           </div>
         ) : (
-          <div className="grid grid-cols-2 gap-3 px-4 pb-4">
+          /* Desktop rows: full-width listing rows like chat list rows, not
+              a phone card grid. Image left, name/price middle, actions right. */
+          <div>
             {displayProducts.map(p => (
-              <div key={p.id} className="rounded-3xl border border-ink/15 bg-panelStrong p-2 shadow-lg">
-                <div className="relative h-28 w-full overflow-hidden rounded-2xl bg-ink/5">
+              <div
+                key={p.id}
+                className="mx-1.5 mb-0.5 flex cursor-pointer items-center gap-3 rounded-xl px-2.5 py-2.5 hover:bg-panelAlt"
+                onClick={() => { haptic('heavy'); setCheckoutProduct(p); }}
+              >
+                <div className="h-14 w-14 flex-none overflow-hidden rounded-lg bg-ink/5">
                   <Picture
                     src={p.image}
                     alt=""
                     className="h-full w-full object-cover"
                     onError={(event) => { event.currentTarget.style.display = 'none'; }}
-                    fallback={<div className="flex h-full w-full items-center justify-center text-ink/30"><ShoppingBag size={28} /></div>}
+                    fallback={<div className="flex h-full w-full items-center justify-center text-ink/30"><ShoppingBag size={22} /></div>}
                   />
                 </div>
-                <div className="px-1.5 pb-1 pt-3">
-                  <p className="truncate text-[15px] font-semibold text-ink">{p.name}</p>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-[14px] font-semibold text-ink">{p.name}</p>
                   <p className="text-[13px] font-bold text-accent">{priceLabel(p.price, p.currency)}</p>
-                  <button type="button" onClick={() => { haptic('heavy'); setCheckoutProduct(p); }} className="mt-3 flex min-h-[44px] w-full items-center justify-center rounded-2xl bg-accent py-2 text-[13px] font-bold text-accentInk shadow-lg">Buy</button>
-                  <button type="button" onClick={() => shareProduct(p)} className="mt-1 flex min-h-[44px] w-full items-center justify-center rounded-xl py-2 text-[12px] font-semibold text-ink/50">Copy link</button>
+                </div>
+                <div className="flex flex-none items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); haptic('heavy'); setCheckoutProduct(p); }}
+                    className="rounded-lg bg-accent px-4 py-2 text-[13px] font-bold text-accentInk hover:brightness-110"
+                  >
+                    Buy
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); shareProduct(p); }}
+                    className="rounded-lg px-3 py-2 text-[12px] font-semibold text-ink/50 hover:bg-ink/5 hover:text-ink/70"
+                  >
+                    Copy link
+                  </button>
                 </div>
               </div>
             ))}
