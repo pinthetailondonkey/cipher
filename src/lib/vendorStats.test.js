@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { BULLETIN_KIND, VENDOR_REPORT_KIND, dealsProvenFor, parseBulletin, phrasingFor } from './vendorStats.js';
+import { BULLETIN_KIND, VENDOR_REPORT_KIND, bulletinContent, bulletinRefusal, bulletinTags, dealsProvenFor, parseBulletin, phrasingFor } from './vendorStats.js';
 
 const VENDOR = 'a'.repeat(64);
 const OTHER = 'b'.repeat(64);
@@ -59,4 +59,16 @@ test('the phrasing law is the data layer\'s, verbatim', () => {
 test('bulletin txids deduplicate', () => {
   const parsed = parseBulletin(bulletinEvent({ txids: ['ab'.repeat(32), 'ab'.repeat(32)] }));
   assert.deepEqual(parsed.txids, ['ab'.repeat(32)]);
+});
+
+test('bulletinRefusal: the publisher passes the same law the reader enforces', () => {
+  const tx = 'aa'.repeat(32);
+  assert.equal(bulletinRefusal('btc', [tx]), null, 'an honest bulletin composes');
+  assert.equal(bulletinRefusal('xmr', [tx, 'bb'.repeat(32)]), null, 'any table rail composes');
+  assert.match(bulletinRefusal('btc', ['zz']), /64 hex/, 'a txid is hex or nothing');
+  assert.match(bulletinRefusal('btc', [tx, tx.toUpperCase()]), /duplicate/, 'case-folded duplicates refuse');
+  assert.match(bulletinRefusal('btc', []), /at least one/, 'an empty bulletin answers nothing');
+  assert.match(bulletinRefusal('usd', [tx]), /does not know that chain/, 'a rail the table does not declare is refused');
+  assert.deepEqual(bulletinTags('BTC'), [['rail', 'btc'], ['bulletin', 'proven']], 'the tags are written the way the reader demands');
+  assert.equal(bulletinContent([tx]), JSON.stringify({ txids: [tx] }), 'the content is the txid list and nothing else');
 });
