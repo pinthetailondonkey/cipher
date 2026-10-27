@@ -42,9 +42,12 @@ test('dealsProvenFor counts the txids — one derivation, newest event per rail 
   const out = dealsProvenFor(VENDOR, events);
   assert.deepEqual(out.btc, { count: 2, txids: ['11'.repeat(32), '44'.repeat(32)], phrasing: 'proven' });
   assert.deepEqual(out.xmr, { count: 2, txids: ['22'.repeat(32), '33'.repeat(32)], phrasing: 'recorded' });
-  assert.deepEqual(dealsProvenFor(OTHER, events), {});
+  // The same list answers each vendor from their own bulletin alone: OTHER
+  // proves exactly their one txid, no more — also the proof that VENDOR's
+  // derivation above never absorbed OTHER's txid.
+  assert.deepEqual(dealsProvenFor(OTHER, events), { btc: { count: 1, txids: ['66'.repeat(32)], phrasing: 'proven' } });
   assert.deepEqual(dealsProvenFor(VENDOR, []), {});
-  assert.equal(dealsProvenFor(null, events), {});
+  assert.deepEqual(dealsProvenFor(null, events), {}, 'no vendor named, no count comes out');
 });
 
 test('the phrasing law is the data layer\'s, verbatim', () => {
