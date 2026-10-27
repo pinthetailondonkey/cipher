@@ -1,23 +1,28 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
-import { BadgeCheck, Bookmark, Copy, Pencil, Pin, Radio, Reply, ShoppingBag, Store, Trash2 } from 'lucide-react';
+import { BadgeCheck, Check, CheckCheck } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
-import Sheet from './ui/Sheet';
 import { paymentRowsFor } from '../lib/paymentUri';
+import { copyText } from '../lib/copyText';
 import { haptic } from '../lib/haptics';
 import { securingPhase } from '../lib/crypto/groupKeyRequest';
 import { useChatStore } from '../store/chatStore';
 import LinkPreview, { firstUrl } from './chat/LinkPreview';
 import Picture from './ui/Picture';
-import { MediaAudio, MediaImage } from './ui/PrivateMedia';
+import { MediaImage } from './ui/PrivateMedia';
 import { attachmentsFor } from '../lib/mediaCrypto';
 import { allowsLinkPreviews } from '../lib/privacy';
 import { orderActionsFor, orderState } from '../lib/orderActions';
+import { nameColorOf } from '../lib/nameColor';
 import { noHexName } from '../lib/npub';
+import { forwardableContent } from './chat/useThreadActions';
 import { orderPriceLabel } from '../lib/listing';
+import VoiceNote from './chat/VoiceNote';
+import MessageContextMenu from './chat/MessageContextMenu';
+import { jumpToMessage } from './chat/threadMotion';
+import './chat/thread.css';
 
 const EMPTY_REACTIONS = [];
-const REACTION_CHOICES = ['❤️', '👍', '🔥', '😂', '😮', '😢', '🙏'];
 
 function messageText(data) {
   if (!data) return '';
@@ -95,10 +100,56 @@ function OrderReceipt({ content }) {
   );
 }
 
+// The payment block: the existing paidRows merge rendered as one card per
+// coin — pay line, QR, selectable address, then the address overflow row.
+function PaymentBlock({ rows }) {
+  return (
+    <div className="mb-1 space-y-2">
+      {rows.map(({ currency, address, amount, uri }) => (
+        <div key={currency} className="flex flex-col items-center gap-1 rounded-xl bg-ink p-2">
+          {amount && <p className="select-all text-center font-mono text-[15px] font-bold text-scrim">Pay {amount} {currency}</p>}
+          <span className="flex justify-center rounded-md bg-scrim/80 p-1">
+            <QRCodeSVG value={uri} size={120} level="M" />
+          </span>
+          <span className="select-all break-all text-center font-mono text-[10px] text-scrim/80">{address}</span>
+          <span className="flex w-full items-center justify-between gap-1 border-t border-scrim/15 pt-1">
+            <button
+              type="button"
+              onPointerDown={(event) => event.stopPropagation()}
+              onClick={(event) => { event.stopPropagation(); haptic('light'); copyText(address); }}
+              className="min-h-[44px] flex-1 text-[12px] font-semibold text-scrim/80 active:opacity-80"
+            >
+              Copy address
+            </button>
+            <button
+              type="button"
+              onPointerDown={(event) => event.stopPropagation()}
+              onClick={(event) => { event.stopPropagation(); haptic('light'); copyText(uri); }}
+              className="min-h-[44px] flex-1 text-[12px] font-semibold text-scrim/80 active:opacity-80"
+            >
+              Share link
+            </button>
+            <a
+              href={uri}
+              target="_blank"
+              rel="noreferrer noopener"
+              onPointerDown={(event) => event.stopPropagation()}
+              onClick={(event) => event.stopPropagation()}
+              className="flex min-h-[44px] flex-1 items-center justify-center text-[12px] font-semibold text-scrim/80 active:opacity-80"
+            >
+              Wallet
+            </a>
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // Run boundaries arrive from the view that maps the messages: a run is a
 // stretch of consecutive bubbles from the same author, so only the run's last
 // bubble wears the squared corner and (in groups) the avatar.
-export default function MessageBubble({ message, data, onAction, senderName, isPinnedListing = false, showAvatar = false, avatarUrl = '', avatarInitial = '?', canPin = false, runStart = true, runEnd = true }) {
+export default function MessageBubble({ message, data, onAction, senderName, isPinnedListing = false, showAvatar = false, avatarUrl = '', avatarInitial = '?', canPin = false, runStart = true, runEnd = true, selectMode = false, selected = false, onToggleSelect }) {
   const content = data || message?.data || {};
   const text = messageText(content) || messageText(message?.rawContent) || messageText(message?.text) || '';
   const isSender = !!message?.isSender;
@@ -114,6 +165,8 @@ export default function MessageBubble({ message, data, onAction, senderName, isP
   const inGroup = useChatStore((state) => !!state.activeGroup);
   const activeDm = useChatStore((state) => state.activeDm);
   const chatMessages = useChatStore((state) => (state.view === 'dm' ? state.dms[state.activeDm] : undefined));
+  // The reply quote reads its parent from THIS thread's list, dm or group.
+  const replyThread = useChatStore((state) => (state.view === 'group' ? state.groupMessages[state.activeGroup?.id] : state.dms[state.activeDm]) || []);
   const pressTimer = useRef(null);
   const pressPoint = useRef(null);
   const paymentRows = paymentRowsFor(content);
@@ -134,7 +187,7 @@ export default function MessageBubble({ message, data, onAction, senderName, isP
     return () => clearInterval(id);
   }, [message?.deliveryStatus, message?.id]);
 
-  const avatarColor = ['text-accentText', 'text-sky-400', 'text-indigo-300', 'text-cyan-300'][(message?.pubkey?.charCodeAt(0) || 0) % 4];
+  const senderTint = useMemo(() => nameColorOf(message?.pubkey || senderName || ''), [message?.pubkey, senderName]);
   const securingSince = message?.securingSince || message?.local_timestamp || (validTimestamp ? validTimestamp * 1000 : 0);
   const securingStuck = message?.deliveryStatus === 'securing' && securingPhase(securingSince, clock) === 'stuck';
   const deliveryLabel = {
@@ -144,17 +197,18 @@ export default function MessageBubble({ message, data, onAction, senderName, isP
     securing: securingStuck ? '' : 'Securing…',
   }[message?.deliveryStatus];
   const read = message?.read || message?.deliveryStatus === 'read';
-  // Meta lives inside the bubble, bottom-right: white at 70% on sent,
-  // ink-subtle on received. A read pair of ticks lifts to full white.
-  const checks = isSender && !deliveryLabel
-    ? <span className={read ? 'text-ink' : ''}>{read ? '✓✓' : '✓'}</span>
+  // Meta pill sits inside the bubble, bottom-right 10px: time + edited +
+  // delivery ticks. On the accent bubble it wears a translucent scrim; read
+  // swaps the tick to the lucide CheckCheck pair.
+  const ticks = isSender && !deliveryLabel
+    ? (read ? <CheckCheck size={13} aria-label="Read" /> : <Check size={13} aria-label="Sent" />)
     : null;
   const timeLabel = validTimestamp === null ? '' : new Date(validTimestamp * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   const time = (
-    <span className={`float-right ml-2 mt-[5px] inline-flex items-center gap-1 text-[10px] leading-none ${isSender ? 'text-ink/70' : 'text-inkSubtle'}`}>
+    <span className={`float-right ml-2 mt-[5px] inline-flex items-center gap-1 rounded-full px-1.5 py-[3px] text-[10px] leading-none ${isSender ? 'bg-scrim/25 text-accentInk/80' : 'bg-panelAlt text-inkSubtle'}`}>
       {message?.edited && <span>edited</span>}
       {isSender && deliveryLabel && <span className={message?.deliveryStatus === 'failed' ? 'text-danger' : ''}>{deliveryLabel}</span>}
-      {checks}
+      {ticks}
       <time dateTime={validTimestamp === null ? undefined : new Date(validTimestamp * 1000).toISOString()}>{timeLabel}</time>
     </span>
   );
@@ -169,6 +223,15 @@ export default function MessageBubble({ message, data, onAction, senderName, isP
   const justArrived = message?.deliveryStatus === 'sending' || (Number(message?.timestamp) >= mountedAt.current - 2);
   if (message?.id && deleted instanceof Set && deleted.has(message.id)) return null;
 
+  // The reply quote: 2px accent bar, 12px quote line, 13px inkMuted fallback
+  // strip. Tap jumps to the msg-<id> anchor with the 2s glow ring.
+  const replyTo = message?.replyTo || message?.data?.replyTo || null;
+  const replyParent = replyTo ? replyThread.find((item) => item?.id === replyTo || item?.clientId === replyTo) : null;
+  const replyQuote = replyParent ? (messageText(replyParent?.data) || messageText(replyParent?.rawContent) || '') : '';
+  const replyAuthor = replyParent
+    ? (replyParent.isSender ? 'You' : noHexName(profiles, replyParent.pubkey))
+    : 'Reply';
+
   const act = (action, extra = {}) => {
     onAction?.(action, { ...message, data: content, text, ...extra });
     setOpen(false);
@@ -178,6 +241,7 @@ export default function MessageBubble({ message, data, onAction, senderName, isP
     pressTimer.current = null;
   };
   const startPress = (event) => {
+    if (selectMode) return;
     if (event.button && event.button !== 0) return;
     pressPoint.current = { x: event.clientX, y: event.clientY };
     clearPress();
@@ -192,17 +256,21 @@ export default function MessageBubble({ message, data, onAction, senderName, isP
     const dy = Math.abs(event.clientY - pressPoint.current.y);
     if (dx > 10 || dy > 10) clearPress();
   };
+
+  const forwardable = forwardableContent(content);
   const menuActions = [
-    ['reply', Reply, 'Reply'],
-    ['copy', Copy, 'Copy'],
-    ['bookmark', Bookmark, 'Save'],
+    { action: 'reply', label: 'Reply' },
+    { action: 'copy', label: 'Copy' },
+    ...(forwardable ? [{ action: 'forward', label: 'Forward' }] : []),
+    { action: 'bookmark', label: 'Save' },
     // S9: the shared pinned slot is an owner or admin choice, so the pin
     // option only shows for one. The group hook re-checks standing anyway.
-    ...(inGroup && canPin ? [['pin', Pin, 'Pin']] : []),
-    ...(content.type === 'product' && !isSender ? [['buy_product', ShoppingBag, 'Buy'], ['view_vendor', Store, 'Seller shop']] : []),
-    ...(content.type === 'product' && isSender ? [['broadcast_product', Radio, 'Share'], ['edit_product', Pencil, 'Edit listing']] : []),
-    ...(isSender && text && content.type !== 'product' ? [['edit', Pencil, 'Edit']] : []),
-    ['delete', Trash2, 'Delete'],
+    ...(inGroup && canPin ? [{ action: 'pin', label: 'Pin' }] : []),
+    ...(isSender && text && content.type !== 'product' ? [{ action: 'edit', label: 'Edit' }] : []),
+    ...(content.type === 'product' && !isSender ? [{ action: 'buy_product', label: 'Buy' }, { action: 'view_vendor', label: 'Seller shop' }] : []),
+    ...(content.type === 'product' && isSender ? [{ action: 'broadcast_product', label: 'Share' }, { action: 'edit_product', label: 'Edit listing' }] : []),
+    { action: 'select', label: 'Select' },
+    { action: 'delete', label: 'Delete', danger: true },
   ];
 
   return (
@@ -214,13 +282,27 @@ export default function MessageBubble({ message, data, onAction, senderName, isP
       transition={{ type: 'spring', stiffness: 420, damping: 28 }}
       className={`flex w-full items-end gap-2 ${runEnd ? 'mb-2' : 'mb-0.5'} ${isSender ? 'justify-end pr-3' : 'justify-start pl-3'}`}
     >
-      {!isSender && showAvatar && (
+      {selectMode && (
+        <button
+          type="button"
+          onClick={(event) => { event.stopPropagation(); onToggleSelect?.(message); }}
+          aria-label={selected ? 'Unselect message' : 'Select message'}
+          aria-pressed={selected}
+          className="flex h-11 w-8 shrink-0 items-center justify-center self-center"
+        >
+          <span className={`flex h-5 w-5 items-center justify-center rounded-full border ${selected ? 'border-accent bg-accent text-accentInk' : 'border-inkMuted/50'}`}>
+            {selected && <Check size={14} />}
+          </span>
+        </button>
+      )}
+      {!isSender && showAvatar && !selectMode && (
         runEnd
-          ? <Picture src={avatarUrl} alt="" className="h-7 w-7 shrink-0 rounded-full object-cover" fallback={<span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-panel-strong text-[11px] font-semibold ${avatarColor}`}>{avatarInitial}</span>} />
+          ? <Picture src={avatarUrl} alt="" className="h-7 w-7 shrink-0 rounded-full object-cover" fallback={<span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-panelAlt text-[11px] font-semibold" style={{ color: senderTint }}>{avatarInitial}</span>} />
           : <span className="h-7 w-7 shrink-0" aria-hidden="true" />
       )}
       <div
-        role="button"
+        role={selectMode ? 'checkbox' : 'button'}
+        aria-checked={selectMode ? selected : undefined}
         tabIndex={0}
         onPointerDown={startPress}
         onPointerUp={clearPress}
@@ -228,12 +310,34 @@ export default function MessageBubble({ message, data, onAction, senderName, isP
         onPointerCancel={clearPress}
         onPointerMove={movePress}
         onContextMenu={(event) => { event.preventDefault(); haptic('medium'); setOpen(true); }}
+        onClick={(event) => {
+          if (!selectMode) return;
+          event.stopPropagation();
+          onToggleSelect?.(message);
+        }}
+        onKeyDown={(event) => { if (selectMode && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); onToggleSelect?.(message); } }}
         // One squared corner per run of same-sender bubbles: the tail corner
         // rounds to 6px only on the run's last bubble, everything else stays
         // at the 18px pill. Anchor image, skeleton B.
         className={`max-w-[76%] min-w-[4.5rem] border px-3 py-2 text-ink ${isSender ? 'rounded-[18px] border-accent bg-accent text-accentInk' : 'rounded-[18px] border-line bg-panel'} ${runEnd ? (isSender ? 'rounded-br-[6px]' : 'rounded-bl-[6px]') : ''}`}
       >
-        {!isSender && senderName && runStart && <p className="mb-0.5 text-[11px] font-semibold leading-none text-accentText">{senderName}</p>}
+        {!isSender && senderName && runStart && (
+          <p className="mb-0.5 text-[11px] font-semibold leading-none" style={{ color: senderTint }}>{senderName}</p>
+        )}
+        {replyParent && (
+          <button
+            type="button"
+            onPointerDown={(event) => event.stopPropagation()}
+            onClick={(event) => { event.stopPropagation(); jumpToMessage(replyParent.id); }}
+            className="mb-1 flex w-full min-h-[44px] items-stretch gap-2 rounded-lg bg-ink/5 px-1.5 py-1 text-left"
+          >
+            <span aria-hidden="true" className="w-[2px] shrink-0 self-stretch rounded-full bg-accent" />
+            <span className="min-w-0">
+              <span className="block truncate text-[12px] font-semibold text-accentText">{replyAuthor}</span>
+              <span className="block truncate text-[13px] text-inkMuted">{replyQuote || 'Message unavailable'}</span>
+            </span>
+          </button>
+        )}
         {(content.type === 'cipher_order' || content.type === 'order_request' || content.type === 'order_update') && (
           // F7: the badge reads derived payment facts, not what the update
           // itself claims — a received "confirmed" with no receipt behind it
@@ -258,22 +362,12 @@ export default function MessageBubble({ message, data, onAction, senderName, isP
             ))}
           </div>
         )}
-        {attachments.layout === 'audio' && <MediaAudio item={attachments.items[0]} className="h-8 max-w-full" />}
+        {attachments.layout === 'audio' && <VoiceNote item={attachments.items[0]} name={content.name || ''} sent={isSender} className="mb-1" />}
         {content.type === 'product' && <Picture src={content.image} alt="" loading="lazy" className="mb-1 max-h-40 rounded-xl object-cover" />}
         {content.type === 'product' && isPinnedListing && (
           <p className="mb-1 inline-flex items-center gap-1 rounded-full border border-accentText px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-accentText"><BadgeCheck size={12} /> Pinned</p>
         )}
-        {paymentRows.length > 0 && (
-          <div className="mb-1 space-y-2">
-            {paymentRows.map(({ currency, address, amount, uri }) => (
-              <div key={currency} className="flex flex-col items-center rounded-xl bg-ink p-2">
-                {amount && <p className="mb-1 select-all text-center font-mono text-[15px] font-bold text-scrim">Pay {amount} {currency}</p>}
-                <QRCodeSVG value={uri} size={120} level="M" />
-                <span className="mt-1 select-all break-all text-center font-mono text-[10px] text-scrim">{address}</span>
-              </div>
-            ))}
-          </div>
-        )}
+        {paymentRows.length > 0 && <PaymentBlock rows={paymentRows} />}
         {text ? (
           <p className="whitespace-pre-wrap break-words text-[14.5px] leading-[1.28]">
             {urlTokens(text).map((token, i) => (
@@ -331,33 +425,23 @@ export default function MessageBubble({ message, data, onAction, senderName, isP
         )}
       </div>
     </motion.article>
-    <Sheet open={open} onClose={() => setOpen(false)} label="Message actions">
-      <div className="px-3 pb-4 pt-3">
-        <div className="mb-2 flex justify-between rounded-2xl bg-ink/5 px-2 py-2">
-          {REACTION_CHOICES.map((emoji) => (
-            <button key={emoji} type="button" aria-label={`React ${emoji}`} onClick={() => { haptic('light'); act('react', { emoji }); }} className="flex min-h-[44px] min-w-[44px] items-center justify-center text-[22px] active:scale-95">{emoji}</button>
-          ))}
-        </div>
-        <div className="grid grid-cols-4 gap-1">
-          {menuActions.map(([action, Icon, label]) => (
-            <button key={action} type="button" onClick={() => { haptic('light'); act(action); }} className={`flex flex-col items-center gap-1 rounded-2xl px-2 py-3 text-[12px] font-semibold active:bg-ink/10 ${action === 'delete' ? 'text-danger' : 'text-ink'}`}>
-              <Icon size={18} />
-              {label}
-            </button>
-          ))}
-        </div>
-      </div>
-    </Sheet>
-    <Sheet open={!!showReactors} onClose={() => setShowReactors(false)} label="Reactions">
-      <div className="px-4 pb-5 pt-3">
+    <MessageContextMenu
+      open={open}
+      onClose={() => setOpen(false)}
+      onAction={(action, emoji) => act(action, emoji ? { emoji } : {})}
+      items={menuActions}
+    />
+    {showReactors && (
+      <Sheet open onClose={() => setShowReactors(false)} label="Reactions">
         <p className="mb-3 text-[15px] font-semibold text-ink">{showReactors}</p>
         {(grouped.get(showReactors) || []).map((person) => (
           <p key={person.pubkey} className="border-b border-ink/5 py-2 text-[13px] text-ink/80">
             {noHexName(profiles[person.pubkey], person.pubkey)}
           </p>
         ))}
-      </div>
-    </Sheet>
+      </Sheet>
+    )}
     </>
   );
 }
+

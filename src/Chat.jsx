@@ -88,6 +88,8 @@ export default function Chat({ identity }) {
   const threadProps = {
     identity,
     sendMessage: composer.sendMessage,
+    // Forward re-sends through the existing direct-message actor only.
+    sendDM,
     handleMessageAction: commands.handleMessageAction,
     handleImageUpload: composer.handleImageUpload,
     startRecording: composer.startRecording,
