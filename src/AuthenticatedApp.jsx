@@ -10,7 +10,7 @@ import Segmented from './components/ui/Segmented';
 import { requestNotificationPermission } from './lib/notifications';
 import { unreadTotalOf, useChatStore } from './store/chatStore';
 
-const Shop = lazy(() => import('./Shop'));
+const Menus = lazy(() => import('./Menus'));
 const Discover = lazy(() => import('./Discover'));
 const Chat = lazy(() => import('./Chat'));
 const Wallet = lazy(() => import('./Wallet'));
@@ -100,12 +100,12 @@ export default function AuthenticatedApp({ identity }) {
                       className="flex-1"
                       value={exploreMode}
                       onChange={setExploreMode}
-                      options={[{ value: 'shop', label: 'Shop' }, { value: 'groups', label: 'Groups' }]}
+                      options={[{ value: 'shop', label: 'Menus' }, { value: 'groups', label: 'Groups' }]}
                     />
                   </div>
                   <div className="relative z-fab min-h-0 flex-1">
                     {exploreMode === 'shop'
-                      ? <Shop identity={identity} setActiveTab={setActiveTab} />
+                      ? <Menus identity={identity} setActiveTab={setActiveTab} />
                       : <Discover identity={identity} onJoined={() => setActiveTab('chat')} />}
                   </div>
                 </div>
@@ -128,7 +128,7 @@ export default function AuthenticatedApp({ identity }) {
         </button>
         <button onClick={() => setActiveTab('explore')} className={`flex w-16 flex-col items-center gap-1 rounded-2xl p-2 min-h-[52px] ${activeTab === 'explore' ? 'text-accent' : 'text-ink/40 hover:text-ink/60'}`}>
           <Compass size={22} strokeWidth={activeTab === 'explore' ? 2.5 : 2} />
-          <span className="text-[10px] font-medium">Shop</span>
+          <span className="text-[10px] font-medium">Menus</span>
         </button>
         <button onClick={() => setActiveTab('profile')} className={`relative flex w-16 flex-col items-center gap-1 rounded-2xl p-2 min-h-[52px] ${activeTab === 'profile' ? 'text-accent' : 'text-ink/40 hover:text-ink/60'}`}>
           <User size={22} strokeWidth={activeTab === 'profile' ? 2.5 : 2} />
