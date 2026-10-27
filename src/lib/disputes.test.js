@@ -1,6 +1,17 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { DISPUTE_KIND, RIDER_WORDS, parseDispute, ridersForReview } from './disputes.js';
+import { DISPUTE_KIND, RIDER_WORDS, markOwnRider, ownRiderTaken, parseDispute, riderPairKey, ridersForReview } from './disputes.js';
+
+// The own-rider ledger lives in scoped localStorage; the browser fallback
+// (absent storage) makes writes a no-op, so tests hand it a fresh one.
+if (!globalThis.localStorage) {
+  const map = new Map();
+  globalThis.localStorage = {
+    getItem: (k) => (map.has(k) ? map.get(k) : null),
+    setItem: (k, v) => map.set(k, String(v)),
+    removeItem: (k) => map.delete(k),
+  };
+}
 
 const VENDOR = 'a'.repeat(64);
 const BUYER = 'c'.repeat(64);
@@ -76,4 +87,17 @@ test('authorship a reader can check: vendor riders are the vendor\'s, a suppleme
   assert.deepEqual(ridersForReview({ vendor: VENDOR, receipt: RECEIPT, review: REVIEW }, otherShop), {
     'vendor-flag': null, 'vendor-rebuttal': null, 'buyer-supplement': null,
   });
+});
+
+test('the own-rider ledger: a word this device spent stays spent, through a reload and a partial fetch', () => {
+  const key = riderPairKey(VENDOR, RECEIPT, REVIEW);
+  assert.equal(ownRiderTaken(VENDOR, RECEIPT, REVIEW, 'vendor-rebuttal'), false, 'nothing posted yet');
+  assert.equal(ownRiderTaken(VENDOR, RECEIPT, REVIEW, 'not-a-word'), false, 'an unknown rider word is never taken');
+  assert.equal(markOwnRider(VENDOR, RECEIPT, REVIEW, 'vendor-rebuttal', 'aa'.repeat(32)), true, 'the sign spends the word');
+  assert.equal(ownRiderTaken(VENDOR, RECEIPT, REVIEW, 'vendor-rebuttal'), true);
+  assert.equal(ownRiderTaken(VENDOR, RECEIPT, REVIEW, 'vendor-flag'), false, 'the other words are still open on this pair');
+  assert.equal(ownRiderTaken(VENDOR, RECEIPT, 'd1'.repeat(32), 'vendor-rebuttal'), false, 'another review is another thread');
+  assert.equal(markOwnRider(VENDOR, RECEIPT, REVIEW, 'vendor-flag', ''), false, 'an event with no id marks nothing');
+  assert.equal(ownRiderTaken(VENDOR, RECEIPT, REVIEW, 'vendor-flag'), false, 'an id-less mark never hardened');
+  assert.equal(key.includes(VENDOR) && key.includes(RECEIPT) && key.includes(REVIEW), true, 'the pair key spells the three bindings');
 });

@@ -24,14 +24,49 @@
 // the one who can call it false.
 
 import { receiptBindingOf } from './reputation.js';
+import { scopedGet, scopedSet } from './storage.js';
 
 export const DISPUTE_KIND = 10006;
 export const RIDER_WORDS = ['vendor-flag', 'vendor-rebuttal', 'buyer-supplement'];
 
 const HEX64 = /^[0-9a-f]{64}$/;
+const OWN_RIDERS_KEY = 'dispute_riders_own';
 
 const tagValue = (event, name) =>
   String(event?.tags?.find((row) => row[0] === name)?.[1] || '').toLowerCase().trim();
+
+// The pair a rider lives on, spelled one way everywhere a key is needed.
+export function riderPairKey(vendor, receipt, review) {
+  return [vendor, receipt, review].map((part) => String(part || '').toLowerCase().trim()).join(':');
+}
+
+// This device's own posted riders, in scoped storage, not memory — the
+// compose guard must survive a reload, and a refetch can come back partial,
+// so a second rider is refused by a record this device wrote the first time
+// it signed one. A relay copy can always be fetched again; the record of a
+// word this device already spent cannot be un-spent.
+export function ownRiderTaken(vendor, receipt, review, rider) {
+  if (!RIDER_WORDS.includes(rider)) return false;
+  const ledger = scopedGet(OWN_RIDERS_KEY, {}) || {};
+  const entry = ledger[riderPairKey(vendor, receipt, review)];
+  return !!(entry && entry[rider]);
+}
+
+// Written once the rider is signed and on its way — a signed rider this
+// device intends to send already spends the word, whatever a publish
+// hiccup made of the moment. An unreadable or refused sign never reaches
+// this mark.
+export function markOwnRider(vendor, receipt, review, rider, eventId) {
+  if (!RIDER_WORDS.includes(rider)) return false;
+  const key = riderPairKey(vendor, receipt, review);
+  if (!key || !String(eventId || '').trim()) return false;
+  const ledger = scopedGet(OWN_RIDERS_KEY, {}) || {};
+  const entry = ledger[key] || {};
+  entry[rider] = String(eventId).trim();
+  ledger[key] = entry;
+  scopedSet(OWN_RIDERS_KEY, ledger);
+  return true;
+}
 
 // Three one-shot riders per (receipt, review). The pick is deterministic
 // when duplicates arrive: the earliest one landed wins, and same-second
