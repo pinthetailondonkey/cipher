@@ -1,8 +1,9 @@
 import { useState } from 'react';
-import { Copy, X } from 'lucide-react';
+import { Copy } from 'lucide-react';
 import { useChatStore } from '../../store/chatStore';
+import Sheet from '../ui/Sheet';
+import Button from '../ui/Button';
 import Avatar from '../ui/Avatar';
-import Button, { pressable } from '../ui/Button';
 import { copyText } from '../../lib/copyText';
 import { noHexName, shortNpub } from '../../lib/npub';
 
@@ -14,7 +15,6 @@ export default function MyProfileModal({ identity }) {
   const profile = useChatStore((state) => (identity?.pk ? state.profiles[identity.pk] : undefined)) || EMPTY_PROFILE;
   const [notice, setNotice] = useState('');
   const [error, setError] = useState('');
-  if (!isOpen) return null;
 
   const copyNpub = async () => {
     setError('');
@@ -33,25 +33,22 @@ export default function MyProfileModal({ identity }) {
   const name = noHexName(profile, identity?.pk);
 
   return (
-    <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-scrim/70 p-4" role="presentation" onMouseDown={(event) => {
-      if (event.target === event.currentTarget) setShowMyProfile(false);
-    }}>
-      <section role="dialog" aria-modal="true" aria-label="My profile" className="relative w-full max-w-sm rounded-3xl border border-line bg-panel p-6">
-        <button type="button" onClick={() => setShowMyProfile(false)} aria-label="Close profile" className={`absolute right-4 top-4 p-2 text-ink/45 hover:text-ink ${pressable}`}><X size={20} /></button>
-        <div className="flex items-center gap-4 pr-8">
-          <Avatar src={profile.picture} name={name} className="!h-16 !w-16 text-xl" />
+    <Sheet open={isOpen} onClose={() => setShowMyProfile(false)} title="My profile">
+      <div className="pb-4">
+        <div className="flex items-center gap-4">
+          <Avatar src={profile.picture} name={name} size="lg" />
           <div className="min-w-0">
-            <h2 className="truncate text-2xl font-bold tracking-tight text-ink">{name}</h2>
-            <p className="truncate text-[13px] text-ink/40">{identity?.pk ? shortNpub(identity.pk) : 'No key loaded'}</p>
+            <h2 className="truncate text-[22px] font-bold tracking-tight text-ink">{name}</h2>
+            <p className="truncate text-[13px] text-inkMuted">{identity?.pk ? shortNpub(identity.pk) : 'No key loaded'}</p>
           </div>
         </div>
-        {profile.about && <p className="mt-4 text-[13px] text-ink/40">{profile.about}</p>}
-        <Button onClick={copyNpub} className="mt-5 flex w-full items-center justify-center gap-2">
-          <Copy size={16} /> Copy npub
+        {profile.about && <p className="mt-4 text-[13px] text-inkMuted">{profile.about}</p>}
+        <Button onClick={copyNpub} fullWidth className="mt-5">
+          <Copy size={16} className="mr-1 inline" /> Copy npub
         </Button>
         {notice && <p role="status" className="mt-3 text-center text-[13px] text-accentText">{notice}</p>}
         {error && <p role="alert" className="mt-3 text-center text-[13px] text-danger">{error}</p>}
-      </section>
-    </div>
+      </div>
+    </Sheet>
   );
 }

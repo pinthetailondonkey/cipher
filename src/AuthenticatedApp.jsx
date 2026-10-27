@@ -5,6 +5,8 @@ import Drawer from './components/chat/Drawer';
 import GlobalDialog from './components/GlobalDialog';
 import CallOverlay from './components/chat/CallOverlay';
 import DeadDropModal from './components/chat/DeadDropModal';
+import Toast from './components/ui/Toast';
+import Segmented from './components/ui/Segmented';
 import { requestNotificationPermission } from './lib/notifications';
 import { unreadTotalOf, useChatStore } from './store/chatStore';
 
@@ -62,6 +64,9 @@ export default function AuthenticatedApp({ identity }) {
     <div className="relative flex h-[100dvh] w-full justify-center overflow-hidden bg-base text-ink md:justify-start">
       {/* The shell glow is drawn once by App.jsx; screens add no own copies
           — a 120px live blur re-rasterizes per frame and stung Safari. */}
+      {/* The one toast queue for the whole app: setToast, pushToast and every
+          old status pill route through this render. */}
+      <Toast />
       <TutorialModal isOpen={showTutorial} onClose={() => { useChatStore.getState().setShowTutorial(false); localStorage.removeItem('cipher_new_account'); }} />
       <DeadDropModal identity={identity} />
       <GlobalDialog />
@@ -80,10 +85,13 @@ export default function AuthenticatedApp({ identity }) {
                 <div className="relative mx-auto flex h-full w-full max-w-md flex-col md:border-x md:border-line">
                   <div className="relative z-10 flex items-center px-4 pb-1 pt-3">
                     <button type="button" onClick={() => useChatStore.getState().setShowDrawer(true)} aria-label="Open menu" className="-ml-1 touch-target p-2 text-ink/50 hover:text-ink md:hidden"><Menu size={20} /></button>
-                    <div className="grid flex-1 grid-cols-2 rounded-2xl border border-ink/15 bg-panelStrong p-1 shadow-lg">
-                      <button type="button" onClick={() => setExploreMode('shop')} className={`min-h-[44px] rounded-xl py-2.5 text-[13px] font-bold ${exploreMode === 'shop' ? 'bg-accent text-accentInk shadow-lg' : 'text-ink/60'}`}>Shop</button>
-                      <button type="button" onClick={() => setExploreMode('groups')} className={`min-h-[44px] rounded-xl py-2.5 text-[13px] font-bold ${exploreMode === 'groups' ? 'bg-accent text-accentInk shadow-lg' : 'text-ink/60'}`}>Groups</button>
-                    </div>
+                    <Segmented
+                      ariaLabel="Discover sections"
+                      className="flex-1"
+                      value={exploreMode}
+                      onChange={setExploreMode}
+                      options={[{ value: 'shop', label: 'Shop' }, { value: 'groups', label: 'Groups' }]}
+                    />
                   </div>
                   <div className="relative z-10 min-h-0 flex-1">
                     {exploreMode === 'shop'
