@@ -15,6 +15,7 @@ export function listingFromEvent(event) {
   const priceTag = tag('price');
   const amount = String(priceTag?.[1] || '').trim();
   const currency = String(priceTag?.[2] || 'USD').toUpperCase();
+
   // A listing's own `payment` tags are never read here. An address the buyer
   // scans straight off the menu skips the order — no accept, no issued
   // address, no chain check, no receipt — so nothing on a menu starts a
@@ -28,6 +29,13 @@ export function listingFromEvent(event) {
     image: tag('image')?.[1] || '',
     vendorPubkey: event.pubkey,
   };
+}
+
+// The relay filter every read of one vendor's kind-30402 listings shares:
+// the storefront fetches it to draw the shop, and a ?product=&vendor= link
+// fetches it to reach a single listing on boot (backlog item 16.3).
+export function vendorListingFilter(vendorPubkey) {
+  return { kinds: [30402], authors: [vendorPubkey], '#t': ['cipher_marketplace'], limit: 50 };
 }
 
 // The product block an order carries. A coin price stays a coin price.

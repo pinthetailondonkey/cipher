@@ -17,7 +17,11 @@ export default function Shop({ identity, setActiveTab }) {
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [checkoutProduct, setCheckoutProduct] = useState(null);
+  // Checkout lives in the chat store, not component state: a saved product
+  // link (?product=&vendor=) sets it on boot, before this screen mounts, and
+  // the same field still holds the screen's own Buy taps.
+  const checkoutProduct = useChatStore((s) => s.checkoutProduct);
+  const setCheckoutProduct = useChatStore((s) => s.setCheckoutProduct);
   const { sendDM } = useNIP44DM({ identity });
 
   useEffect(() => {

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { BadgeCheck, MessageCircle, Package, Store, X } from 'lucide-react';
 import { useVouchCount } from '../../hooks/useVouchCount';
 import { generalRelays } from '../../lib/relays';
+import { vendorListingFilter } from '../../lib/listing';
 import Picture from '../ui/Picture';
 import { noHexName } from '../../lib/npub';
 
@@ -40,12 +41,7 @@ export default function VendorStorefront({ isOpen, onClose, vendorPubkey, profil
       try {
         const { SimplePool } = await import('nostr-tools');
         pool = new SimplePool();
-        const events = await pool.querySync(generalRelays, {
-          kinds: [30402],
-          authors: [vendorPubkey],
-          '#t': ['cipher_marketplace'],
-          limit: 50,
-        });
+        const events = await pool.querySync(generalRelays, vendorListingFilter(vendorPubkey));
         if (!active) return;
         setProducts(events.map(parseListing).sort((a, b) => b.createdAt - a.createdAt));
       } catch (loadError) {

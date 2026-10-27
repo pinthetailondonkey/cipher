@@ -14,6 +14,7 @@ import { useGroupKeyReconciler } from '../../hooks/useGroupKeyReconciler';
 import { flushSecuringGroupSends } from '../../hooks/useNIP29Group';
 import { bindMemberBaselinePublisher, sealMemberBaseline } from '../../lib/crypto/memberBaseline';
 import { sortMessages } from './media';
+import { listingFromEvent, vendorListingFilter } from '../../lib/listing';
 import { activeUrl, entryById } from '../../lib/egress';
 import { isNativeShell, registerWithGateway, subscribeBrowser, subscribeNative } from '../../lib/pushGateway';
 
@@ -489,6 +490,8 @@ export function useChatBootstrap({
     // Link shapes (user-specified): /note#<fragment> opens a burn note — the
     // fragment is the key, never sent to any server. /<groupid> joins a group,
     // same as the older ?g= / ?group= / ?join= shapes which keep working.
+    // ?product=&vendor= is a shared shop card: the listing id and the vendor
+    // that published it, copied by the Shop screen's link button.
     const path = window.location.pathname;
     const pathGroup = path.match(/^\/([0-9a-f]{64})\/?$/)?.[1] || null;
     const pathNote = path === '/note' || path === '/note/' ? window.location.hash.slice(1) : null;
@@ -496,7 +499,10 @@ export function useChatBootstrap({
     const naddr = urlParams.get('naddr');
     const joinName = urlParams.get('name');
     const noteFragment = pathNote;
-    if ((!directId && !naddr && !noteFragment) || !identity?.pk) return undefined;
+    const productParam = urlParams.get('product');
+    const vendorParam = urlParams.get('vendor');
+    const linkedProduct = !!productParam && !!vendorParam;
+    if ((!directId && !naddr && !noteFragment && !linkedProduct) || !identity?.pk) return undefined;
     let cancelled = false;
     (async () => {
       if (noteFragment) {
@@ -513,6 +519,38 @@ export function useChatBootstrap({
         } finally {
           // The link has done its one job; clean the address bar either way.
           window.history.replaceState(null, '', '/');
+        }
+        return;
+      }
+      if (linkedProduct) {
+        // The link names one listing this vendor published. The read is the
+        // storefront's own vendor-listing filter, shared through
+        // lib/listing.js; the id answers only against rows fetched under
+        // that vendor's key, so a link cannot aim another vendor's listing.
+        const miss = () => {
+          // The miss lands on the vendor's shop, not nowhere: their listings
+          // are at least reachable where the dead link was handed over.
+          if (/^[0-9a-f]{64}$/.test(String(vendorParam))) useChatStore.getState().setVendorStorefrontPubkey(vendorParam);
+        };
+        try {
+          const pool = await getAuthenticatedPool(identity);
+          const events = await queryWithTimeout(pool, generalRelays, vendorListingFilter(vendorParam));
+          if (cancelled) return;
+          const listing = events.map(listingFromEvent).find((row) => String(row.id) === String(productParam));
+          if (listing) {
+            useChatStore.getState().setCheckoutProduct(listing);
+          } else {
+            useChatStore.getState().setToast({ type: 'error', message: 'That product is no longer listed.' });
+            miss();
+          }
+        } catch (error) {
+          console.error('[product link] Could not load the listing:', error);
+          useChatStore.getState().setToast({ type: 'error', message: 'That product is no longer listed.' });
+          miss();
+        } finally {
+          // The link has done its one job; clean the address bar either way,
+          // the way the group join drops the search params when it lands.
+          if (window.location.search.length > 0) window.history.replaceState({}, document.title, window.location.pathname);
         }
         return;
       }
