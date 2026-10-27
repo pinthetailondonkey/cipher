@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   assembleOrderScript,
   assembleOvertOrderScript,
+  assembleClockClaimScript,
   decodeOrderScript,
   hexToScript,
   scriptToHex,
@@ -99,6 +100,57 @@ test('the committed hash is exactly 32 bytes of hash: wrong lengths refuse', () 
   assert.equal(decodeOrderScript(hexToScript(hex.replace(full, '1f' + scriptToHex(OVERT).slice(2)))), null);
   // 33-byte padded push: same refusal
   assert.equal(decodeOrderScript(hexToScript(hex.replace(full, '21' + scriptToHex(OVERT) + '00'))), null);
+});
+
+// The Clock Box (founder card): the Dead Drop box gains the day-20
+// claim branch under the CSV gate — the vendor alone, SAME committed
+// preimage, all the money home. Everything here keeps the round-trip
+// law and the one-shape dispatch law.
+test('the clock box round-trips: keys, clock, and the shared commitment all come back', () => {
+  for (const delay of [2880, MIN_CSV_BLOCK_DELAY, MAX_CSV_BLOCK_DELAY, 144, 65534]) {
+    const bytes = assembleClockClaimScript({ vendorPubKey: V, buyerPubKey: B, delayBlocks: delay, overtHash: OVERT });
+    const back = decodeOrderScript(bytes);
+    assert.notEqual(back, null, `clock box failed at delay ${delay}`);
+    assert.equal(scriptToHex(back.vendorPubKey), scriptToHex(V));
+    assert.equal(scriptToHex(back.buyerPubKey), scriptToHex(B));
+    assert.equal(back.delayBlocks, delay);
+    assert.equal(back.claimBlocks, delay); // one clock, buyer refund and vendor claim alike
+    assert.equal(scriptToHex(back.overtHash), scriptToHex(OVERT));
+  }
+});
+
+test('the clock box refuses a second delivery word: the claim preimage is the one commitment', () => {
+  // hand-craft a claim hash different from the overt hash: two branches
+  // that reveal DIFFERENT words for the same delivery would mint a
+  // second attestation from nothing, so the shape refuses at decode
+  const box = assembleClockClaimScript({ vendorPubKey: V, buyerPubKey: B, delayBlocks: 2880, overtHash: OVERT });
+  const hex = scriptToHex(box);
+  const claimHashPush = '20' + scriptToHex(OVERT); // 32-byte push: length byte 0x20, then the hash
+  const first = hex.indexOf(claimHashPush);
+  assert.notEqual(first, -1, 'the overt push is where this test thinks it is');
+  const second = hex.indexOf(claimHashPush, first + 1);
+  assert.notEqual(second, -1, 'the claim push is where this test thinks it is');
+  const OTHER_HASH = '20' + 'eb'.repeat(32);
+  assert.equal(decodeOrderScript(hexToScript(hex.slice(0, second) + OTHER_HASH + hex.slice(second + 66))), null);
+});
+
+test('the clock box keeps the dispatch law: crafted variants refuse', () => {
+  const box = assembleClockClaimScript({ vendorPubKey: V, buyerPubKey: B, delayBlocks: 2880, overtHash: OVERT });
+  const hex = scriptToHex(box);
+  // a stranger's key at the claim table: the claim pays the vendor whose
+  // key signed the release, nobody else
+  const claimVendorAt = hex.lastIndexOf(scriptToHex(V));
+  assert.notEqual(claimVendorAt, -1);
+  assert.equal(decodeOrderScript(hexToScript(hex.slice(0, claimVendorAt) + scriptToHex(WRONG) + hex.slice(claimVendorAt + 66))), null);
+  // and a stranger's key in the inner refund branch: refused, the same law
+  const claimBuyerAt = hex.lastIndexOf(scriptToHex(B));
+  assert.equal(decodeOrderScript(hexToScript(hex.slice(0, claimBuyerAt) + scriptToHex(WRONG) + hex.slice(claimBuyerAt + 66))), null);
+  // truncation of the third ENDIFness: refused
+  assert.equal(decodeOrderScript(box.slice(0, box.length - 1)), null);
+  assert.equal(decodeOrderScript(Uint8Array.from([...box, 0x51])), null);
+  // bad inputs throw at the assembler, same law
+  assert.throws(() => assembleClockClaimScript({ vendorPubKey: null, buyerPubKey: B, delayBlocks: 2880, overtHash: OVERT }), /vendor key/);
+  assert.throws(() => assembleClockClaimScript({ vendorPubKey: V, buyerPubKey: B, delayBlocks: 2880 }), /overt hash/);
 });
 
 

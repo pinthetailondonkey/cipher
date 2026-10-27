@@ -9,16 +9,25 @@
 // The absence of any other branch is the product: there is no arbiter
 // key, no recovery key, no support backdoor. Both readers of this file
 // — the app and a skeptical outsider — must assemble the same bytes,
-// so decode is exact: two shapes, strict pushes, nothing optional.
+// so decode is exact: three shapes, strict pushes, nothing optional.
 //
-// The second shape is the Dead Drop box: the same release branch, and
-// the refund side gains one nested overt branch the VENDOR fires alone.
+// Shape 1, the plain box:
+//
+//   OP_IF    <vendor_pub> OP_CHECKSIGVERIFY <buyer_pub> OP_CHECKSIG
+//   OP_ELSE  <delay> OP_CSV OP_DROP <buyer_pub> OP_CHECKSIG
+//   OP_ENDIF
+//
+// Shape 2, the Dead Drop box: the same release branch, and the refund
+// side gains one nested overt branch the VENDOR fires alone.
 //
 //   OP_IF    <vendor_pub> OP_CHECKSIGVERIFY <buyer_pub> OP_CHECKSIG
 //   OP_ELSE  OP_IF      OP_SHA256 <overt_hash> OP_EQUALVERIFY <vendor_pub> OP_CHECKSIG
 //            OP_ELSE    <delay> OP_CSV OP_DROP <buyer_pub> OP_CHECKSIG
 //            OP_ENDIF
 //   OP_ENDIF
+//
+// Shape 3, the Clock Box (see assembleClockClaimScript): the Dead Drop
+// box with the day-20 claim branch under the same CSV gate.
 //
 // The vendor returns ALL the money to the buyer fee-free, any time —
 // but only by publishing preimage(overt_hash) on-chain: the act of
@@ -122,6 +131,42 @@ export function assembleOvertOrderScript({ vendorPubKey, buyerPubKey, delayBlock
   ]);
 }
 
+// The Clock Box (founder card, "keep clock claim"): the Dead Drop box
+// with one more branch. After the refund timer's CSV gate (the SAME
+// day-20 clock), an inner OP_IF opens a second delivery-attested claim:
+// the vendor alone, same committed preimage, takes ALL the money home.
+// Buyer silence at day 20 never strands the vendor, and the buyer's own
+// refund branch sits in the SAME dispatch beside it — whoever needs the
+// money uses their branch. The claim's destination is enforced at the
+// spend builder and re-checked by the membrane (no CTV), and its fee is
+// zero by founder order: the 5% exists only on the cooperative release.
+export function assembleClockClaimScript({ vendorPubKey, buyerPubKey, delayBlocks, overtHash }) {
+  if (!isPubkey(vendorPubKey)) throw new Error('The vendor key must be a 33-byte compressed point.');
+  if (!isPubkey(buyerPubKey)) throw new Error('The buyer key must be a 33-byte compressed point.');
+  if (!isOvertHash(overtHash)) throw new Error('The overt hash must be a 32-byte SHA-256.');
+  return Uint8Array.from([
+    OP_IF,
+    ...pushBytes(vendorPubKey), OP_CHECKSIGVERIFY,
+    ...pushBytes(buyerPubKey), OP_CHECKSIG,
+    OP_ELSE,
+    OP_IF,
+    OP_SHA256,
+    ...pushBytes(overtHash), OP_EQUALVERIFY,
+    ...pushBytes(vendorPubKey), OP_CHECKSIG,
+    OP_ELSE,
+    ...scriptNumPush(delayBlocks), OP_CSV, OP_DROP,
+    OP_IF,
+    OP_SHA256,
+    ...pushBytes(overtHash), OP_EQUALVERIFY, // the SAME commitment: one nonce, one delivery word
+    ...pushBytes(vendorPubKey), OP_CHECKSIG,
+    OP_ELSE,
+    ...pushBytes(buyerPubKey), OP_CHECKSIG,
+    OP_ENDIF,
+    OP_ENDIF,
+    OP_ENDIF,
+  ]);
+}
+
 export function hexToScript(hex) {
   const clean = String(hex ?? '').trim().toLowerCase();
   if (!/^[0-9a-f]*$/.test(clean) || clean.length % 2 !== 0) {
@@ -175,6 +220,7 @@ export function decodeOrderScript(bytes) {
     // push's length byte (1..4); the Dead Drop box opens OP_IF (0x63),
     // which is never a legal delay push length — one unambiguous byte.
     let overtHash = null;
+    let claimBlocks = null;
     if (readByte() === OP_IF) {
       // Dead Drop branch: OP_SHA256 <32-byte hash> OP_EQUALVERIFY <vendor_pub> OP_CHECKSIG
       if (readByte() !== OP_SHA256) return null;
@@ -191,8 +237,32 @@ export function decodeOrderScript(bytes) {
     }
     const delay = readNum();
     if (delay === null || readByte() !== OP_CSV || readByte() !== OP_DROP) return null;
-    const refundBuyer = readPush();
-    if (!isPubkey(refundBuyer) || readByte() !== OP_CHECKSIG) return null;
+    let refundBuyer;
+    if (overtHash !== null && bytes[i] === OP_IF) {
+      // The Clock Box (third shape): the delay's CSV gates both remaining
+      // branches. The claim side: the SAME committed preimage, the VENDOR's
+      // key — one nonce, one delivery word for both attested exits.
+      i += 1;
+      if (readByte() !== OP_SHA256) return null;
+      const claimHash = readPush();
+      if (!isOvertHash(claimHash) || readByte() !== OP_EQUALVERIFY) return null;
+      // one commitment, one nonce: a second clock unlocked by ANY other
+      // preimage is a second delivery word minted from nothing
+      if (scriptToHex(claimHash) !== scriptToHex(overtHash)) return null;
+      const claimVendor = readPush();
+      if (!isPubkey(claimVendor) || readByte() !== OP_CHECKSIG) return null;
+      if (scriptToHex(claimVendor) !== scriptToHex(vendorPubKey)) return null;
+      if (readByte() !== OP_ELSE) return null;
+      const claimBuyer = readPush();
+      if (!isPubkey(claimBuyer) || readByte() !== OP_CHECKSIG) return null;
+      if (scriptToHex(claimBuyer) !== scriptToHex(buyerPubKey)) return null;
+      if (readByte() !== OP_ENDIF) return null;
+      refundBuyer = claimBuyer;
+      claimBlocks = delay;
+    } else {
+      refundBuyer = readPush();
+      if (!isPubkey(refundBuyer) || readByte() !== OP_CHECKSIG) return null;
+    }
     if (readByte() !== OP_ENDIF) return null;
     // the Dead Drop box nests one frame deeper: a second OP_ENDIF
     // closes the outer refund side. The plain box has exactly one frame.
@@ -207,7 +277,7 @@ export function decodeOrderScript(bytes) {
     // derivation, but the strict shape is the contract, so it is the
     // shape that refuses it.)
     if (scriptToHex(vendorPubKey) === scriptToHex(buyerPubKey)) return null;
-    return { vendorPubKey, buyerPubKey, delayBlocks: delay, overtHash };
+    return { vendorPubKey, buyerPubKey, delayBlocks: delay, claimBlocks, overtHash };
   } catch {
     return null;
   }
