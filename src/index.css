@@ -8,6 +8,10 @@
    one switch, two value sets. */
 :root {
   color-scheme: dark;
+  --z-fab: 40;
+  --z-sheet: 60;
+  --z-call: 80;
+  --z-toast: 100;
   --sat: env(safe-area-inset-top, 0px);
   --sab: env(safe-area-inset-bottom, 0px);
   --nav-h: 4rem;
