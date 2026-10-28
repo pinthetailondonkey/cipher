@@ -327,17 +327,28 @@ export function useIdentity() {
     
     // Multi-account support: store vaults by pubkey
     const vaults = getVaults();
-    vaults[pk] = { 
-      vault: encryptedLocal, 
+    // Earlier abandoned drafts are not accounts: drop them so they never
+    // pile up in the switcher or the counters that read this table.
+    for (const key of Object.keys(vaults)) {
+      if (vaults[key]?.confirmed === false) delete vaults[key];
+    }
+    vaults[pk] = {
+      vault: encryptedLocal,
       handle: handle.toLowerCase().trim(),
       displayName: handle,
       createdAt: Date.now(),
-      mnemonicEnc: await encryptWithSk(sk, mnemonic)
+      mnemonicEnc: await encryptWithSk(sk, mnemonic),
+      // Draft until the 12 words are confirmed: boot must not read this
+      // entry as a finished account, and an abandon here must leave no
+      // unlockable PIN gate behind (founder break 2026-10-27).
+      confirmed: false,
     };
     saveVaults(vaults);
     localStorage.setItem('cipher_active_pubkey', pk);
-    
-    // Legacy fallback (for backwards compat)
+
+    // Legacy fallback (for backwards compat). Byte-identical to the entry's
+    // vault on purpose: removeAccountVault matches it by string to know it
+    // belongs to the wiped account. The draft flag lives on the entry only.
     localStorage.setItem('cipher_vault', JSON.stringify(encryptedLocal))
     localStorage.setItem('cipher_handle', handle.toLowerCase().trim())
     resetPinFailures(localStorage, pk)
@@ -374,6 +385,18 @@ export function useIdentity() {
 
     return { sk, pk, npub: nip19.npubEncode(pk), handle, mnemonic, biometricEnabled, biometricError }
   }
+
+  // The 12-word confirm passed: this draft vault is a real account now.
+  // Only the active account can be confirmed, and only its own draft.
+  const confirmVault = () => {
+    const pk = getActivePubkey();
+    if (!pk) return;
+    const vaults = getVaults();
+    if (vaults[pk]) {
+      vaults[pk] = { ...vaults[pk], confirmed: true };
+      saveVaults(vaults);
+    }
+  };
 
   const finalizeLogin = async (sk, pk, npub, profile) => {
     const username = (profile?.username || '').replace(/^@/, '').trim().toLowerCase()
@@ -580,7 +603,11 @@ export function useIdentity() {
         vault: targetVault,
         handle: handle,
         displayName: newVaults[pk]?.displayName || handle,
-        createdAt: newVaults[pk]?.createdAt || Date.now()
+        createdAt: newVaults[pk]?.createdAt || Date.now(),
+        // This path only re-admits accounts the user can already PIN-unlock
+        // on this device — keep any prior confirm; pre-fix installs wrote no
+        // flag and were all finished accounts, so absent = granted here.
+        confirmed: true,
       };
       saveVaults(newVaults);
 
@@ -630,7 +657,11 @@ export function useIdentity() {
         handle: '',
         displayName: 'Restored',
         createdAt: Date.now(),
-        mnemonicEnc: await encryptWithSk(sk, normalizedMnemonic)
+        mnemonicEnc: await encryptWithSk(sk, normalizedMnemonic),
+        // Typing the 12 words IS the confirmation here — this entry is born
+        // finished, never a draft (a draft flag would re-offer creation on
+        // relaunch and threaten the restored account with a second flow).
+        confirmed: true,
       }
       saveVaults(vaults)
       setActivePubkey(pk)
@@ -866,9 +897,9 @@ export function useIdentity() {
     window.location.reload();
   };
 
-  return { 
+  return {
     ...keys, hasVault, hasBiometric, loadingSession,
     getAccounts, switchAccount, removeAccount, addNewAccount, getMnemonic,
-    unlock, unlockWithBiometric, enableBiometric, restoreFromRelays, restoreFromMnemonic, createVault, finalizeLogin, lockApp, panicWipe
+    unlock, unlockWithBiometric, enableBiometric, restoreFromRelays, restoreFromMnemonic, createVault, confirmVault, finalizeLogin, lockApp, panicWipe
   }
 }

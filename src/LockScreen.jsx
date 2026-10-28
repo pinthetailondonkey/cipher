@@ -14,8 +14,16 @@ import RestoreMnemonic from './components/onboarding/RestoreMnemonic';
 export default function LockScreen({ identity }) {
   const [mode, setMode] = useState(() => {
     try {
+      // A vault written before the 12-word confirm is a DRAFT, not an
+      // account. Boot counts finished vaults only: an abandoned creation
+      // relaunches into the create offer, never into a PIN gate over an
+      // account the user never finished making (founder break 2026-10-27).
       const vaults = JSON.parse(localStorage.getItem('cipher_vaults') || '{}');
-      const hasVault = !!localStorage.getItem('cipher_vault') || Object.keys(vaults).length > 0;
+      // The per-account table is the authority once it has any entry; the
+      // single legacy vault only speaks for installs that predate it.
+      const hasVault = Object.keys(vaults).length > 0
+        ? Object.values(vaults).some((v) => v && v.confirmed !== false)
+        : !!localStorage.getItem('cipher_vault');
       return hasVault || localStorage.getItem('cipher_biometric_enabled') === 'true' ? 'unlock' : 'create';
     } catch (e) { return 'create'; }
   });
@@ -133,7 +141,7 @@ export default function LockScreen({ identity }) {
           <SaveKey savedMnemonic={savedMnemonic} biometricNotice={biometricNotice} onContinue={() => setMode('verify_key')} />
         )}
         {mode === 'verify_key' && (
-          <VerifyKey savedMnemonic={savedMnemonic} verifyIndices={verifyIndices} onVerified={() => setMode('setup_profile')} />
+          <VerifyKey savedMnemonic={savedMnemonic} verifyIndices={verifyIndices} onVerified={() => { identity.confirmVault(); setMode('setup_profile'); }} />
         )}
         {mode === 'setup_profile' && (
           <SetupProfile identity={identity} tempIdentity={tempIdentity} initialHandle={createdHandle} />
