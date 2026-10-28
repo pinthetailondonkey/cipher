@@ -7,13 +7,18 @@ outside the tree. Nothing here is pushed, deployed or released.
 
 - Base: `origin/main` = `1b0fb053f5695cc729b390948c7635b320606fa1` (fetched 2026-10-28).
 - Branch: `release/launch-v1`, cut from that SHA.
-- Candidate HEAD: `25ce9f7615598577643159ebe1db9c28d953cf61`. Ten local
-  commits, none pushed, per the founder's release order that overrides "push
-  each commit":
+- Candidate HEAD: `ec9b0c5c2dce4d18a287ec42d383cd1838cbcfe9`. Fifteen local
+  commits (`git rev-list --count 1b0fb05..HEAD` → 15), none pushed
+  (`git ls-remote origin 'refs/heads/release/*'` → empty), per the founder's
+  release order that overrides "push each commit":
   `cbc2037` `5b12a30` `4dc0df0` `7042cb5` `298ef9b` `574a299` `54be472`
-  `fb7d6cf` `61f35c0` `e1cdc54` `25ce9f7`. The last three are docs only; the
-  source candidate AUDITOR gated is `61f35c0`, and `git diff --stat
-  61f35c0..25ce9f7` touches `docs/LAUNCH-EVIDENCE.md` and nothing else.
+  `fb7d6cf` `61f35c0` `e1cdc54` `25ce9f7` `17dc8ab` `3176e18` `7d60e1a`
+  `ec9b0c5`.
+- Source history: `61f35c0` is the milestone-1 source candidate AUDITOR gated
+  in round 1; `e1cdc54`, `25ce9f7` and `17dc8ab` are docs only
+  (`git diff --stat 61f35c0..17dc8ab` touches `docs/LAUNCH-EVIDENCE.md` alone,
+  99 lines, 87+/12−; AUDITOR re-measured it file by file). Round 2 adds three
+  source commits — `3176e18`, `7d60e1a`, `ec9b0c5` — listed below.
 
 ## Milestone 1 — auth and recovery
 
@@ -46,6 +51,18 @@ source changed between them:
 - `__cipher` absent from every built asset at both SHAs (test-hook build not
   used for either; AUDITOR also measured the seam build separately and then
   rebuilt production to 0 hits)
+
+At the round-2 candidate `ec9b0c5`, run in this checkout:
+
+- `npm run build` — exit 0, entry `dist/assets/index-oiLnEhZQ.js`
+- `npm run lint` — exit 0, 88 warnings, 0 errors (oxlint exits nonzero on an
+  error; it exited 0, and the warning count matches the 61f35c0 baseline)
+- `npm test` — exit 0, 436 tests, 436 pass, 0 fail (434 + the 2 landed below)
+- production build, hooks disabled: `grep -rl __cipher dist/ | wc -l` → 0
+- `npx playwright test tests/ui/pin-unlock.spec.js tests/ui/persistence.spec.js
+  tests/ui/keypad.spec.js` — exit 0, 17 passed (2.1m). Server was fresh:
+  `ss -ltnp` found nothing on 8081 before the run, so `reuseExistingServer`
+  had nothing to reuse. It served the seam build; production was rebuilt after.
 
 ## Milestone 1 close-out — UI-level unlock evidence
 
@@ -98,6 +115,39 @@ no-authenticator door is not. A cancelled or failing authenticator then ends
 in the screen's error line. Not changed here — it is a founder decision, since
 requiring a platform authenticator would hide the door for roaming keys.
 
+## Round 2 — usability defects and the removal regression
+
+Production stayed on HOLD. No feature was added; three defects and one missing
+regression.
+
+| # | Defect | Verdict | Commit |
+|---|--------|---------|--------|
+| 6 | A media, voice or file send that the relays refused still fired its own "sent" toast, one line after the failure toast | confirmed, fixed | `3176e18` |
+| 7 | A failed text send had already cleared the field, so the user's words were gone | confirmed, fixed | `3176e18` |
+| 8 | Buy has no disabled state; a second tap posted a second order request and a second success toast | confirmed, fixed | `7d60e1a` |
+| 9 | No test executed a removal followed by a post-removal message | gap, closed | `ec9b0c5` |
+
+Defects 6–8 are CODE-WALK, and are labelled so. They were found by reading
+`sendMessage`'s callers and the Buy button, not by reproducing a refused send:
+reproducing one offline needs a relay that refuses, and every call site already
+read the same unconditionally-toasted shape. What changed is mechanical and
+small: `sendMessage` now returns `'sent' | 'securing' | 'failed'`, all four
+callers toast success only on `'sent'`, `submit` puts the text back on
+`'failed'`, and `startOrderWithVendor` drops a second press while one is in
+flight and clears the flag in a `finally`. No draft system was added; the
+existing per-chat draft keys are untouched.
+
+Defect 9 is EXECUTED. `src/lib/crypto/groupRemoval.test.js` (AUDITOR's probe,
+landed unchanged except import paths, and added to `npm test`): real secp256k1
+identities, real `rotateGroupEpoch`, real NIP-44 bundle, real sealed key store,
+real codec. A removed member cannot open the post-removal message; a remaining
+member can; the ciphertext is bound to the real key (a foreign epoch-1 key gives
+`decrypt-failed`); and it records in-file that removal does not take back
+history. AUDITOR's negative control — putting the removed member back in
+`remainingPubkeys` — makes the test fail. It is not the live two-account drill:
+no relay, no socket, and the membership snapshot, `installReceivedGroupKey`
+guards and network delivery are outside it.
+
 ## Lane reports (independent, read-only)
 
 - AUDITOR, verdict at `61f35c0` on a clean clone: build 0 (`index-CNxR3c1G.js`),
@@ -129,6 +179,22 @@ requiring a platform authenticator would hide the door for roaming keys.
   base `1f32ba6`. Withdrew an earlier "pre-rewrite history" claim: the branch
   and all 14 commits are noreply. Separate hazard found while checking it —
   see below.
+- AUDITOR, round 2 at `17dc8ab`, own clone, `npm ci` instead of a symlinked
+  `node_modules` (lock sha256 `6ee082e2…` unchanged by the install;
+  nostr-tools 2.25.2, dexie 4.4.6): build 0 (`index-CNxR3c1G.js`), lint 0/88,
+  434/434, 14/14 UI on its own fresh port 8103, `__cipher` 0 in production
+  after rebuilding. It verified the docs-only chain parent by parent and added
+  the removal probe. Its open items: D1 (Face ID door), D2 (group transport
+  443/80), D3 (no two-account exchange).
+- OPSEC, round 2 — runbook corrected, and it withdrew a claim it had made
+  itself: onion TLS would not fix group transport for ordinary browsers,
+  because a browser cannot resolve an onion name at all; it fixes the measured
+  endpoint for Tor-routing clients only. It could not establish a certificate
+  path for `.onion` and marks TLS-on-443 NOT actionable until one is verified.
+  The only actionable owner action it found is flipping two pinned literals
+  from `wss` to `ws` in `src/lib/egress.js:43` and the same string in
+  `egress.test.js` — no certificate, no server change. That is a founder
+  decision and is not taken here.
 
 ### Two branches under one name
 
@@ -165,8 +231,8 @@ passed GCM authentication after corruption.
 ## Not done, and not claimed
 
 - Not pushed. Not deployed. Not released. No deployment of this branch
-  exists: the served entry is `index-C8I3GXXT.js`, the candidate builds
-  `index-CNxR3c1G.js`.
+  exists: the served entry is `index-C8I3GXXT.js` (measured by AUDITOR in
+  round 1), the candidate builds `index-oiLnEhZQ.js`.
 - `feat/device-lock` not merged, and refused for launch on the risk read below.
 - Redesign, `/download`, `/privacy`, desktop builds, Tor bundles, orphaned
   test runners: untouched, per the order to complete only milestone 1.
@@ -175,10 +241,12 @@ passed GCM authentication after corruption.
 
 Stated so nobody reads this file as more than it is:
 
-- A removed member cannot read a post-removal message: asserted only in
-  pieces (`groupKeyGrant.test.js` rotation backfill, `groupMembership.test.js`
-  "a kick refuses a grant from a pre-rotation list"). No test executes a
-  removal followed by a post-removal message. It needs a two-account drill.
+- A removed member cannot read a post-removal message: the local rule is now
+  EXECUTED end to end (`src/lib/crypto/groupRemoval.test.js`, landed at
+  `ec9b0c5`) — rotation, bundle, store and codec, with the removed member
+  unable to open and a remaining member able. The live path is still not
+  proven: no relay, no socket, membership enforcement and network delivery
+  untested. It needs a two-account drill.
 - Two accounts exchanging a group message on any transport: not done. Every
   transport statement in this file stops at socket behaviour.
 - A keyring-less device under `feat/device-lock`: CODE-WALK, twice
