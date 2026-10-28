@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { senderAuthorizedForGroupKey, parseGroupKeyBundle, safetyChangeFromInstall } from './groupKeyDistribution.js';
+import { conflictingHeldEpoch, senderAuthorizedForGroupKey, parseGroupKeyBundle, safetyChangeFromInstall } from './groupKeyDistribution.js';
 
 // F1: a kind-4 t:'gkey' DM used to install for ANY sender — key takeover.
 // The guard: sender must be named in the relay-signed member snapshot, and
@@ -31,9 +31,39 @@ test('a missing sender is refused', () => {
   assert.equal(senderAuthorizedForGroupKey({ snapshot: SNAPSHOT, sender: '', maxEpoch: 5, currentEpoch: 5 }), false);
 });
 
-test('a member of record may install a bundle at or above the current epoch', () => {
+test('a member of record may install a bundle that restates the current epoch', () => {
   assert.equal(senderAuthorizedForGroupKey({ snapshot: SNAPSHOT, sender: MEMBER, maxEpoch: 5, currentEpoch: 5 }), true);
-  assert.equal(senderAuthorizedForGroupKey({ snapshot: SNAPSHOT, sender: MEMBER, maxEpoch: 6, currentEpoch: 5 }), true);
+  // Restating the held epoch is fine for a member; moving past it is not (below).
+});
+
+// Audit finding: any member of record could install a key at ANY epoch above
+// the held one and move the group onto bytes they knew.
+test('an ordinary member cannot force a new epoch; only the creator or an admin rotates, one step at a time', () => {
+  const CREATOR = 'f'.repeat(64);
+  const snap = [...SNAPSHOT, { pubkey: CREATOR, role: 'member' }];
+  const base = { snapshot: snap, currentEpoch: 5 };
+  // A member forcing epoch 6, or a far-future epoch 99: refused.
+  assert.equal(senderAuthorizedForGroupKey({ ...base, sender: MEMBER, maxEpoch: 6 }), false);
+  assert.equal(senderAuthorizedForGroupKey({ ...base, sender: MEMBER, maxEpoch: 99, offeredEpochs: [99] }), false);
+  // An admin rotating to exactly current+1: accepted.
+  assert.equal(senderAuthorizedForGroupKey({ ...base, sender: ADMIN, maxEpoch: 6, offeredEpochs: [6] }), true);
+  // The creator (a trusted name, whatever the roster row says) rotates too.
+  assert.equal(senderAuthorizedForGroupKey({ ...base, sender: CREATOR, maxEpoch: 6, creator: CREATOR, offeredEpochs: [6, 4] }), true);
+  // An admin jumping the epoch to a number of their choosing: refused.
+  assert.equal(senderAuthorizedForGroupKey({ ...base, sender: ADMIN, maxEpoch: 99, offeredEpochs: [99] }), false);
+  assert.equal(senderAuthorizedForGroupKey({ ...base, sender: ADMIN, maxEpoch: 7, offeredEpochs: [7, 5] }), false);
+  // Catching up through a gapless run is fine from an admin.
+  assert.equal(senderAuthorizedForGroupKey({ ...base, sender: ADMIN, maxEpoch: 7, offeredEpochs: [7, 6, 5] }), true);
+  // The first key a device holds: a member of record, as before.
+  assert.equal(senderAuthorizedForGroupKey({ snapshot: snap, sender: MEMBER, maxEpoch: 99, currentEpoch: undefined }), true);
+});
+
+test('an epoch already held is never overwritten with different bytes, current or older', () => {
+  const held = [{ epoch: 3, hex: 'aa'.repeat(32) }, { epoch: 5, hex: 'bb'.repeat(32) }];
+  assert.equal(conflictingHeldEpoch([{ epoch: 5, hex: 'bb'.repeat(32) }, { epoch: 3, hex: 'AA'.repeat(32) }], held), null);
+  assert.equal(conflictingHeldEpoch([{ epoch: 5, hex: 'cc'.repeat(32) }], held), 5);
+  assert.equal(conflictingHeldEpoch([{ epoch: 3, hex: 'cc'.repeat(32) }, { epoch: 5, hex: 'bb'.repeat(32) }], held), 3);
+  assert.equal(conflictingHeldEpoch([{ epoch: 4, hex: 'cc'.repeat(32) }], held), null);
 });
 
 test('a member of record may NOT roll the epoch back', () => {
@@ -57,7 +87,9 @@ test('case differences in pubkey comparison do not bypass the check', () => {
 
 test('plain-string snapshot rows are treated as members, not admins', () => {
   assert.equal(senderAuthorizedForGroupKey({ snapshot: [ADMIN], sender: ADMIN, maxEpoch: 3, currentEpoch: 5 }), false);
-  assert.equal(senderAuthorizedForGroupKey({ snapshot: [ADMIN], sender: ADMIN, maxEpoch: 6, currentEpoch: 5 }), true);
+  // A bare string row has no admin role, so it cannot move the epoch forward.
+  assert.equal(senderAuthorizedForGroupKey({ snapshot: [ADMIN], sender: ADMIN, maxEpoch: 6, currentEpoch: 5 }), false);
+  assert.equal(senderAuthorizedForGroupKey({ snapshot: [ADMIN], sender: ADMIN, maxEpoch: 5, currentEpoch: 5 }), true);
 });
 
 test('a bundle must not mix group ids (partial install of a split bundle refused upstream)', () => {
