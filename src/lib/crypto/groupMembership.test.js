@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { finalizeEvent, generateSecretKey, getPublicKey } from 'nostr-tools';
 import {
   GROUP_RELAY_PUBKEY,
   MEMBER_OMISSION_TTL_MS,
@@ -8,6 +9,8 @@ import {
   authorizeGroupControl,
   authorizeGroupPin,
   authorizeMemberSnapshot,
+  eventSignatureValid,
+  groupFrameAccepted,
   controlSubject,
   groupRelayPubkey,
   groupRelayReq,
@@ -116,26 +119,55 @@ test('the group socket subscribes per group, so one restricted id cannot close t
   assert.deepEqual(req[3], { kinds: [39002], '#d': ['g1'] });
 });
 
+// A real signing key stands in for the relay: the snapshot gate now checks
+// the id and signature, so a fixture that only carries the relay's pubkey is
+// exactly the forgery it must refuse.
+const relaySk = generateSecretKey();
+const RELAY_PK = getPublicKey(relaySk);
+const signedBy = (sk, template) => finalizeEvent({ created_at: 20, content: '', ...template }, sk);
+
 test('39002 is accepted only from the relay key, and only when the member list is well formed', () => {
   const memberPk = '1'.repeat(64);
-  const good = {
-    kind: 39002,
-    pubkey: GROUP_RELAY_PUBKEY,
-    tags: [['d', 'group-1'], ['p', memberPk]],
-  };
-  assert.equal(authorizeMemberSnapshot({ event: good }), true);
+  const make = (tags, sk = relaySk) => signedBy(sk, { kind: 39002, tags });
+  const good = make([['d', 'group-1'], ['p', memberPk]]);
+  assert.equal(authorizeMemberSnapshot({ event: good, relayPubkey: RELAY_PK }), true);
   assert.equal(authorizeMemberSnapshot({
-    event: { ...good, tags: [['h', 'group-1'], ['p', memberPk, 'admin']] },
+    event: make([['h', 'group-1'], ['p', memberPk, 'admin']]), relayPubkey: RELAY_PK,
   }), true);
-  assert.equal(authorizeMemberSnapshot({ event: { ...good, pubkey: admin } }), false);
-  assert.equal(authorizeMemberSnapshot({ event: { ...good, pubkey: creator } }), false);
-  assert.equal(authorizeMemberSnapshot({ event: { ...good, tags: [['p', memberPk]] } }), false);
+  // Signed by someone else: a valid signature that is not the relay's.
   assert.equal(authorizeMemberSnapshot({
-    event: { ...good, tags: [['d', 'group-1'], ['p', 'not-a-pubkey']] },
+    event: make([['d', 'group-1'], ['p', memberPk]], generateSecretKey()), relayPubkey: RELAY_PK,
+  }), false);
+  assert.equal(authorizeMemberSnapshot({ event: make([['p', memberPk]]), relayPubkey: RELAY_PK }), false);
+  assert.equal(authorizeMemberSnapshot({
+    event: make([['d', 'group-1'], ['p', 'not-a-pubkey']]), relayPubkey: RELAY_PK,
   }), false);
   assert.equal(authorizeGroupControl({
     kind: 39002, sender: GROUP_RELAY_PUBKEY, subject: memberPk, members, creator,
   }), false);
+});
+
+test('a forged 39002 that names the relay pubkey but carries a fake signature is refused', () => {
+  const memberPk = '1'.repeat(64);
+  const real = signedBy(relaySk, { kind: 39002, tags: [['d', 'group-1'], ['p', memberPk]] });
+  // The attacker rewrites the roster and keeps the relay's pubkey, id and sig.
+  const tampered = { ...real, tags: [['d', 'group-1'], ['p', stranger.replace(/s/g, '2')]] };
+  // Or invents the whole event with a made-up signature.
+  const invented = {
+    ...real, tags: [['d', 'group-1'], ['p', '2'.repeat(64)]], sig: 'f'.repeat(128),
+  };
+  const noSig = { kind: 39002, pubkey: RELAY_PK, created_at: 20, tags: [['d', 'group-1'], ['p', '2'.repeat(64)]] };
+  assert.equal(authorizeMemberSnapshot({ event: real, relayPubkey: RELAY_PK }), true);
+  for (const forged of [tampered, invented, noSig]) {
+    assert.equal(authorizeMemberSnapshot({ event: forged, relayPubkey: RELAY_PK }), false);
+    assert.equal(eventSignatureValid(forged), false);
+    assert.equal(groupFrameAccepted(['EVENT', 'sub', forged]), false);
+    assert.equal(pickMemberSnapshot([forged], RELAY_PK, 'group-1'), null);
+  }
+  assert.equal(groupFrameAccepted(['EVENT', 'sub', real]), true);
+  assert.equal(groupFrameAccepted(['EOSE', 'sub']), true);
+  assert.equal(groupFrameAccepted(['EVENT', 'sub']), false);
+  assert.equal(groupFrameAccepted(null), true);
 });
 
 test('key grants refetch a fresh list that omits the requester before refusing', () => {
@@ -246,18 +278,18 @@ test('the relay pubkey is read from NIP-11 and a failed lookup is a short negati
 
 test('a membership snapshot is taken only from the relay key', () => {
   const memberPk = '1'.repeat(64);
-  const good = {
-    kind: 39002,
-    pubkey: GROUP_RELAY_PUBKEY,
-    created_at: 20,
-    tags: [['d', 'group-1'], ['p', memberPk, 'member']],
-  };
-  const forged = { ...good, pubkey: stranger, created_at: 50, tags: [['d', 'group-1'], ['p', stranger]] };
-  assert.deepEqual(pickMemberSnapshot([forged, good], GROUP_RELAY_PUBKEY, 'group-1'), [
+  const good = signedBy(relaySk, {
+    kind: 39002, created_at: 20, tags: [['d', 'group-1'], ['p', memberPk, 'member']],
+  });
+  const impostor = generateSecretKey();
+  const forged = signedBy(impostor, {
+    kind: 39002, created_at: 50, tags: [['d', 'group-1'], ['p', stranger]],
+  });
+  assert.deepEqual(pickMemberSnapshot([forged, good], RELAY_PK, 'group-1'), [
     { pubkey: memberPk, role: 'member' },
   ]);
-  assert.equal(pickMemberSnapshot([forged], GROUP_RELAY_PUBKEY, 'group-1'), null);
-  assert.equal(pickMemberSnapshot([], GROUP_RELAY_PUBKEY, 'group-1'), null);
+  assert.equal(pickMemberSnapshot([forged], RELAY_PK, 'group-1'), null);
+  assert.equal(pickMemberSnapshot([], RELAY_PK, 'group-1'), null);
 });
 
 test('a requester without a key keeps a capped backoff instead of stopping at 32s', () => {

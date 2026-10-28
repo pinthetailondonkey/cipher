@@ -11,6 +11,7 @@ import { useChatStore } from '../../store/chatStore';
 import { db, saveMessage } from '../../db';
 import { scopedRemove } from '../../lib/storage';
 import { useNIP29Group, loadGroupProfile, retrySecuringGroup } from '../../hooks/useNIP29Group';
+import { mergeGroupProfile } from '../../lib/groupJoin';
 import { securingPhase, securingSendsFor } from '../../lib/crypto/groupKeyRequest';
 import { haptic } from '../../lib/haptics';
 import { noHexName } from '../../lib/npub';
@@ -214,16 +215,17 @@ export default function GroupView({
     loadGroupProfile(identity, activeGroup.id, activeGroup.name).then((profile) => {
       if (cancelled || !profile?.id) return;
       const current = useChatStore.getState().activeGroup;
-      if (current?.id === profile.id && (current.name !== profile.name || current.picture !== profile.picture)) {
-        useChatStore.getState().setActiveGroup({ ...current, ...profile });
+      if (current?.id === profile.id) {
+        const merged = mergeGroupProfile(current, profile);
+        if (merged.changed) useChatStore.getState().setActiveGroup(merged.next);
       }
       useChatStore.getState().setGroups((groups) => {
         const list = Array.isArray(groups) ? groups : [];
         const existing = list.find((group) => group.id === profile.id);
-        if (existing && existing.name === profile.name && (existing.picture || '') === (profile.picture || '') && (existing.about || '') === (profile.about || '')) {
-          return list;
-        }
-        return list.map((group) => (group.id === profile.id ? { ...group, ...profile } : group));
+        if (!existing) return list;
+        const merged = mergeGroupProfile(existing, profile);
+        if (!merged.changed) return list;
+        return list.map((group) => (group.id === profile.id ? merged.next : group));
       });
     }).catch((error) => console.warn('[GroupView] Group name lookup failed:', error));
     return () => { cancelled = true; };

@@ -4,6 +4,7 @@ import { profileRelays as PROFILE_RELAYS } from './lib/relays'
 import { DeviceKeyMissing, getDeviceProvider, isDeviceKeyError, isDeviceVault, unwrapDeviceVault } from './lib/vaultEnvelope'
 import { destroyDeviceKeys, sealNewVault, upgradeStoredVault } from './lib/deviceLock'
 import { ensureDeviceProvider } from './lib/deviceProvider'
+import { runPanicWipe } from './lib/panicWipe'
 
 // Derive 32-byte secret key from BIP39 mnemonic
 export async function deriveSkFromMnemonic(mnemonic) {
@@ -799,82 +800,23 @@ export function useIdentity() {
     } catch(e) {}
   }
 
+  // Every step runs on its own (src/lib/panicWipe.js): a dynamic import that
+  // fails or hangs here can no longer skip the deletions or the storage clear.
   const panicWipe = async () => {
-    try {
-      const { clearPool } = await import('./lib/pool');
-      clearPool();
-      const { closeGroupSessions } = await import('./hooks/useNIP29Group');
-      closeGroupSessions();
-      const { closeDB } = await import('./db');
-      closeDB();
-
-      if (typeof indexedDB !== 'undefined') {
-        const databaseNames = new Set();
-        try {
-          const databases = typeof indexedDB.databases === 'function' ? await indexedDB.databases() : [];
-          databases.forEach((database) => {
-            if (database.name) databaseNames.add(database.name);
-          });
-        } catch (error) {
-          console.warn('[panicWipe] Could not enumerate IndexedDB databases:', error);
-        }
-
-        const owner = localStorage.getItem('cipher_db_owner');
-        if (owner) databaseNames.add(`CipherDB_v7_${owner.slice(0, 16)}`);
-        try {
-          const vaults = JSON.parse(localStorage.getItem('cipher_vaults') || '{}');
-          Object.keys(vaults).forEach((pubkey) => databaseNames.add(`CipherDB_v7_${pubkey.slice(0, 16)}`));
-        } catch (error) {
-          console.warn('[panicWipe] Could not read account list for database cleanup:', error);
-        }
-
-        const deleteOne = (name) => new Promise((resolve) => {
-          const request = indexedDB.deleteDatabase(name);
-          request.onsuccess = () => resolve(true);
-          request.onerror = () => {
-            console.error(`[panicWipe] Failed to delete IndexedDB database ${name}:`, request.error);
-            resolve(false);
-          };
-          request.onblocked = () => {
-            console.error(`[panicWipe] IndexedDB deletion was blocked for ${name}`);
-            resolve(false);
-          };
-        });
-        const deleted = await Promise.race([
-          Promise.all(Array.from(databaseNames, deleteOne)),
-          new Promise((resolve) => setTimeout(() => resolve(null), 3000)),
-        ]);
-        if (deleted === null || deleted.some((success) => !success)) {
-          console.error('[panicWipe] Some IndexedDB databases may not have been deleted.');
-        }
-      }
-      // 2. Unregister service workers (PWA cache)
-      if ('serviceWorker' in navigator) {
-        try {
-          const regs = await navigator.serviceWorker.getRegistrations();
-          await Promise.allSettled(regs.map(r => r.unregister()));
-        } catch (e) {}
-      }
-      // 3. Clear caches API
-      if ('caches' in window) {
-        try {
-          const keys = await caches.keys();
-          await Promise.allSettled(keys.map(k => caches.delete(k)));
-        } catch (e) {}
-      }
-      // 3b. End every account's device key while the account list still exists
-      try {
-        const saved = Object.keys(JSON.parse(localStorage.getItem('cipher_vaults') || '{}'));
-        await destroyDeviceKeys(await ensureDeviceProvider(), saved);
-      } catch (e) { console.error('[panicWipe] Could not destroy device keys:', e); }
-      // 4. Clear storage
-      localStorage.clear();
-      sessionStorage.clear();
-    } catch (e) {
-      console.error('[panicWipe]', e);
-    } finally {
-      window.location.reload();
-    }
+    return runPanicWipe({
+      stop: [
+        async () => { const { clearPool } = await import('./lib/pool'); clearPool(); },
+        async () => { const { closeGroupSessions } = await import('./hooks/useNIP29Group'); closeGroupSessions(); },
+        async () => { const { closeDB } = await import('./db'); closeDB(); },
+      ],
+      localStorage,
+      sessionStorage,
+      indexedDB: typeof indexedDB !== 'undefined' ? indexedDB : undefined,
+      serviceWorker: 'serviceWorker' in navigator ? navigator.serviceWorker : undefined,
+      caches: 'caches' in window ? window.caches : undefined,
+      destroyKeys: async (pubkeys) => destroyDeviceKeys(await ensureDeviceProvider(), pubkeys),
+      reload: () => window.location.reload(),
+    });
   }
 
   const getAccounts = () => {

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
 import { allowsGroupJoins, allowsLinkPreviews, setPrivacy, getPrivacy } from './privacy.js';
+import { joinRequestDecision } from './groupJoinQueue.js';
 import { scopedGet, scopedSet } from './storage.js';
 
 const memory = new Map();
@@ -51,13 +52,16 @@ test('the Groups setting is refused by an engine, not a placebo: nobody denies n
   setPrivacy({ groups: 'nobody' });
   assert.equal(allowsGroupJoins(), false);
   const handler = fs.readFileSync(new URL('../hooks/useNIP29Group.js', import.meta.url), 'utf8');
-  const queue = handler.indexOf("} else if (!allowsGroupJoins()) {");
-  const deny = handler.indexOf('denyPendingJoin(groupId, pk)');
-  const queueJoin = handler.indexOf('queuePendingJoin(groupId,');
-  assert.ok(queue !== -1 && deny !== -1 && queueJoin !== -1);
-  // The deny arm sits ahead of the queue arm: a Nobody setting refuses a
-  // first request durably before the queue can hold it.
-  assert.ok(queue < queueJoin);
+  // The setting feeds the one join decision, and the deny arm is handled
+  // ahead of the queue arm: a Nobody setting refuses a first request durably
+  // before the queue can hold it.
+  assert.ok(handler.includes('allowsJoins: allowsGroupJoins()'));
+  const deny = handler.indexOf("decision === 'deny'");
+  const queue = handler.indexOf("decision === 'queue'");
+  assert.ok(deny !== -1 && queue !== -1);
+  assert.ok(deny < queue);
+  assert.ok(handler.indexOf('denyPendingJoin(groupId, pk)', deny) < queue);
+  assert.equal(joinRequestDecision({ allowsJoins: false, inSnapshot: false }), 'deny');
   setPrivacy({ groups: 'everyone' });
   assert.equal(allowsGroupJoins(), true);
   const settings = fs.readFileSync(new URL('../components/chat/PrivacySettings.jsx', import.meta.url), 'utf8');
