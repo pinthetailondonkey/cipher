@@ -53,6 +53,9 @@ export function removeAccountVault(storage, pubkey) {
     storage.removeItem('cipher_handle');
   }
   if (!pubkey || storage.getItem('cipher_active_pubkey') === pubkey) storage.removeItem('cipher_active_pubkey');
+  // The device key's stored record goes with the vault it locked. (Keys held
+  // outside storage are destroyed by the caller: storage cannot reach them.)
+  if (pubkey) storage.removeItem(`cipher_devkey_${pubkey}`);
   resetPinFailures(storage, pubkey);
 }
 
@@ -82,6 +85,7 @@ export function removeAccountKeys(storage, pubkey) {
   const sharedScope = others.some((pk) => pk.slice(0, 8) === prefix);
   const exact = new Set([
     `cipher_passkey_${pubkey}`,
+    `cipher_devkey_${pubkey}`,
     pinFailureKey(pubkey),
     `cipher_my_groups_${pubkey.slice(0, 16)}`,
     `cipher_migrated_v1_${prefix}`,

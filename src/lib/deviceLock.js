@@ -120,3 +120,23 @@ export async function upgradeStoredVault({ storage, provider, pk, vault, pin, sk
   }
   return next;
 }
+
+// Destroys the device key of each account. Never throws and never waits
+// longer than timeoutMs: a wipe must finish even if a native store is slow.
+// Returns the accounts whose key could not be confirmed destroyed.
+export async function destroyDeviceKeys(provider, pubkeys, { timeoutMs = 2500 } = {}) {
+  if (!provider) return [];
+  const failed = [];
+  const one = async (pk) => {
+    try {
+      await Promise.race([
+        provider.destroy(pk),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), timeoutMs)),
+      ]);
+    } catch {
+      failed.push(pk);
+    }
+  };
+  await Promise.all(pubkeys.filter(Boolean).map(one));
+  return failed;
+}

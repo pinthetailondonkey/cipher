@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { decryptKey, encryptKey, isLegacyVault } from '../useIdentity.js';
-import { sealNewVault, upgradeStoredVault } from './deviceLock.js';
+import { destroyDeviceKeys, sealNewVault, upgradeStoredVault } from './deviceLock.js';
 import { DeviceKeyCancelled, DeviceKeyMissing, DeviceKeyUnavailable, isDeviceVault, makeSecretProvider } from './vaultEnvelope.js';
 
 const PK = 'd'.repeat(64);
@@ -199,4 +199,39 @@ test('an account opened without its PIN (by passkey) is wrapped as it is and the
     assert.deepEqual(await decryptKey(upgraded, PIN, { pk: PK, provider }), sk);
     assert.equal(storage.getItem('cipher_vault'), JSON.stringify(upgraded));
   }
+});
+
+test('after the device key is destroyed a copy of the old vault is dead ciphertext, even with the right PIN', async () => {
+  const { provider, secrets } = fakeProvider();
+  const sk = newSk();
+  const vault = await sealNewVault({ ...deps(provider), pk: PK, pin: PIN, skArray: sk });
+  const copy = JSON.parse(JSON.stringify(vault));
+  assert.deepEqual(await decryptKey(copy, PIN, { pk: PK, provider }), sk);
+  assert.deepEqual(await destroyDeviceKeys(provider, [PK]), []);
+  assert.equal(secrets.has(PK), false);
+  await assert.rejects(() => decryptKey(copy, PIN, { pk: PK, provider }), DeviceKeyMissing);
+});
+
+test('restoring over an account makes a fresh device key, so the old vault copy cannot open any more', async () => {
+  const { provider } = fakeProvider();
+  const sk = newSk();
+  const first = await sealNewVault({ ...deps(provider), pk: PK, pin: PIN, skArray: sk });
+  const second = await sealNewVault({ ...deps(provider), pk: PK, pin: '87654321', skArray: sk });
+  assert.deepEqual(await decryptKey(second, '87654321', { pk: PK, provider }), sk);
+  await assert.rejects(() => decryptKey(first, PIN, { pk: PK, provider }), DeviceKeyMissing);
+});
+
+test('destroying keys never throws, never hangs, and reports what it could not confirm', async () => {
+  const stuck = makeSecretProvider({
+    kind: 'prf',
+    available: async () => true,
+    enroll: async () => ({ k: 'prf', id: 'x' }),
+    getSecret: async () => new Uint8Array(32),
+    destroy: async (pk) => { if (pk === 'hang') await new Promise(() => {}); if (pk === 'boom') throw new Error('native'); },
+  });
+  const started = Date.now();
+  const failed = await destroyDeviceKeys(stuck, ['ok', 'hang', 'boom', ''], { timeoutMs: 50 });
+  assert.deepEqual(failed.sort(), ['boom', 'hang']);
+  assert.ok(Date.now() - started < 1000);
+  assert.deepEqual(await destroyDeviceKeys(null, ['a']), []);
 });

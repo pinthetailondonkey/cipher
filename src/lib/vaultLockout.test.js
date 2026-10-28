@@ -204,3 +204,27 @@ test('an upgrade that could not lock the account says nothing changed and points
   assert.match(deviceLockUpgradeMessage(new DeviceKeyUnavailable()), /12 words/);
   assert.match(deviceLockUpgradeMessage(new DeviceKeyMissing()), /12 words/);
 });
+
+test('the device key record goes with the account on a lockout and on removal, and only that account\'s', () => {
+  const vault = { v: 3 };
+  const seed = {
+    cipher_vaults: JSON.stringify({ pkaaaaaaaaaaaaaaaa: { vault }, pkbbbbbbbbbbbbbbbb: { vault } }),
+    cipher_vault: JSON.stringify(vault),
+    cipher_active_pubkey: 'pkaaaaaaaaaaaaaaaa',
+    cipher_devkey_pkaaaaaaaaaaaaaaaa: 'record-a',
+    cipher_devkey_pkbbbbbbbbbbbbbbbb: 'record-b',
+  };
+  const wiped = memoryStorage(seed);
+  for (let i = 0; i < 5; i += 1) failUnlockAttempt(wiped, 'pkaaaaaaaaaaaaaaaa', new Error('OperationError'));
+  assert.equal(wiped.getItem('cipher_devkey_pkaaaaaaaaaaaaaaaa'), null);
+  assert.equal(wiped.getItem('cipher_devkey_pkbbbbbbbbbbbbbbbb'), 'record-b');
+
+  const vaultOnly = memoryStorage(seed);
+  removeAccountVault(vaultOnly, 'pkaaaaaaaaaaaaaaaa');
+  assert.equal(vaultOnly.getItem('cipher_devkey_pkaaaaaaaaaaaaaaaa'), null);
+  assert.equal(vaultOnly.getItem('cipher_devkey_pkbbbbbbbbbbbbbbbb'), 'record-b');
+
+  const removed = memoryStorage(seed);
+  assert.ok(removeAccountKeys(removed, 'pkbbbbbbbbbbbbbbbb').includes('cipher_devkey_pkbbbbbbbbbbbbbbbb'));
+  assert.equal(removed.getItem('cipher_devkey_pkaaaaaaaaaaaaaaaa'), 'record-a');
+});

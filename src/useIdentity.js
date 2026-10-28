@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { LOCKED_OUT_MESSAGE, MIN_PIN_LENGTH, deviceKeyFailureMessage, deviceLockUpgradeMessage, failUnlockAttempt, isAcceptableNewPin, pinFailureMessage, removeAccountKeys, resetPinFailures } from './lib/vaultLockout'
 import { profileRelays as PROFILE_RELAYS } from './lib/relays'
 import { DeviceKeyMissing, getDeviceProvider, isDeviceKeyError, isDeviceVault, unwrapDeviceVault } from './lib/vaultEnvelope'
-import { sealNewVault, upgradeStoredVault } from './lib/deviceLock'
+import { destroyDeviceKeys, sealNewVault, upgradeStoredVault } from './lib/deviceLock'
 import { ensureDeviceProvider } from './lib/deviceProvider'
 
 // Derive 32-byte secret key from BIP39 mnemonic
@@ -279,9 +279,24 @@ export async function getMnemonicFromVault(sk, pk) {
   }
 }
 
+// The account's device key is destroyed wherever it lives (a passkey record,
+// the OS store, the Keystore). With the key gone, any old copy of the vault
+// is dead ciphertext: a wipe is then an erasure, not a deleted file.
+async function destroyDeviceKey(pubkey) {
+  if (!pubkey) return
+  try {
+    const failed = await destroyDeviceKeys(await ensureDeviceProvider(), [pubkey])
+    if (failed.length) console.error('[identity] The device key may remain on this device.')
+  } catch (error) {
+    console.error('[identity] Could not destroy the device key:', error)
+  }
+}
+
 // Storage cleanup happens inside failUnlockAttempt. The database needs IndexedDB.
+// Every path that removes an account (lockout, remove) also ends its device key.
 async function deleteLockedOutDatabase(pubkey) {
   if (!pubkey) return
+  await destroyDeviceKey(pubkey)
   try {
     const { deleteAccountDatabase } = await import('./db')
     if (!(await deleteAccountDatabase(pubkey))) {
@@ -374,7 +389,11 @@ export function useIdentity() {
     // Earlier abandoned drafts are not accounts: drop them so they never
     // pile up in the switcher or the counters that read this table.
     for (const key of Object.keys(vaults)) {
-      if (vaults[key]?.confirmed === false) delete vaults[key];
+      if (vaults[key]?.confirmed === false) {
+        delete vaults[key];
+        // The abandoned draft's device key goes with it.
+        await destroyDeviceKey(key);
+      }
     }
     vaults[pk] = {
       vault: encryptedLocal,
@@ -843,6 +862,11 @@ export function useIdentity() {
           await Promise.allSettled(keys.map(k => caches.delete(k)));
         } catch (e) {}
       }
+      // 3b. End every account's device key while the account list still exists
+      try {
+        const saved = Object.keys(JSON.parse(localStorage.getItem('cipher_vaults') || '{}'));
+        await destroyDeviceKeys(await ensureDeviceProvider(), saved);
+      } catch (e) { console.error('[panicWipe] Could not destroy device keys:', e); }
       // 4. Clear storage
       localStorage.clear();
       sessionStorage.clear();
