@@ -100,9 +100,9 @@ test('the listing send reports the outbox\'s real answer and keeps the form when
 
 test('the menu error state can ask the same loader again, one fetch at a time', () => {
   const menus = read('../Menus.jsx');
-  assert.match(menus, /const loadMenu = useCallback\(async \(\) => \{/);
+  assert.match(menus, /const loadMenus = useCallback\(async \(\) => \{/);
   assert.match(menus, /if \(loadingRef\.current\) return;/);
-  assert.match(menus, /onClick=\{\(\) => \{ haptic\('light'\); loadMenu\(\); \}\}/);
+  assert.match(menus, /onClick=\{\(\) => loadMenus\(\)\}/);
   assert.match(menus, />\s*Try again\s*</);
   assert.match(menus, /!loading && error/);
   assert.match(menus, /!loading && !error && sections\.length === 0/, 'a failed fetch never renders as an empty menu');
