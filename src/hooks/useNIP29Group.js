@@ -15,7 +15,7 @@ import { grantKeyRequest, loadMemberSnapshot, loadMemberSnapshotRecord, memberKe
 import { generateGroupKey } from '../lib/crypto/groupCipher';
 import { heldGroupRow } from '../lib/groupJoin';
 import { distributeGroupKey, epochsToBackfill } from '../lib/crypto/groupKeyDistribution';
-import { enqueueNostrEvent, startOutboxSync } from '../lib/outbox';
+import { publishWriteAhead, startOutboxSync } from '../lib/outbox';
 import { groupSocketUrl } from '../lib/egress';
 import { relaysForPeer } from '../lib/dmRelays';
 import { dropSecuringSend, forgetPendingKeyRequest, queueSecuringSend, rememberPendingKeyRequest, resetKeyRequest, securingSendsFor } from '../lib/crypto/groupKeyRequest';
@@ -659,14 +659,12 @@ export function useNIP29Group({ identity }) {
         tags,
         content: encoded.content,
       }, identity.sk);
-      try {
-        await publishAuthedGroupEvent(identity, event);
-        return { success: true, event, relayCount: 1 };
-      } catch (error) {
-        console.warn('[NIP29] Group relay did not accept the message after AUTH:', error);
-        await enqueueNostrEvent(event);
-        return { success: true, queued: true, event, relayCount: 0 };
-      }
+      // Write-ahead: the signed event is in the outbox before the relay is
+      // tried and leaves it on the first accept (publishWriteAhead).
+      const sent = await publishWriteAhead(event, null, () => [publishAuthedGroupEvent(identity, event)]);
+      if (!sent.queued) return { success: true, event, relayCount: 1 };
+      console.warn('[NIP29] Group relay did not accept the message after AUTH:', sent.results);
+      return { success: true, queued: true, event, relayCount: 0 };
     } catch (error) {
       console.error('[NIP29] Failed to send group message:', error);
       return { success: false, error: error?.message || 'Group message failed' };

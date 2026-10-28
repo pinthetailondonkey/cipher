@@ -5,7 +5,7 @@ import { showNotification } from '../lib/notifications';
 import { useChatStore } from '../store/chatStore';
 import { getAuthenticatedPool } from '../lib/pool';
 import { generalRelays, queryAllPages } from '../lib/relays';
-import { enqueueNostrEvent, startOutboxSync } from '../lib/outbox';
+import { publishWriteAhead, startOutboxSync } from '../lib/outbox';
 import { allowsTyping } from '../lib/privacy';
 import { publishOwnRelayList, relaysForPeer } from '../lib/dmRelays';
 import { sortMessages, stampArrival } from '../features/chat/media';
@@ -119,22 +119,25 @@ export function useNIP44DM({ identity }) {
       }, identity.sk);
 
       let targets = generalRelays.slice();
-      let results;
+      let pool = null;
       try {
-        const pool = await getAuthenticatedPool(identity);
+        pool = await getAuthenticatedPool(identity);
         publishOwnRelayList(identity).catch(() => {});
         targets = await relaysForPeer(identity, targetDm);
-        results = await Promise.allSettled(pool.publish(targets, event));
       } catch (publishError) {
         console.warn('[DM] Offline publish deferred to outbox:', publishError);
-        await enqueueNostrEvent(event, targets);
-        return { success: true, queued: true, event, relayCount: 0 };
       }
-      const okCount = results.filter(r => r.status === 'fulfilled').length;
-      if (okCount > 0) return { success: true, event, results, relayCount: okCount };
-      console.warn('[DM] All relays rejected:', results);
-      await enqueueNostrEvent(event, targets);
-      return { success: true, queued: true, event, results, relayCount: 0 };
+      // Write-ahead (see publishWriteAhead): the signed event is in the outbox
+      // before any relay is tried, so a close between sign and publish cannot
+      // lose it. Calls and read marks are ephemeral and keep the old order.
+      const ephemeral = payload?.type === 'call' || payload?.type === 'read';
+      const sent = await publishWriteAhead(event, targets, () => {
+        if (!pool) throw new Error('No relay connection yet.');
+        return pool.publish(targets, event);
+      }, { writeAhead: !ephemeral });
+      if (!sent.queued) return { success: true, event, results: sent.results, relayCount: sent.okCount };
+      console.warn('[DM] All relays rejected:', sent.results);
+      return { success: true, queued: true, event, results: sent.results, relayCount: 0 };
     } catch (err) {
       console.error('[useNIP44DM] Send failed:', err);
       return { success: false, error: err.message };
