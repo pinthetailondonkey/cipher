@@ -16,7 +16,7 @@ test('calls are off: an offer is refused, nothing rings, nothing routes', async 
   assert.equal(getCallSnapshot(), null);
 
   // A live offer from a modern or old peer: one reject back, no session, no ring.
-  await handleCallSignal({ data: { type: 'call', action: 'offer', callId: 'live', sdp: {} }, from: 'peer-c', known: true });
+  await handleCallSignal({ data: { type: 'call', action: 'offer', callId: 'live', sdp: {} }, from: 'peer-c', known: true, createdAt: Math.floor(Date.now() / 1000) });
   assert.equal(getCallSnapshot(), null);
   assert.equal(sent.length, 1);
   assert.equal(sent[0].payload.action, 'reject');
@@ -34,10 +34,32 @@ test('a stranger\'s call offer gets silence, not a signed reject', async () => {
   const sent = [];
   bindCallTransport(async (peer, payload) => { sent.push({ peer, payload }); return { success: true }; });
   const offer = { type: 'call', action: 'offer', callId: 'probe', sdp: {} };
-  await handleCallSignal({ data: offer, from: 'stranger' });
-  await handleCallSignal({ data: offer, from: 'stranger', known: false });
-  await handleCallSignal({ data: offer, from: 'stranger', known: 'yes' });
+  const now = Math.floor(Date.now() / 1000);
+  await handleCallSignal({ data: offer, from: 'stranger', createdAt: now });
+  await handleCallSignal({ data: offer, from: 'stranger', known: false, createdAt: now });
+  await handleCallSignal({ data: offer, from: 'stranger', known: 'yes', createdAt: now });
   assert.equal(sent.length, 0);
-  await handleCallSignal({ data: offer, from: 'friend', known: true });
+  await handleCallSignal({ data: offer, from: 'friend', known: true, createdAt: now });
+  assert.equal(sent.length, 1);
+});
+
+test('a call signal a relay held too long is dropped without a reply', async () => {
+  const sent = [];
+  bindCallTransport(async (peer, payload) => { sent.push({ peer, payload }); return { success: true }; });
+  const offer = { type: 'call', action: 'offer', callId: 'replayed', sdp: {} };
+  const now = Math.floor(Date.now() / 1000);
+
+  // Fresh: still one polite reject.
+  await handleCallSignal({ data: offer, from: 'friend', known: true, createdAt: now });
+  assert.equal(sent.length, 1);
+
+  // A minute and one second old, or hours old: dead on arrival, no reply.
+  await handleCallSignal({ data: offer, from: 'friend', known: true, createdAt: now - 61 });
+  await handleCallSignal({ data: offer, from: 'friend', known: true, createdAt: now - 3600 });
+  assert.equal(sent.length, 1);
+
+  // No readable timestamp at all: nothing can prove it is fresh.
+  await handleCallSignal({ data: offer, from: 'friend', known: true, createdAt: undefined });
+  await handleCallSignal({ data: offer, from: 'friend', known: true, createdAt: 'yesterday' });
   assert.equal(sent.length, 1);
 });

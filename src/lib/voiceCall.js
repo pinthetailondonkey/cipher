@@ -50,8 +50,17 @@ export function toggleMute() {}
 // A stranger gets nothing. A signed reply to a stranger's offer would tell
 // them our key is live and online, and would open a connection to their
 // relays on their say-so.
-export async function handleCallSignal({ data, from, known = false }) {
+//
+// A signal with no readable timestamp, or one a relay held for over a minute,
+// is dead on arrival: an offer that old cannot still be ringing anybody, and
+// answering a replay is the same free proof of life the stranger rule refuses.
+// The minute rides the event's own created_at, which the sender signed.
+const CALL_SIGNAL_MAX_AGE_SECONDS = 60;
+
+export async function handleCallSignal({ data, from, known = false, createdAt } = {}) {
   if (!data || data.action !== 'offer' || !from || known !== true) return;
+  const age = Math.floor(Date.now() / 1000) - Number(createdAt);
+  if (!Number.isFinite(age) || age > CALL_SIGNAL_MAX_AGE_SECONDS) return;
   try { await transport(from, { type: 'call', callId: data.callId, action: 'reject', reason: 'privacy' }); }
   catch { }
 }
