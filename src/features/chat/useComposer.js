@@ -5,6 +5,7 @@ import { scopedRemove } from '../../lib/storage';
 import { haptic } from '../../lib/haptics';
 import { sortMessages, stampArrival } from './media';
 import { sendOutcome } from '../../lib/sendOutcome';
+import { createRecordingSession } from './recordingSession';
 import { sendPrivateImage, uploadPrivateMedia } from '../../lib/mediaCrypto';
 import { blossomServers } from '../../lib/egress';
 
@@ -22,16 +23,35 @@ export function useComposer({ identity, sendDM, sendGroupMessage }) {
   const isRecording = useChatStore((s) => s.isRecording);
   const setIsRecording = useChatStore((s) => s.setIsRecording);
   const mediaRecorderRef = useRef(null);
-  const audioChunksRef = useRef([]);
   // A recording the person threw away must not upload on the way out. The
-  // recorder's own onstop still fires, so it reads this flag and returns.
-  const cancelledRef = useRef(false);
+  // recorder's own onstop still fires, so it asks the session it was born in.
+  // The answer lives with the session, not in the hook: a shared flag is
+  // cleared by the next recording and revives the cancelled one.
+  const sessionRef = useRef(null);
+  const beginSession = () => {
+    // A second start while one is running: the old session sends nothing and
+    // its microphone is let go here, so the device is never left listening.
+    const previous = mediaRecorderRef.current;
+    if (previous) {
+      try {
+        if (previous.state !== 'inactive') previous.stop();
+        previous.stream?.getTracks().forEach((track) => track.stop());
+      } catch { /* the old recorder is already gone */ }
+      mediaRecorderRef.current = null;
+    }
+    sessionRef.current?.supersede();
+    const session = createRecordingSession();
+    sessionRef.current = session;
+    return session;
+  };
   const chatMountedRef = useRef(false);
 
   useEffect(() => {
     chatMountedRef.current = true;
     return () => {
       chatMountedRef.current = false;
+      // Leaving the chat throws the recording away like Cancel does.
+      sessionRef.current?.cancel();
       const recorder = mediaRecorderRef.current;
       if (!recorder) return;
       recorder.ondataavailable = null;
@@ -228,14 +248,15 @@ export function useComposer({ identity, sendDM, sendGroupMessage }) {
         return;
       }
       const mediaRecorder = new MediaRecorder(stream);
+      const session = beginSession();
       mediaRecorderRef.current = mediaRecorder;
-      cancelledRef.current = false;
-      audioChunksRef.current = [];
-      mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) audioChunksRef.current.push(e.data); };
+      mediaRecorder.ondataavailable = (e) => { session.addChunk(e.data); };
       mediaRecorder.onstop = async () => {
-        if (cancelledRef.current) { cancelledRef.current = false; return; }
+        // Its own session decides: a cancelled one sends nothing, and one a
+        // newer recording replaced sends nothing either.
+        if (!session.shouldSend()) return;
         if (!chatMountedRef.current) return;
-        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+        const audioBlob = session.blob('audio/webm');
         const file = new File([audioBlob], 'voice_note.webm', { type: 'audio/webm' });
         setUploadingImage(true);
         setToast({ type: 'success', message: 'Uploading voice note...' });
@@ -271,9 +292,10 @@ export function useComposer({ identity, sendDM, sendGroupMessage }) {
   // the chunks are dropped before the recorder can hand them anywhere.
   const cancelRecording = () => {
     const recorder = mediaRecorderRef.current;
+    // The session is told even when the recorder is already gone, so a
+    // late onstop has an answer waiting for it.
+    sessionRef.current?.cancel();
     if (!recorder && !isRecording) return;
-    cancelledRef.current = true;
-    audioChunksRef.current = [];
     if (recorder) {
       if (recorder.state !== 'inactive') recorder.stop();
       recorder.stream.getTracks().forEach((track) => track.stop());
