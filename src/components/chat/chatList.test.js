@@ -291,19 +291,55 @@ test('the segmented filter selects a real segment and filters the rows', () => {
   assert.deepEqual(rowNames(rows).sort(), ['Green Room', 'Plain Pat', 'Times Square', 'Vendor Vic'], 'All restores the whole list');
 });
 
-test('the in-place filter and the network search are named for what they do', () => {
+test('one header line: the compose button starts a chat, the overflow keeps every other door', () => {
+  globalThis.window = globalThis.window || { setInterval: () => 0, clearInterval: () => {} };
+  seedStore();
+  const tree = createTree(app.ChatList, { onOpenChat: () => {}, onRefresh: () => {} });
+
+  let { hosts } = tree.render();
+  assert.equal(labelledButton(hosts, 'Open menu'), undefined, 'the phone drawer door is gone from the chat header');
+  assert.equal(labelledButton(hosts, 'Notifications'), undefined, 'the bell is not a second button beside the overflow');
+  assert.ok(labelledButton(hosts, 'Chat list menu'), 'one overflow button on the left');
+  assert.ok(labelledButton(hosts, 'New chat'), 'one compose button on the right');
+
+  labelledButton(hosts, 'Chat list menu').props.onClick({});
+  ({ hosts } = tree.render());
+  for (const label of ['New group', 'New menu', 'Burn note', 'Saved messages', 'Scan QR code', 'Notifications', 'Refresh chats']) {
+    assert.ok(labelledButton(hosts, label), `${label} must survive inside the overflow`);
+  }
+  assert.equal(labelledButton(hosts, 'Find someone'), undefined, 'no separate new-chat item competes with the compose button');
+
+  app.useChatStore.setState({ showCreateGroup: false });
+  labelledButton(hosts, 'New group').props.onClick({});
+  ({ hosts } = tree.render());
+  assert.equal(app.useChatStore.getState().showCreateGroup, true, 'New group opens the existing group screen');
+  assert.equal(labelledButton(hosts, 'Close menu'), undefined, 'the menu and its scrim are gone once an action is picked');
+
+  app.useChatStore.setState({ view: 'list' });
+  labelledButton(hosts, 'New chat').props.onClick({});
+  assert.equal(app.useChatStore.getState().view, 'search', 'the compose button opens the existing new-chat screen');
+  ({ hosts } = tree.render());
+  assert.equal(hosts.filter((host) => host.props.className && String(host.props.className).includes('inset-0')).length, 0, 'no scrim is left behind');
+});
+
+test('the filter field always sits under the title and narrows the list as it is typed', () => {
   globalThis.window = globalThis.window || { setInterval: () => 0, clearInterval: () => {} };
   seedStore();
   const tree = createTree(app.ChatList, { onOpenChat: () => {}, onRefresh: null });
 
-  let { hosts } = tree.render();
-  assert.ok(labelledButton(hosts, 'Filter chats'), 'the magnifier filters the chats already here');
-  assert.equal(labelledButton(hosts, 'Search chats'), undefined, 'the magnifier does not promise a network search');
+  let { hosts, rows } = tree.render();
+  const field = () => hosts.find((host) => host.tag === 'input' && host.props['aria-label'] === 'Filter chats');
+  assert.ok(field(), 'the filter field is on the screen without a tap');
+  assert.equal(labelledButton(hosts, 'Search chats'), undefined, 'no second search control competes with the field');
 
-  labelledButton(hosts, 'Chat list menu').props.onClick({});
-  ({ hosts } = tree.render());
-  assert.ok(labelledButton(hosts, 'Find someone'), 'the menu door that searches the network says so');
-  assert.equal(labelledButton(hosts, 'New chat'), undefined, 'no door claims a new chat when it opens a search');
+  field().props.onChange({ target: { value: 'green' } });
+  ({ hosts, rows } = tree.render());
+  assert.deepEqual(rowNames(rows), ['Green Room'], 'typing narrows the rows');
+
+  labelledButton(hosts, 'Clear filter').props.onClick({});
+  ({ hosts, rows } = tree.render());
+  assert.equal(field().props.value, '', 'the clear control empties the field');
+  assert.deepEqual(rowNames(rows).sort(), ['Green Room', 'Plain Pat', 'Times Square', 'Vendor Vic'], 'the whole list comes back');
 });
 
 test('the phone drawer is a dialog: Escape closes it, Tab stays inside, focus comes back', () => {

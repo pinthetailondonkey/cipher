@@ -11,7 +11,6 @@ import {
   ChevronDown,
   ChevronUp,
   Flame,
-  Menu,
   MessageSquare,
   MoreVertical,
   Pin,
@@ -19,6 +18,7 @@ import {
   QrCode,
   RefreshCw,
   Search,
+  SquarePen,
   Store,
   Users,
   X,
@@ -27,9 +27,7 @@ import { notifTotalOf, useChatStore } from '../../store/chatStore';
 import { boundReceipts } from '../../lib/vendorReviews';
 import { haptic } from '../../lib/haptics';
 import { noHexName } from '../../lib/npub';
-import Logo from '../Logo';
 import Avatar from '../ui/Avatar';
-import Button from '../ui/Button';
 import IconButton from '../ui/IconButton';
 import Segmented from '../ui/Segmented';
 import ListRow from '../ui/ListRow';
@@ -277,10 +275,12 @@ function ChatRow({
   );
 }
 
-// The chat list, Telegram anatomy with the cipher skin: logo chip + title,
-// in-place filter over the chats already here, kebab (Find someone / New
-// group / Burn note — the same actions the floating menu wires), segmented
-// filter, PINNED section, 64px rows, archived section.
+// The chat list, Telegram anatomy with the cipher skin: one 56px header
+// (overflow left, "Chats" middle, compose right), the filter over the chats
+// already here, the All / Menus / Vendors row, PINNED section, rows,
+// archived section. The floating plus is gone: the header's compose button
+// opens the same New chat screen, and the overflow carries every other door
+// the old icon row and the phone drawer used to hold.
 export default function ChatList({ onOpenChat, onRefresh }) {
   const dms = useChatStore((s) => s.dms);
   const groups = useChatStore((s) => s.groups);
@@ -294,19 +294,18 @@ export default function ChatList({ onOpenChat, onRefresh }) {
   const blockedUsers = useChatStore((s) => s.blockedUsers);
   const typingUsers = useChatStore((s) => s.typingUsers);
   const loading = useChatStore((s) => s.loading);
-  const setView = useChatStore((s) => s.setView);
   const setShowCreateGroup = useChatStore((s) => s.setShowCreateGroup);
+  const setIsChannel = useChatStore((s) => s.setIsChannel);
   const setShowDeadDrop = useChatStore((s) => s.setShowDeadDrop);
   const setVendorStorefrontPubkey = useChatStore((s) => s.setVendorStorefrontPubkey);
   const togglePinChat = useChatStore((s) => s.togglePinChat);
-  const setShowDrawer = useChatStore((s) => s.setShowDrawer);
+  const setView = useChatStore((s) => s.setView);
   const setShowBookmarks = useChatStore((s) => s.setShowBookmarks);
   const setShowNotifCenter = useChatStore((s) => s.setShowNotifCenter);
   const setShowQRScanner = useChatStore((s) => s.setShowQRScanner);
   const notifTotal = useChatStore(notifTotalOf);
 
   const [segment, setSegment] = useState('all');
-  const [searchOpen, setSearchOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [revealed, setRevealed] = useState(() => new Set());
   const [menuFor, setMenuFor] = useState(null);
@@ -486,108 +485,95 @@ export default function ChatList({ onOpenChat, onRefresh }) {
   const regularRows = shownChats.filter(c => !pinnedChats.includes(c.id));
 
   const listHeader = (
-    /* Header row: logo chip + title left, filter and kebab right. */
-    <div className="mb-2 flex items-center justify-between gap-2 pt-3 md:px-3">
-        <div className="flex min-w-0 items-center gap-2">
-          <Logo size={20} />
-          <h2 className="text-xl font-bold tracking-tight text-ink">Chats</h2>
-        </div>
-        {searchOpen ? (
-          <div className="flex min-w-0 flex-1 items-center gap-1">
-            <input
-              type="text"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Escape') { setSearchOpen(false); setQuery(''); }
-              }}
-              placeholder="Filter chats"
-              aria-label="Filter chats"
-              autoFocus
-              className="h-11 min-w-0 flex-1 rounded-full border border-line bg-panel px-4 text-[14px] text-ink outline-none focus:border-accent"
-            />
-            <IconButton
-              icon={<X size={18} />}
-              label="Close filter"
-              onClick={() => { setSearchOpen(false); setQuery(''); }}
-            />
-          </div>
-        ) : (
-          <div className="flex items-center">
-            <IconButton
-              icon={<Menu size={20} />}
-              label="Open menu"
-              className="md:hidden"
-              onClick={() => setShowDrawer(true)}
-            />
-            <span className="relative">
-              <IconButton
-                icon={<Bell size={20} />}
-                label="Notifications"
-                onClick={() => setShowNotifCenter(true)}
+    /* The founder's phone header, one 56px line: one overflow on the left,
+       the screen's name in the middle, one compose on the right. Everything
+       the old row of icons and the drawer did lives inside the overflow, so
+       every door still opens and nothing crowds the title. */
+    <div className="pt-safe md:px-3">
+      <div className="flex h-14 items-center gap-1">
+        <span className="relative">
+          <IconButton
+            icon={<MoreVertical size={22} />}
+            label="Chat list menu"
+            aria-expanded={headerMenuOpen}
+            aria-haspopup="menu"
+            onClick={() => setHeaderMenuOpen(!headerMenuOpen)}
+          />
+          {notifTotal > 0 && (
+            <span className="pointer-events-none absolute right-2 top-2 h-2 w-2 rounded-full bg-accent" aria-hidden="true" />
+          )}
+          {headerMenuOpen && (
+            <>
+              <button
+                type="button"
+                aria-label="Close menu"
+                onClick={() => setHeaderMenuOpen(false)}
+                className="fixed inset-0 z-fab cursor-default"
               />
-              {notifTotal > 0 && (
-                <span className="pointer-events-none absolute right-0.5 top-0.5 flex h-[14px] min-w-[14px] items-center justify-center rounded-full bg-accent px-1 text-[9px] font-bold text-accentInk">
-                  {notifTotal > 99 ? '99+' : notifTotal}
-                </span>
-              )}
-            </span>
-            {onRefresh && (
-              <IconButton
-                icon={<RefreshCw size={20} className={loading ? 'animate-spin' : undefined} />}
-                label="Refresh chats"
-                onClick={onRefresh}
-              />
-            )}
-            <IconButton
-              icon={<Search size={20} />}
-              label="Filter chats"
-              onClick={() => setSearchOpen(true)}
-            />
-            <span className="relative">
-              <IconButton
-                icon={<MoreVertical size={20} />}
-                label="Chat list menu"
-                aria-expanded={headerMenuOpen}
-                aria-haspopup="menu"
-                onClick={() => setHeaderMenuOpen(!headerMenuOpen)}
-              />
-              {headerMenuOpen && (
-                <>
-                  <button
-                    type="button"
-                    aria-label="Close menu"
-                    onClick={() => setHeaderMenuOpen(false)}
-                    className="fixed inset-0 z-fab cursor-default"
-                  />
-                  <div
-                    role="menu"
-                    onKeyDown={(e) => { if (e.key === 'Escape') setHeaderMenuOpen(false); }}
-                    className="absolute right-0 top-11 z-fab w-44 overflow-hidden rounded-xl border border-lineStrong bg-panelStrong shadow-lg"
-                  >
-                    {/* Same actors the floating menu wires — this kebab is the primary door. */}
-                    <MenuItem icon={<MessageSquare size={14} className="text-inkMuted" />} onClick={() => { setHeaderMenuOpen(false); setView('search'); }}>
-                      Find someone
-                    </MenuItem>
-                    <MenuItem icon={<Users size={14} className="text-inkMuted" />} onClick={() => { setHeaderMenuOpen(false); setShowCreateGroup(true); }}>
-                      New group
-                    </MenuItem>
-                    <MenuItem icon={<Flame size={14} className="text-inkMuted" />} onClick={() => { setHeaderMenuOpen(false); setShowDeadDrop(true); }}>
-                      Burn note
-                    </MenuItem>
-                    <MenuItem icon={<Bookmark size={14} className="text-inkMuted" />} onClick={() => { setHeaderMenuOpen(false); setShowBookmarks(true); }}>
-                      Saved messages
-                    </MenuItem>
-                    <MenuItem icon={<QrCode size={14} className="text-inkMuted" />} onClick={() => { setHeaderMenuOpen(false); setShowQRScanner(true); }}>
-                      Scan QR code
-                    </MenuItem>
-                  </div>
-                </>
-              )}
-            </span>
-          </div>
-        )}
+              <div
+                role="menu"
+                onKeyDown={(e) => { if (e.key === 'Escape') setHeaderMenuOpen(false); }}
+                className="absolute left-0 top-12 z-fab w-52 overflow-hidden rounded-xl border border-lineStrong bg-panelStrong shadow-lg"
+              >
+                {/* The one creation menu on this screen: opening it closes
+                    any row menu, and every action closes it before it
+                    navigates. */}
+                <MenuItem icon={<Users size={14} className="text-inkMuted" />} onClick={() => { setHeaderMenuOpen(false); setShowCreateGroup(true); }}>
+                  New group
+                </MenuItem>
+                <MenuItem icon={<Store size={14} className="text-inkMuted" />} onClick={() => { setHeaderMenuOpen(false); setIsChannel(true); setShowCreateGroup(true); }}>
+                  New menu
+                </MenuItem>
+                <MenuItem icon={<Flame size={14} className="text-inkMuted" />} onClick={() => { setHeaderMenuOpen(false); setShowDeadDrop(true); }}>
+                  Burn note
+                </MenuItem>
+                <MenuItem icon={<Bookmark size={14} className="text-inkMuted" />} onClick={() => { setHeaderMenuOpen(false); setShowBookmarks(true); }}>
+                  Saved messages
+                </MenuItem>
+                <MenuItem icon={<QrCode size={14} className="text-inkMuted" />} onClick={() => { setHeaderMenuOpen(false); setShowQRScanner(true); }}>
+                  Scan QR code
+                </MenuItem>
+                <MenuItem icon={<Bell size={14} className="text-inkMuted" />} onClick={() => { setHeaderMenuOpen(false); setShowNotifCenter(true); }}>
+                  Notifications
+                </MenuItem>
+                {onRefresh && (
+                  <MenuItem icon={<RefreshCw size={14} className={loading ? 'animate-spin' : 'text-inkMuted'} />} onClick={() => { setHeaderMenuOpen(false); onRefresh(); }}>
+                    Refresh chats
+                  </MenuItem>
+                )}
+              </div>
+            </>
+          )}
+        </span>
+        <h2 className="min-w-0 flex-1 truncate text-center text-xl font-semibold tracking-tight text-ink">Chats</h2>
+        <IconButton
+          icon={<SquarePen size={22} />}
+          label="New chat"
+          onClick={() => setView('search')}
+        />
       </div>
+      <div className="pb-2">
+        <div className="flex h-11 items-center gap-2 rounded-full border border-line bg-panel px-4">
+          <Search size={16} className="shrink-0 text-inkSubtle" aria-hidden="true" />
+          <input
+            type="text"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Escape') setQuery(''); }}
+            placeholder="Filter chats"
+            aria-label="Filter chats"
+            className="h-11 min-w-0 flex-1 bg-transparent text-[14px] text-ink placeholder-inkSubtle outline-none"
+          />
+          {query && (
+            <IconButton
+              icon={<X size={16} />}
+              label="Clear filter"
+              onClick={() => setQuery('')}
+            />
+          )}
+        </div>
+      </div>
+    </div>
   );
 
   // The early screens (loading skeleton, empty state) render the header
@@ -609,10 +595,11 @@ export default function ChatList({ onOpenChat, onRefresh }) {
     return (
       <div className="px-4 pb-4">
         {listHeader}
+        {/* The compose button sits on this screen too, so the empty state
+            adds no second door of its own. */}
         <EmptyState
           icon={<MessageSquare size={24} />}
           title="No chats yet — your first message starts the cipher"
-          action={<Button size="md" onClick={() => setView('search')}>Find someone</Button>}
         />
       </div>
     );
