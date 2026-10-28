@@ -71,7 +71,13 @@ prove, and what they do not:
   entry is still there afterwards. EXECUTED.
 - A missing vault answers "No local vault found" and spends none. EXECUTED.
 - A local restore (handle + PIN) keeps `mnemonicEnc`, `deviceEnvelope`,
-  `displayName`, `createdAt` and `confirmed`. EXECUTED.
+  `displayName`, `createdAt` and `confirmed`. EXECUTED. Precision, from
+  AUDITOR and re-measured here: `mnemonicEnc` is written only into an entry
+  (`useIdentity.js:343`, `:676`), so the legacy single-vault fallback has no
+  words to lose; and `deviceEnvelope` appears in no production source on this
+  branch — only in these two tests, planted to prove the merge is
+  field-preserving. The merge is the right shape for the device-lock work;
+  today it protects one field that exists (`mnemonicEnc`).
 - A vault with whole `iv`/`data` but a damaged `salt` still reads as a wrong
   PIN and spends an attempt: GCM cannot tell that from a bad PIN. Recorded
   as measured, not as a promise. EXECUTED.
@@ -99,6 +105,10 @@ requiring a platform authenticator would hide the door for roaming keys.
   `release/*` on origin. Packet: `/tmp/audit-cand/REVIEW.md`. It caught three
   evidence-file errors, all corrected above: the stale gates entry name, "five"
   where there are nine commits, and row 4 called fixed when it is partial.
+- AUDITOR, delta check: `e1cdc54^ = 61f35c0`, docs only, 45+/7−; its 61f35c0
+  gates carry to this candidate. It asked to carry two additions, both
+  re-measured here: `vaultEntry` merge and the restore test are "not defects,
+  checked, stands"; `deviceEnvelope` is test-only on this branch.
 - OPSEC, transport: onion 80 open / 443 dead, clearnet 443 refused / 8080
   open; preference, overrides and "off" unchanged; no automatic clearnet
   fallback, no TLS bypass. Socket OPEN is not group messaging — no lane has
