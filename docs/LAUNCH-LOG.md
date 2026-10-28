@@ -177,7 +177,7 @@ Still open, and each one needs a decision rather than code:
 
 - **Safety numbers never change.** `markSafetyChange` has no caller. There is no handle-to-key map in the app to hang a trigger on, so wiring one would mean inventing the trigger. Question: should a changed safety number be raised on opening a chat with a known key, and is a toast enough?
 - **Escrow stays off.** `ESCROW_WIRING_LANDED = false` in `src/components/MessageBubble.jsx`. Nothing was wired.
-- **Live host is 887 commits behind** the current `main` as of 2026-10-28; the check and its evidence are in README.md.
+- **Live host is 887 commits behind** the current `main` as of 2026-10-28; the check and its evidence are in README.md. Resolved in Phase 10: the cause was a redirect to a second Vercel project that had stopped deploying, and the live page is now this build.
 - **`cipher-70` never filed a report** for the work it took.
 
 
@@ -190,3 +190,70 @@ Rebased onto `e409f97` after the boss tab's MessageBubble work; one line of hist
 - **D2, Block from the profile sheet — already built, no change.** Button `src/components/ProfileModal.jsx:104`, persisted list `src/store/chatStore.js:232`, Blocked screen `src/components/chat/PrivacySettings.jsx:93`.
 - `416584b` — **C1, stale call signals dropped.** An offer whose `created_at` is over 60 seconds old, or unreadable, gets silence instead of a reject (`src/lib/voiceCall.js:58`); proven in `src/lib/voiceCall.test.js:46`. Receive side only; the call button and `startCall` untouched.
 - **P2, DVM search — closed, no code.** The block `docs/AUDIT-2.md:228` flagged (signed kind-5315 to the group relays) was already deleted in `0d00d42`, and `src/lib/egress.test.js:134` asserts the search path never publishes. NIP-50 already targets the Connections search rows (`src/features/chat/usePeopleSearch.js:92`, set at `src/lib/egress.js:41`). Accepted as closed by the founder, 2026-10-28.
+
+## Phase 10 — the front door, at `6ca5f27` (2026-10-28)
+
+### The cause of the staleness
+
+Not failing builds, not a disconnected integration, not a wrong branch. There were **two Vercel projects built from this same repo**:
+
+- `cipher` — the one `.vercel/repo.json` links to. It built `main` on every push, green. Latest production before this work: `594cac4`, 2026-10-28 05:00Z.
+- `sonic-cobalt-4m6q5vj` — a second project on the same repo. **Its last deployment was 2026-10-24 19:25Z at `f392dca`.** It stopped deploying and kept answering.
+- `cipher-shop` — a third copy, deployed 2 days earlier.
+
+`vercel.json` sent `cipher`'s production name, `cipher-beta-eight.vercel.app`, to `sonic`. So every push built correctly into `cipher`, and every visitor was then handed to the project that had frozen on 24 October. `main` was 909 commits past the served build.
+
+Proof the pipeline itself was sound, without a deploy: the live deployment of `594cac4` served `assets/index-C-deVjni.js`, and a clean local build of that same commit produced `index-C-deVjni.js`. Identical.
+
+### The bind
+
+`ciphermessenger.org` was registered 2026-10-27 at Tucows, zone on Cloudflare (`cesar`/`vera.ns.cloudflare.com`), and bound to the `cipher` project on 2026-10-28.
+
+**The canonical address is `https://www.ciphermessenger.org`.** The bare name answers `308` and forwards to it. This is the inverse of the usual arrangement and it is deliberate for now: Vercel issued the redirect that way when both names were added, and the founder ruled on 2026-10-28 that `www` stays primary and the order follows it. **Do not "fix" it back.** If the direction is ever reversed, it is a dashboard change on the domain entry, and the README, `src/lib/egress.js` and `scripts/verify-live.mjs`'s default all follow it.
+
+### Three checks, verbatim
+
+Deployed `dpl_FyRxwahNWfouREB7TuQooxniHJbr` — **https://cipher-leck6tmem-cipher.vercel.app**, aliased to `https://www.ciphermessenger.org`. This is the rollback: `vercel alias set cipher-leck6tmem-cipher.vercel.app www.ciphermessenger.org`.
+
+```
+verify:live — https://www.ciphermessenger.org
+  final       https://www.ciphermessenger.org/
+  status      200
+  title       Cipher
+  built here  index-B_8vez9N.js
+  served      index-B_8vez9N.js
+verify:live — the live page is this build.            exit 0
+
+verify:live — https://ciphermessenger.org
+  redirect    308 https://ciphermessenger.org/ -> https://www.ciphermessenger.org/
+  final       https://www.ciphermessenger.org/
+  status      200
+  title       Cipher
+  built here  index-B_8vez9N.js
+  served      index-B_8vez9N.js
+verify:live — the live page is this build.            exit 0
+
+verify:live — https://cipher-beta-eight.vercel.app
+  redirect    308 https://cipher-beta-eight.vercel.app/ -> https://ciphermessenger.org/
+  redirect    308 https://ciphermessenger.org/ -> https://www.ciphermessenger.org/
+  final       https://www.ciphermessenger.org/
+  status      200
+  title       Cipher
+  built here  index-B_8vez9N.js
+  served      index-B_8vez9N.js
+verify:live — the live page is this build.            exit 0
+```
+
+### Deletions
+
+`sonic-cobalt-4m6q5vj` and `cipher-shop` were deleted after the three passes. `sonic-cobalt-4m6q5vj.vercel.app` now answers `404`. `cipher` is the only project left, and its production URL is `https://www.ciphermessenger.org`.
+
+### A deploy run by hand uploaded the machine, not the repo
+
+The first `npx vercel deploy --prod` read 3.3 GB from disk and had not finished after ten minutes: the Git integration ships the tracked tree, but a CLI deploy uploads the working directory, and this one carried `desktop/dist` (3.0 GB of installers) and eighteen agent worktrees (2.7 GB). `.vercelignore` now excludes both, so a by-hand deploy takes under two minutes and sends the same set the pipeline does.
+
+### Known gaps
+
+- **No install files.** `/download` was claimed to be a page pointing at them. It is not: `public/` holds icons, `manifest.json` and `sw.js` only, and the catch-all rewrite answers `/download` — and every other path — with the app. The README now says it is not built.
+- **No staging environment.** Every deploy is production. There is nowhere to see a change running before people do.
+- **Deploys are by hand, and nothing stops a merge from landing undeployed.** The Git integration does deploy `main`, but nothing asserts it: the four-day freeze was found by hand, not by a check. `npm run verify:live` closes part of this — it catches a live page that is not this build — but it has to be run.
