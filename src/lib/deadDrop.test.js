@@ -69,6 +69,9 @@ test('the link host comes from the egress registry', () => {
   const entry = entryById('dead-drop');
   assert.ok(entry, 'dead-drop egress entry exists');
   assert.ok(noteOrigin(), 'noteOrigin resolves');
+  // The host has to serve a page that opens a note. The app host does: the
+  // app parses path /note and reads the key from the fragment.
+  assert.equal(entry.url, entryById('app-host').url);
 });
 
 test('note hash is sha256 of the key', async () => {
@@ -325,4 +328,39 @@ test('the writer opening its own note still asks relays to drop it', async () =>
   await openDeadDropNote({ identity: buyer, fragment: url.split('#')[1], pool, relays });
   await new Promise((r) => setTimeout(r, 10));
   assert.equal(pool.published[before].kind, 5);
+});
+
+// Synthetic end-to-end for both link shapes the app hands out. No network: the
+// fake pool stands in for the relay, so what is checked is the link the app
+// builds and the reader's own open, not a relay's answer.
+test('a generated standalone note link lands on the app host and opens for its reader', async () => {
+  const pool = fakePool();
+  const relays = ['wss://relay.test'];
+  const { url, hash } = await createDeadDropNote({ identity: buyer, text: '12 Elm St', pool, relays });
+
+  const link = new URL(url);
+  assert.equal(link.origin, entryById('app-host').url);
+  assert.equal(link.pathname, '/note');
+  assert.equal(link.search, '', 'the key rides in the fragment, never in the query');
+  assert.ok(link.hash.length > 1, 'the fragment carries the key');
+  assert.ok(!url.includes(hash), 'the relay lookup hash stays out of the link');
+
+  // What useChatBootstrap does with a pasted link: take the fragment, open it.
+  const opened = await openDeadDropNote({ identity: vendor, fragment: link.hash.slice(1), pool, relays });
+  assert.equal(opened.text, '12 Elm St');
+});
+
+test('a generated checkout delivery link opens for the vendor who was sent it', async () => {
+  const pool = fakePool();
+  const relays = ['wss://relay.test'];
+  const { url } = await createDeadDropNote({ identity: buyer, text: '12 Elm St', pool, relays });
+
+  // OneTapCheckout puts the url on the order event as delivery.note; the
+  // vendor's screen (useCommerce, open_delivery_note) takes the fragment from
+  // it and asks for the buyer's own event only.
+  const order = { pubkey: buyer.pk, data: { delivery: { note: url } } };
+  const fragment = String(order.data.delivery.note).split('#')[1] || '';
+  assert.ok(fragment);
+  const opened = await openDeadDropNote({ identity: vendor, fragment, pool, relays, author: order.pubkey, hold: true });
+  assert.equal(opened.text, '12 Elm St');
 });

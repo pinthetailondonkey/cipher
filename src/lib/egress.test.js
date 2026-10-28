@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
-import { EGRESS, blossomServers, groupRelayHttp, isOnionUrl, listEgress, readNetworkConfig, urlsFor } from './egress.js';
+import { EGRESS, blossomServers, entryById, groupRelayHttp, isOnionUrl, listEgress, readNetworkConfig, urlsFor } from './egress.js';
 
 function walk(dir, out = []) {
   for (const name of fs.readdirSync(dir)) {
@@ -31,8 +31,20 @@ const GRANDFATHERED_CLEARNET = new Map([
   ['blossom-nostr-build', 'https://nostr.build'],
   ['blossom-band', 'https://blossom.band'],
   ['link-preview', 'https://api.microlink.io'],
-  ['dead-drop', 'https://cipherlinkhere.com'],
 ]);
+
+// The burn-note row was grandfathered on a placeholder address that never
+// resolved, so every link it built was dead on arrival. It now names the app
+// host, which serves /note — the page that actually opens a note — and like
+// every other clearnet row the founder named, it carries the gate.
+test('the burn-note link points at the app host that serves the note page', () => {
+  const note = entryById('dead-drop');
+  const app = entryById('app-host');
+  assert.ok(note && app);
+  assert.equal(note.url, app.url);
+  assert.equal(note.gate, 'founder');
+  assert.equal(new URL(note.url).hostname, 'www.ciphermessenger.org');
+});
 
 test('a clearnet row the founder never named does not ship', () => {
   for (const entry of EGRESS) {
