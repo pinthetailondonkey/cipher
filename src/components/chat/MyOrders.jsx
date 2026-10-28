@@ -85,13 +85,18 @@ export default function MyOrders({ dms = null, profiles = null, onBack, onOpenCh
               const product = message.data.product || message.data;
               return (
                 <div key={message.id} className="last:border-b-0 border-b border-line">
-                  <button type="button" onClick={() => onOpenChat?.(peerPubkey)} className="flex min-h-[64px] w-full items-center gap-3 px-4 py-2 text-left active:bg-ink/5">
-                    <Picture src={product.image} alt="" loading="lazy" className="h-10 w-10 shrink-0 rounded-xl object-cover" fallback={<span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-panelAlt text-inkMuted"><Package size={16} /></span>} />
-                    <span className="min-w-0 flex-1">
-                      <span className="flex items-baseline justify-between gap-2">
-                        <span className="block truncate text-[15px] font-semibold text-ink">{product.title || product.name || 'Order'}</span>
+                  {/* One compact row, the same rhythm as a chat row: picture,
+                      what was bought, who from, when, and the status it is at. */}
+                  <button type="button" onClick={() => onOpenChat?.(peerPubkey)} className="flex min-h-[72px] w-full items-center gap-3 px-4 py-2.5 text-left active:bg-ink/5">
+                    <Picture src={product.image} alt="" loading="lazy" className="h-12 w-12 shrink-0 rounded-xl object-cover" fallback={<span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-panelAlt text-inkMuted"><Package size={18} /></span>} />
+                    <span className="flex min-w-0 flex-1 items-center gap-2">
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-[16px] font-semibold text-ink">{product.title || product.name || 'Order'}</span>
+                        <span className="mt-0.5 block truncate text-[14px] text-inkMuted">{names[peerPubkey]?.displayName || names[peerPubkey]?.name || (isVendor ? 'Buyer' : 'Seller')}</span>
+                      </span>
+                      <span className="flex shrink-0 flex-col items-end gap-1">
                         {message.timestamp && (
-                          <span className="shrink-0 text-[11px] font-medium text-inkSubtle">
+                          <span className="text-[12px] font-medium text-inkSubtle">
                             {new Date(message.timestamp * 1000).toLocaleDateString([], { month: 'short', day: 'numeric' })}
                           </span>
                         )}
@@ -105,27 +110,32 @@ export default function MyOrders({ dms = null, profiles = null, onBack, onOpenCh
                       </span>
                     </span>
                   </button>
-                  {/* The menu door is the buyer's: it opens the seller's
-                      menu. On incoming rows the peer is a buyer — they have
-                      no menu — so the door does not show. The row's own
-                      direction says which is which, not the mode. */}
-                  {isBuyer && (
-                    <button
-                      type="button"
-                      onClick={() => { haptic('light'); useChatStore.getState().setVendorStorefrontPubkey(peerPubkey); }}
-                      className="flex min-h-[44px] w-full items-center gap-1.5 px-4 pb-1 text-[13px] font-semibold text-accentText"
-                    >
-                      <Store size={14} /> View menu
-                    </button>
-                  )}
-                  {countersigned && (
-                    <button
-                      type="button"
-                      onClick={() => { haptic('light'); setReceipt(message.id); }}
-                      className="flex min-h-[44px] w-full items-center gap-1.5 px-4 pb-1 text-[13px] font-semibold text-accentText"
-                    >
-                      <ReceiptText size={14} /> View receipt
-                    </button>
+                  {/* The row's secondary doors sit on one line under it, so a
+                      row with both does not stack two bands of height. */}
+                  {(isBuyer || countersigned) && (
+                    <div className="flex gap-1 px-4 pb-1">
+                      {/* The menu door is the buyer's: it opens the seller's
+                          menu. On vendor rows the peer is a buyer — they
+                          have no menu — so the door does not show. */}
+                      {isBuyer && (
+                        <button
+                          type="button"
+                          onClick={() => { haptic('light'); useChatStore.getState().setVendorStorefrontPubkey(peerPubkey); }}
+                          className="flex min-h-[44px] items-center gap-1.5 pr-3 text-[13px] font-semibold text-accentText"
+                        >
+                          <Store size={14} /> View menu
+                        </button>
+                      )}
+                      {countersigned && (
+                        <button
+                          type="button"
+                          onClick={() => { haptic('light'); setReceipt(message.id); }}
+                          className="flex min-h-[44px] items-center gap-1.5 pr-3 text-[13px] font-semibold text-accentText"
+                        >
+                          <ReceiptText size={14} /> View receipt
+                        </button>
+                      )}
+                    </div>
                   )}
                 </div>
               );
