@@ -108,6 +108,7 @@ export default function VendorMenuHome({ open, onClose, vendorPubkey, profiles =
           summary={standing.summary}
           loading={standing.loading}
           onBack={() => setPage('menu')}
+          onViewMenu={() => setPage('menu')}
         />
       </section>
     );

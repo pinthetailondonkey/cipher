@@ -44,6 +44,7 @@ export default function VendorProfilePage({
   summary = { count: 0, average: '0.0' },
   loading = false,
   onBack,
+  onViewMenu,
 }) {
   const { sendRider } = useReputation({ identity });
   const [draft, setDraft] = useState(null);
@@ -105,8 +106,8 @@ export default function VendorProfilePage({
       </header>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-8">
-        {onBack && (
-          <Button variant="secondary" fullWidth className="mt-3" onClick={onBack} leadingIcon={<Store size={16} />}>
+        {onViewMenu && (
+          <Button variant="secondary" fullWidth className="mt-3 w-full" onClick={onViewMenu} leadingIcon={<Store size={16} />}>
             View menu
           </Button>
         )}
