@@ -94,3 +94,13 @@ component and its assertions.
 The parallel rebuild re-skins every screen, so pixel baselines taken today
 would misfire at the merge. describe.skip with a TODO referencing that merge;
 re-enable when the shell lands.
+
+### 9. Four tabs, not three (15.1, 2026-10-28)
+UI-SPEC (founder, 2026-10-28) supersedes master §2's old "3 tabs stay" line:
+the shell has four primary destinations in a fixed order — Chats | Menus |
+Orders | Profile. The one source is src/lib/tabs.js; the below-md bottom bar,
+the md+ rail and the command palette all map it, so the three navs can never
+disagree. The id `explore` keeps its engineering name (palette ids, boot deep
+links, tests) while the label the user reads is Menus. Badges ride Chats
+(unread) and Orders (needs action) only; the bar hides inside a conversation.
+The drawer keeps what the bar does not cover: Groups, Connections, Lock now.

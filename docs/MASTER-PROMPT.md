@@ -92,9 +92,11 @@ Type scale (on 15px base): page titles 22/26 bold tracking-tight, row titles
 
 ## 2 · NAVIGATION SHELL
 
-3 tabs stay: Chats, Discover, Profile (rail labels md+).
-- Mobile (<md): keep the side Drawer as overflow navigation only (Chats with
-  unread badge, Menus, Orders, Groups, Connections, Lock now) — anatomy:
+4 tabs (UI-SPEC 2026-10-28, fixed order): Chats | Menus | Orders | Profile —
+one set, src/lib/tabs.js, mapped by both navs; md+ rail labels ⌘1–⌘4.
+- Mobile (<md): a persistent bottom bar carries the four (badges on Chats
+  and Orders only, hidden inside a conversation); the side Drawer is
+  overflow navigation (Groups, Connections, Lock now) — anatomy:
   320px panel, glass-header over scroll, profile card top (avatar 56, name,
   @handle, verified icon = reset trust row), sections with lucide icons,
   active pill bg-accent-soft. Keep onNavigate(tab, mode, startView) +
