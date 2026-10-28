@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { ORDER_STATUS } from './lib/paymentState';
-import { Search, ChevronRight, ShoppingBag } from 'lucide-react';
+import { Search, ChevronRight, ShoppingBag, X } from 'lucide-react';
 import OneTapCheckout from './components/OneTapCheckout';
 import { useNIP44DM } from './hooks/useNIP44DM';
 import { useChatStore } from './store/chatStore';
@@ -32,8 +32,10 @@ const APP_HOST_URL = entryById('app-host')?.url || '';
 
 function MenuTile({ item, onBuy, onCopyLink }) {
   return (
-    <article className="rounded-3xl border border-line bg-panelStrong p-2">
-      <div className="relative h-28 w-full overflow-hidden rounded-2xl bg-ink/5">
+    <article className="rounded-2xl border border-line bg-panelStrong p-2">
+      {/* One ratio for every card, so the grid reads as one shelf however
+          tall the source pictures are. */}
+      <div className="relative aspect-[4/3] w-full overflow-hidden rounded-xl bg-ink/5">
         <Picture
           src={item.image}
           alt=""
@@ -42,13 +44,13 @@ function MenuTile({ item, onBuy, onCopyLink }) {
           fallback={<div className="flex h-full w-full items-center justify-center text-inkSubtle"><ShoppingBag size={28} /></div>}
         />
       </div>
-      <div className="px-1.5 pb-1 pt-3">
+      <div className="px-1.5 pb-1 pt-2.5">
         <p className="truncate text-[15px] font-semibold text-ink">{item.name}</p>
-        <p className="text-[13px] font-bold text-accentText">{priceLabel(item.price, item.currency)}</p>
+        <p className="text-[14px] font-bold text-accentText">{priceLabel(item.price, item.currency)}</p>
         <button
           type="button"
           onClick={() => { haptic('heavy'); onBuy?.(item); }}
-          className="mt-3 flex min-h-[44px] w-full items-center justify-center rounded-2xl bg-accent py-2 text-[13px] font-bold text-accentInk"
+          className="mt-2.5 flex min-h-[44px] w-full items-center justify-center rounded-xl bg-accent py-2 text-[14px] font-bold text-accentInk"
         >
           Buy
         </button>
@@ -82,7 +84,7 @@ export default function Menus({ identity, setActiveTab }) {
   // One loader, named so the error state can call it again. The ref guard
   // stops a second tap from starting a fetch while the first is still out.
   const loadingRef = useRef(false);
-  const loadMenu = useCallback(async () => {
+  const loadMenus = useCallback(async () => {
     if (loadingRef.current) return;
     loadingRef.current = true;
     setLoading(true);
@@ -109,16 +111,16 @@ export default function Menus({ identity, setActiveTab }) {
       pool.close(generalRelays);
     } catch (fetchError) {
       console.error('Failed to fetch marketplace:', fetchError);
-      setError('Could not load this menu. Check your connection and try again.');
-    } finally {
+      setError('Could not load menus. Check your connection and try again.');
       loadingRef.current = false;
+    } finally {
       setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    loadMenu();
-  }, [loadMenu]);
+    loadMenus();
+  }, [loadMenus]);
 
   // The share link is built on the canonical app host the egress table names,
   // not on this window's origin: inside the desktop build the origin is a
@@ -203,42 +205,65 @@ export default function Menus({ identity, setActiveTab }) {
 
   return (
     <div className="flex h-full w-full flex-col bg-transparent">
-      <div className="px-4 pb-3 pt-2">
-        <div className="flex items-center gap-2 rounded-2xl border border-line bg-panelStrong px-4 py-3">
-          <Search size={16} className="text-inkMuted" />
+      {/* The same 44px filter field the chat list wears: 16px side margins,
+          one 12px corner, magnifier left, clear on the right once there is
+          text. It narrows the menus already loaded here. */}
+      <div className="px-4 pb-2">
+        <div className="flex h-11 items-center gap-2 rounded-xl border border-line bg-panel px-3">
+          <Search size={16} className="shrink-0 text-inkSubtle" aria-hidden="true" />
           <input
             type="text"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder="Search"
-            className="flex-1 bg-transparent text-[15px] text-ink placeholder:text-inkSubtle focus:outline-none"
+            onKeyDown={(event) => { if (event.key === 'Escape') setQuery(''); }}
+            placeholder="Filter menus"
+            aria-label="Filter menus"
+            className="h-11 min-w-0 flex-1 bg-transparent text-[14px] text-ink placeholder-inkSubtle outline-none"
           />
+          {query && (
+            <button
+              type="button"
+              aria-label="Clear filter"
+              onClick={() => setQuery('')}
+              className="flex h-11 w-11 shrink-0 items-center justify-center text-inkSubtle"
+            >
+              <X size={16} />
+            </button>
+          )}
         </div>
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto pb-4">
         {loading && (
-          <div className="mt-16 px-4">
-            <SkeletonGrid cols={4} />
+          <div className="mt-2 px-4">
+            <SkeletonGrid cols={2} itemClass="aspect-[4/3]" />
           </div>
         )}
+        {/* A failed load is its own state with its own door: it must not read
+            as an empty menu, and the try again is the loader's own. */}
         {!loading && error && (
-          <div className="mx-4 mt-2 rounded-2xl border border-line bg-panel px-4 py-16 text-center">
+          <div className="mx-4 mt-2 rounded-2xl border border-line bg-panel px-4 py-12 text-center">
             <p className="text-[15px] font-semibold text-ink">Menus unavailable</p>
-            <p className="mt-1 text-[13px] text-ink/40">{error}</p>
+            <p className="mt-1 text-[13px] text-inkMuted">{error}</p>
             <button
               type="button"
-              onClick={() => { haptic('light'); loadMenu(); }}
-              className="mt-4 min-h-[44px] rounded-full border border-line px-5 text-[13px] font-bold text-accentText"
+              onClick={() => loadMenus()}
+              className="mt-4 inline-flex min-h-[44px] items-center justify-center rounded-xl bg-accent px-4 text-[14px] font-bold text-accentInk"
             >
               Try again
             </button>
           </div>
         )}
         {!loading && !error && sections.length === 0 && (
-          <EmptyState icon={<ShoppingBag size={28} />} title="Nothing on the menu yet">
-            Check back later, or open Discover to find vendors.
-          </EmptyState>
+          queryText ? (
+            <EmptyState icon={<ShoppingBag size={28} />} title="Nothing matches that filter">
+              Clear the filter to see every menu.
+            </EmptyState>
+          ) : (
+            <EmptyState icon={<ShoppingBag size={28} />} title="No menus yet">
+              Menus vendors publish show up here. Open Discover to find vendors.
+            </EmptyState>
+          )
         )}
         {!loading && sections.map(([vendor, items]) => {
           const vendorName = noHexName(profiles[vendor], vendor);
