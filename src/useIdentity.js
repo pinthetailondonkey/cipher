@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { LOCKED_OUT_MESSAGE, MIN_PIN_LENGTH, failPinAttempt, isAcceptableNewPin, isDamagedVault, pinFailureMessage, removeAccountKeys, resetPinFailures } from './lib/vaultLockout'
 import { profileRelays as PROFILE_RELAYS } from './lib/relays'
 import { runPanicWipe } from './lib/panicWipe'
+import { mergeRestoredEntry } from './lib/vaultEntry'
 
 // Derive 32-byte secret key from BIP39 mnemonic
 export async function deriveSkFromMnemonic(mnemonic) {
@@ -614,18 +615,16 @@ export function useIdentity() {
 
       if (targetPk && pk !== targetPk) throw new Error('Invalid PIN');
 
-      // Update multi-account store just in case it was legacy
+      // Update multi-account store just in case it was legacy. The entry keeps
+      // everything it already held — the encrypted 12 words above all — so a
+      // restore never leaves an account this device can open but cannot
+      // recover from.
       const newVaults = getVaults();
-      newVaults[pk] = {
+      newVaults[pk] = mergeRestoredEntry(newVaults[pk], {
         vault: targetVault,
-        handle: handle,
-        displayName: newVaults[pk]?.displayName || handle,
-        createdAt: newVaults[pk]?.createdAt || Date.now(),
-        // This path only re-admits accounts the user can already PIN-unlock
-        // on this device — keep any prior confirm; pre-fix installs wrote no
-        // flag and were all finished accounts, so absent = granted here.
-        confirmed: true,
-      };
+        handle,
+        now: Date.now(),
+      });
       saveVaults(newVaults);
 
       setActivePubkey(pk);
