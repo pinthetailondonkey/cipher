@@ -1,5 +1,7 @@
 import { toHex, fromHex } from './groupCipher';
-import { recordGrant, getGrantedEpochsFor, getCurrentGroupKey, putGroupKey } from './groupKeyStore';
+import { recordGrant, getGrantedEpochsFor, getCurrentGroupKey, getAllGroupKeys, putGroupKey } from './groupKeyStore';
+import { isGroupAdmin, trustedGroupCreator } from './groupMembership';
+import { getMyGroups } from '../myGroups';
 import { currentOwner } from '../../db';
 import { loadMemberSnapshot } from './groupKeyRotation';
 import { isJoinDenied } from '../groupJoinQueue';
@@ -53,22 +55,64 @@ export function parseGroupKeyBundle(payload) {
 // epoch-0 rollback verified end-to-end in the repro), which made one
 // roster row worth a full key takeover. The epoch rule is uniform now:
 // installReceivedGroupKey refuses any rollback for everyone.
-export function senderAuthorizedForGroupKey({ snapshot, sender, maxEpoch, currentEpoch }) {
+//
+// Audit finding (any member can force any epoch): standing as a member of
+// record used to be enough to install a key at ANY epoch at or above the
+// held one, so one ordinary member could ship a key they knew and move the
+// whole group onto it. The rule now is by what the bundle does:
+//   - no key held yet (the first key, which this device asked for - see the
+//     floor in installReceivedGroupKey): a member of record, as before;
+//   - a bundle that only restates or backfills epochs at or below the held
+//     one: a member of record, as before (installReceivedGroupKey separately
+//     refuses to overwrite any held epoch with different bytes);
+//   - a bundle that carries an epoch ABOVE the held one is a rotation, and
+//     only the creator or an admin rotates. The new epochs must also run on
+//     from the held one with no gap (held+1, held+2, ...): a jump past the
+//     next epoch is refused, so a sender cannot park the group at a number
+//     of their choosing. A device that missed a rotation catches up through
+//     its own key request, which is answered with every epoch it lacks.
+export function senderAuthorizedForGroupKey({ snapshot, sender, maxEpoch, currentEpoch, creator = '', offeredEpochs = null }) {
   if (!sender || !Array.isArray(snapshot)) return false;
   const row = snapshot.find((member) => {
     const pubkey = typeof member === 'string' ? member : member?.pubkey;
     return String(pubkey || '').toLowerCase() === String(sender).toLowerCase();
   });
   if (!row) return false;
-  return !(Number.isInteger(currentEpoch) && Number.isInteger(maxEpoch) && maxEpoch < currentEpoch);
+  if (!Number.isInteger(currentEpoch) || !Number.isInteger(maxEpoch)) return true;
+  if (maxEpoch < currentEpoch) return false;
+  if (maxEpoch === currentEpoch) return true;
+  const who = String(sender).toLowerCase();
+  const standing = snapshot.map((member) => (typeof member === 'string' ? { pubkey: member.toLowerCase() } : { ...member, pubkey: String(member?.pubkey || '').toLowerCase() }));
+  if (!isGroupAdmin(standing, who, String(creator || '').toLowerCase())) return false;
+  if (Array.isArray(offeredEpochs)) {
+    const above = new Set(offeredEpochs.filter((epoch) => epoch > currentEpoch));
+    for (let epoch = currentEpoch + 1; epoch <= maxEpoch; epoch += 1) {
+      if (!above.has(epoch)) return false;
+    }
+  } else if (maxEpoch !== currentEpoch + 1) {
+    return false;
+  }
+  return true;
 }
 
-export async function senderMayInstallGroupKey({ sender, groupId, maxEpoch }) {
+// Never overwrite an epoch this device already holds with different bytes.
+// An honest re-delivery or backfill restates the held bytes; a mismatch on
+// ANY held epoch (not just the current one) closes the whole bundle.
+export function conflictingHeldEpoch(rows, held) {
+  const bytes = new Map((held || []).map((item) => [item.epoch, String(item.hex || '').toLowerCase()]));
+  const hit = (rows || []).find((row) => bytes.has(row.epoch) && bytes.get(row.epoch) !== String(row.hex || '').toLowerCase());
+  return hit ? hit.epoch : null;
+}
+
+export async function senderMayInstallGroupKey({ sender, groupId, maxEpoch, offeredEpochs = null }) {
   if (!sender || !groupId) return false;
   const snapshot = await loadMemberSnapshot(groupId);
   if (!Array.isArray(snapshot)) return false;
   const current = await getCurrentGroupKey(groupId);
-  return senderAuthorizedForGroupKey({ snapshot, sender, maxEpoch, currentEpoch: current?.epoch });
+  const owner = currentOwner();
+  const claimed = (getMyGroups(owner).find((group) => group?.id === groupId) || {}).creator;
+  const creator = trustedGroupCreator({ creator: claimed, identityPk: owner, snapshot });
+  return senderAuthorizedForGroupKey({ snapshot, sender, maxEpoch, currentEpoch: current?.epoch, creator, offeredEpochs });
 }
 
 export async function installReceivedGroupKey(payload, sender = null) {
@@ -101,7 +145,7 @@ export async function installReceivedGroupKey(payload, sender = null) {
     console.warn('[group-key] A key bundle was not installed: this device has not asked this group for a key.', { groupId, epoch: maxEpoch });
     return false;
   }
-  const authorized = await senderMayInstallGroupKey({ sender, groupId, maxEpoch });
+  const authorized = await senderMayInstallGroupKey({ sender, groupId, maxEpoch, offeredEpochs: rows.map((row) => row.epoch) });
   if (!authorized) {
     console.warn('[group-key] A key bundle was not installed: sender is not authorized for this group.', { groupId, epoch: maxEpoch });
     return false;
@@ -115,8 +159,10 @@ export async function installReceivedGroupKey(payload, sender = null) {
   // the same epoch number, which the rollback guard never sees. Honest
   // backfills re-state the held epoch with the held bytes, so only a byte
   // mismatch closes the whole bundle.
-  if (current && rows.some((row) => row.epoch === current.epoch && row.hex !== toHex(current.bytes))) {
-    console.warn('[group-key] A key bundle was not installed: it re-states the held epoch with different bytes.', { groupId, epoch: current.epoch });
+  const heldRows = (await getAllGroupKeys(groupId)).map((item) => ({ epoch: item.epoch, hex: toHex(item.bytes) }));
+  const conflict = conflictingHeldEpoch(rows, heldRows);
+  if (conflict !== null) {
+    console.warn('[group-key] A key bundle was not installed: it re-states a held epoch with different bytes.', { groupId, epoch: conflict });
     return false;
   }
   // The safety flag rides the install that changed key material, after
