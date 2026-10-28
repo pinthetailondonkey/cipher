@@ -178,30 +178,41 @@ const stubTable = (tableName) => ({
   filter: () => ({ toArray: () => Promise.resolve([]) }),
 });
 
+// A Dexie query on the messages table. `where(index)` returns a WhereClause,
+// and `.equals()` / `.between()` / `.anyOf()` on it return the Collection that
+// finally reads rows: every step is wrapped, so rows leave opened. Wrapping
+// only the first step (as it once was) handed the raw sealed rows to every
+// `where(...).equals(...).toArray()` caller, which then saw a shell with no
+// data, no deliveryStatus and no order fields.
+const isQuery = (value) => !!value && typeof value === 'object' && (typeof value.toArray === 'function' || typeof value.equals === 'function');
+export function openQuery(query) {
+  return new Proxy(query, {
+    get(_t, member) {
+      switch (member) {
+        case 'first': return (...a) => query.first(...a).then((row) => (row ? openMessageRow(row) : row));
+        case 'toArray': return () => query.toArray().then((rows) => Promise.all(rows.map(openMessageRow)));
+        case 'sortBy': return (...a) => query.sortBy(...a).then((rows) => Promise.all(rows.map(openMessageRow)));
+        case 'each': return (cb) => query.each(async (row, cursor) => cb(await openMessageRow(row), cursor));
+        case 'modify': return () => Promise.reject(new Error('Messages are sealed at rest; modify() cannot be used on the messages table.'));
+        default: {
+          const v = query[member];
+          if (typeof v !== 'function') return v;
+          return (...a) => {
+            const result = v.apply(query, a);
+            return isQuery(result) ? openQuery(result) : result;
+          };
+        }
+      }
+    },
+  });
+}
+
 // One message read or write through the at-rest layer (src/lib/messageAtRest.js).
 const queryMessages = (table) => ({
   get: (id) => table.get(id).then((row) => (row ? openMessageRow(row) : row)),
   bulkGet: (ids) => table.bulkGet(ids).then((rows) => Promise.all(rows.map(openMessageRow))),
   toArray: () => table.toArray().then((rows) => Promise.all(rows.map(openMessageRow))),
-  where: (...args) => {
-    const collection = table.where(...args);
-    return new Proxy(collection, {
-      get(_t, member) {
-        switch (member) {
-          case 'first': return (...a) => collection.first(...a).then((row) => (row ? openMessageRow(row) : row));
-          case 'toArray': return () => collection.toArray().then((rows) => Promise.all(rows.map(openMessageRow)));
-          case 'sortBy': return (...a) => collection.sortBy(...a).then((rows) => Promise.all(rows.map(openMessageRow)));
-          case 'each': return (cb) => collection.each(async (row, cursor) => cb(await openMessageRow(row), cursor));
-          case 'filter': return (...a) => collection.filter(...a);
-          case 'modify': return () => Promise.reject(new Error('Messages are sealed at rest; modify() cannot be used on the messages table.'));
-          default: {
-            const v = collection[member];
-            return typeof v === 'function' ? v.bind(collection) : v;
-          }
-        }
-      },
-    });
-  },
+  where: (...args) => openQuery(table.where(...args)),
 });
 
 // One message put through the at-rest layer. Without the vault key the row is
