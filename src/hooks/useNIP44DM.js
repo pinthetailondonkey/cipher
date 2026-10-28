@@ -222,7 +222,10 @@ export function useNIP44DM({ identity }) {
               if (data.type === 'call') {
                 if (!isSender) {
                   const { handleCallSignal } = await import('../lib/voiceCall');
-                  await handleCallSignal({ data, from: counterparty, eventId: event.id, createdAt: event.created_at });
+                  // Only someone we have written to gets the refusal; a stranger's offer gets silence.
+                  const thread = useChatStore.getState().dms?.[counterparty] || [];
+                  const known = thread.some((message) => message?.isSender);
+                  await handleCallSignal({ data, from: counterparty, known, eventId: event.id, createdAt: event.created_at });
                 }
                 return;
               }

@@ -241,3 +241,88 @@ test('held-open and discarded leaves the note as it was — a failed save can re
   const del = pool.published.find((e) => e.kind === 5);
   assert.ok(del, 'the burn still publishes the delete request');
 });
+
+// ————— a stranger cannot shadow or poison a note —————
+
+const { finalizeEvent, getPublicKey } = await import('nostr-tools');
+const buyerSk = new Uint8Array(32).fill(7);
+const vendorSk = new Uint8Array(32).fill(8);
+const attackerSk = new Uint8Array(32).fill(9);
+const buyer = { sk: buyerSk, pk: getPublicKey(buyerSk) };
+const vendor = { sk: vendorSk, pk: getPublicKey(vendorSk) };
+
+// Honors the authors filter like a relay does, and records every filter.
+function filteringPool() {
+  const pool = fakePool();
+  pool.filters = [];
+  const base = pool.querySync;
+  pool.querySync = async (relays, filter) => {
+    pool.filters.push(filter);
+    const rows = await base(relays, filter);
+    return filter.authors ? rows.filter((e) => filter.authors.includes(e.pubkey)) : rows;
+  };
+  return pool;
+}
+
+function squat(pool, hash, sk, content = 'AAAA') {
+  const event = finalizeEvent({
+    kind: NOTE_KIND,
+    created_at: Math.floor(Date.now() / 1000) + 3600,
+    tags: [['d', hash]],
+    content,
+  }, sk);
+  pool.published.push(event);
+  return event;
+}
+
+test('a newer event from a stranger on the same d tag cannot make the buyer\'s note look altered', async () => {
+  const pool = filteringPool();
+  const relays = ['wss://relay.test'];
+  const { url, hash } = await createDeadDropNote({ identity: buyer, text: '12 Elm St', pool, relays });
+  squat(pool, hash, attackerSk);
+  const fragment = url.split('#')[1];
+  // The vendor knows the buyer from the chat and asks for that key only.
+  const opened = await openDeadDropNote({ identity: vendor, fragment, pool, relays, author: buyer.pk, hold: true });
+  assert.equal(opened.text, '12 Elm St');
+  assert.deepEqual(pool.filters.at(-1).authors, [buyer.pk]);
+});
+
+test('a relay that ignores the authors filter is not trusted, and a bare link skips what its key cannot open', async () => {
+  const pool = fakePool(); // ignores authors on purpose
+  const relays = ['wss://relay.test'];
+  const { url, hash } = await createDeadDropNote({ identity: buyer, text: 'real', pool, relays });
+  squat(pool, hash, attackerSk);
+  const fragment = url.split('#')[1];
+  assert.equal((await openDeadDropNote({ identity: vendor, fragment, pool, relays, author: buyer.pk, hold: true })).text, 'real');
+  assert.equal((await openDeadDropNote({ identity: vendor, fragment, pool, relays, hold: true })).text, 'real');
+  // Only a stranger's event exists for that author: nothing to open.
+  const lone = filteringPool();
+  const made = await createDeadDropNote({ identity: { sk: attackerSk }, text: 'planted', pool: lone, relays });
+  await assert.rejects(
+    () => openDeadDropNote({ identity: vendor, fragment: made.url.split('#')[1], pool: lone, relays, author: buyer.pk }),
+    /gone|never/,
+  );
+});
+
+test('a reader\'s burn marks the local ledger only; relays would ignore its delete, so none is sent', async () => {
+  const pool = filteringPool();
+  const relays = ['wss://relay.test'];
+  const { url, hash } = await createDeadDropNote({ identity: buyer, text: 'for the vendor', pool, relays });
+  const before = pool.published.length;
+  const opened = await openDeadDropNote({ identity: vendor, fragment: url.split('#')[1], pool, relays, author: buyer.pk, hold: true });
+  assert.equal(deadDropConsumed(hash), false, 'held open until the caller burns');
+  await opened.burn();
+  await new Promise((r) => setTimeout(r, 10));
+  assert.equal(deadDropConsumed(hash), true);
+  assert.equal(pool.published.length, before, 'no kind-5 from a key that did not sign the note');
+});
+
+test('the writer opening its own note still asks relays to drop it', async () => {
+  const pool = filteringPool();
+  const relays = ['wss://relay.test'];
+  const { url } = await createDeadDropNote({ identity: buyer, text: 'mine', pool, relays });
+  const before = pool.published.length;
+  await openDeadDropNote({ identity: buyer, fragment: url.split('#')[1], pool, relays });
+  await new Promise((r) => setTimeout(r, 10));
+  assert.equal(pool.published[before].kind, 5);
+});

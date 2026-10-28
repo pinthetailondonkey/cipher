@@ -159,7 +159,7 @@ export default function OneTapCheckout({ product, open = true, onConfirmOrder, o
           <p className="text-[13px] leading-relaxed text-inkMuted">
             Your address goes to the vendor once, sealed — never into the chat,
             <br />
-            never off your phone any other way. The note burns after they open it.
+            never off your phone any other way. The note will not open again on their phone.
           </p>
           {DELIVERY_FIELDS.map((spec) => (
             <DeliveryField

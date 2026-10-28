@@ -44,10 +44,14 @@ export async function hangup() {}
 export function toggleMute() {}
 
 // Old peers may still ring us with a call offer. Answering silence would leave
-// their side ringing until it gives up — instead each offer is politely
-// refused, so they learn the same thing this screen does: calls are off here.
-export async function handleCallSignal({ data, from }) {
-  if (!data || data.action !== 'offer' || !from) return;
+// their side ringing until it gives up — so a person we already talk to (the
+// caller passes known: true only when we have sent them a message) is politely
+// refused and learns the same thing this screen does: calls are off here.
+// A stranger gets nothing. A signed reply to a stranger's offer would tell
+// them our key is live and online, and would open a connection to their
+// relays on their say-so.
+export async function handleCallSignal({ data, from, known = false }) {
+  if (!data || data.action !== 'offer' || !from || known !== true) return;
   try { await transport(from, { type: 'call', callId: data.callId, action: 'reject', reason: 'privacy' }); }
   catch { }
 }

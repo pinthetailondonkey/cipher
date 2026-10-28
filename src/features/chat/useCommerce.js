@@ -93,7 +93,7 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
           import('../../lib/deadDrop'),
           import('../../lib/deliveryAddress'),
         ]);
-        const opened = await openDeadDropNote({ identity, fragment, pool, relays: generalRelays, hold: true });
+        const opened = await openDeadDropNote({ identity, fragment, pool, relays: generalRelays, hold: true, author: msg.pubkey });
         const { form, misses } = deliveryFromNoteText(opened.text);
         if (misses.length) {
           setToast({ type: 'error', message: `${misses[0].message} Nothing was saved, and the note is still open.` });
@@ -108,7 +108,7 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
           return true;
         }
         await opened.burn();
-        setToast({ type: 'success', message: 'Address saved. The note is burned.' });
+        setToast({ type: 'success', message: 'Address saved. The note will not open again on this device.' });
         setSelectedMessage(null);
         return true;
       } catch (error) {
