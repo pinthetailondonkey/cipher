@@ -7,7 +7,7 @@ import { createRequire } from 'node:module';
 
 // Desktop code is CommonJS (electron's main); tests read it without electron.
 const require = createRequire(import.meta.url);
-const { createUiServer, MIME } = require('../src/uiServer.js');
+const { createUiServer, MIME, CSP } = require('../src/uiServer.js');
 
 function makeFixtureDist() {
   const dist = fs.mkdtempSync(path.join(os.tmpdir(), 'cipher-ui-'));
@@ -28,7 +28,7 @@ function get(url) {
       let body = '';
       res.setEncoding('utf8');
       res.on('data', (chunk) => { body += chunk; });
-      res.on('end', () => resolve({ status: res.statusCode, type: res.headers['content-type'], body }));
+      res.on('end', () => resolve({ status: res.statusCode, type: res.headers['content-type'], headers: res.headers, body }));
     });
     req.on('error', reject);
     req.end();
@@ -131,4 +131,50 @@ test('the mime map is the spike exactly, and unknown types fall back', () => {
     '.webp': 'image/webp',
     '.wasm': 'application/wasm',
   });
+});
+
+test('a sibling folder that shares the dist prefix is not reachable (defense in depth: normalize already eats the climb)', async () => {
+  const dist = makeFixtureDist();
+  const sibling = `${dist}-old`;
+  fs.mkdirSync(sibling);
+  fs.writeFileSync(path.join(sibling, 'secret.txt'), 'sibling-secret');
+  const ui = createUiServer(dist, 0);
+  await new Promise((r) => ui.listen(r));
+  const base = `http://127.0.0.1:${ui.address().port}`;
+  try {
+    for (const p of [`/../${path.basename(sibling)}/secret.txt`, `/..%2F${path.basename(sibling)}%2Fsecret.txt`]) {
+      const res = await get(`${base}${p}`);
+      assert.equal(res.status, 404, p);
+      assert.equal(res.body, '', p);
+    }
+  } finally {
+    ui.close();
+    fs.rmSync(dist, { recursive: true, force: true });
+    fs.rmSync(sibling, { recursive: true, force: true });
+  }
+});
+
+test('every answer carries the security headers, errors included', async () => {
+  const dist = makeFixtureDist();
+  const ui = createUiServer(dist, 0);
+  await new Promise((r) => ui.listen(r));
+  const base = `http://127.0.0.1:${ui.address().port}`;
+  try {
+    for (const p of ['/', '/assets/app.js', '/nope.txt', '/%zz']) {
+      const res = await get(`${base}${p}`);
+      assert.equal(res.headers['content-security-policy'], CSP, p);
+      assert.equal(res.headers['x-content-type-options'], 'nosniff', p);
+      assert.equal(res.headers['referrer-policy'], 'no-referrer', p);
+    }
+  } finally {
+    ui.close();
+    fs.rmSync(dist, { recursive: true, force: true });
+  }
+});
+
+test('the CSP allows no calls and no framing', () => {
+  assert.doesNotMatch(CSP, /stun|turn/);
+  assert.match(CSP, /frame-ancestors 'none'/);
+  assert.match(CSP, /object-src 'none'/);
+  assert.doesNotMatch(CSP, /'unsafe-eval'/);
 });
