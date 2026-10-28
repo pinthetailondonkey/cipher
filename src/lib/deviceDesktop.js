@@ -13,7 +13,7 @@ const KIND = 'safe';
 
 const bridge = () => (typeof window === 'undefined' ? undefined : window.cipherDeviceKey);
 
-const UNAVAILABLE_CODES = ['not-available', 'basic-text', 'no-safe-storage', 'unreadable'];
+const UNAVAILABLE_CODES = ['not-available', 'basic-text', 'no-safe-storage', 'unreadable', 'replace-refused'];
 
 function typed(result) {
   if (result?.ok === true) return result;
@@ -35,14 +35,27 @@ export const desktopProvider = {
       return false;
     }
   },
-  async enroll(pk) {
-    return typed(await bridge().enroll(pk)).dk;
+  // The same rule as the main process, in the page's words: an existing key
+  // is reused and never overwritten; replacing one is refused until a
+  // verified flow exists.
+  async enroll(pk, options) {
+    return typed(await bridge().enroll(pk, options)).dk;
   },
   async seal(pk, dk, bytes, aad) {
     return typed(await bridge().seal(pk, dk?.id, bytes, aad)).blob;
   },
   async open(pk, dk, blob, aad) {
     return typed(await bridge().open(pk, dk?.id, blob, aad)).bytes;
+  },
+  // True only when this device already holds a key for the account. Never
+  // throws: a page without the bridge simply holds none.
+  async hasKey(pk) {
+    try {
+      const result = await bridge()?.has(pk);
+      return result?.ok === true && result.has === true;
+    } catch {
+      return false;
+    }
   },
   async destroy(pk, dk) {
     await typed(await bridge().destroy(pk, dk?.id));

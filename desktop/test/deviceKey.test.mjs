@@ -66,6 +66,26 @@ test('enroll writes one sealed file for that account only', (t) => {
   assert.equal(backend.enroll('short').code, 'bad-account');
 });
 
+test('a second enroll reuses the key instead of overwriting it, and replacement is refused', (t) => {
+  const { dir, backend } = freshBackend(t);
+  assert.equal(backend.enroll(PK).ok, true);
+  const file = path.join(dir, `devkey-${PK}.bin`);
+  const first = fs.readFileSync(file);
+  // The same account enrolled again: the file is untouched, because a vault
+  // may already be wrapped under it.
+  assert.equal(backend.enroll(PK).ok, true);
+  assert.deepEqual(fs.readFileSync(file), first);
+  assert.equal(backend.has(PK).has, true);
+  // Replacing a working key has no verified flow yet, so it is refused
+  // rather than done silently.
+  const refused = backend.enroll(PK, { replace: true });
+  assert.equal(refused.ok, false);
+  assert.equal(refused.code, 'replace-refused');
+  assert.deepEqual(fs.readFileSync(file), first);
+  // An account this device does not know reports no key.
+  assert.equal(backend.has('cd'.repeat(32)).has, false);
+});
+
 test('seal and open round-trip, and nothing else opens it', (t) => {
   const { backend } = freshBackend(t);
   const aad = Buffer.from(`cipher-vault-3|${PK}|safe`);

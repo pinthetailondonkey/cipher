@@ -64,7 +64,9 @@ test('enroll, seal, open and destroy cross the bridge with the same shapes', () 
   await desktopProvider.destroy(pk, dk);
 
   const byAsk = Object.fromEntries(calls.map(([ask, ...rest]) => [ask, rest]));
-  assert.deepEqual(byAsk.enroll, [pk]);
+  // enroll now carries the options through, so the main process can refuse a
+  // replacement instead of overwriting a key this device already holds.
+  assert.deepEqual(byAsk.enroll, [pk, undefined]);
   assert.deepEqual(byAsk.seal, [pk, 'cipher-devkey', bytes, aad]);
   assert.deepEqual(byAsk.open, [pk, 'cipher-devkey', blob, aad]);
   assert.equal(byAsk.destroy[0], pk);

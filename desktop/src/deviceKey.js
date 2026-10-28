@@ -93,10 +93,24 @@ function createDeviceKeyBackend({ safeStorage, fs, dir, randomBytes, platform = 
       return problem ? { ok: false, code: problem } : { ok: true };
     },
 
-    enroll(pk) {
+    // A key this device already holds is REUSED, never overwritten. Writing a
+    // fresh secret over a key that an existing vault is wrapped under would
+    // make that vault unopenable, and the vault is only replaced after this
+    // returns — so the old key has to survive every path out of here.
+    enroll(pk, options) {
       if (!isAccountKey(pk)) return badAccount();
       const problem = storageProblem(safeStorage, platform);
       if (problem) return unavailable(problem);
+      if (secretFor(pk)) {
+        if (options?.replace) {
+          // Replacing a working key needs a verified, consented flow that
+          // stages the new key and commits it with the new vault. There is
+          // none yet, and doing it anyway is the overwrite this guard exists
+          // to stop.
+          return { ok: false, code: 'replace-refused', message: 'This account already has a key on this device, and replacing one is not done without a verified flow.' };
+        }
+        return { ok: true, dk: { k: 'safe', id: DEVKEY_ID } };
+      }
       const secret = randomBytes(32);
       try {
         fs.mkdirSync(dir, { recursive: true });
@@ -143,6 +157,14 @@ function createDeviceKeyBackend({ safeStorage, fs, dir, randomBytes, platform = 
       }
     },
 
+    // Does this device already hold a key for the account? Asked before an
+    // upgrade so a failure afterwards knows it must NOT destroy the key the
+    // stored vault depends on.
+    has(pk) {
+      if (!isAccountKey(pk)) return badAccount();
+      return { ok: true, has: !!secretFor(pk) };
+    },
+
     destroy(pk) {
       if (!isAccountKey(pk)) return badAccount();
       try {
@@ -166,9 +188,10 @@ function registerDeviceKeyIpc({ ipcMain, backend, isAllowed }) {
     return handler(...args);
   };
   ipcMain.handle('cipher-device-key:available', guard(() => backend.available()));
-  ipcMain.handle('cipher-device-key:enroll', guard((pk) => backend.enroll(pk)));
+  ipcMain.handle('cipher-device-key:enroll', guard((pk, options) => backend.enroll(pk, options)));
   ipcMain.handle('cipher-device-key:seal', guard((pk, id, plain, aad) => backend.seal(pk, id, plain, aad)));
   ipcMain.handle('cipher-device-key:open', guard((pk, id, blob, aad) => backend.open(pk, id, blob, aad)));
+  ipcMain.handle('cipher-device-key:has', guard((pk) => backend.has(pk)));
   ipcMain.handle('cipher-device-key:destroy', guard((pk) => backend.destroy(pk)));
 }
 

@@ -8,8 +8,9 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('cipherDeviceKey', {
   available: () => ipcRenderer.invoke('cipher-device-key:available'),
-  enroll: (pk) => ipcRenderer.invoke('cipher-device-key:enroll', pk),
+  enroll: (pk, options) => ipcRenderer.invoke('cipher-device-key:enroll', pk, options),
   seal: (pk, id, plain, aad) => ipcRenderer.invoke('cipher-device-key:seal', pk, id, plain, aad),
   open: (pk, id, blob, aad) => ipcRenderer.invoke('cipher-device-key:open', pk, id, blob, aad),
+  has: (pk) => ipcRenderer.invoke('cipher-device-key:has', pk),
   destroy: (pk) => ipcRenderer.invoke('cipher-device-key:destroy', pk),
 });

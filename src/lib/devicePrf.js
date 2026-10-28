@@ -83,11 +83,26 @@ export const prfProvider = makeSecretProvider({
   },
   // Makes the passkey and the wrapped secret. Needs a person at the screen:
   // the browser asks for their fingerprint, face or security key.
-  async enroll(pk) {
+  //
+  // A record this device already holds is REUSED, never overwritten: a vault
+  // is wrapped under that secret, and the vault is only replaced after this
+  // returns, so a fresh secret here would strand the stored vault. Replacing
+  // a working key needs a verified, consented flow that stages the new key
+  // and commits it with the new vault; there is none yet, so it is refused
+  // rather than done silently.
+  async enroll(pk, enrollOptions) {
     const problem = prfEnvironmentProblem();
     if (problem) throw new DeviceKeyUnavailable(problem);
     const lib = await readPasskeyLib();
-    const options = { rpName: 'Cipher', userName: 'cipher device lock', displayName: 'Cipher device lock', storageKey: prfStorageKey(pk) };
+    const storageKey = prfStorageKey(pk);
+    if (lib.hasStoredPasskeyIdentity({ storageKey })) {
+      if (enrollOptions?.replace) throw new DeviceKeyUnavailable('replace-refused');
+      // Reading the existing secret proves the authenticator still answers;
+      // it is not a new enrolment and it is not a guess.
+      await loadSecret(pk);
+      return { k: KIND, id: 'existing', rpId: globalThis.location?.hostname };
+    }
+    const options = { rpName: 'Cipher', userName: 'cipher device lock', displayName: 'Cipher device lock', storageKey };
     let secret;
     let created;
     // 32 random bytes are a valid secp256k1 scalar except with negligible
@@ -106,6 +121,15 @@ export const prfProvider = makeSecretProvider({
     }
     secrets.set(pk, secret);
     return { k: KIND, id: created.record.credentialId, rpId: created.record.rpId };
+  },
+  // An unreadable record still counts as held: a malformed record must not
+  // make the next attempt believe it can safely make a new one.
+  async hasKey(pk) {
+    try {
+      return (await readPasskeyLib()).hasStoredPasskeyIdentity({ storageKey: prfStorageKey(pk) });
+    } catch {
+      return false;
+    }
   },
   getSecret: (pk) => loadSecret(pk),
   async destroy(pk) {
