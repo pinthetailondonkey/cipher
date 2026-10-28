@@ -2,7 +2,6 @@ import React from 'react';
 import { Search, Users, User } from 'lucide-react';
 import ScreenHeader from '../ui/ScreenHeader';
 import Picture from '../ui/Picture';
-import Logo from '../Logo';
 import { noHexName } from '../../lib/npub';
 import { useChatStore } from '../../store/chatStore';
 
@@ -19,15 +18,15 @@ export default function SearchView({ handleSearch, joinGroupById, openChat }) {
         background: 'radial-gradient(ellipse 55% 38% at 12% 0%, var(--glow-a), transparent 65%), radial-gradient(ellipse 50% 30% at 92% 100%, var(--glow-b), transparent 70%)',
       }} />
       <div className="relative flex min-h-0 flex-1 flex-col">
-        <ScreenHeader title={<span className="flex items-center gap-2"><Logo size={24} />Find someone</span>} onBack={() => setView('list')} />
+        <ScreenHeader title="New message" onBack={() => setView('list')} />
         <div className="px-4 pb-3">
           <div className="flex items-center gap-2 rounded-full border border-line bg-panel px-4 py-3">
             <Search size={24} className="shrink-0 text-inkSubtle" />
             <input
               autoFocus
               type="text"
-              placeholder="Name, @handle or group"
-              aria-label="Search a name, a handle or a group"
+              placeholder="Name, @handle or public key"
+              aria-label="Search a name, a handle or a public key"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               onKeyDown={(e) => {
@@ -52,8 +51,8 @@ export default function SearchView({ handleSearch, joinGroupById, openChat }) {
             </div>
           ) : searchResults.length === 0 ? (
             <div className="rounded-2xl border border-line bg-panel px-4 py-16 text-center">
-              <p className="text-[15px] font-semibold text-ink">{searchQuery ? 'No results' : 'Find someone'}</p>
-              <p className="mt-1 text-[13px] text-inkMuted">{searchQuery ? 'Try another name.' : 'Search a name or a group.'}</p>
+              <p className="text-[15px] font-semibold text-ink">{searchQuery ? 'No results' : 'New message'}</p>
+              <p className="mt-1 text-[13px] text-inkMuted">{searchQuery ? 'Try another name.' : 'Search a name, a handle or a public key.'}</p>
             </div>
           ) : (
             <div className="overflow-hidden rounded-2xl border border-line bg-panel">

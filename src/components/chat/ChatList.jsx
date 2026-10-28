@@ -29,7 +29,6 @@ import { haptic } from '../../lib/haptics';
 import { noHexName } from '../../lib/npub';
 import Avatar from '../ui/Avatar';
 import IconButton from '../ui/IconButton';
-import Segmented from '../ui/Segmented';
 import ListRow from '../ui/ListRow';
 import Badge from '../ui/Badge';
 import EmptyState from '../ui/EmptyState';
@@ -553,7 +552,7 @@ export default function ChatList({ onOpenChat, onRefresh }) {
         />
       </div>
       <div className="pb-2">
-        <div className="flex h-11 items-center gap-2 rounded-full border border-line bg-panel px-4">
+        <div className="flex h-11 items-center gap-2 rounded-xl border border-line bg-panel px-3">
           <Search size={16} className="shrink-0 text-inkSubtle" aria-hidden="true" />
           <input
             type="text"
@@ -609,7 +608,26 @@ export default function ChatList({ onOpenChat, onRefresh }) {
     <div className="px-4 pb-4">
       {listHeader}
 
-      <Segmented options={SEGMENTS} value={segment} onChange={setSegment} ariaLabel="Filter chats" className="mb-2" />
+      {/* The founder's selection row: one 44px line, the chosen one wearing
+          the accent. It replaces the card-height pill row; the value/label
+          contract is the same one Segmented reads, so the filter is the
+          same filter. */}
+      <div role="group" aria-label="Filter chats" className="mb-2 flex h-11 items-center gap-1">
+        {SEGMENTS.map((option) => {
+          const active = option.value === segment;
+          return (
+            <button
+              key={option.value}
+              type="button"
+              aria-pressed={active}
+              onClick={() => { haptic('light'); setSegment(option.value); }}
+              className={`h-9 flex-1 rounded-xl px-3 text-[13px] font-semibold transition-colors ${active ? 'bg-accent text-accentInk' : 'text-inkMuted hover:text-ink'}`}
+            >
+              {option.label}
+            </button>
+          );
+        })}
+      </div>
 
       {pinnedRows.length > 0 && (
         <>

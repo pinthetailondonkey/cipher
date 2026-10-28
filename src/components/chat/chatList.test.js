@@ -115,6 +115,7 @@ export const jsxDEV = jsx;
 const ENTRY = `
 export { default as ChatList } from ${JSON.stringify(path.join(ROOT, 'src/components/chat/ChatList.jsx'))};
 export { default as Drawer } from ${JSON.stringify(path.join(ROOT, 'src/components/chat/Drawer.jsx'))};
+export { default as SearchView } from ${JSON.stringify(path.join(ROOT, 'src/components/chat/SearchView.jsx'))};
 export { useChatStore } from ${JSON.stringify(path.join(ROOT, 'src/store/chatStore.js'))};
 export * as hooks from './react-shim.js';
 `;
@@ -270,6 +271,9 @@ test('the segmented filter selects a real segment and filters the rows', () => {
   const tree = createTree(app.ChatList, { onOpenChat: () => {}, onRefresh: null });
 
   let { hosts, rows } = tree.render();
+  const selectionRow = hosts.find((host) => host.props.role === 'group' && host.props['aria-label'] === 'Filter chats');
+  assert.ok(selectionRow, 'All / Menus / Vendors is one labelled selection row');
+  assert.equal(String(selectionRow.props.className).includes('h-11'), true, 'the selection row is one compact 44px line, not a card');
   assert.equal(labelledButton(hosts, 'All').props['aria-pressed'], true, 'All starts selected');
   assert.equal(labelledButton(hosts, 'Menus').props['aria-pressed'], false, 'Menus is not selected yet');
   assert.deepEqual(rowNames(rows).sort(), ['Green Room', 'Plain Pat', 'Times Square', 'Vendor Vic'], 'All shows every chat');
@@ -340,6 +344,33 @@ test('the filter field always sits under the title and narrows the list as it is
   ({ hosts, rows } = tree.render());
   assert.equal(field().props.value, '', 'the clear control empties the field');
   assert.deepEqual(rowNames(rows).sort(), ['Green Room', 'Plain Pat', 'Times Square', 'Vendor Vic'], 'the whole list comes back');
+});
+
+test('the new message screen says what it searches and has a submit that works', () => {
+  globalThis.window = globalThis.window || { setInterval: () => 0, clearInterval: () => {} };
+  seedStore();
+  app.useChatStore.setState({ searchQuery: '', searchResults: [], isSearching: false });
+
+  let searched = 0;
+  const tree = createTree(app.SearchView, {
+    handleSearch: () => { searched += 1; },
+    joinGroupById: () => {},
+    openChat: () => {},
+  });
+  let { hosts } = tree.render();
+
+  const heading = hosts.find((host) => host.tag === 'h1');
+  assert.equal(textOf(heading.props.children), 'New message', 'the screen is the new message screen');
+  assert.ok(labelledButton(hosts, 'Back'), 'it has a way back to the list');
+  const field = hosts.find((host) => host.tag === 'input');
+  assert.equal(field.props.placeholder, 'Name, @handle or public key', 'the field names the three things it accepts');
+  assert.equal(labelledButton(hosts, 'Search').props.disabled, true, 'submit is inert while the field is empty');
+
+  field.props.onChange({ target: { value: 'bob' } });
+  ({ hosts } = tree.render());
+  assert.equal(labelledButton(hosts, 'Search').props.disabled, false, 'submit wakes up with text in the field');
+  labelledButton(hosts, 'Search').props.onClick({});
+  assert.equal(searched, 1, 'the submit action runs the same search Enter runs');
 });
 
 test('the phone drawer is a dialog: Escape closes it, Tab stays inside, focus comes back', () => {
