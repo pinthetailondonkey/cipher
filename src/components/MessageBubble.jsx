@@ -259,6 +259,9 @@ export default function MessageBubble({ message, data, onAction, senderName, ide
   const mountedAt = useRef(Date.now() / 1000);
   const deleted = useChatStore((state) => state.deletedMsgs);
   const reactions = useChatStore((state) => (message?.id ? state.reactions[message.id] : undefined)) || EMPTY_REACTIONS;
+  // Every edit already writes the text it replaced; nothing read it back, so
+  // the record existed and no one could see it. The row below is its door.
+  const editHistory = useChatStore((state) => (message?.id ? state.messageEdits?.[message.id] : undefined));
   const profiles = useChatStore((state) => state.profiles);
   const inGroup = useChatStore((state) => !!state.activeGroup);
   const activeDm = useChatStore((state) => state.activeDm);
@@ -387,6 +390,7 @@ export default function MessageBubble({ message, data, onAction, senderName, ide
     // option only shows for one. The group hook re-checks standing anyway.
     ...(inGroup && canPin ? [{ action: 'pin', label: 'Pin' }] : []),
     ...(isSender && text && content.type !== 'product' ? [{ action: 'edit', label: 'Edit' }] : []),
+    ...(editHistory?.length ? [{ action: 'edit_history', label: 'Edit history' }] : []),
     ...(content.type === 'product' && !isSender ? [{ action: 'buy_product', label: 'Buy' }, { action: 'view_vendor', label: 'Their menu' }] : []),
     ...(content.type === 'product' && isSender ? [{ action: 'broadcast_product', label: 'Share' }, { action: 'edit_product', label: 'Edit listing' }] : []),
     { action: 'select', label: 'Select' },

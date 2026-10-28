@@ -106,6 +106,24 @@ export function useMessageCommands({
       setSelectedMessage(null);
       return;
     }
+    if (action === 'edit_history') {
+      // The stored record of what the message used to say. Timestamps are in
+      // the reader's own locale; the text is shown as it was written, refused
+      // or not, because the point of the row is that nothing is hidden.
+      const edits = useChatStore.getState().messageEdits?.[msg.id] || [];
+      if (!edits.length) {
+        setSelectedMessage(null);
+        return;
+      }
+      const lines = edits.map((entry) => {
+        const when = Number(entry?.timestamp) > 0 ? new Date(Number(entry.timestamp)).toLocaleString() : '';
+        const said = String(entry?.previousText || '').trim() || '(empty)';
+        return when ? `${when} — ${said}` : said;
+      });
+      useChatStore.getState().openDialog({ title: `Edit history (${edits.length})`, message: lines.join('\n') });
+      setSelectedMessage(null);
+      return;
+    }
     if (action === 'edit') {
       useChatStore.getState().openDialog({
         title: 'Edit Message', hasInput: true, inputDefault: msg.text || msg.data?.message || '',
