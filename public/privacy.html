@@ -60,7 +60,7 @@
     <li>Messages are sealed end to end before they leave the device. A relay stores sealed text, not the words inside it.</li>
     <li>Groups are shared through a relay. The relay can see which keys belong to a group and when each one posts; it cannot read what is posted.</li>
     <li>Payments go from the buyer to the vendor's own address. Cipher holds no money, and no public block explorer is ever called from the app.</li>
-    <li>Order receipts stay between the two people in the order. They are not published to relays.</li>
+    <li>Order receipts are sealed like messages. A relay carries a receipt from one person in the order to the other, and cannot read it.</li>
   </ul>
 
   <h2>What a relay can see</h2>
