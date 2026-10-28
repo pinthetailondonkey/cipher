@@ -337,6 +337,14 @@ export function useIdentity() {
           const pointer = getActivePubkey()
           if (pointer && pointer !== 'guest' && pointer !== pk) {
             sessionStorage.removeItem('cipher_session_sk')
+          } else if (!isDeviceVault(getVaults()[pk]?.vault)) {
+            // A session saved before the device-lock law can outlive it: a
+            // tab carries its sessionStorage across the reload that swaps in
+            // this build, and the vault it sits on was never wrapped. That
+            // session is not let in — the wrap happens at the next unlock,
+            // which asks for the PIN. A vault already locked to this device
+            // is the one case that restores with no prompt at all.
+            sessionStorage.removeItem('cipher_session_sk')
           } else {
             if (!pointer || pointer === 'guest') localStorage.setItem('cipher_active_pubkey', pk)
             setKeys({ sk, pk, npub: nip19.npubEncode(pk) })
