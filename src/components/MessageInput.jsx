@@ -82,7 +82,10 @@ export default function MessageInput({ sendMessage, handleImageUpload, startReco
     if (!text || uploading) return;
     setInput('');
     try {
-      await sendMessage?.(text);
+      // A send the relays refused is not the user's text thrown away: the
+      // field takes it back so the next press is free.
+      const outcome = await sendMessage?.(text);
+      if (outcome === 'failed') setInput(text);
     } catch (error) {
       setInput(text);
       console.error('[MessageInput] Could not send message:', error);
@@ -101,8 +104,8 @@ export default function MessageInput({ sendMessage, handleImageUpload, startReco
       // The document rides the existing voice-note sender: same encrypted
       // upload, same payload shape, the file's name carried alongside.
       const entry = await uploadPrivateMedia(file);
-      await sendMessage('', { type: 'audio', ...entry, name: file.name });
-      setToast({ type: 'success', message: 'File sent!' });
+      const outcome = await sendMessage('', { type: 'audio', ...entry, name: file.name });
+      if (outcome === 'sent') setToast({ type: 'success', message: 'File sent!' });
     } catch (error) {
       console.error('[media] Encrypted file upload failed:', error);
       setToast({ type: 'error', message: 'The file was not sent. No media host took the encrypted file.' });

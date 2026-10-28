@@ -38,8 +38,12 @@ export function useComposer({ identity, sendDM, sendGroupMessage }) {
     };
   }, []);
 
+  // Returns 'sent', 'securing' or 'failed'. Callers used to fire their own
+  // "sent" toast the moment this returned, so a send the relays refused
+  // reported success one line after reporting the failure. A securing group
+  // message is neither: it waits on a key, and the bubble says so.
   const sendMessage = async (text, customPayload = null) => {
-    if (!text.trim() && !customPayload) return;
+    if (!text.trim() && !customPayload) return 'failed';
     haptic('light');
     const tempId = `temp-${Date.now()}`;
     let msgPayload = customPayload || { type: 'text', message: text };
@@ -91,6 +95,7 @@ export function useComposer({ identity, sendDM, sendGroupMessage }) {
             )),
           }));
           await saveMessage(activeGroup.id, securing);
+          return 'securing';
         } else {
           useChatStore.getState().setGroupMessages(prev => ({
             ...prev,
@@ -102,6 +107,7 @@ export function useComposer({ identity, sendDM, sendGroupMessage }) {
             console.error('[Chat] Failed to remove unsent group message:', error);
           }
           setToast({ type: 'error', message: 'Failed to send to group' });
+          return 'failed';
         }
       } else if (result.event?.id) {
         const outboxEntry = result.queued ? await db.outbox.get(result.event.id) : null;
@@ -126,7 +132,9 @@ export function useComposer({ identity, sendDM, sendGroupMessage }) {
           timestamp: result.event.created_at,
           deliveryStatus,
         });
+        return 'sent';
       }
+      return 'failed';
     }
     if (isDmView && activeDm) await saveMessage(activeDm, newMsg);
     setReplyingTo(null);
@@ -145,6 +153,7 @@ export function useComposer({ identity, sendDM, sendGroupMessage }) {
           console.error('[Chat] Failed to remove unsent direct message:', error);
         }
         setToast({ type: 'error', message: 'Failed to send: ' + (result.error || 'unknown') });
+        return 'failed';
       } else if (result.event?.id) {
         const outboxEntry = result.queued ? await db.outbox.get(result.event.id) : null;
         const deliveryStatus = result.queued && outboxEntry ? 'queued' : 'sent';
@@ -168,8 +177,11 @@ export function useComposer({ identity, sendDM, sendGroupMessage }) {
           timestamp: result.event.created_at,
           deliveryStatus,
         });
+        return 'sent';
       }
+      return 'failed';
     }
+    return 'failed';
   };
   const handleImageUpload = async (e) => {
     const files = Array.from(e.target.files || []);
@@ -182,8 +194,12 @@ export function useComposer({ identity, sendDM, sendGroupMessage }) {
       for (const file of files) {
         media.push(await sendPrivateImage(file, blossomServers()));
       }
-      await sendMessage(caption, { type: 'album', media, message: caption });
-      setToast({ type: 'success', message: media.length > 1 ? 'Album sent!' : 'Image sent!' });
+      // The photo reached a host; the message still has to reach the chat.
+      // sendMessage's own failure toast is the last word when it did not.
+      const outcome = await sendMessage(caption, { type: 'album', media, message: caption });
+      if (outcome === 'sent') {
+        setToast({ type: 'success', message: media.length > 1 ? 'Album sent!' : 'Image sent!' });
+      }
     } catch (err) {
       console.error('[media] Encrypted photo upload failed:', err);
       setToast({ type: 'error', message: 'The photo was not sent. No media host took the encrypted file.' });
@@ -211,8 +227,8 @@ export function useComposer({ identity, sendDM, sendGroupMessage }) {
         setToast({ type: 'success', message: 'Uploading voice note...' });
         try {
           const entry = await uploadPrivateMedia(file, blossomServers());
-          await sendMessage('', { type: 'audio', ...entry });
-          setToast({ type: 'success', message: 'Voice note sent!' });
+          const outcome = await sendMessage('', { type: 'audio', ...entry });
+          if (outcome === 'sent') setToast({ type: 'success', message: 'Voice note sent!' });
         } catch (err) {
           console.error('[media] Encrypted voice upload failed:', err);
           setToast({ type: 'error', message: 'The voice note was not sent. No media host took the encrypted file.' });
