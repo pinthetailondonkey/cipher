@@ -35,6 +35,10 @@ test('the window.__cipher test seam is compiled in only for a build that asks fo
   const dbSource = fs.readFileSync(new URL('../db.js', import.meta.url), 'utf8');
   assert.match(dbSource, /typeof window !== "undefined" && import\.meta\.env\?\.VITE_TEST_HOOKS === '1'\) \{\n  window\.__cipher = \{/);
   assert.equal(/if \(typeof window !== "undefined"\) \{\n  window\.__cipher/.test(dbSource), false);
+  // Whichever door starts the browser suite must build the seam first. It
+  // lives in the script or in the Playwright webServer command, and the
+  // run-context project then proves the served bundle really carries it.
   const pkg = JSON.parse(fs.readFileSync(new URL('../../package.json', import.meta.url), 'utf8'));
-  assert.match(pkg.scripts['test:ui'], /build-ui-test/);
+  const config = fs.readFileSync(new URL('../../playwright.config.js', import.meta.url), 'utf8');
+  assert.match(`${pkg.scripts['test:ui']}\n${config}`, /build[:-]ui[:-]test/);
 });
