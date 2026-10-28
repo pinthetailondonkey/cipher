@@ -501,7 +501,10 @@ export function useIdentity() {
       setKeys({ sk, pk, npub: nip19.npubEncode(pk) })
       return { success: true }
     } catch (e) {
-      return { success: false, error: e?.message || 'Could not open this account on this device.' }
+      // The vault opened but the account would not load. Plain words only:
+      // this is our failure, not a sentence for the person locked out.
+      console.error('[identity] Could not load the opened account:', e)
+      return { success: false, error: 'Could not open this account on this device.' }
     }
   }
 

@@ -59,7 +59,9 @@ export default function Restore({ identity, go }) {
       const res = await identity.restoreFromRelays(cleanHandle, pin);
       if (!res.success) setError(res.error);
     } catch (err) {
-      setError(err?.message || 'Something went wrong');
+      // Plain words only on the PIN path; the raw error goes to the console.
+      console.error('[Restore] Restore failed:', err);
+      setError('Something went wrong. Try again, or use your recovery phrase.');
     }
     setLoading(false);
   };
