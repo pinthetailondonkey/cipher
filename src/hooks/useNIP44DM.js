@@ -1,11 +1,13 @@
 import { useCallback, useEffect } from 'react';
-import { db, openDBFor, saveMessage } from '../db';
+import { db, openDBFor, saveMessage, markSentMessagesRead, markChatRead } from '../db';
+import { countsAsNewUnread } from '../lib/unreadCounts';
+import { receiptTime } from '../lib/messageMerge';
 import { dmControlAction, dmExpired, installMemberGroupKey } from './useGroupKeyMember';
 import { showNotification } from '../lib/notifications';
 import { useChatStore } from '../store/chatStore';
 import { getAuthenticatedPool } from '../lib/pool';
 import { generalRelays, queryAllPages } from '../lib/relays';
-import { enqueueNostrEvent, startOutboxSync } from '../lib/outbox';
+import { publishWriteAhead, startOutboxSync } from '../lib/outbox';
 import { allowsTyping } from '../lib/privacy';
 import { publishOwnRelayList, relaysForPeer } from '../lib/dmRelays';
 import { sortMessages, stampArrival } from '../features/chat/media';
@@ -119,22 +121,25 @@ export function useNIP44DM({ identity }) {
       }, identity.sk);
 
       let targets = generalRelays.slice();
-      let results;
+      let pool = null;
       try {
-        const pool = await getAuthenticatedPool(identity);
+        pool = await getAuthenticatedPool(identity);
         publishOwnRelayList(identity).catch(() => {});
         targets = await relaysForPeer(identity, targetDm);
-        results = await Promise.allSettled(pool.publish(targets, event));
       } catch (publishError) {
         console.warn('[DM] Offline publish deferred to outbox:', publishError);
-        await enqueueNostrEvent(event, targets);
-        return { success: true, queued: true, event, relayCount: 0 };
       }
-      const okCount = results.filter(r => r.status === 'fulfilled').length;
-      if (okCount > 0) return { success: true, event, results, relayCount: okCount };
-      console.warn('[DM] All relays rejected:', results);
-      await enqueueNostrEvent(event, targets);
-      return { success: true, queued: true, event, results, relayCount: 0 };
+      // Write-ahead (see publishWriteAhead): the signed event is in the outbox
+      // before any relay is tried, so a close between sign and publish cannot
+      // lose it. Calls and read marks are ephemeral and keep the old order.
+      const ephemeral = payload?.type === 'call' || payload?.type === 'read';
+      const sent = await publishWriteAhead(event, targets, () => {
+        if (!pool) throw new Error('No relay connection yet.');
+        return pool.publish(targets, event);
+      }, { writeAhead: !ephemeral });
+      if (!sent.queued) return { success: true, event, results: sent.results, relayCount: sent.okCount };
+      console.warn('[DM] All relays rejected:', sent.results);
+      return { success: true, queued: true, event, results: sent.results, relayCount: 0 };
     } catch (err) {
       console.error('[useNIP44DM] Send failed:', err);
       return { success: false, error: err.message };
@@ -237,9 +242,17 @@ export function useNIP44DM({ identity }) {
                 return;
               }
               if (data.type === 'read') {
+                // Only the peer's receipt means "they read it". Our own receipt,
+                // echoed back from the relay, says nothing about our messages.
+                if (isSender) return;
+                const upTo = receiptTime(data, event.created_at);
+                // Written to the database first: the history fetch re-saves
+                // our messages as 'sent', and a tick held only in memory died
+                // on reload. Scoped to messages at or before the receipt.
+                await markSentMessagesRead(counterparty, upTo);
                 setDms(prev => {
                   const msgs = prev[counterparty] || [];
-                  return { ...prev, [counterparty]: msgs.map(m => m.isSender ? { ...m, read: true, deliveryStatus: 'read' } : m) };
+                  return { ...prev, [counterparty]: msgs.map(m => (m.isSender && Number(m.timestamp) <= upTo && m.deliveryStatus !== 'sending' && m.deliveryStatus !== 'failed' ? { ...m, read: true, deliveryStatus: 'read' } : m)) };
                 });
                 return;
               }
@@ -299,11 +312,21 @@ export function useNIP44DM({ identity }) {
                   await db.messages.delete(optimisticMessage.id);
                 }
               }
+              // Read before the save: whether this id is already stored, was
+              // deleted here, and where the chat's read marker stands.
+              const alreadyStored = !isSender && !!(await db.messages.get(event.id));
+              const tombstoned = !isSender && !!(await db.tombstones.get(event.id));
+              const lastRead = isSender ? 0 : ((await db.chatReads.get(counterparty))?.lastRead || 0);
               await saveMessage(counterparty, newMsg);
               if (!isSender) {
                 const state = useChatStore.getState();
-                if (state.activeDm !== counterparty) {
+                const chatOpen = state.activeDm === counterparty;
+                if (countsAsNewUnread({ alreadyStored, tombstoned, isSender, chatOpen, timestamp: event.created_at, lastRead })) {
                   state.setUnreadCounts(prev => ({ ...prev, [counterparty]: (prev[counterparty] || 0) + 1 }));
+                } else if (chatOpen && !tombstoned) {
+                  // Arriving into the chat on screen is reading it: the marker
+                  // moves, or the message counts as unread after a reload.
+                  markChatRead(counterparty, Math.max(Math.floor(Date.now() / 1000), event.created_at));
                 }
               }
               if (!isSender && data.type !== 'typing' && data.type !== 'read' && !shouldSuppress(counterparty)) {
@@ -344,6 +367,7 @@ export function useNIP44DM({ identity }) {
       queryAllPages(pool, generalRelays, { kinds: [4], '#p': [identity.pk] })
     ]);
     const allDms = Array.from(new Map([...sentDms, ...recvDms].map(ev => [ev.id, ev])).values());
+    const readUpTo = new Map();
     for (const ev of allDms) {
       try {
         const isSender = ev.pubkey === identity.pk;
@@ -369,6 +393,13 @@ export function useNIP44DM({ identity }) {
           openDBFor(identity.pk);
           const installed = await installMemberGroupKey(data, ev.pubkey);
           if (!installed) console.error('[group-key] A key message arrived and was not installed.');
+          continue;
+        }
+        if (data.type === 'read' && !isSender) {
+          // Receipts that came in while the app was closed: keep the newest
+          // per peer and apply it after the loop.
+          const upTo = receiptTime(data, ev.created_at);
+          if (Number.isFinite(upTo) && upTo > (readUpTo.get(counterparty) ?? 0)) readUpTo.set(counterparty, upTo);
           continue;
         }
         if (data.type === 'typing' || data.type === 'read' || data.type === 'pin' || data.type === 'call') {
@@ -408,6 +439,7 @@ export function useNIP44DM({ identity }) {
         console.error('[DM] Could not save a message:', error);
       }
     }
+    for (const [peer, upTo] of readUpTo) await markSentMessagesRead(peer, upTo);
     const counterparties = new Set();
     for (const ev of allDms) {
       const isSender = ev.pubkey === identity.pk;

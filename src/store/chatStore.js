@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { scopedGet, scopedSet } from '../lib/storage';
+import { markChatRead } from '../db';
 
 const safeStorage = {
   getItem(key) {
@@ -108,6 +109,13 @@ export const useChatStore = create((set) => ({
   setActiveDm: (v) => set({ activeDm: v }),
   setActiveGroup: (v) => set({ activeGroup: v }),
   openChat: (type, id, groupObj = null) => {
+    // Opening a chat reads it. The marker is written to the database, or the
+    // count comes back after a reload; the count on screen drops with it.
+    const chatId = type === 'dm' ? id : (groupObj?.id ?? id);
+    if (chatId) {
+      markChatRead(chatId);
+      set((s) => (s.unreadCounts?.[chatId] ? { unreadCounts: { ...s.unreadCounts, [chatId]: 0 } } : {}));
+    }
     if (type === 'dm') {
       set({ view: 'dm', activeDm: id, activeGroup: null, typingUsers: {}, groupTypingUsers: {} });
     } else {

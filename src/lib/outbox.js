@@ -38,6 +38,50 @@ export async function enqueueNostrEvent(event, relays = null) {
   await updateMessageStatus(event.id, 'queued', owner);
 }
 
+async function dropOutboxRow(id) {
+  await db.outbox.delete(id);
+}
+
+// Write-ahead publish. The signed event goes into the outbox BEFORE any relay
+// is tried, and the row is deleted on the first relay accept. A crash or a
+// closed tab between sign and publish used to lose the message for good: the
+// row was only written after every relay had refused. The event id is stable
+// and a relay ignores an id it already holds, so a retry from the outbox
+// cannot double-send. `publish` returns the pool's list of publish promises.
+// writeAhead:false is for ephemeral signals (calls, read marks), which keep
+// the old order: queued only if every relay refuses.
+export async function publishWriteAhead(event, relays, publish, deps = {}) {
+  const enqueue = deps.enqueue || enqueueNostrEvent;
+  const unqueue = deps.unqueue || dropOutboxRow;
+  const writeAhead = deps.writeAhead !== false;
+  let written = false;
+  if (writeAhead) {
+    try {
+      await enqueue(event, relays);
+      written = true;
+    } catch (error) {
+      console.warn('[outbox] Could not write the event ahead of publishing:', error);
+    }
+  }
+  let results = [];
+  try {
+    results = await Promise.allSettled(publish());
+  } catch (error) {
+    console.warn('[outbox] Publish could not start:', error);
+  }
+  const okCount = results.filter((result) => result.status === 'fulfilled').length;
+  if (okCount > 0) {
+    if (written) {
+      try { await unqueue(event.id); } catch (error) {
+        console.warn('[outbox] Could not clear a delivered row; the next flush will clear it:', error);
+      }
+    }
+    return { queued: false, results, okCount };
+  }
+  if (!written) await enqueue(event, relays);
+  return { queued: true, results, okCount: 0 };
+}
+
 function retryDelay(attempts, random = Math.random) {
   const exponential = Math.min(RETRY_MAX_MS, RETRY_BASE_MS * (2 ** Math.min(attempts - 1, 16)));
   return Math.round(exponential * (0.8 + random() * 0.4));

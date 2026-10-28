@@ -1,6 +1,6 @@
 // src/db.js
 import Dexie from 'dexie';
-import { mergeStoredMessage, patchStoredMessage } from './lib/messageMerge';
+import { mergeStoredMessage, patchStoredMessage, markReadThrough, replacedTempId, planTempSweep } from './lib/messageMerge';
 import { createWriteQueue } from './lib/writeQueue';
 import {
   trySealMessageRow, openMessageRow, isSealedRow,
@@ -178,30 +178,41 @@ const stubTable = (tableName) => ({
   filter: () => ({ toArray: () => Promise.resolve([]) }),
 });
 
+// A Dexie query on the messages table. `where(index)` returns a WhereClause,
+// and `.equals()` / `.between()` / `.anyOf()` on it return the Collection that
+// finally reads rows: every step is wrapped, so rows leave opened. Wrapping
+// only the first step (as it once was) handed the raw sealed rows to every
+// `where(...).equals(...).toArray()` caller, which then saw a shell with no
+// data, no deliveryStatus and no order fields.
+const isQuery = (value) => !!value && typeof value === 'object' && (typeof value.toArray === 'function' || typeof value.equals === 'function');
+export function openQuery(query) {
+  return new Proxy(query, {
+    get(_t, member) {
+      switch (member) {
+        case 'first': return (...a) => query.first(...a).then((row) => (row ? openMessageRow(row) : row));
+        case 'toArray': return () => query.toArray().then((rows) => Promise.all(rows.map(openMessageRow)));
+        case 'sortBy': return (...a) => query.sortBy(...a).then((rows) => Promise.all(rows.map(openMessageRow)));
+        case 'each': return (cb) => query.each(async (row, cursor) => cb(await openMessageRow(row), cursor));
+        case 'modify': return () => Promise.reject(new Error('Messages are sealed at rest; modify() cannot be used on the messages table.'));
+        default: {
+          const v = query[member];
+          if (typeof v !== 'function') return v;
+          return (...a) => {
+            const result = v.apply(query, a);
+            return isQuery(result) ? openQuery(result) : result;
+          };
+        }
+      }
+    },
+  });
+}
+
 // One message read or write through the at-rest layer (src/lib/messageAtRest.js).
 const queryMessages = (table) => ({
   get: (id) => table.get(id).then((row) => (row ? openMessageRow(row) : row)),
   bulkGet: (ids) => table.bulkGet(ids).then((rows) => Promise.all(rows.map(openMessageRow))),
   toArray: () => table.toArray().then((rows) => Promise.all(rows.map(openMessageRow))),
-  where: (...args) => {
-    const collection = table.where(...args);
-    return new Proxy(collection, {
-      get(_t, member) {
-        switch (member) {
-          case 'first': return (...a) => collection.first(...a).then((row) => (row ? openMessageRow(row) : row));
-          case 'toArray': return () => collection.toArray().then((rows) => Promise.all(rows.map(openMessageRow)));
-          case 'sortBy': return (...a) => collection.sortBy(...a).then((rows) => Promise.all(rows.map(openMessageRow)));
-          case 'each': return (cb) => collection.each(async (row, cursor) => cb(await openMessageRow(row), cursor));
-          case 'filter': return (...a) => collection.filter(...a);
-          case 'modify': return () => Promise.reject(new Error('Messages are sealed at rest; modify() cannot be used on the messages table.'));
-          default: {
-            const v = collection[member];
-            return typeof v === 'function' ? v.bind(collection) : v;
-          }
-        }
-      },
-    });
-  },
+  where: (...args) => openQuery(table.where(...args)),
 });
 
 // One message put through the at-rest layer. Without the vault key the row is
@@ -298,10 +309,53 @@ export const saveMessage = async (chatId, msg) => {
     await db.transaction('rw', 'messages', 'tombstones', async () => {
       const [existing, tombstone] = await Promise.all([db.messages.get(msg.id), db.tombstones.get(msg.id)]);
       const merged = mergeStoredMessage(existing, msg, chatId, { tombstoned: !!tombstone });
-      if (merged) await db.messages.put(merged);
+      if (merged) {
+        await db.messages.put(merged);
+        // The real row is in: the temporary one it replaces goes in the same
+        // transaction.
+        const temp = replacedTempId(merged);
+        if (temp) await db.messages.delete(temp);
+      }
     });
   } catch (error) {
     console.error('[db] Could not save message:', error);
+  }
+};
+
+// The read marker of a chat, written to the database. It only moves forward:
+// opening a chat and a message arriving into an open chat both call it, and a
+// stale caller must not pull the marker back.
+export const markChatRead = async (chatId, at = Math.floor(Date.now() / 1000)) => {
+  if (!currentOwner() || !chatId) return false;
+  try {
+    await db.transaction('rw', 'chatReads', async () => {
+      const current = await db.chatReads.get(chatId);
+      if ((current?.lastRead || 0) >= at) return;
+      await db.chatReads.put({ chatId, lastRead: at });
+    });
+    return true;
+  } catch (error) {
+    console.error('[db] Could not save the read marker:', error);
+    return false;
+  }
+};
+
+// Settles temporary send rows a closed app left behind (see planTempSweep).
+// Returns the plan that was applied.
+export const sweepTempMessages = async () => {
+  if (!currentOwner()) return null;
+  try {
+    const [rows, outbox] = await Promise.all([db.messages.toArray(), db.outbox.toArray()]);
+    const plan = planTempSweep(rows, outbox.map((row) => row.event));
+    await db.transaction('rw', 'messages', async () => {
+      for (const id of plan.remove) await db.messages.delete(id);
+      for (const id of plan.queued) await db.messages.put({ ...rows.find((r) => r.id === id), deliveryStatus: 'queued' });
+      for (const id of plan.failed) await db.messages.put({ ...rows.find((r) => r.id === id), deliveryStatus: 'failed' });
+    });
+    return plan;
+  } catch (error) {
+    console.error('[db] Could not settle unsent messages:', error);
+    return null;
   }
 };
 
@@ -351,6 +405,25 @@ export const patchMessage = async (id, patch) => {
   }
 };
 
+// A peer's read receipt, written to the database: our own messages in that
+// chat at or before `upTo` become 'read'. Returns the ids changed. The next
+// history fetch re-saves the relay copy as 'sent' and the merge keeps 'read'.
+export const markSentMessagesRead = async (chatId, upTo) => {
+  if (!currentOwner() || !chatId) return [];
+  try {
+    let changed = [];
+    await db.transaction('rw', 'messages', async () => {
+      const rows = await db.messages.where('chatId').equals(chatId).toArray();
+      changed = markReadThrough(rows, upTo);
+      for (const row of changed) await db.messages.put(row);
+    });
+    return changed.map((row) => row.id);
+  } catch (error) {
+    console.error('[db] Could not save the read mark:', error);
+    return [];
+  }
+};
+
 // Test seam: lets the UI specs drive the real save and patch paths.
 
 export const saveProfile = async (profile) => {
@@ -365,7 +438,12 @@ export async function readStoredRows() {
   return queryMessages(_current.messages).toArray();
 }
 
-if (typeof window !== "undefined") {
+// The seam is compiled in only when the build asks for it
+// (VITE_TEST_HOOKS=1, `npm run build:ui-test`, which `npm run test:ui` runs
+// first). An ordinary build, the one that ships, carries no window.__cipher:
+// a page script or an extension could otherwise read every opened message row
+// and write messages through it.
+if (typeof window !== "undefined" && import.meta.env?.VITE_TEST_HOOKS === '1') {
   window.__cipher = {
     saveMessage, patchMessage, readStoredRows,
     // Test seam: closeDB + openDBFor re-open the account's database. Writes
