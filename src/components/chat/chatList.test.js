@@ -192,39 +192,48 @@ function createTree(component, props) {
   return { render };
 }
 
+const textOf = (node) => {
+  if (typeof node === 'string' || typeof node === 'number') return String(node);
+  if (Array.isArray(node)) return node.map(textOf).join('');
+  if (node && typeof node === 'object' && node.props) return textOf(node.props.children);
+  return '';
+};
+
 const labelledButton = (hosts, label) => hosts.find(
-  (host) => host.tag === 'button' && (host.props.children === label || host.props['aria-label'] === label)
+  (host) => host.tag === 'button' && (textOf(host.props.children) === label || host.props['aria-label'] === label)
 );
 
 const rowNames = (rows) => rows.map((row) => row.name);
 
+const vendorDm = 'f'.repeat(64);
+const plainDm = 'e'.repeat(64);
+
+const seedStore = () => app.useChatStore.setState({
+  dms: {
+    [vendorDm]: [{ pubkey: vendorDm, timestamp: 30, data: { message: 'order please', type: 'order_request' } }],
+    [plainDm]: [{ pubkey: plainDm, timestamp: 20, data: { message: 'hello' } }],
+  },
+  groups: [
+    { id: 'green', name: 'Green Room', isChannel: true },
+    { id: 'square', name: 'Times Square', isChannel: false },
+  ],
+  profiles: {
+    [vendorDm]: { displayName: 'Vendor Vic', name: 'Vendor Vic' },
+    [plainDm]: { displayName: 'Plain Pat', name: 'Plain Pat' },
+  },
+  archivedChats: [],
+  pinnedChats: [],
+  blockedUsers: [],
+  mutedChats: [],
+  mutedUntil: {},
+  unreadCounts: {},
+  typingUsers: {},
+  loading: false,
+});
+
 test('the segmented filter selects a real segment and filters the rows', () => {
   globalThis.window = globalThis.window || { setInterval: () => 0, clearInterval: () => {} };
-  const vendorDm = 'f'.repeat(64);
-  const plainDm = 'e'.repeat(64);
-  app.useChatStore.setState({
-    dms: {
-      [vendorDm]: [{ pubkey: vendorDm, timestamp: 30, data: { message: 'order please', type: 'order_request' } }],
-      [plainDm]: [{ pubkey: plainDm, timestamp: 20, data: { message: 'hello' } }],
-    },
-    groups: [
-      { id: 'green', name: 'Green Room', isChannel: true },
-      { id: 'square', name: 'Times Square', isChannel: false },
-    ],
-    profiles: {
-      [vendorDm]: { displayName: 'Vendor Vic', name: 'Vendor Vic' },
-      [plainDm]: { displayName: 'Plain Pat', name: 'Plain Pat' },
-    },
-    archivedChats: [],
-    pinnedChats: [],
-    blockedUsers: [],
-    mutedChats: [],
-    mutedUntil: {},
-    unreadCounts: {},
-    typingUsers: {},
-    loading: false,
-  });
-
+  seedStore();
   const tree = createTree(app.ChatList, { onOpenChat: () => {}, onRefresh: null });
 
   let { hosts, rows } = tree.render();
@@ -247,4 +256,19 @@ test('the segmented filter selects a real segment and filters the rows', () => {
   ({ hosts, rows } = tree.render());
   assert.equal(labelledButton(hosts, 'All').props['aria-pressed'], true, 'All takes the fill back');
   assert.deepEqual(rowNames(rows).sort(), ['Green Room', 'Plain Pat', 'Times Square', 'Vendor Vic'], 'All restores the whole list');
+});
+
+test('the in-place filter and the network search are named for what they do', () => {
+  globalThis.window = globalThis.window || { setInterval: () => 0, clearInterval: () => {} };
+  seedStore();
+  const tree = createTree(app.ChatList, { onOpenChat: () => {}, onRefresh: null });
+
+  let { hosts } = tree.render();
+  assert.ok(labelledButton(hosts, 'Filter chats'), 'the magnifier filters the chats already here');
+  assert.equal(labelledButton(hosts, 'Search chats'), undefined, 'the magnifier does not promise a network search');
+
+  labelledButton(hosts, 'Chat list menu').props.onClick({});
+  ({ hosts } = tree.render());
+  assert.ok(labelledButton(hosts, 'Find someone'), 'the menu door that searches the network says so');
+  assert.equal(labelledButton(hosts, 'New chat'), undefined, 'no door claims a new chat when it opens a search');
 });

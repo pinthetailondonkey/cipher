@@ -19,14 +19,15 @@ export default function SearchView({ handleSearch, joinGroupById, openChat }) {
         background: 'radial-gradient(ellipse 55% 38% at 12% 0%, var(--glow-a), transparent 65%), radial-gradient(ellipse 50% 30% at 92% 100%, var(--glow-b), transparent 70%)',
       }} />
       <div className="relative flex min-h-0 flex-1 flex-col">
-        <ScreenHeader title={<span className="flex items-center gap-2"><Logo size={24} />Search</span>} onBack={() => setView('list')} />
+        <ScreenHeader title={<span className="flex items-center gap-2"><Logo size={24} />Find someone</span>} onBack={() => setView('list')} />
         <div className="px-4 pb-3">
           <div className="flex items-center gap-2 rounded-full border border-line bg-panel px-4 py-3">
             <Search size={24} className="shrink-0 text-inkSubtle" />
             <input
               autoFocus
               type="text"
-              placeholder="Name or group"
+              placeholder="Name, @handle or group"
+              aria-label="Search a name, a handle or a group"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               onKeyDown={(e) => {
@@ -34,6 +35,14 @@ export default function SearchView({ handleSearch, joinGroupById, openChat }) {
               }}
               className="w-full bg-transparent text-[15px] text-ink placeholder-inkSubtle outline-none"
             />
+            <button
+              type="button"
+              onClick={() => handleSearch()}
+              disabled={!searchQuery.trim() || isSearching}
+              className="shrink-0 rounded-full bg-accent px-3 py-1.5 text-[13px] font-bold text-accentInk disabled:opacity-50"
+            >
+              Search
+            </button>
           </div>
         </div>
         <div className="mx-auto min-h-0 w-full max-w-3xl flex-1 overflow-y-auto px-4 pb-8">

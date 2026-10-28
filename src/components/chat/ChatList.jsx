@@ -278,9 +278,9 @@ function ChatRow({
 }
 
 // The chat list, Telegram anatomy with the cipher skin: logo chip + title,
-// in-place filter, kebab (New chat / New group / Burn note — the same
-// actions the floating menu wires), segmented filter, PINNED section,
-// 64px rows, archived section.
+// in-place filter over the chats already here, kebab (Find someone / New
+// group / Burn note — the same actions the floating menu wires), segmented
+// filter, PINNED section, 64px rows, archived section.
 export default function ChatList({ onOpenChat, onRefresh }) {
   const dms = useChatStore((s) => s.dms);
   const groups = useChatStore((s) => s.groups);
@@ -541,7 +541,7 @@ export default function ChatList({ onOpenChat, onRefresh }) {
             )}
             <IconButton
               icon={<Search size={20} />}
-              label="Search chats"
+              label="Filter chats"
               onClick={() => setSearchOpen(true)}
             />
             <span className="relative">
@@ -567,7 +567,7 @@ export default function ChatList({ onOpenChat, onRefresh }) {
                   >
                     {/* Same actors the floating menu wires — this kebab is the primary door. */}
                     <MenuItem icon={<MessageSquare size={14} className="text-inkMuted" />} onClick={() => { setHeaderMenuOpen(false); setView('search'); }}>
-                      New chat
+                      Find someone
                     </MenuItem>
                     <MenuItem icon={<Users size={14} className="text-inkMuted" />} onClick={() => { setHeaderMenuOpen(false); setShowCreateGroup(true); }}>
                       New group
@@ -612,7 +612,7 @@ export default function ChatList({ onOpenChat, onRefresh }) {
         <EmptyState
           icon={<MessageSquare size={24} />}
           title="No chats yet — your first message starts the cipher"
-          action={<Button size="md" onClick={() => setView('search')}>New chat</Button>}
+          action={<Button size="md" onClick={() => setView('search')}>Find someone</Button>}
         />
       </div>
     );
