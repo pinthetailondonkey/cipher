@@ -1,11 +1,12 @@
 import { useState } from 'react';
-import { CheckCircle2, Package, ReceiptText } from 'lucide-react';
+import { CheckCircle2, Package, ReceiptText, Store } from 'lucide-react';
 import ScreenHeader from '../ui/ScreenHeader';
 import Picture from '../ui/Picture';
 import ReceiptInspect from './ReceiptInspect';
 import { scopedGet } from '../../lib/storage';
 import { haptic } from '../../lib/haptics';
 import { orderState, orderHasVerifiedReceipt } from '../../lib/orderActions';
+import { useChatStore } from '../../store/chatStore';
 
 // The buyer's ledger: one timeline, newest first. Every row reads the same
 // derived facts the order card in the thread reads (orderState — F7), so a
@@ -68,6 +69,13 @@ export default function MyOrders({ dms = {}, profiles = {}, onBack, onOpenChat, 
                         </span>
                       </span>
                     </span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { haptic('light'); useChatStore.getState().setVendorStorefrontPubkey(vendorPubkey); }}
+                    className="flex min-h-[44px] w-full items-center gap-1.5 px-4 pb-1 text-[13px] font-semibold text-accentText"
+                  >
+                    <Store size={14} /> View menu
                   </button>
                   {countersigned && (
                     <button

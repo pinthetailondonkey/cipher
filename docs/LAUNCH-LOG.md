@@ -179,3 +179,14 @@ Still open, and each one needs a decision rather than code:
 - **Escrow stays off.** `ESCROW_WIRING_LANDED = false` in `src/components/MessageBubble.jsx`. Nothing was wired.
 - **Live host is 887 commits behind** the current `main` as of 2026-10-28; the check and its evidence are in README.md.
 - **`cipher-70` never filed a report** for the work it took.
+
+
+## Phase 4 — privacy defaults, `feat/privacy-overnight`
+
+Rebased onto `e409f97` after the boss tab's MessageBubble work; one line of history, 415/415 green on the merged tree. One change per commit:
+
+- `80e482d` — **P1, link previews off by default, enforced at the fetch itself.** New `src/lib/linkPreview.js` (`fetchLinkPreview` returns null unless `allowsLinkPreviews()`); `src/components/chat/LinkPreview.jsx` renders nothing with defaults; a test on a fresh profile throws the moment any preview request leaves the device (`src/lib/linkPreview.test.js`).
+- **M1, media encrypted before upload — already built, no change.** Per-file random AES-GCM in `src/lib/mediaCrypto.js`, wired at `src/features/chat/useComposer.js:7`; `src/lib/mediaCrypto.test.js:11,34` already prove the stored blob does not decode as an image.
+- **D2, Block from the profile sheet — already built, no change.** Button `src/components/ProfileModal.jsx:104`, persisted list `src/store/chatStore.js:232`, Blocked screen `src/components/chat/PrivacySettings.jsx:93`.
+- `416584b` — **C1, stale call signals dropped.** An offer whose `created_at` is over 60 seconds old, or unreadable, gets silence instead of a reject (`src/lib/voiceCall.js:58`); proven in `src/lib/voiceCall.test.js:46`. Receive side only; the call button and `startCall` untouched.
+- **P2, DVM search — closed, no code.** The block `docs/AUDIT-2.md:228` flagged (signed kind-5315 to the group relays) was already deleted in `0d00d42`, and `src/lib/egress.test.js:134` asserts the search path never publishes. NIP-50 already targets the Connections search rows (`src/features/chat/usePeopleSearch.js:92`, set at `src/lib/egress.js:41`). Accepted as closed by the founder, 2026-10-28.

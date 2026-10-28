@@ -1,15 +1,9 @@
 import { useEffect, useState } from 'react';
-import { linkPreviewEndpoint } from '../../lib/egress';
+import { fetchLinkPreview } from '../../lib/linkPreview';
+import { allowsLinkPreviews } from '../../lib/privacy';
 import Picture from '../ui/Picture';
 
 const cache = new Map();
-const URL_PATTERN = /https?:\/\/[^\s<>"']+/i;
-
-export function firstUrl(text) {
-  const match = String(text || '').match(URL_PATTERN);
-  if (!match) return '';
-  return match[0].replace(/[),.!?]+$/, '');
-}
 
 export default function LinkPreview({ url }) {
   const [meta, setMeta] = useState(() => cache.get(url) || null);
@@ -22,29 +16,19 @@ export default function LinkPreview({ url }) {
       setLoading(false);
       return undefined;
     }
-    let live = true;
-    const controller = new AbortController();
-    setLoading(true);
-    const endpoint = linkPreviewEndpoint(url);
-    if (!endpoint) {
-      cache.set(url, null);
+    // The gate lives in fetchLinkPreview too; a stray render with the
+    // profile opted out still makes no request.
+    if (!allowsLinkPreviews()) {
       setLoading(false);
       return undefined;
     }
-    fetch(endpoint, { signal: controller.signal })
-      .then((response) => response.json())
-      .then((body) => {
-        const data = body?.data || {};
-        const next = {
-          title: data.title || '',
-          description: data.description || '',
-          image: data.image?.url || data.logo?.url || '',
-        };
+    let live = true;
+    const controller = new AbortController();
+    setLoading(true);
+    fetchLinkPreview(url, { signal: controller.signal })
+      .then((next) => {
         cache.set(url, next);
         if (live) setMeta(next);
-      })
-      .catch(() => {
-        if (live) cache.set(url, null);
       })
       .finally(() => {
         if (live) setLoading(false);
@@ -55,6 +39,8 @@ export default function LinkPreview({ url }) {
     };
   }, [url]);
 
+  // Off stays plain: no skeleton either, the way the words say.
+  if (!allowsLinkPreviews()) return null;
   if (loading) {
     return (
       <div className="mb-1 overflow-hidden rounded-xl border border-ink/10 bg-scrim/30">

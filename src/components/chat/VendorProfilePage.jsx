@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ArrowLeft, Star } from 'lucide-react';
+import { ArrowLeft, Star, Store } from 'lucide-react';
 import { pressable } from '../ui/Button';
 import Button from '../ui/Button';
 import Textarea from '../ui/Textarea';
@@ -10,6 +10,7 @@ import { pushToast } from '../ui/toast';
 import { shortNpub, noHexName } from '../../lib/npub';
 import { haptic } from '../../lib/haptics';
 import { useReputation } from '../../hooks/useReputation';
+import { useChatStore } from '../../store/chatStore';
 import { riderComposeOf } from '../../lib/vendorReviews';
 import ProvenBanner from './ProvenBanner';
 import ReviewRow from './ReviewRow';
@@ -105,6 +106,15 @@ export default function VendorProfilePage({
       </header>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-8">
+        <Button
+          variant="secondary"
+          fullWidth
+          className="mt-3 w-full"
+          onClick={() => { haptic('light'); useChatStore.getState().setVendorStorefrontPubkey(vendorPubkey); }}
+          leadingIcon={<Store size={16} />}
+        >
+          View menu
+        </Button>
         {summary.count > 0 && (
           <section className="rounded-2xl border border-line bg-panelStrong px-4 py-4">
             <div className="flex items-center gap-3">
