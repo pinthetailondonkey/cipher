@@ -6,14 +6,20 @@
 // so a page carrying the same name as a local build of this commit is
 // running this commit.
 //
+// A name is still only a name tag: anyone who can push a deploy can copy a
+// name onto different bytes. So the proof goes one step further and compares
+// a fingerprint of the served bytes against this tree's build. A stale build
+// fails on the name; a tampered one under a copied name fails on the bytes.
+//
 //   npm run verify:live                      the canonical address
 //   npm run verify:live -- https://host      any host
 //   npm run verify:live -- --skip-build      reuse the dist already there
 //
-// Exit 0 when the names match, 1 when they do not, 2 when the page cannot be
-// read or carries no title.
+// Exit 0 when the names and the bytes match, 1 when either does not, 2 when
+// the page cannot be read or carries no title.
 
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -89,4 +95,35 @@ if (live !== built) {
   console.error(`verify:live — the live page is not this build. It serves ${live || 'nothing'}, this tree builds ${built}.`);
   process.exit(1);
 }
-console.log('verify:live — the live page is this build.');
+
+// The names matching is only half a proof: a name is a label anyone holding
+// the deploy account can copy onto different bytes. The proof is complete
+// when the served file's fingerprint equals this tree's. The body is read
+// through arrayBuffer(), which returns the bytes after the transport
+// compression is undone, so a host's gzip choice cannot change the answer.
+const fingerprint = (bytes) => createHash('sha256').update(bytes).digest('hex');
+let servedFingerprint = '';
+try {
+  const served = await fetch(new URL(`assets/${live}`, url), { signal: AbortSignal.timeout(20000) });
+  if (!served.ok) {
+    console.error(`verify:live — the live bundle answered ${served.status}, so its bytes cannot be proven.`);
+    process.exit(2);
+  }
+  servedFingerprint = fingerprint(new Uint8Array(await served.arrayBuffer()));
+} catch (error) {
+  console.error(`verify:live — the live bundle could not be read for fingerprinting: ${error?.cause?.code || error.message}`);
+  process.exit(2);
+}
+const localBundle = path.resolve('dist', 'assets', built);
+if (!fs.existsSync(localBundle)) {
+  console.error(`verify:live — ${localBundle} is missing, so there are no bytes to compare against.`);
+  process.exit(2);
+}
+const localFingerprint = fingerprint(new Uint8Array(fs.readFileSync(localBundle)));
+console.log(`  served sha  ${servedFingerprint.slice(0, 16)}`);
+console.log(`  built sha   ${localFingerprint.slice(0, 16)}`);
+if (servedFingerprint !== localFingerprint) {
+  console.error('verify:live — the live bundle wears this build\'s name but not its bytes. Tampered, or built by a different toolchain.');
+  process.exit(1);
+}
+console.log('verify:live — the live page is this build, down to the bytes.');

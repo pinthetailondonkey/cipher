@@ -19,7 +19,7 @@ A fresh checkout sets the commit scanner once: `git config core.hooksPath .githo
 
 ## Verify a deploy by the page, never a status code
 
-HTTP 200 proves nothing: a redirect, a gate or another project's page all answer 200. A deploy is proven by `<title>Cipher</title>` from `index.html` **and** an asset bundle that matches a build of the checked-out commit. `npm run verify:live` does it: it builds the tree, reads the `/assets/index-*.js` name that build produced, follows every redirect on the way (printing each status and target), and fails when the page loads a different name. Point it at another host with `npm run verify:live -- https://host`.
+HTTP 200 proves nothing: a redirect, a gate or another project's page all answer 200. A deploy is proven by `<title>Cipher</title>` from `index.html` **and** an asset bundle that matches a build of the checked-out commit. `npm run verify:live` does it: it builds the tree, reads the `/assets/index-*.js` name that build produced, follows every redirect on the way (printing each status and target), and fails when the page loads a different name — or when a bundle wears this build's name without its bytes, because a name is a label a hijacked deploy can copy, and the proof compares fingerprints of the actual bytes. Point it at another host with `npm run verify:live -- https://host`.
 
 What that check last found is in [docs/LAUNCH-LOG.md](docs/LAUNCH-LOG.md).
 
