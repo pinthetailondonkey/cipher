@@ -5,6 +5,8 @@ import {
   MIN_PIN_LENGTH,
   MIN_EXISTING_PIN_LENGTH,
   isAcceptableNewPin,
+  isPlausiblePin,
+  PIN_TOO_SHORT_MESSAGE,
   PIN_FAILURE_LIMIT,
   pinFailureKey,
   pinFailureMessage,
@@ -227,4 +229,12 @@ test('the device key record goes with the account on a lockout and on removal, a
   const removed = memoryStorage(seed);
   assert.ok(removeAccountKeys(removed, 'pkbbbbbbbbbbbbbbbb').includes('cipher_devkey_pkbbbbbbbbbbbbbbbb'));
   assert.equal(removed.getItem('cipher_devkey_pkaaaaaaaaaaaaaaaa'), 'record-a');
+});
+
+test('an empty or half-typed PIN is refused before it can count as a guess', () => {
+  for (const pin of ['', '1', '12345', '     ', null, undefined, 123456]) assert.equal(isPlausiblePin(pin), false, String(pin));
+  for (const pin of ['123456', '12345678', '1234567890']) assert.equal(isPlausiblePin(pin), true, pin);
+  assert.match(PIN_TOO_SHORT_MESSAGE, /nothing was counted/i);
+  // An account made before the 8-digit rule keeps its 6-digit PIN.
+  assert.equal(isPlausiblePin('0'.repeat(MIN_EXISTING_PIN_LENGTH)), true);
 });

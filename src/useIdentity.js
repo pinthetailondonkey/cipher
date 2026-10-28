@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { LOCKED_OUT_MESSAGE, MIN_PIN_LENGTH, deviceKeyFailureMessage, deviceLockUpgradeMessage, failUnlockAttempt, isAcceptableNewPin, pinFailureMessage, removeAccountKeys, resetPinFailures } from './lib/vaultLockout'
+import { LOCKED_OUT_MESSAGE, MIN_PIN_LENGTH, PIN_TOO_SHORT_MESSAGE, isPlausiblePin, deviceKeyFailureMessage, deviceLockUpgradeMessage, failUnlockAttempt, isAcceptableNewPin, pinFailureMessage, removeAccountKeys, resetPinFailures } from './lib/vaultLockout'
 import { profileRelays as PROFILE_RELAYS } from './lib/relays'
 import { DeviceKeyMissing, getDeviceProvider, isDeviceKeyError, isDeviceVault, unwrapDeviceVault } from './lib/vaultEnvelope'
 import { destroyDeviceKeys, sealNewVault, upgradeStoredVault } from './lib/deviceLock'
@@ -498,6 +498,7 @@ export function useIdentity() {
   }
 
   const unlock = async (pin) => {
+    if (!isPlausiblePin(pin)) return { success: false, error: PIN_TOO_SHORT_MESSAGE, notCounted: true }
     // The account Unlock opens, and the one a wrong PIN counts against, is a
     // finished account: a draft is never it (see lib/accountPick.js).
     const picked = pickUnlockAccount(getVaults(), getActivePubkey(), localStorage.getItem('cipher_vault'))
@@ -622,6 +623,7 @@ export function useIdentity() {
   };
 
   const restoreFromRelays = async (handle, pin) => {
+    if (!isPlausiblePin(pin)) return { success: false, error: PIN_TOO_SHORT_MESSAGE };
     const vaults = getVaults();
     let targetPk = null;
     let targetVault = null;
@@ -867,6 +869,7 @@ export function useIdentity() {
   };
 
   const switchAccount = async (targetPk, pin) => {
+    if (!isPlausiblePin(pin)) return { success: false, error: PIN_TOO_SHORT_MESSAGE };
     try {
       const vaults = getVaults();
       if (!vaults[targetPk] || isDraftEntry(vaults[targetPk])) throw new Error('Account not found');

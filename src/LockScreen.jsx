@@ -3,7 +3,7 @@ import React, { useState } from "react";
 import { RefreshCw } from "lucide-react";
 import Button from './components/ui/Button';
 import Keypad from './components/ui/Keypad';
-import { MIN_PIN_LENGTH } from './lib/vaultLockout';
+import { MIN_PIN_LENGTH, isPlausiblePin } from './lib/vaultLockout';
 import { passkeyOffered } from './lib/accountPick';
 import Create from './components/onboarding/Create';
 import SaveKey from './components/onboarding/SaveKey';
@@ -123,7 +123,7 @@ export default function LockScreen({ identity }) {
                 disabled={loading}
               />
               {error && <p role="alert" className="max-w-[280px] text-center text-sm font-medium text-danger">{error}</p>}
-              <Button type="submit" disabled={loading || biometricLoading} className="mt-2 flex w-full items-center justify-center gap-2">
+              <Button type="submit" disabled={loading || biometricLoading || !isPlausiblePin(pin)} className="mt-2 flex w-full items-center justify-center gap-2">
                 {loading ? <RefreshCw size={20} className="animate-spin" /> : 'Unlock'}
               </Button>
             </form>

@@ -11,6 +11,15 @@ export function isAcceptableNewPin(pin) {
   return typeof pin === 'string' && pin.length >= MIN_PIN_LENGTH;
 }
 
+// An entry too short to be any account's PIN is not a guess: it is an empty
+// or half-typed field. It is refused before the vault is touched and never
+// counts toward the five-wrong-PINs wipe.
+export function isPlausiblePin(pin) {
+  return typeof pin === 'string' && pin.length >= MIN_EXISTING_PIN_LENGTH;
+}
+
+export const PIN_TOO_SHORT_MESSAGE = `Enter your PIN (${MIN_EXISTING_PIN_LENGTH} digits or more). Nothing was counted.`;
+
 export function pinFailureKey(pubkey) {
   return pubkey ? `cipher_fails_${pubkey}` : 'cipher_fails_legacy';
 }
