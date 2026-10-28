@@ -6,40 +6,101 @@
    panels. Dark only — no light set, no theme registry, no picker. */
 :root {
   color-scheme: dark;
-  --z-fab: 40;
-  --z-sheet: 60;
-  --z-call: 80;
-  --z-toast: 100;
   --sat: env(safe-area-inset-top, 0px);
   --sab: env(safe-area-inset-bottom, 0px);
   --nav-h: 4rem;
   --app-edge: max(1.25rem, calc(50% - 14rem + 1.25rem));
-  --bg: #000000;
-  --bg-soft: #0a0a0a;
-  --panel: #111111;
-  --panel-strong: #171717;
-  --panel-alt: #1d1d1d;
-  --border: rgba(255, 255, 255, 0.08);
-  --border-strong: rgba(255, 255, 255, 0.12);
-  --text: #f5f5f5;
-  --text-rgb: 245 245 245;
+
+  /* Brand palette (CIPHER-UI-SPEC). Blue is the accent, never a wash:
+     --blue is a FILL (primary button, active nav, outgoing bubble, selected
+     control; white on it is 5.0:1). --blue-bright is the TEXT and ICON blue
+     (links, active label, next-step words; 5.2:1 on surface-2). Never put
+     white text on --blue-bright (3.5:1) and never put --blue text on a
+     surface (3.6:1). */
+  --bg: #050505;
+  --surface: #101010;
+  --surface-2: #171717;
+  --pressed: #202020;
+  --border-solid: #282828;
+  --separator: #1d1d1d;
+  --text-1: #f5f6f8;
+  --text-2: #969ba6;
+  --text-3: #7a8190;
+  --blue: #2463f5;
+  --blue-bright: #3987ff;
+  --success-solid: #37c98b;
+  --warning-solid: #f0b85a;
+  --destructive: #ff5b64;
+  /* Text on solid fills. Destructive takes dark text: white on #ff5b64 is
+     3.0:1, the bg colour on it is 6.7:1. */
+  --on-blue: #ffffff;
+  --on-blue-2: #f0f4ff;
+  --on-destructive: #050505;
+
+  /* The older names every existing screen reads, mapped onto the palette so
+     they keep meaning what they meant. */
+  --bg-soft: var(--surface);
+  --panel: var(--surface);
+  --panel-strong: var(--surface-2);
+  --panel-alt: var(--pressed);
+  --border: var(--separator);
+  --border-strong: var(--border-solid);
+  --text: var(--text-1);
+  --text-rgb: 245 246 248;
   --scrim-rgb: 0 0 0;
-  --text-muted: #9ca3af;
-  --text-subtle: #8b93a0;
-  --accent: #2563eb;
-  --accent-text: #60a5fa;
-  --accent-soft: rgba(37, 99, 235, 0.14);
-  --accent-ink: #ffffff;
-  --success: #10b981;
-  --success-rgb: 16 185 129;
-  --danger: #ef4444;
-  --danger-rgb: 239 68 68;
-  --glow-a: rgba(37, 99, 235, 0.13);
-  --glow-b: rgba(37, 99, 235, 0.06);
-  --glass-panel: rgba(28, 28, 30, 0.7);
-  --glass-header: rgba(10, 10, 10, 0.75);
-  --glass-shadow: rgba(0, 0, 0, 0.37);
+  --text-muted: var(--text-2);
+  --text-subtle: var(--text-3);
+  --accent: var(--blue);
+  --accent-text: var(--blue-bright);
+  --accent-soft: rgba(36, 99, 245, 0.16);
+  --accent-ink: var(--on-blue);
+  --success: var(--success-solid);
+  --success-rgb: 55 201 139;
+  --warning: var(--warning-solid);
+  --warning-rgb: 240 184 90;
+  --danger: var(--destructive);
+  --danger-rgb: 255 91 100;
+  --focus: var(--blue-bright);
+
+  /* No glow on the ground and no see-through panels: the spec rules out
+     blue glow and indiscriminate glass, so these stay as tokens (so the
+     rules that read them keep working) but carry no colour or blur worth
+     seeing. */
+  --glow-a: transparent;
+  --glow-b: transparent;
+  --glass-panel: rgba(23, 23, 23, 0.96);
+  --glass-header: rgba(5, 5, 5, 0.96);
+  --glass-shadow: transparent;
   --hover-wash: rgba(255, 255, 255, 0.06);
+
+  /* Spacing: the 4-point scale. Tailwind's whole-number steps (1 = 4px, 2 =
+     8px, 3 = 12px, 4 = 16px, 5 = 20px, 6 = 24px, 8 = 32px, 10 = 40px,
+     12 = 48px) are the same grid; half steps (0.5, 1.5, 2.5, 3.5) are off it
+     and new components do not use them. The named roles below say which
+     step a role takes. */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 20px;
+  --sp-6: 24px;
+  --sp-8: 32px;
+  --sp-10: 40px;
+  --sp-12: 48px;
+  --screen-pad: var(--sp-4);
+  --list-pad: var(--sp-4);
+  --card-pad: var(--sp-4);
+  --section-gap: var(--sp-6);
+  --text-gap: var(--sp-1);
+  --icon-gap: var(--sp-2);
+
+  /* Corners. */
+  --r-control: 10px; /* chips, small controls, inputs (8-12) */
+  --r-card: 14px; /* standard cards (12-16) */
+  --r-hero: 16px; /* large transaction cards (14-18) */
+  --r-bubble: 18px; /* message bubbles; tail corner 6px */
+  --r-tail: 6px;
+
   /* Layer tokens: the only z values any component may use. fab floats over
      content, sheet overlays content and chrome, call takes the phone,
      toast answers to no one. */
@@ -47,6 +108,14 @@
   --z-sheet: 60;
   --z-call: 80;
   --z-toast: 100;
+}
+
+@font-face {
+  font-family: 'Archivo';
+  font-weight: 400 700;
+  font-style: normal;
+  font-display: swap;
+  src: url('/fonts/archivo-var.woff2') format('woff2');
 }
 
 html, body, #root {
@@ -63,7 +132,7 @@ html, body, #root {
 body {
   background: var(--bg) !important;
   color: var(--text);
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  font-family: 'Archivo', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
   overscroll-behavior-y: none;
@@ -87,7 +156,7 @@ img {
 }
 
 :focus-visible {
-  outline: 2px solid rgba(37, 99, 235, 0.9);
+  outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
 
@@ -135,7 +204,7 @@ select:focus-visible {
 
 input::placeholder,
 textarea::placeholder {
-  color: rgba(156, 163, 175, 0.8);
+  color: var(--text-3);
 }
 
 ::-webkit-scrollbar {
@@ -164,6 +233,16 @@ textarea::placeholder {
   .fab-pos { bottom: calc(var(--nav-h) + var(--sab) + 1.25rem); right: var(--app-edge); }
   .fab-menu-pos { bottom: calc(var(--nav-h) + var(--sab) + 6rem); right: var(--app-edge); }
   .touch-target { min-width: 44px; min-height: 44px; }
+
+  /* Amounts: tabular, lining numerals so a column of prices lines up. */
+  .amount {
+    font-variant-numeric: tabular-nums lining-nums;
+    font-feature-settings: 'tnum' 1, 'lnum' 1;
+  }
+
+  /* Pressed state for a tappable surface: the pressed grey, no scale. */
+  .press { transition: background-color 120ms ease; }
+  .press:active { background-color: var(--pressed); }
 
   /* Elevation without arbitrary z-[...] literals (master §1). */
   .z-fab { z-index: var(--z-fab); }
@@ -233,8 +312,8 @@ textarea::placeholder {
   }
 
   .neon-green {
-    color: #10b981;
-    text-shadow: 0 0 10px rgba(16, 185, 129, 0.5);
+    color: var(--success);
+    text-shadow: 0 0 10px rgb(var(--success-rgb) / 0.5);
   }
 
   .mono {
@@ -351,7 +430,13 @@ textarea::placeholder {
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
+  }
+  /* A press that scales is movement: it keeps its colour change only. */
+  [class*='active:scale-']:active,
+  .hybrid-button:active {
+    transform: none !important;
   }
 }
