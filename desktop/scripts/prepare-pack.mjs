@@ -19,10 +19,31 @@ import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
+// Only the desktop build carries the onion group door (see src/lib/egress.js:
+// a browser cannot reach an onion, the shell's own Tor can). Staging the web
+// build here would make every group connection leave Tor without a word, so
+// this refuses instead of packing it.
+export function assertDesktopDoor(dir) {
+  // The marker is written by scripts/build-desktop.mjs and by nothing else.
+  // Looking for ".onion" in the bundle would not work: every build carries
+  // that string in ordinary URL-parsing code, so a web build would pass.
+  const marker = path.join(dir, 'cipher-desktop-build.json');
+  let marked = false;
+  try {
+    marked = JSON.parse(fs.readFileSync(marker, 'utf8')).desktop === true;
+  } catch {
+    marked = false;
+  }
+  if (!marked) {
+    throw new Error(`No group door in the build at ${dir}: this is a web build, and the desktop would quietly leave Tor for groups. Run "npm run build:desktop" in the cipher repo root and stage dist-desktop.`);
+  }
+}
+
 export function stageWeb(webBuildDir, targetDir) {
   if (!fs.existsSync(path.join(webBuildDir, 'index.html'))) {
-    throw new Error(`No web build at ${webBuildDir}. Run "npm run build" in the cipher repo root first.`);
+    throw new Error(`No build at ${webBuildDir}. Run "npm run build:desktop" in the cipher repo root first.`);
   }
+  assertDesktopDoor(webBuildDir);
   fs.rmSync(targetDir, { recursive: true, force: true });
   fs.cpSync(webBuildDir, targetDir, { recursive: true });
 }
@@ -53,7 +74,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   try {
     const [platform, webBuild] = process.argv.slice(2);
     checkVendorTor(path.join(root, 'vendor'), platform);
-    stageWeb(path.resolve(webBuild || path.join(root, '..', 'dist')), path.join(root, 'web'));
+    stageWeb(path.resolve(webBuild || path.join(root, '..', 'dist-desktop')), path.join(root, 'web'));
     console.log(`Staged the web build in web/ and checked the ${platform} tor in vendor/.`);
   } catch (e) {
     console.error(e.message);

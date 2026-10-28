@@ -34,13 +34,31 @@ export const EGRESS = [
   { id: 'apns', role: 'iOS push', url: 'https://api.push.apple.com', sees: 'Nothing from the phone. The push box you run delivers a message or a call here when an APNs key is set. The text is not included.', called: false },
 ];
 
-// The founder's own onion door for groups. It outranks the shipped clearnet
-// address; a device's own paste outranks both, and `off` drops the host
-// entirely. The address is a literal on purpose: anything that reaches the
-// page is in the bundle anyway, so an env var bought no secrecy and only
-// bought a silent fallback to clearnet on every build made without it.
-// A fresh door is one folder and one rebuild away.
-export const FOUNDER_GROUP_ONION = 'wss://5zxjlolifxz4didbdbnr4bigzcjpeejgpa4nw5ef5f3vvevh4vxmytyd.onion';
+// The group door is chosen by the build, and the address lives outside the
+// repo. A browser cannot open a connection to an onion at all: a page served
+// over https may not dial ws:// on port 80 (mixed content), and the hidden
+// service answers nothing on 443. So the web build — the browser, iPhone
+// Safari, the installed PWA — ships the clear address its own row already
+// names, and the desktop build, which runs its own Tor, carries the onion.
+//
+// The address is not written here. It comes from an untracked build file
+// (VITE_GROUP_ONION, read by scripts/with-app-env.mjs), and the desktop build
+// refuses to start without it: a desktop bundle that silently fell back to
+// clearnet would take groups off Tor without a word. That refusal is the
+// difference between an env var and a silent fallback.
+//
+// The switch is decided at build time, never by looking at the user agent and
+// never by a runtime guess: a page cannot tell reliably whether Tor is
+// underneath it. prepare-pack.mjs refuses a build without the marker
+// build-desktop.mjs writes, for the same reason.
+//
+// A device's own paste still outranks the build's door, and `off` still drops
+// the host entirely.
+const DESKTOP_BUILD = typeof __CIPHER_DESKTOP_BUILD__ !== 'undefined' && __CIPHER_DESKTOP_BUILD__ === true;
+
+const buildDoor = String(import.meta?.env?.VITE_GROUP_ONION || '').trim();
+
+export const FOUNDER_GROUP_ONION = DESKTOP_BUILD && buildDoor ? buildDoor : '';
 
 // The same shape for the doors still to come: one message relay, one search
 // relay, one media host, one note host. Each ships dark (empty) until the

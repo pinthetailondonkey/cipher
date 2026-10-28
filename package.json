@@ -11,6 +11,7 @@
     "preview:restart": "node scripts/preview.mjs restart",
     "preview:stop": "node scripts/preview.mjs stop",
     "boxes": "node scripts/boxes.mjs",
+    "build:desktop": "node scripts/build-desktop.mjs",
     "build:ui-test": "node scripts/build-ui-test.mjs",
     "test:ui": "node scripts/build-ui-test.mjs && playwright test",
     "lint:core": "oxlint src/useIdentity.js src/Chat.jsx src/hooks/useNIP44DM.js src/hooks/useNIP29Group.js src/db.js",

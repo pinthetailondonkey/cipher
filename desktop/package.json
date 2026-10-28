@@ -11,8 +11,9 @@
     "test": "node --test test/",
     "prepare:linux": "node scripts/prepare-pack.mjs linux",
     "prepare:win": "node scripts/prepare-pack.mjs win",
-    "dist": "npm run prepare:linux && electron-builder --linux",
-    "dist:win": "npm run prepare:win && electron-builder --win"
+    "web": "npm --prefix .. run build:desktop",
+    "dist": "npm run web && npm run prepare:linux && electron-builder --linux",
+    "dist:win": "npm run web && npm run prepare:win && electron-builder --win"
   },
   "devDependencies": {
     "electron": "33.4.11",
