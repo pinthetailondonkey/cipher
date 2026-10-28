@@ -9,7 +9,10 @@
   "scripts": {
     "start": "electron .",
     "test": "node --test test/",
-    "dist": "electron-builder --linux"
+    "prepare:linux": "node scripts/prepare-pack.mjs linux",
+    "prepare:win": "node scripts/prepare-pack.mjs win",
+    "dist": "npm run prepare:linux && electron-builder --linux",
+    "dist:win": "npm run prepare:win && electron-builder --win"
   },
   "devDependencies": {
     "electron": "33.4.11",

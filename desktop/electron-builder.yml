@@ -7,10 +7,23 @@ executableName: cipher
 # TODO: no icon yet (docs/DESKTOP.md build order step 2). electron-builder
 # ships a default placeholder until linux/icon.png (>=512px) exists.
 asar: true
+# Build output goes to out/ and the web build is staged in web/ (by
+# scripts/prepare-pack.mjs). They used to share dist/, which was both packed
+# and written to, so the Windows app.asar carried the Linux tarball and both
+# unpacked trees inside itself. Output is also excluded below as a second lock.
+directories:
+  output: out
 files:
   - src/**
-  - dist/**
+  - web/**
   - package.json
+  - "!out/**"
+  - "!dist/**"
+  - "!vendor/**"
+  - "!data/**"
+  - "!test/**"
+  - "!scripts/**"
+  - "!**/*.tar.gz"
 # vendor/tor is downloaded by scripts/fetch-tor.sh (git-ignored, never
 # committed) and copied OUTSIDE the asar: a packed archive cannot be
 # spawned, so the bundled tor ships as a real file at
@@ -22,3 +35,8 @@ linux:
   target:
     - tar.gz
   category: Network
+# Windows is also a portable archive, no installer. Packing it needs the
+# Windows tor staged first (scripts/fetch-tor-windows.sh); see README.md.
+win:
+  target:
+    - tar.gz

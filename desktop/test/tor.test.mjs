@@ -4,7 +4,11 @@ import { createRequire } from 'node:module';
 
 // Desktop code is CommonJS (electron's main); tests read it without electron.
 const require = createRequire(import.meta.url);
-const { buildTorArgs, parseOsRelease, randomSocksPort, socksPortFromTorrc } = require('../src/tor.js');
+const net = require('node:net');
+const {
+  buildTorArgs, parseOsRelease, randomSocksPort, socksPortFromTorrc,
+  portIsFreeSync, pickSocksPort, createRestartLimiter,
+} = require('../src/tor.js');
 
 test('tor args serve socks on the loopback port with a temporary data dir', () => {
   assert.deepEqual(
@@ -72,4 +76,51 @@ test('torrc hands over the first loopback SocksPort and nothing else', () => {
   assert.equal(socksPortFromTorrc('# SocksPort 127.0.0.1:9050\n'), null);
   assert.equal(socksPortFromTorrc(''), null);
   assert.equal(socksPortFromTorrc(undefined), null);
+});
+
+test('portIsFreeSync sees a taken port and a free one', async () => {
+  const server = net.createServer();
+  await new Promise((r) => server.listen(0, '127.0.0.1', r));
+  const taken = server.address().port;
+  try {
+    assert.equal(portIsFreeSync(taken), false);
+  } finally {
+    await new Promise((r) => server.close(r));
+  }
+  assert.equal(portIsFreeSync(taken), true);
+});
+
+test('pickSocksPort keeps 9050 when free and moves off it when taken', () => {
+  assert.deepEqual(pickSocksPort({ isFree: () => true }), { port: 9050, moved: false });
+  const seen = [];
+  const got = pickSocksPort({
+    isFree: (p) => { seen.push(p); return p !== 9050 && p !== 20001; },
+    random: (() => { const q = [20001, 30002]; return () => q.shift(); })(),
+  });
+  assert.deepEqual(got, { port: 30002, moved: true });
+  assert.deepEqual(seen, [9050, 20001, 30002]);
+});
+
+test('pickSocksPort never returns the taken preferred port, and gives up loudly', () => {
+  assert.throws(
+    () => pickSocksPort({ isFree: () => false, random: () => 9050, attempts: 3 }),
+    /free local port/,
+  );
+  // a random draw equal to the preferred port is skipped even if "free"
+  assert.deepEqual(
+    pickSocksPort({ isFree: (p) => p !== 9050, random: (() => { const q = [9050, 40000]; return () => q.shift(); })() }),
+    { port: 40000, moved: true },
+  );
+});
+
+test('the restart limiter allows a few restarts per window and then stops', () => {
+  let t = 0;
+  const lim = createRestartLimiter({ max: 3, windowMs: 1000, now: () => t });
+  assert.equal(lim.allow(), true);
+  assert.equal(lim.allow(), true);
+  assert.equal(lim.allow(), true);
+  assert.equal(lim.allow(), false);
+  assert.equal(lim.allow(), false);
+  t = 1000; // the window has passed: the old restarts no longer count
+  assert.equal(lim.allow(), true);
 });
