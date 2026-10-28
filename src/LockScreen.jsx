@@ -11,7 +11,7 @@ import VerifyKey from './components/onboarding/VerifyKey';
 import SetupProfile from './components/onboarding/SetupProfile';
 import Restore from './components/onboarding/Restore';
 import RestoreMnemonic from './components/onboarding/RestoreMnemonic';
-import { passkeyFailureMessage } from './lib/passkeyMessages';
+import { passkeyFailureCode, passkeyFailureMessage } from './lib/passkeyMessages';
 
 export default function LockScreen({ identity }) {
   const [mode, setMode] = useState(() => {
@@ -69,7 +69,10 @@ export default function LockScreen({ identity }) {
       }
     } catch (biometricError) {
       console.error('[LockScreen] Passkey unlock failed:', biometricError);
-      failAttempt(passkeyFailureMessage(biometricError));
+      // A throw carries a code too: a cancellation the browser raised, not
+      // returned, must not shake the screen or look like a wrong PIN.
+      if (passkeyFailureCode(biometricError) === 'cancelled') setError(passkeyFailureMessage(biometricError));
+      else failAttempt(passkeyFailureMessage(biometricError));
     } finally {
       setBiometricLoading(false);
     }
