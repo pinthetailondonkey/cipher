@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { LOCKED_OUT_MESSAGE, MIN_PIN_LENGTH, failPinAttempt, isAcceptableNewPin, pinFailureMessage, removeAccountKeys, resetPinFailures } from './lib/vaultLockout'
 import { profileRelays as PROFILE_RELAYS } from './lib/relays'
+import { DeviceKeyMissing, getDeviceProvider, isDeviceVault, unwrapDeviceVault } from './lib/vaultEnvelope'
 
 // Derive 32-byte secret key from BIP39 mnemonic
 export async function deriveSkFromMnemonic(mnemonic) {
@@ -48,7 +49,9 @@ async function getKey(secret, salt = LEGACY_SALT, iterations = LEGACY_ITERATIONS
   )
 }
 
-export const isLegacyVault = (encryptedObj) => !encryptedObj?.salt
+// A device vault (v3) has no salt of its own: the PIN vault sits inside it.
+// It must never be taken for a no-salt legacy vault.
+export const isLegacyVault = (encryptedObj) => !encryptedObj?.salt && !isDeviceVault(encryptedObj)
 
 export async function encryptKey(skArray, secret) {
   const salt = crypto.getRandomValues(new Uint8Array(16))
@@ -66,7 +69,16 @@ export async function encryptKey(skArray, secret) {
   }
 }
 
-export async function decryptKey(encryptedObj, secret) {
+// opts.pk and opts.provider matter only for a device vault (v3): the device
+// layer opens first (a failure there is a DeviceKeyError, never a wrong PIN),
+// then the PIN vault inside opens exactly as a v2 or legacy vault always did.
+export async function decryptKey(encryptedObj, secret, opts = {}) {
+  if (isDeviceVault(encryptedObj)) {
+    const provider = opts.provider || getDeviceProvider()
+    if (!provider) throw new DeviceKeyMissing('no-provider')
+    const inner = await unwrapDeviceVault(encryptedObj, opts.pk, provider)
+    return decryptKey(inner, secret)
+  }
   const key = isLegacyVault(encryptedObj)
     ? await getKey(secret)
     : await getKey(secret, new Uint8Array(encryptedObj.salt), encryptedObj.iter || KDF_ITERATIONS)
