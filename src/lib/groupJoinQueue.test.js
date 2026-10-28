@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
-  DENIED_PER_GROUP_MAX, JOIN_REQUESTS_EVENT, PENDING_PER_GROUP_MAX, PENDING_TOTAL_MAX, admitRelayRoster, clearJoinDenial, joinRequestDecision, denyPendingJoin, dropPendingJoin, hasPendingJoin, isJoinDenied,
+  DENIED_PER_GROUP_MAX, JOIN_REQUESTS_EVENT, PENDING_PER_GROUP_MAX, PENDING_TOTAL_MAX, admitRelayRoster, clearJoinDenial, joinRequestDecision, denyPendingJoin, dropPendingJoin, forgetJoinsNotOwned, hasPendingJoin, isJoinDenied,
   loadPendingJoins, pendingJoinsFor, queuePendingJoin, subscribeJoinRequests,
   withoutDenied,
 } from './groupJoinQueue.js';
@@ -210,6 +210,32 @@ test('a join request is queued on the owner device only', () => {
   // Owner or not, a member of record re-stating a join is known.
   assert.equal(decide({ isOwner: false, inSnapshot: true }), 'known');
 });
+
+// Rows the old rule wrote on devices that cannot approve anyone. The sweep
+// clears them once per load; the owner's own queue is never touched.
+const ME = 'e'.repeat(64);
+const MY_GROUP = 'mine';
+const JOINED_GROUP = 'theirs';
+
+test('the one-time sweep clears a member device\'s rows and keeps the owner\'s own queue', () => withStorage(() => {
+  queuePendingJoin(MY_GROUP, { pubkey: OTHER, eventId: 'own1', at: 100 });
+  queuePendingJoin(JOINED_GROUP, { pubkey: OTHER, eventId: 'their1', at: 100 });
+  queuePendingJoin('left-behind', { pubkey: OTHER, eventId: 'gone1', at: 100 });
+  const groups = [
+    { id: MY_GROUP, creator: ME },
+    { id: JOINED_GROUP, creator: OTHER },
+    { id: 'creatorless', creator: '' },
+  ];
+  queuePendingJoin('creatorless', { pubkey: OTHER, eventId: 'hmm1', at: 100 });
+  const cleared = forgetJoinsNotOwned({ groups, me: ME });
+  assert.equal(pendingJoinsFor(MY_GROUP).length, 1, 'the owner\'s own queue stays');
+  assert.equal(pendingJoinsFor(JOINED_GROUP).length, 0, 'a group this account did not create is cleared');
+  assert.equal(pendingJoinsFor('left-behind').length, 0, 'a group this account no longer holds is cleared');
+  assert.equal(pendingJoinsFor('creatorless').length, 1, 'a group that names no creator is kept, not guessed away');
+  assert.equal(cleared, 2);
+  // A second pass finds nothing and writes nothing.
+  assert.equal(forgetJoinsNotOwned({ groups, me: ME }), 0);
+}));
 
 // Audit finding: the pending and deny stores grew without limit, and a full
 // drawer was swallowed silently.

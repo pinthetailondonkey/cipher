@@ -21,7 +21,7 @@ import { relaysForPeer } from '../lib/dmRelays';
 import { claimSecuringSend, dropSecuringSend, forgetPendingKeyRequest, queueSecuringSend, releaseSecuringSend, rememberPendingKeyRequest, resetKeyRequest, securingSendsFor } from '../lib/crypto/groupKeyRequest';
 import { approvalKeySend, clearKeyAsk, keyAskAt, rememberKeyAsk } from '../lib/crypto/groupKeyAsks';
 import { sortMessages, stampArrival } from '../features/chat/media';
-import { admitRelayRoster, isJoinDenied, joinRequestDecision, denyPendingJoin, dropPendingJoin, clearJoinDenial, loadPendingJoins, queuePendingJoin, withoutDenied } from '../lib/groupJoinQueue.js';
+import { admitRelayRoster, forgetJoinsNotOwned, isJoinDenied, joinRequestDecision, denyPendingJoin, dropPendingJoin, clearJoinDenial, loadPendingJoins, queuePendingJoin, withoutDenied } from '../lib/groupJoinQueue.js';
 import { allowsGroupJoins } from '../lib/privacy.js';
 import { clearMemberRemoval, recordMemberRemoval, sentAfterRemoval } from '../lib/groupRemoval.js';
 import { groupMetaAnnouncement } from '../lib/groupMetaAnnouncement.js';
@@ -532,6 +532,14 @@ export function useNIP29Group({ identity }) {
     if (!identity?.sk) return undefined;
     return startOutboxSync(identity);
   }, [identity?.pk, identity?.sk]);
+
+  // One-time per session: rows the old rule wrote on a device that cannot
+  // approve anyone go now. The owner's own queue is kept, and a group that
+  // names no creator is kept too — never wiped on a guess.
+  useEffect(() => {
+    if (!identity?.pk) return;
+    forgetJoinsNotOwned({ groups: getMyGroups(identity.pk), me: identity.pk });
+  }, [identity?.pk]);
 
   const appendSystemMessage = useCallback((groupId, text, eventId = null) => {
     const id = eventId ? 'sys-' + eventId : 'sys-' + Date.now() + Math.random().toString(36).substr(2, 9);

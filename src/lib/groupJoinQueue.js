@@ -104,6 +104,40 @@ export function dropPendingJoin(groupId, pubkey) {
   return true;
 }
 
+// One-time sweep, with the owner-only rule above: rows the old rule wrote on
+// a device that cannot approve anyone. They were never actionable there, and
+// the row is not inert — the key grant path reads it and would deny the
+// sender a key on that device even after the owner approves them.
+//
+// Kept: the owner's own queue (creator is this account), and any group whose
+// row names no creator either way — never wipe a queue on a guess. Cleared:
+// a group this account did not create, and a group this account does not
+// hold at all. Returns how many groups were cleared.
+export function forgetJoinsNotOwned({ groups = [], me = '' } = {}) {
+  const owned = new Set();
+  const held = new Map();
+  for (const group of groups || []) {
+    if (!group?.id) continue;
+    held.set(String(group.id), group);
+    if (group.creator === undefined || group.creator === null || group.creator === '') continue;
+    if (String(group.creator) === String(me)) owned.add(String(group.id));
+  }
+  const all = loadPendingJoins();
+  let cleared = 0;
+  for (const id of Object.keys(all)) {
+    if (owned.has(id)) continue;
+    const group = held.get(id);
+    // Held but naming no creator: keep — never wipe a queue on a guess.
+    if (group && (group.creator === undefined || group.creator === null || group.creator === '')) continue;
+    delete all[id];
+    cleared += 1;
+  }
+  if (!cleared) return 0;
+  persist(KEY, all);
+  notifyJoinRequests();
+  return cleared;
+}
+
 // The grant path reads the queue too (drill round D1-B/D1-D). A sender
 // still holding a pending row has never been approved by anyone: a open-join
 // relay writing them into its next 39002 used to let the grant path hand
