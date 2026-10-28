@@ -1,5 +1,6 @@
 import { AnimatePresence, motion } from 'framer-motion';
 import { useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { useModalA11y } from './modal';
 
 // Open Sheet registry so Escape only takes down the topmost open sheet —
@@ -11,7 +12,17 @@ const openSheets = [];
 // md+ screens center it as a max-w-md panel. One surface replaces the app's
 // hand-rolled modal shells — DeadDrop, product editor, profile card, onboarding.
 // `heading` and `ariaLabel` are aliases of `title` and `label`: the earlier
-// converted screens call them by the first pair.
+// converted screens call them by the first pair. A sheet that names only its
+// spoken label still gets the shared heading bar from that label, so no sheet
+// has to draw its own title and dismiss control inside the body.
+//
+// The overlay renders through a portal on document.body, not inside the app
+// tree. The shell wraps every tab in <main class="z-fab">, which is a
+// stacking context: a sheet mounted inside it could never paint over the
+// bottom bar, however high its own z-index. Portalled to the body, the overlay
+// takes the one sheet layer (--z-sheet, above the bar) and dims and blocks the
+// whole app behind it. The portal is skipped when there is no document (the
+// server render in ui.test), so the same markup still renders in place there.
 export default function Sheet({
   open,
   onClose,
@@ -25,8 +36,8 @@ export default function Sheet({
   className = '',
   bodyClassName = '',
 }) {
-  const headingText = title || heading;
-  const spokenLabel = label || ariaLabel || headingText;
+  const headingText = title || heading || (typeof label === 'string' && label ? label : null);
+  const spokenLabel = label || ariaLabel || title || heading;
   const uid = useRef(null);
   // Only the topmost open sheet answers Escape; deeper sheets keep theirs
   // for their own unwinding.
@@ -66,7 +77,7 @@ export default function Sheet({
     };
   }, [open]);
 
-  return (
+  const overlay = (
     <AnimatePresence>
       {open && (
         <motion.div
@@ -97,29 +108,33 @@ export default function Sheet({
             animate={{ y: 0 }}
             exit={{ y: '100%', opacity: 0.9 }}
             transition={{ type: 'spring', stiffness: 380, damping: 34 }}
-            className={`w-full max-w-md overflow-hidden rounded-t-[28px] border-b-0 border-x border-t border-line bg-panel pb-sheet shadow-2xl outline-none md:rounded-[28px] md:border-b ${className}`}
+            className={`w-full max-w-md overflow-hidden overscroll-contain rounded-t-[28px] border-b-0 border-x border-t border-line bg-panel pb-sheet shadow-2xl outline-none md:rounded-[28px] md:border-b ${className}`}
             onClick={(event) => event.stopPropagation()}
           >
-            <div className="mx-auto mt-2 h-1 w-9 shrink-0 rounded-full bg-ink/20" aria-hidden="true" />
-            {headingText && (
-              <div className="flex items-center gap-3 px-5 pt-3">
-                <h2 id={labelledBy} className="min-w-0 flex-1 truncate text-[15px] font-bold text-ink">{headingText}</h2>
-                <button
-                  type="button"
-                  onClick={onClose}
-                  aria-label={closeLabel}
-                  className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-full text-inkMuted hover:bg-ink/5 hover:text-ink"
-                >
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
-                    <path d="M18 6 6 18M6 6l12 12" />
-                  </svg>
-                </button>
-              </div>
-            )}
+            <div className="sticky top-0 bg-panel">
+              <div className="mx-auto mt-2 h-1 w-9 shrink-0 rounded-full bg-ink/20" aria-hidden="true" />
+              {headingText && (
+                <div className="flex items-center gap-3 px-5 pt-3">
+                  <h2 id={labelledBy} className="min-w-0 flex-1 truncate text-[15px] font-bold text-ink">{headingText}</h2>
+                  <button
+                    type="button"
+                    onClick={onClose}
+                    aria-label={closeLabel}
+                    className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-full text-inkMuted hover:bg-ink/5 hover:text-ink"
+                  >
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+                      <path d="M18 6 6 18M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+              )}
+            </div>
             <div className={`px-5 pt-3 ${bodyClassName}`}>{children}</div>
           </motion.div>
         </motion.div>
       )}
     </AnimatePresence>
   );
+
+  return typeof document !== 'undefined' ? createPortal(overlay, document.body) : overlay;
 }

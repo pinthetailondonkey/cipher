@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { motion } from 'framer-motion';
 import { AlertTriangle } from 'lucide-react';
 import Button from './Button';
@@ -51,7 +52,11 @@ export default function Dialog({
     }
   };
 
-  return (
+  // The confirm rides the same portal layer as the sheets (see Sheet.jsx):
+  // it answers a button pressed inside a sheet, so it has to paint above it,
+  // and a sheet-mounted confirm could never outrank the sheet itself. Without
+  // a document (the server render in ui.test) it stays in place.
+  const overlay = (
     <>
       <motion.div
         key="dialog-veil"
@@ -119,4 +124,6 @@ export default function Dialog({
       </motion.div>
     </>
   );
+
+  return typeof document !== 'undefined' ? createPortal(overlay, document.body) : overlay;
 }
