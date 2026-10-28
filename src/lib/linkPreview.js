@@ -9,6 +9,22 @@ export function firstUrl(text) {
   return match[0].replace(/[),.!?]+$/, '');
 }
 
+// What a preview may ask about. The fragment is not part of the page a link
+// points at, and for a burn note the fragment IS the key: the preview host
+// must never be handed one. A note link has nothing to preview anyway, so it
+// is skipped outright instead of being sent without its fragment.
+export function previewTarget(url) {
+  try {
+    const parsed = new URL(String(url || ''));
+    if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return '';
+    parsed.hash = '';
+    if (parsed.pathname.replace(/\/+$/, '') === '/note') return '';
+    return parsed.toString();
+  } catch {
+    return '';
+  }
+}
+
 // The one fetch door for previews. A fresh profile is opted out
 // (DEFAULT_PRIVACY.linkPreviews is false), and this check — not the call
 // site alone — is what keeps a link in a chat from reaching the preview
@@ -16,7 +32,9 @@ export function firstUrl(text) {
 export async function fetchLinkPreview(url, { fetchImpl = globalThis.fetch, signal } = {}) {
   if (!url || typeof fetchImpl !== 'function') return null;
   if (!allowsLinkPreviews()) return null;
-  const endpoint = linkPreviewEndpoint(url);
+  const target = previewTarget(url);
+  if (!target) return null;
+  const endpoint = linkPreviewEndpoint(target);
   if (!endpoint) return null;
   try {
     const response = await fetchImpl(endpoint, { signal });

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { fetchLinkPreview, firstUrl } from './linkPreview.js';
+import { fetchLinkPreview, firstUrl, previewTarget } from './linkPreview.js';
 import { setPrivacy, getPrivacy } from './privacy.js';
 import { scopeKey } from './storage.js';
 
@@ -45,6 +45,38 @@ test('a refused or broken response stays a null preview, never a throw', async (
   const broken = await fetchLinkPreview('https://example.com/x', { fetchImpl: async () => { throw new Error('network gone'); } });
   assert.equal(broken, null);
   setPrivacy({ linkPreviews: false });
+});
+
+// A burn note's whole secret is its fragment. Previews used to encode the
+// entire link into the query of the preview host, key and all.
+test('a burn-note link never reaches the preview host', async () => {
+  setPrivacy({ linkPreviews: true });
+  const asked = [];
+  const fake = async (endpoint) => { asked.push(endpoint); return { ok: true, json: async () => ({}) }; };
+  const fragment = 'a'.repeat(102);
+  const result = await fetchLinkPreview(`https://www.ciphermessenger.org/note#${fragment}`, { fetchImpl: fake });
+  assert.equal(result, null);
+  assert.equal(asked.length, 0, 'a note link has nothing to preview and its key stays home');
+  setPrivacy({ linkPreviews: false });
+});
+
+test('no fragment of any link is handed to the preview host', async () => {
+  setPrivacy({ linkPreviews: true });
+  const asked = [];
+  const fake = async (endpoint) => { asked.push(endpoint); return { ok: true, json: async () => ({ data: {} }) }; };
+  await fetchLinkPreview('https://example.com/page#section-2', { fetchImpl: fake });
+  assert.equal(asked.length, 1);
+  assert.doesNotMatch(asked[0], /section-2|%23/, 'the fragment is dropped, not encoded');
+  assert.match(asked[0], /url=https%3A%2F%2Fexample\.com%2Fpage$/);
+  setPrivacy({ linkPreviews: false });
+});
+
+test('previewTarget drops the fragment and refuses note links', () => {
+  assert.equal(previewTarget('https://example.com/a#x'), 'https://example.com/a');
+  assert.equal(previewTarget('https://www.ciphermessenger.org/note#k'), '');
+  assert.equal(previewTarget('https://www.ciphermessenger.org/note/#k'), '');
+  assert.equal(previewTarget('javascript:alert(1)'), '');
+  assert.equal(previewTarget('not a url'), '');
 });
 
 test('firstUrl picks the first link and trims trailing punctuation', () => {
