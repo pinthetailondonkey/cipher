@@ -335,15 +335,18 @@ export function useIdentity() {
           // An unset pointer claims the session's account.
           // (security re-attack)
           const pointer = getActivePubkey()
+          const entry = getVaults()[pk]
           if (pointer && pointer !== 'guest' && pointer !== pk) {
             sessionStorage.removeItem('cipher_session_sk')
-          } else if (!isDeviceVault(getVaults()[pk]?.vault)) {
+          } else if (entry && !isDeviceVault(entry.vault)) {
             // A session saved before the device-lock law can outlive it: a
             // tab carries its sessionStorage across the reload that swaps in
             // this build, and the vault it sits on was never wrapped. That
             // session is not let in — the wrap happens at the next unlock,
             // which asks for the PIN. A vault already locked to this device
-            // is the one case that restores with no prompt at all.
+            // is the one case that restores with no prompt at all. A session
+            // with no vault entry on this device is not this regression: it
+            // keeps the answer it has always had.
             sessionStorage.removeItem('cipher_session_sk')
           } else {
             if (!pointer || pointer === 'guest') localStorage.setItem('cipher_active_pubkey', pk)
