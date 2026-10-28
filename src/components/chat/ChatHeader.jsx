@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { ChevronLeft, MoreVertical, Phone, Shield, ShieldAlert } from 'lucide-react';
 import { useChatStore } from '../../store/chatStore';
-import { startCall } from '../../lib/voiceCall';
+import { callsAvailable, startCall } from '../../lib/voiceCall';
 import { haptic } from '../../lib/haptics';
 import { safetyNumberFor, verifySafetyNumber } from '../../lib/safetyNumber';
 import { shortNpub } from '../../lib/npub';
@@ -155,7 +155,7 @@ export default function ChatHeader({ mode }) {
           <h2 className="max-w-[12rem] truncate text-[15px] font-semibold leading-none text-ink">{title}</h2>
         </button>
         <div className="ml-auto flex items-center">
-          {mode === 'dm' && (
+          {mode === 'dm' && callsAvailable && (
             <button type="button" onClick={placeCall} aria-label="Voice call" className="touch-target -mr-1 flex items-center justify-center text-ink/70 hover:text-ink">
               <Phone size={19} />
             </button>

@@ -79,7 +79,19 @@ export default function PrivacySettings({ onBack }) {
       <ScreenHeader title="Privacy" onBack={onBack} />
       <div className="space-y-4 p-4">
         <div className="overflow-hidden rounded-2xl border border-line bg-panel">
-          <Choice icon={Phone} label="Calls" hint="Voice only. Video is not available." value={privacy.calls} options={[{ id: 'everyone', label: 'Everyone' }, { id: 'nobody', label: 'Nobody' }]} onChange={(calls) => update({ calls })} />
+          {/* Calls are off in every build under the no-IP-leak law, so this
+              row states a fact instead of offering a switch that cannot change
+              anything. The stored value is left where it is: it is not read by
+              any call code, and rewriting it would claim a setting changed. */}
+          <div className="border-b border-line p-4">
+            <div className="flex items-start gap-3">
+              <Phone size={24} className="mt-0.5 shrink-0 text-inkSubtle" />
+              <div className="min-w-0 flex-1">
+                <p className="text-[15px] font-semibold text-ink">Calls</p>
+                <p className="mt-0.5 text-[13px] text-inkMuted">Off in this app. Messages work everywhere calls ever did.</p>
+              </div>
+            </div>
+          </div>
           <Choice icon={Eye} label="Last seen" hint="Nobody also stops your typing status." value={privacy.lastSeen} options={[{ id: 'everyone', label: 'Everyone' }, { id: 'nobody', label: 'Nobody' }]} onChange={(lastSeen) => update({ lastSeen })} />
           <Choice icon={Image} label="Profile photo" hint="Hidden the next time you save your profile." value={privacy.profilePhoto} options={[{ id: 'everyone', label: 'Everyone' }, { id: 'nobody', label: 'Nobody' }]} onChange={(profilePhoto) => update({ profilePhoto })} />
           <Choice icon={Users} label="Groups" hint="Who can ask to join your groups. Nobody refuses new requests without showing them to you." value={privacy.groups} options={[{ id: 'everyone', label: 'Everyone' }, { id: 'nobody', label: 'Nobody' }]} onChange={(groups) => update({ groups })} />

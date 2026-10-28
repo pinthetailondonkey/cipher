@@ -14,6 +14,11 @@
 
 const CALLS_OFF = 'Calls are off in this app. Messages still work everywhere calls ever did.';
 
+// The one fact the UI reads to decide whether a call door exists at all. It is
+// not a setting and cannot be turned on: while this is false, no screen may
+// show a control that looks like it places a call.
+export const callsAvailable = false;
+
 let transport = async () => {};
 
 export function bindCallTransport(send) {

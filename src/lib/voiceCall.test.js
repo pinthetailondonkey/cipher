@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { bindCallTransport, getCallSnapshot, handleCallSignal, startCall } from './voiceCall.js';
+import { bindCallTransport, callsAvailable, getCallSnapshot, handleCallSignal, startCall } from './voiceCall.js';
 
 // Calls are off in every build (docs/NO-IP-LEAKS.md). The module keeps the
 // shape an old peer knows: an offer gets a polite reject, nothing ever rings,
@@ -62,4 +62,14 @@ test('a call signal a relay held too long is dropped without a reply', async () 
   await handleCallSignal({ data: offer, from: 'friend', known: true, createdAt: undefined });
   await handleCallSignal({ data: offer, from: 'friend', known: true, createdAt: 'yesterday' });
   assert.equal(sent.length, 1);
+});
+
+// The UI reads one flag to decide whether a call door exists at all. It must
+// never disagree with the module's own refusal: a screen that hides the button
+// and a startCall that says no are the same fact, stated once.
+test('the UI flag and the refusal are the same fact', async () => {
+  assert.equal(callsAvailable, false);
+  const started = await startCall({ peer: 'peer-a', name: 'Test' });
+  assert.equal(started.ok, false);
+  assert.match(started.error, /Calls are off/);
 });
