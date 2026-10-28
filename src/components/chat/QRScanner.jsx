@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
-import { CameraOff, Check, Copy, Scan, UserRound } from 'lucide-react';
+import { CameraOff, Check, Copy, Link2, Scan, UserRound } from 'lucide-react';
 import ScreenHeader from '../ui/ScreenHeader';
 import Sheet from '../ui/Sheet';
 import useDialogA11y from '../ui/dialogA11y';
 import { writeClipboard } from '../../lib/copyText';
 import { pubkeyFromScanned } from '../../lib/npub';
+import { scannedTargets, scannedHref } from '../../lib/scannedTarget';
 import { haptic } from '../../lib/haptics';
 import { useChatStore } from '../../store/chatStore';
 
@@ -126,6 +127,20 @@ export default function QRScanner({ onClose }) {
     onClose?.();
   };
 
+  // Everything Cipher itself hands out opens from here: a group by any of its
+  // link shapes or its id, a shared product card, a chat, a burn note. Each
+  // one walks out through the same boot path a tapped link uses, so a scan
+  // and a link cannot drift into two different joins.
+  const LABELS = { group: 'Open group', product: 'Open menu item', chat: 'Open chat', note: 'Open note' };
+  const doors = (decodedValue ? scannedTargets(decodedValue) : [])
+    .filter((target) => target.kind !== 'profile')
+    .map((target) => ({ ...target, href: scannedHref(target, window.location.origin) }))
+    .filter((target) => target.href);
+  const openDoor = (href) => {
+    haptic('light');
+    window.location.assign(href);
+  };
+
   return (
     <>
     <div className="fixed inset-0 z-call flex flex-col bg-scrim pt-safe pb-safe md:items-center md:justify-center md:bg-scrim/70" role="dialog" aria-modal="true" aria-label="Scan QR code">
@@ -173,6 +188,16 @@ export default function QRScanner({ onClose }) {
               <UserRound size={16} /> Open profile
             </button>
           )}
+          {doors.map((door) => (
+            <button
+              key={`${door.kind}:${door.href}`}
+              type="button"
+              onClick={() => openDoor(door.href)}
+              className="mt-2 flex min-h-[52px] w-full items-center justify-center gap-2 rounded-full border border-line text-[15px] font-bold text-ink"
+            >
+              <Link2 size={16} /> {LABELS[door.kind] || 'Open'}
+            </button>
+          ))}
         </div>
       </Sheet>
     </>
