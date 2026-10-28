@@ -1,5 +1,6 @@
 import { useCallback, useEffect } from 'react';
-import { db, openDBFor, saveMessage } from '../db';
+import { db, openDBFor, saveMessage, markSentMessagesRead } from '../db';
+import { receiptTime } from '../lib/messageMerge';
 import { dmControlAction, dmExpired, installMemberGroupKey } from './useGroupKeyMember';
 import { showNotification } from '../lib/notifications';
 import { useChatStore } from '../store/chatStore';
@@ -237,9 +238,17 @@ export function useNIP44DM({ identity }) {
                 return;
               }
               if (data.type === 'read') {
+                // Only the peer's receipt means "they read it". Our own receipt,
+                // echoed back from the relay, says nothing about our messages.
+                if (isSender) return;
+                const upTo = receiptTime(data, event.created_at);
+                // Written to the database first: the history fetch re-saves
+                // our messages as 'sent', and a tick held only in memory died
+                // on reload. Scoped to messages at or before the receipt.
+                await markSentMessagesRead(counterparty, upTo);
                 setDms(prev => {
                   const msgs = prev[counterparty] || [];
-                  return { ...prev, [counterparty]: msgs.map(m => m.isSender ? { ...m, read: true, deliveryStatus: 'read' } : m) };
+                  return { ...prev, [counterparty]: msgs.map(m => (m.isSender && Number(m.timestamp) <= upTo && m.deliveryStatus !== 'sending' && m.deliveryStatus !== 'failed' ? { ...m, read: true, deliveryStatus: 'read' } : m)) };
                 });
                 return;
               }
@@ -344,6 +353,7 @@ export function useNIP44DM({ identity }) {
       queryAllPages(pool, generalRelays, { kinds: [4], '#p': [identity.pk] })
     ]);
     const allDms = Array.from(new Map([...sentDms, ...recvDms].map(ev => [ev.id, ev])).values());
+    const readUpTo = new Map();
     for (const ev of allDms) {
       try {
         const isSender = ev.pubkey === identity.pk;
@@ -369,6 +379,13 @@ export function useNIP44DM({ identity }) {
           openDBFor(identity.pk);
           const installed = await installMemberGroupKey(data, ev.pubkey);
           if (!installed) console.error('[group-key] A key message arrived and was not installed.');
+          continue;
+        }
+        if (data.type === 'read' && !isSender) {
+          // Receipts that came in while the app was closed: keep the newest
+          // per peer and apply it after the loop.
+          const upTo = receiptTime(data, ev.created_at);
+          if (Number.isFinite(upTo) && upTo > (readUpTo.get(counterparty) ?? 0)) readUpTo.set(counterparty, upTo);
           continue;
         }
         if (data.type === 'typing' || data.type === 'read' || data.type === 'pin' || data.type === 'call') {
@@ -408,6 +425,7 @@ export function useNIP44DM({ identity }) {
         console.error('[DM] Could not save a message:', error);
       }
     }
+    for (const [peer, upTo] of readUpTo) await markSentMessagesRead(peer, upTo);
     const counterparties = new Set();
     for (const ev of allDms) {
       const isSender = ev.pubkey === identity.pk;

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { mergeStoredMessage, patchStoredMessage } from './messageMerge.js';
+import { mergeStoredMessage, patchStoredMessage, markReadThrough, receiptTime } from './messageMerge.js';
 
 const relayCopy = () => ({
   id: 'order-event',
@@ -81,4 +81,28 @@ test('a local edit survives the history fetch that serves the original text agai
   const commands = fs.readFileSync(new URL('../features/chat/useMessageCommands.js', import.meta.url), 'utf8');
   assert.match(commands, /patchMessage\(msg\.id, \{ message: newText, edited: true \}\)/);
   assert.equal(/db\.messages\.put\(updated\)/.test(commands), false);
+});
+
+test('a read tick survives the history fetch that re-saves our message as sent', () => {
+  const relay = () => ({ id: 'm-read', isSender: true, pubkey: 'me', timestamp: 10, data: { type: 'text', message: 'hi' }, deliveryStatus: 'sent' });
+  const [ticked] = markReadThrough([mergeStoredMessage(undefined, relay(), 'peer')], 20);
+  assert.equal(ticked.deliveryStatus, 'read');
+  const refetched = mergeStoredMessage(ticked, relay(), 'peer');
+  assert.equal(refetched.deliveryStatus, 'read');
+  assert.equal(refetched.read, true);
+});
+
+test('a read receipt covers only our messages at or before its time', () => {
+  const rows = [
+    { id: 'a', isSender: true, timestamp: 10, deliveryStatus: 'sent' },
+    { id: 'b', isSender: true, timestamp: 20, deliveryStatus: 'sent' },
+    { id: 'c', isSender: true, timestamp: 21, deliveryStatus: 'sent' },
+    { id: 'd', isSender: false, timestamp: 5 },
+    { id: 'e', isSender: true, timestamp: 1, deliveryStatus: 'failed' },
+  ];
+  assert.deepEqual(markReadThrough(rows, 20).map((m) => m.id), ['a', 'b']);
+  assert.deepEqual(markReadThrough(rows, NaN), []);
+  assert.equal(receiptTime({ at: 50 }, 40), 40);
+  assert.equal(receiptTime({ at: 30 }, 40), 30);
+  assert.equal(receiptTime({}, 40), 40);
 });

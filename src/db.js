@@ -1,6 +1,6 @@
 // src/db.js
 import Dexie from 'dexie';
-import { mergeStoredMessage, patchStoredMessage } from './lib/messageMerge';
+import { mergeStoredMessage, patchStoredMessage, markReadThrough } from './lib/messageMerge';
 import { createWriteQueue } from './lib/writeQueue';
 import {
   trySealMessageRow, openMessageRow, isSealedRow,
@@ -359,6 +359,25 @@ export const patchMessage = async (id, patch) => {
   } catch (error) {
     console.error('[db] Could not save the change to a message:', error);
     return false;
+  }
+};
+
+// A peer's read receipt, written to the database: our own messages in that
+// chat at or before `upTo` become 'read'. Returns the ids changed. The next
+// history fetch re-saves the relay copy as 'sent' and the merge keeps 'read'.
+export const markSentMessagesRead = async (chatId, upTo) => {
+  if (!currentOwner() || !chatId) return [];
+  try {
+    let changed = [];
+    await db.transaction('rw', 'messages', async () => {
+      const rows = await db.messages.where('chatId').equals(chatId).toArray();
+      changed = markReadThrough(rows, upTo);
+      for (const row of changed) await db.messages.put(row);
+    });
+    return changed.map((row) => row.id);
+  } catch (error) {
+    console.error('[db] Could not save the read mark:', error);
+    return [];
   }
 };
 
