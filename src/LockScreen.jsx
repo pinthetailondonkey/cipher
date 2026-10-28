@@ -87,7 +87,10 @@ export default function LockScreen({ identity }) {
       // toward the five-wrong-PINs wipe without the user ever seeing why.
       if (!res.success) { setPin(''); failAttempt(res.error || 'Invalid PIN'); }
     } catch (err) {
-      failAttempt(err?.message || 'Something went wrong');
+      // The PIN path answers in our own words only; the raw error goes to
+      // the console. What can throw here is ours, not the user's to decode.
+      console.error('[LockScreen] Unlock failed:', err);
+      failAttempt('Something went wrong. Try your PIN again, or use your recovery phrase.');
     }
     setLoading(false);
   };
