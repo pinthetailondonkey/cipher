@@ -11,10 +11,13 @@
 // the key, and relays that never see the fragment still store only ciphertext.
 // Anyone with the relay and no fragment can neither find nor read the note.
 //
-// One-open destruct is best-effort: publishing a delete (kind 5) asks relays
-// to drop it, and readers mark the hash consumed locally, but relay deletes
-// are untrusted — the real boundary is that without the fragment key the
-// ciphertext is unreadable and unfindable. Deletion is UX sugar on top.
+// One-open is a LOCAL rule: the reader marks the hash spent on its own device
+// and refuses the link there a second time. A relay delete (kind 5) can only
+// come from the key that signed the note (NIP-09), so only the writer opening
+// its own note can ask relays to drop it; a reader's delete would be ignored
+// and is not sent. The note stays on the relay as ciphertext, and the link
+// still opens on any other device that has not spent it. The real boundary is
+// that without the fragment key the ciphertext is unreadable and unfindable.
 //
 // Groups deep links (user-specified): <note-origin>/<groupid> is handled in
 // useChatBootstrap — same behavior as ?g=, new shape.
@@ -157,15 +160,20 @@ export async function createDeadDropNote({ identity, text, pool, relays }) {
 // to consult a different store.
 //
 // `hold: true` hands the burn to the caller: it returns { text, hash, burn }
-// without marking the hash consumed or asking the relays to forget, and
-// `burn()` does both. That exists for the delivery-address carrier: the
-// opened text is the buyer's address and it must be SAVED into the
-// vendor's order record first — burning before the save would destroy the
-// address on a save failure — and once the record is down the transit
-// copy burns. Nothing else in this file touches encryption (NIP-44,
-// group AAD, outbox are elsewhere); this only reorders when the local
-// burn marks and the kind-5 request happen.
-export async function openDeadDropNote({ identity, fragment, pool, relays, isConsumed = null, hold = false }) {
+// without marking the hash consumed, and `burn()` does it. That exists for the
+// delivery-address carrier: the opened text is the buyer's address and it must
+// be SAVED into the vendor's order record first — burning before the save
+// would destroy the address on a save failure — and once the record is down
+// the note is marked spent on this device. Nothing else in this file touches
+// encryption (NIP-44, group AAD, outbox are elsewhere).
+//
+// `author` is the key the note must come from (the buyer who sent the link in
+// the chat). With it the query asks only that key's events and any event from
+// another key is ignored. Without it (a bare note link, writer unknown) every
+// event for the hash is still tried newest first and the first one the link's
+// key actually opens wins, so a stranger's newer event on the same d tag, which
+// cannot be opened with a key they do not have, cannot shadow the real note.
+export async function openDeadDropNote({ identity, fragment, pool, relays, isConsumed = null, hold = false, author = null }) {
   const parts = unpackFragment(fragment);
   if (!parts) throw new Error('That link is not a valid note link.');
 
@@ -174,37 +182,47 @@ export async function openDeadDropNote({ identity, fragment, pool, relays, isCon
     throw new Error('This note was already opened on this device.');
   }
 
-  const events = await pool.querySync(relays, { kinds: [NOTE_KIND], '#d': [hashHex] });
+  const wanted = typeof author === 'string' && /^[0-9a-f]{64}$/i.test(author) ? author.toLowerCase() : null;
+  const filter = { kinds: [NOTE_KIND], '#d': [hashHex] };
+  if (wanted) filter.authors = [wanted];
+  const found = await pool.querySync(relays, filter);
+  // A relay can ignore the authors filter; the check is repeated here.
+  const events = (found || [])
+    .filter((e) => e && e.kind === NOTE_KIND && (!wanted || String(e.pubkey).toLowerCase() === wanted))
+    .sort((a, b) => b.created_at - a.created_at);
   if (!events.length) throw new Error('The note is gone or was never here.');
 
-  // Newest wins — a re-uploaded note (destruct failed everywhere) supersedes.
-  const latest = events.sort((a, b) => b.created_at - a.created_at)[0];
+  // Newest valid wins — a re-uploaded note (destruct failed everywhere)
+  // supersedes, and an event that does not open under this link's key is
+  // skipped, not trusted. Only when none opens is the link called altered.
   const aesKey = await subtle().importKey('raw', parts.key, 'AES-GCM', false, ['decrypt']);
-  let plaintext;
-  try {
-    plaintext = await subtle().decrypt(
-      { name: 'AES-GCM', iv: parts.iv },
-      aesKey,
-      fromB64Url(latest.content),
-    );
-  } catch {
-    throw new Error('This note could not be opened — the link was altered.');
+  let latest = null;
+  let payload = null;
+  for (const event of events) {
+    try {
+      const plaintext = await subtle().decrypt(
+        { name: 'AES-GCM', iv: parts.iv },
+        aesKey,
+        fromB64Url(event.content),
+      );
+      const parsed = JSON.parse(new TextDecoder().decode(plaintext));
+      if (parsed && typeof parsed === 'object') { latest = event; payload = parsed; break; }
+    } catch { /* not ours; try the next one */ }
   }
-  let payload;
-  try { payload = JSON.parse(new TextDecoder().decode(plaintext)); } catch {
-    throw new Error('This note could not be opened — the link was altered.');
-  }
+  if (!latest) throw new Error('This note could not be opened — the link was altered.');
 
-  // The burn, as one awaited step: mark the ledger, then best-effort ask
-  // every relay to forget the blob (kind 5) and remember locally that this
-  // hash is spent. Relays may ignore deletes; without the fragment the
-  // ciphertext stays unreadable either way. An unreadable or altered link
-  // never reaches this mark, so it still opens once it is fixed.
+  // The burn, as one awaited step: mark the ledger so this device refuses the
+  // link a second time. That is the whole burn for a reader. A relay honors a
+  // delete (NIP-09) only from the key that signed the note, so a delete signed
+  // by anyone else would be ignored and is not sent; only the writer opening
+  // its own note asks relays to drop it. An unreadable or altered link never
+  // reaches this mark, so it still opens once it is fixed.
   const burn = async () => {
     markDeadDropConsumed(hashHex);
     if (identity?.sk) {
       try {
-        const { finalizeEvent } = await import('nostr-tools');
+        const { finalizeEvent, getPublicKey } = await import('nostr-tools');
+        if (getPublicKey(identity.sk) !== latest.pubkey) return;
         const del = finalizeEvent({
           kind: 5,
           created_at: Math.floor(Date.now() / 1000),

@@ -184,7 +184,7 @@ function DeliveryAddressRow({ address }) {
         <p className="select-all">{[address.city, region].filter(Boolean).join(', ')}</p>
       )}
       {address.country ? <p className="select-all">{address.country}</p> : null}
-      <p className="mt-1 text-[12px] text-inkSubtle">Sealed by the buyer. The note burned after one open.</p>
+      <p className="mt-1 text-[12px] text-inkSubtle">Sealed by the buyer. The note will not open again on this device.</p>
     </div>
   );
 }
