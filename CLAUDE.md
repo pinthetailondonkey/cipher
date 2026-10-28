@@ -16,9 +16,9 @@ Nostr messenger and direct-deal shop. Vite + React. See AGENTS.md if present.
 - No secret, key, token or credential file ever enters a commit — not the
   working tree's tracked files, not history. `.env.local` and build output
   (`dist/`, `.vercel/`) stay untracked forever.
-- Commit both name and email under the noreply GitHub identity
-  (cipher@users.noreply.github.com). The founder's real
-  Gmail never appears in author or committer fields, any lane.
+- Commit both name and email as `Cipher <noreply@ciphermessenger.org>`.
+  No personal account name, no personal address and no AI attribution
+  ever appears in author, committer or message fields, any lane.
 - `.githooks/pre-commit` scans staged additions for key-shaped strings.
   Choose `git config core.hooksPath .githooks` in every fresh checkout.
 
