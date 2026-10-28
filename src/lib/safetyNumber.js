@@ -18,6 +18,7 @@
 //   changed      — true when key material changed after the code was set
 
 import { sha256 } from '@noble/hashes/sha2.js';
+import { scopedGet, scopedRaw, scopedSet } from './storage.js';
 
 // Bump this when the derivation changes. Every stored comparison dies with it.
 const SAFETY_NUMBER_VERSION = 'v1';
@@ -70,13 +71,32 @@ export function deriveSafetyNumber(contactPubkey, firstSeenRelays) {
 
 // ————— contact-record state —————
 
+// The records are per account: one account's contacts are not another's, and
+// removing an account must take its records with it. They live in the scoped
+// drawer (`cipher_<pubkey>_safety_numbers_v1`), which removeAccountKeys
+// already clears. Before this, one global key held every account's contacts
+// and nothing removed it. The old global key is adopted once by the first
+// account that reads, then deleted; that account keeps its pinned codes.
+function adoptLegacyRecords() {
+  try {
+    const legacy = localStorage.getItem(STORAGE_KEY);
+    if (legacy === null) return;
+    if (scopedRaw(STORAGE_KEY) === null) {
+      const parsed = JSON.parse(legacy);
+      if (parsed && typeof parsed === 'object') scopedSet(STORAGE_KEY, parsed);
+    }
+    localStorage.removeItem(STORAGE_KEY);
+  } catch { /* a corrupt legacy copy is dropped on the next write */ }
+}
+
 function loadAll() {
-  try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}') || {}; }
-  catch { return {}; }
+  adoptLegacyRecords();
+  const all = scopedGet(STORAGE_KEY, {});
+  return all && typeof all === 'object' ? { ...all } : {};
 }
 
 function saveAll(all) {
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(all)); } catch {}
+  scopedSet(STORAGE_KEY, all);
 }
 
 export function safetyRecord(contactPubkey) {
