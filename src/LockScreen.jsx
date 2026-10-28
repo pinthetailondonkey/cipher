@@ -11,6 +11,7 @@ import VerifyKey from './components/onboarding/VerifyKey';
 import SetupProfile from './components/onboarding/SetupProfile';
 import Restore from './components/onboarding/Restore';
 import RestoreMnemonic from './components/onboarding/RestoreMnemonic';
+import { passkeyFailureMessage } from './lib/passkeyMessages';
 
 export default function LockScreen({ identity }) {
   const [mode, setMode] = useState(() => {
@@ -60,10 +61,15 @@ export default function LockScreen({ identity }) {
     setError('');
     try {
       const result = await identity.unlockWithBiometric(pin);
-      if (!result.success) failAttempt(result.error || 'Passkey unlock failed. Use your PIN or recovery phrase.');
+      // Plain words only: the authenticator's own message is never shown.
+      // A cancellation is not a wrong PIN, so it does not shake the screen.
+      if (!result.success) {
+        if (result.code === 'cancelled') setError(passkeyFailureMessage(result));
+        else failAttempt(passkeyFailureMessage(result));
+      }
     } catch (biometricError) {
       console.error('[LockScreen] Passkey unlock failed:', biometricError);
-      failAttempt(biometricError?.message || 'Passkey unlock failed. Use your PIN or recovery phrase.');
+      failAttempt(passkeyFailureMessage(biometricError));
     } finally {
       setBiometricLoading(false);
     }

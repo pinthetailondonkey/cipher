@@ -83,7 +83,7 @@ export default function Create({ identity, onCreated, go }) {
             <input type="checkbox" checked={enableBio} onChange={(e) => setEnableBio(e.target.checked)} className="peer h-5 w-5 appearance-none rounded-md border border-ink/20 bg-ink/5 transition-colors checked:border-accent checked:bg-accent" />
             <Check size={14} strokeWidth={3} className="pointer-events-none absolute text-ink opacity-0 transition-opacity peer-checked:opacity-100" aria-hidden="true" />
           </span>
-          Set up Face ID / fingerprint
+          Set up a saved passkey
         </label>
         {error && <p className="mb-1 mt-1 text-center text-sm font-medium text-danger">{error}</p>}
         <Button type="submit" disabled={loading} className="mt-2 flex w-full items-center justify-center gap-2">

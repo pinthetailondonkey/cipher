@@ -183,7 +183,7 @@ test.describe('Restore by handle keeps what the entry already held', () => {
   });
 });
 
-test.describe('The Face ID door on the restore screen', () => {
+test.describe('The saved-passkey door on the restore screen', () => {
   test('the door follows WebAuthn presence, not whether an authenticator can answer', async ({ page }) => {
     // Measured limit of the fix: the screen asks nostr-passkey's
     // isPRFSupported(), which is only "this browser has WebAuthn"
@@ -204,9 +204,12 @@ test.describe('The Face ID door on the restore screen', () => {
         return await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable();
       } catch { return false; }
     }));
-    const door = page.getByRole('button', { name: /Use Face ID/ });
+    // Founder's call, 2026-10-28: keep the saved-passkey path. The door is
+    // shown on a stored record and a WebAuthn presence check, with no
+    // authenticator prompt spent on deciding to show it, and its words name
+    // a saved passkey rather than one vendor's face unlock.
+    const door = page.getByRole('button', { name: /Use saved passkey/ });
     await expect(door).toHaveCount(1);
-    // The two answers disagree, and that disagreement is the finding.
     expect(platformAuthenticator).toBe(false);
   });
 });

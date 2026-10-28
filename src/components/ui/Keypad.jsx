@@ -69,7 +69,7 @@ export default function Keypad({
             type="button"
             onClick={onBiometric}
             disabled={disabled || biometricDisabled}
-            aria-label="Unlock with Face ID / fingerprint"
+            aria-label="Unlock with a saved passkey"
             className={`flex h-16 w-16 items-center justify-center rounded-full text-accentText active:bg-ink/10 disabled:opacity-40 ${pressable}`}
           >
             <Fingerprint size={26} aria-hidden="true" />

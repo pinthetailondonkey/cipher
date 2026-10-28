@@ -1,4 +1,4 @@
-// The Face ID door asks one question: would the unlock path find a usable
+// The saved-passkey door asks one question: would the unlock path find a usable
 // passkey record on this device? unlockWithBiometric reads ONE key —
 // cipher_passkey_<pubkey> at the active pubkey first, else the biometric
 // pointer — so the door tests that exact key and a record-shaped value.

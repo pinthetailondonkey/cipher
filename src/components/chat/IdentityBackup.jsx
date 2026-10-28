@@ -107,7 +107,7 @@ export default function IdentityBackup({ identity, onClose }) {
     setBiometricMessage('');
     try {
       const result = await identity.enableBiometric();
-      setBiometricMessage(result.success ? 'Face ID / device passkey is ready for future unlocks.' : (result.error || 'Could not set up this device passkey.'));
+      setBiometricMessage(result.success ? 'A saved passkey is ready for future unlocks.' : (result.error || 'Could not set up this device passkey.'));
     } finally {
       setEnablingBiometric(false);
     }
@@ -123,10 +123,10 @@ export default function IdentityBackup({ identity, onClose }) {
         </div>
         <div className="overflow-hidden rounded-2xl border border-line bg-panel">
           {identity?.hasBiometric ? (
-            <p className="flex items-center gap-3 p-4 text-[15px] text-success"><Fingerprint size={24} className="shrink-0" /> Face ID is on</p>
+            <p className="flex items-center gap-3 p-4 text-[15px] text-success"><Fingerprint size={24} className="shrink-0" /> Saved passkey is on</p>
           ) : (
             <button type="button" onClick={setupBiometric} disabled={!identity?.sk || enablingBiometric} className={`flex w-full items-center gap-3 p-4 text-left text-[15px] font-semibold text-ink disabled:opacity-40 ${pressable}`}>
-              <Fingerprint size={24} className="shrink-0 text-inkSubtle" /> {enablingBiometric ? 'Setting up…' : 'Set up Face ID'}
+              <Fingerprint size={24} className="shrink-0 text-inkSubtle" /> {enablingBiometric ? 'Setting up…' : 'Set up a saved passkey'}
             </button>
           )}
           {biometricMessage && <p role="status" className="border-t border-line px-4 py-3 text-[13px] text-inkMuted">{biometricMessage}</p>}

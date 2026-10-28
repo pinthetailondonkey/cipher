@@ -3,6 +3,7 @@ import { LOCKED_OUT_MESSAGE, MIN_PIN_LENGTH, failPinAttempt, isAcceptableNewPin,
 import { profileRelays as PROFILE_RELAYS } from './lib/relays'
 import { runPanicWipe } from './lib/panicWipe'
 import { mergeRestoredEntry } from './lib/vaultEntry'
+import { PASSKEY_WRONG_ACCOUNT, passkeyFailureCode } from './lib/passkeyMessages'
 
 // Derive 32-byte secret key from BIP39 mnemonic
 export async function deriveSkFromMnemonic(mnemonic) {
@@ -510,10 +511,10 @@ export function useIdentity() {
       const storageKey = activePk ? `cipher_passkey_${activePk}` : undefined;
       const { unlockPasskeyIdentity } = await import('nostr-passkey')
       const { secretKey, pubkey } = await unlockPasskeyIdentity(undefined, storageKey ? { storageKey } : undefined)
-      if (activePk && pubkey !== activePk) throw new Error('The saved passkey belongs to a different account.');
+      if (activePk && pubkey !== activePk) throw Object.assign(new Error(PASSKEY_WRONG_ACCOUNT), { passkeyCode: 'wrong-account' });
       const vaults = getVaults();
       if (!vaults[pubkey]) {
-        if (!isAcceptableNewPin(newPin)) throw new Error(`Enter a new PIN (exactly ${MIN_PIN_LENGTH} digits) to restore this account on this device.`);
+        if (!isAcceptableNewPin(newPin)) throw Object.assign(new Error(`Enter a new PIN (exactly ${MIN_PIN_LENGTH} digits) to restore this account on this device.`), { passkeyCode: 'new-pin' });
         const vault = await encryptKey(Array.from(secretKey), newPin);
         const legacyHandle = localStorage.getItem('cipher_handle') || 'restored';
         vaults[pubkey] = {
@@ -541,7 +542,9 @@ export function useIdentity() {
       setHasVault(true)
       setHasBiometric(true)
       return { success: true }
-    } catch (e) { return { success: false, error: e.message } }
+      // A code travels with the failure, so the screen can say a plain
+      // sentence instead of the browser's or the library's own words.
+    } catch (e) { return { success: false, error: e.message, code: e?.passkeyCode || passkeyFailureCode(e) } }
   }
 
   const enableBiometric = async () => {
