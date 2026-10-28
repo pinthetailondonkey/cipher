@@ -31,8 +31,13 @@ async function wrapAndVerify({ provider, pk, pin, skArray, open, innerFor }) {
   // the device layer gives that same inner vault back.
   if (!provider) throw new DeviceKeyUnavailable('no-provider');
   if (!(await provider.available())) throw new DeviceKeyUnavailable('unavailable');
+  // Was a key already here before this call? If so it stays, whatever happens
+  // below: the vault on disk may only open with it, and nothing in this
+  // function has replaced that vault yet.
+  const hadKey = typeof provider.hasKey === 'function' ? (await provider.hasKey(pk)) === true : false;
   // The authenticator step comes first, before the slow PIN hashing: some
-  // browsers only accept it soon after the tap that started the action.
+  // browsers only accept it soon after the tap that started the action. An
+  // existing key is reused by the provider, never overwritten.
   const dk = await provider.enroll(pk);
   try {
     provider.forget?.(pk);
@@ -47,9 +52,11 @@ async function wrapAndVerify({ provider, pk, pin, skArray, open, innerFor }) {
       const back = await open(vault, pin, pk);
       if (!sameKey(back, skArray)) throw new DeviceKeyUnavailable('verify-failed');
     }
-    return vault;
+    return { vault, hadKey };
   } catch (error) {
-    await destroyQuietly(provider, pk, dk);
+    // Only a key made by this attempt is destroyed. Destroying a reused one
+    // would be the same lockout the reuse is there to prevent.
+    if (!hadKey) await destroyQuietly(provider, pk, dk);
     throw isDeviceKeyError(error) ? error : new DeviceKeyUnavailable('wrap-failed', error?.message);
   }
 }
@@ -57,7 +64,7 @@ async function wrapAndVerify({ provider, pk, pin, skArray, open, innerFor }) {
 // A new account's vault (create, restore from words, new device). There is no
 // PIN-only fallback: without a device key the account is not created.
 export async function sealNewVault({ provider, pk, pin, skArray, encrypt, open }) {
-  return wrapAndVerify({ provider, pk, pin, skArray, open, innerFor: () => encrypt(skArray, pin) });
+  return (await wrapAndVerify({ provider, pk, pin, skArray, open, innerFor: () => encrypt(skArray, pin) })).vault;
 }
 
 function readVaults(storage) {
@@ -71,7 +78,7 @@ function readVaults(storage) {
 // cipher_vault mirror change together, or not at all.
 export async function upgradeStoredVault({ storage, provider, pk, vault, pin, skArray, encrypt, open, isLegacy, activePk }) {
   if (isDeviceVault(vault)) return vault;
-  const next = await wrapAndVerify({
+  const { vault: next, hadKey } = await wrapAndVerify({
     provider,
     pk,
     pin,
@@ -115,7 +122,9 @@ export async function upgradeStoredVault({ storage, provider, pk, vault, pin, sk
     put('cipher_vaults', before.vaults);
     put('cipher_vault', before.mirror);
     put('cipher_active_pubkey', before.active);
-    if (restored) await destroyQuietly(provider, pk);
+    // A reused key is never destroyed here: the restored vault still opens
+    // with it. Only a key made for this attempt goes.
+    if (restored && !hadKey) await destroyQuietly(provider, pk);
     throw new DeviceKeyUnavailable('write-failed', error?.message);
   }
   return next;
