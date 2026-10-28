@@ -14,6 +14,7 @@
 
 const { app, BrowserWindow, dialog, ipcMain, safeStorage, session } = require('electron');
 const { spawn } = require('node:child_process');
+const { randomBytes } = require('node:crypto');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
