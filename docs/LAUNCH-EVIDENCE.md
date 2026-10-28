@@ -240,10 +240,12 @@ passed GCM authentication after corruption.
 
 - Not pushed. Not deployed. Not released. No deployment of this branch
   exists: the served entry is `index-C8I3GXXT.js` (measured by AUDITOR in
-  round 1), the candidate builds `index-oiLnEhZQ.js`.
-- `feat/device-lock` not merged, and refused for launch on the risk read below.
-- Redesign, `/download`, `/privacy`, desktop builds, Tor bundles, orphaned
-  test runners: untouched, per the order to complete only milestone 1.
+  round 1), the candidate builds `index-pVuPuLHD.js` at `f6c4ad4` (round 3).
+- `feat/device-lock` not merged into this branch. It is re-landed, measured
+  and refused for launch on `integ/device-lock-r2` — see round 3 below.
+- Redesign, desktop installers, Tor bundles, orphaned test runners:
+  untouched. `/download`, `/privacy` and one desktop archive were made in
+  round 3, none of them published.
 
 ## Promises not proven by any execution here
 
@@ -275,3 +277,89 @@ Branch `origin/feat/device-lock`, merge-base `1f32ba6`, 14 commits, 27 files.
 - Synced passkeys do not open a second device; the PRF record is per origin.
 - Verdict: not safe to merge for launch without fixing the overwrite and the
   lockout, or an explicit founder decision.
+
+## Round 3 — overnight, 2026-10-28
+
+All in the founder's checkout unless a path says otherwise. Nothing pushed,
+deployed or published.
+
+### The candidate
+
+- `release/launch-v1` at `f6c4ad4`, 28 commits above `1b0fb05`
+  (`git rev-list --count 1b0fb05..HEAD`), working tree clean.
+- Round 3 source commits: `12a2cfb` (the two web pages and their rewrites),
+  `d065e0b` (service worker shell cache), `244658e` (the onboarding shot),
+  `f6c4ad4` (merge of the reviewed round-2 lane, `round2/vault-and-pin`
+  `692a94a`: KDF-metadata damage guard, PIN-length evidence, browser-refusal
+  spec).
+
+### Gates at `f6c4ad4`
+
+- `npm run build` — exit 0, entry `dist/assets/index-pVuPuLHD.js`;
+  `grep -rl __cipher dist/ | wc -l` → 0 after the seam build was used for the
+  UI run and production rebuilt.
+- `npm run lint` — exit 0, 88 warnings, 0 errors (unchanged baseline).
+- `npm test` — exit 0, 451 tests, 451 pass, 0 fail.
+- `npx playwright test` (whole suite, fresh server, seam build) — exit 0,
+  49 passed (3.6m). Includes the four new lock-screen specs and the four
+  screenshot receipts.
+- `npx playwright test tests/ui/pin-unlock.spec.js` — exit 0, 14 passed.
+- Measured after the merge, then production rebuilt and re-checked.
+
+### What round 3 added
+
+- `public/download.html` and `public/privacy.html`, served by two rewrites
+  ahead of the app catch-all. No download button: no file is published, so
+  there is no link. Content is what exists today (browser app, Add to Home
+  Screen on iPhone, Android package not published, desktop archive made but
+  not published).
+- `public/sw.js`: only `/` is cached as the app shell, so a page beside the
+  app can no longer become the offline messenger; cache name `v2` so an
+  installed copy takes the change. The rewrite order is CODE-READ (Vercel
+  applies it at deploy); the file existence and the worker logic are the
+  parts executed here (`node --check`, build, 4 screenshots).
+- Desktop artifact, local only, from the production `dist` of `f6c4ad4`:
+  `desktop/out/cipher-1.0.0.tar.gz`, 133,295,850 bytes, SHA-256
+  `2772f73c8a745995a48f3d77c77a804665c5d46dc5485a8bdf722d63d41eab07`.
+  The packaged `app.asar` (1,857,652 bytes) has 0 `__cipher` hits and carries
+  `download.html`/`privacy.html`. Bundled tor is the pinned 15.0.26 Linux
+  expert bundle, `fetch-tor.sh` hash-checked. The Windows tor staging that
+  was in `desktop/vendor/tor` was moved to
+  `aegis-backups/tor-win-staging-2026-10-28/` before Linux staging, so the
+  two are not interleaved.
+- Screenshots (synthetic 0xaa test key, no real material): `home.png`,
+  `explore.png`, `profile.png`, `onboarding.png`, copied to
+  `aegis-backups/cipher-r3-2026-10-28/`. Conversation, order card and orders
+  were not captured.
+
+### Device lock: repaired, re-landed, measured, refused for launch
+
+- Repairs on `devlock/repair-r2` (`27f8b88`, `d3f4969`, `594fa51`) from
+  `origin/feat/device-lock` `6356411`, not the old `wt-lock` branch: enroll
+  reuses the key the device holds and refuses unverified replacement
+  (`replace-refused`); `hadKey` decides whether a failed wrap may destroy a
+  key; create and restore ask the device before any recovery words are shown.
+  In that worktree: 449/449 node tests, 5/5 new overwrite/rollback tests,
+  36/36 desktop tests, lint 88/0, build green.
+- Re-landed on `release/launch-v1` as `integ/device-lock-r2` (`b018c3a`),
+  conflicts resolved by hand. There: 500/500 node tests, 87 warnings, 0
+  errors, build green, 36/36 desktop tests.
+- Blocking measurement at that branch: the browser suite fails every PIN
+  unlock (4 of 10 in `pin-unlock.spec.js`) because a bare IP host is not a
+  WebAuthn relying-party id, so no device key provider exists and the app
+  refuses to open an account it cannot lock. The screen says: "Your PIN is
+  right, but this device cannot lock an account to itself, and Cipher no
+  longer opens accounts that are not locked. Nothing was deleted. Restore the
+  account from its 12 words on a device that can."
+- Consequence, stated plainly: with device lock as designed, any install
+  served from an IP address, and any browser with no platform authenticator,
+  cannot open an existing account. A domain and real hardware are needed
+  before this can ship.
+
+### Still open
+
+- No OPSEC normal-domain TLS/WebSocket plan was received in this session;
+  the group transport stays as it was, the wss→ws flip stays rejected.
+- iPhone Safari and installed-PWA group messaging, and device-lock enrolment
+  on a real iPhone: not executed anywhere.
+- Nothing pushed, so every SHA above is local only.
