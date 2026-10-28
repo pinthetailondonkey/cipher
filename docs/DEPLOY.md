@@ -49,6 +49,10 @@ your hands, stop: none of the rest applies.
 
 Registered 2026-10-27 at Tucows, expires 2027-10-27.
 
+The zone is moving from Cloudflare to the registrar's own DNS by decision
+of 2026-10-28. Until the move is finished, the Cloudflare login still
+matters; the move's order is at the bottom of this page.
+
 ### 1. Diagnose why the live site is stale
 
 In the Vercel dashboard, open the project named `cipher`:
@@ -147,3 +151,33 @@ npm run verify:live -- https://ciphermessenger.org
   that is authoritative.
 - `/download`. It is a separate page on the same host, served by the same
   deploy.
+
+## Moving the zone to the registrar's DNS (decided 2026-10-28)
+
+What this changes: one fewer party holds the zone file — the registrar sees
+it instead of Cloudflare. What it does not change: visitors are unaffected
+either way, and whoever serves the page still sees their IPs.
+
+The site sends `Strict-Transport-Security` with `preload`, so a name that
+resolves to nothing is not cheap to take back. The order exists because of
+that: recreate first, switch second, delete last.
+
+1. **Turn on DNS hosting at the registrar** for `ciphermessenger.org`.
+   It prints its own nameservers; note them.
+2. **Recreate every record there first**, copied from the Cloudflare zone
+   exactly: the apex record Vercel printed and the `www` CNAME from step 4
+   above. Plain records only — no proxying exists to turn on.
+3. **Prove the new servers answer before switching anything.**
+   `dig @<registrar-nameserver-1> ciphermessenger.org` and the same for
+   `www`, and check the answers match what Cloudflare returns. A wrong
+   record caught here costs nothing; caught after the switch it takes the
+   site down.
+4. **Switch the nameservers** at the registrar from Cloudflare's
+   (`cesar`, `vera`) to the registrar's own. Nothing changes at Cloudflare
+   yet — it keeps answering for anyone who has not caught up.
+5. **Wait, then prove.** After a few hours, `dig +short ciphermessenger.org`
+   against the system resolver, then `npm run verify:live` — the site must
+   still answer and still be this build. Also check Vercel still says
+   **Valid Configuration** for both names.
+6. **Remove the Cloudflare zone last**, only after step 5 passes, so the
+   Cloudflare login stops mattering from that day.
