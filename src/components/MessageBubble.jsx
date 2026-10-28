@@ -133,7 +133,7 @@ function nextStepOf(state, isBuyer) {
   return '';
 }
 
-function OrderReceipt({ content, isBuyer = false }) {
+function OrderReceipt({ content, isBuyer = false, disputeReason = '' }) {
   const product = content.product || {};
   const title = product.title || product.name || content.productName || 'Order';
   const price = orderPriceLabel(content);
@@ -152,6 +152,15 @@ function OrderReceipt({ content, isBuyer = false }) {
         </div>
         {price && <p className="mt-1 text-[15px] font-bold text-accentText">{price}</p>}
         {nextStep && <p className="mt-0.5 text-[12px] leading-snug text-ink/50">{nextStep}</p>}
+        {content.status === 'disputed' && disputeReason && (
+          // The disagreement as it was sent: the order it names is the card
+          // itself, and the line under it is the resolution that was asked
+          // for. Nothing here decides it.
+          <div className="mt-1.5 rounded-lg bg-ink/5 px-2 py-1.5">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-inkSubtle">Reported issue</p>
+            <p className="text-[13px] leading-snug text-ink">{disputeReason}</p>
+          </div>
+        )}
         {escrow && (
           // The escrow quote on the card: prices read back only after they
           // re-derive on this device (escrowForCard), so the words under
@@ -326,6 +335,19 @@ export default function MessageBubble({ message, data, onAction, senderName, ide
   // reroute — the FSM owns it, not a peer's word.
   const escrowRows = escrowRowsFor(message, chatMessages, content);
   const paidRows = [...paymentRows, ...escrowRows];
+  // The issue a side reported, read from the update that carried it. The card
+  // shows what was asked for; whether to refund or reopen stays the vendor's
+  // own act, so nothing here promises a resolution.
+  const disputeReason = (() => {
+    if (!['cipher_order', 'order_request', 'order_update'].includes(content.type)) return '';
+    const orderId = content.type === 'order_update' ? (content.orderId || message?.id) : message?.id;
+    const reported = (chatMessages || [])
+      .filter((item) => item?.data?.type === 'order_update'
+        && String(item.data.orderId) === String(orderId)
+        && item.data.disputeReason)
+      .sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+    return String(reported[reported.length - 1]?.data?.disputeReason || content.disputeReason || '');
+  })();
   const qrSignature = `${message?.id || ''}:${paidRows.map((row) => row.currency).join(',')}`;
   const lastQrSignature = useRef('');
 
@@ -498,7 +520,7 @@ export default function MessageBubble({ message, data, onAction, senderName, ide
           // F7: the badge reads derived payment facts, not what the update
           // itself claims — a received "confirmed" with no receipt behind it
           // reads back as its real state.
-          <OrderReceipt content={{ ...content, ...orderState(chatMessages, message?.id, { data: content }, '', activeDm) }} isBuyer={isSender} />
+          <OrderReceipt content={{ ...content, ...orderState(chatMessages, message?.id, { data: content }, '', activeDm) }} isBuyer={isSender} disputeReason={disputeReason} />
         )}
         {(content.type === 'cipher_order' || content.type === 'order_update') && (
           <ReceiptDoor message={message} content={content} />
