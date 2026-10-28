@@ -104,12 +104,42 @@ function orderLabel(content) {
   return { text: 'Awaiting payment', className: 'bg-accentSoft text-accentText' };
 }
 
-function OrderReceipt({ content }) {
+// What happens next, said plainly, from the state the order already reached.
+// The line names who acts; it never claims a step the wire has not taken —
+// marked paid is not checked on chain, shipped is not delivered.
+function nextStepOf(state, isBuyer) {
+  const status = state.status;
+  const paymentState = state.paymentState;
+  const confirmed = paymentState === 'confirmed';
+  const seen = paymentState === 'seen' || confirmed;
+  if (state.resurrected) return 'This order was closed once and its status moved again. Check the chain before acting.';
+  if (status === 'pending') return isBuyer ? 'Waiting for the vendor to accept.' : 'Accept or decline this order.';
+  if (status === 'accepted') {
+    if (confirmed) return 'Payment confirmed. Waiting for the vendor to ship.';
+    if (seen) return 'Payment seen on chain. Waiting for the vendor to ship.';
+    if (state.paymentSeenBy === 'vendor') return 'The vendor marked this paid. Only the chain check confirms it.';
+    return isBuyer ? 'Pay the address above. The vendor checks the chain.' : 'Waiting for the buyer to pay.';
+  }
+  if (status === 'paid') {
+    if (confirmed) return isBuyer ? 'Paid. Waiting for the vendor to ship.' : 'Payment confirmed. Mark it shipped.';
+    if (seen) return isBuyer ? 'Payment seen. Waiting for the vendor to ship.' : 'Payment seen. Mark it shipped.';
+    return isBuyer ? 'The vendor marked this paid. Your watcher has not confirmed it yet.' : 'You marked this paid. Run the chain check before shipping.';
+  }
+  if (status === 'shipped') return isBuyer ? 'The vendor marked it shipped. Confirm when it arrives.' : 'Waiting for the buyer to confirm it arrived.';
+  if (status === 'completed') return 'The order is complete.';
+  if (status === 'cancelled') return 'This order was cancelled.';
+  if (status === 'refunded') return 'The vendor marked this refunded.';
+  if (status === 'disputed') return 'An issue was reported. The vendor can refund or reopen the order.';
+  return '';
+}
+
+function OrderReceipt({ content, isBuyer = false }) {
   const product = content.product || {};
   const title = product.title || product.name || content.productName || 'Order';
   const price = orderPriceLabel(content);
   const address = content.shippingAddress || content.address || content.shipTo || '';
   const pill = orderLabel(content);
+  const nextStep = nextStepOf(content, isBuyer);
   return (
     // Telegram's attached card: the card takes the full bubble width, up
     // to 280px, and the product shot crops flat to 28:9.
@@ -121,6 +151,7 @@ function OrderReceipt({ content }) {
           <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold ${pill.className}`}>{pill.text}</span>
         </div>
         {price && <p className="mt-1 text-[15px] font-bold text-accentText">{price}</p>}
+        {nextStep && <p className="mt-0.5 text-[12px] leading-snug text-ink/50">{nextStep}</p>}
         {escrow && (
           // The escrow quote on the card: prices read back only after they
           // re-derive on this device (escrowForCard), so the words under
@@ -467,7 +498,7 @@ export default function MessageBubble({ message, data, onAction, senderName, ide
           // F7: the badge reads derived payment facts, not what the update
           // itself claims — a received "confirmed" with no receipt behind it
           // reads back as its real state.
-          <OrderReceipt content={{ ...content, ...orderState(chatMessages, message?.id, { data: content }, '', activeDm) }} />
+          <OrderReceipt content={{ ...content, ...orderState(chatMessages, message?.id, { data: content }, '', activeDm) }} isBuyer={isSender} />
         )}
         {(content.type === 'cipher_order' || content.type === 'order_update') && (
           <ReceiptDoor message={message} content={content} />
