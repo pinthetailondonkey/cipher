@@ -13,37 +13,116 @@
 // same vendor/tor/ and overwrite each other. Packing with the wrong one
 // would ship a bundle whose tor cannot start (and the shell then fails
 // closed, so it would be a dead bundle, not a leak).
+import { createHash } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
-// Only the desktop build carries the onion group door (see src/lib/egress.js:
-// a browser cannot reach an onion, the shell's own Tor can). Staging the web
-// build here would make every group connection leave Tor without a word, so
-// this refuses instead of packing it.
-export function assertDesktopDoor(dir) {
-  // The marker is written by scripts/build-desktop.mjs and by nothing else.
-  // Looking for ".onion" in the bundle would not work: every build carries
-  // that string in ordinary URL-parsing code, so a web build would pass.
-  const marker = path.join(dir, 'cipher-desktop-build.json');
-  let marked = false;
-  try {
-    marked = JSON.parse(fs.readFileSync(marker, 'utf8')).desktop === true;
-  } catch {
-    marked = false;
+const MANIFEST = 'cipher-desktop-build.json';
+const HOOK_MARK = '__cipher';
+
+function walk(dir, base = dir, out = []) {
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) walk(full, base, out);
+    else out.push(path.relative(base, full).split(path.sep).join('/'));
   }
-  if (!marked) {
-    throw new Error(`No group door in the build at ${dir}: this is a web build, and the desktop would quietly leave Tor for groups. Run "npm run build:desktop" in the cipher repo root and stage dist-desktop.`);
+  return out;
+}
+
+function sha256(file) {
+  return createHash('sha256').update(fs.readFileSync(file)).digest('hex');
+}
+
+// The commit this build claims to come from, read from the checkout that
+// holds it. A dist folder copied out of its repo has no answer, and the
+// caller must then say which source the pack is for.
+export function gitHead(dir) {
+  let here = path.resolve(dir);
+  for (;;) {
+    if (fs.existsSync(path.join(here, '.git'))) {
+      try {
+        return execFileSync('git', ['rev-parse', 'HEAD'], { cwd: here, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+      } catch {
+        return '';
+      }
+    }
+    const up = path.dirname(here);
+    if (up === here) return '';
+    here = up;
   }
 }
 
-export function stageWeb(webBuildDir, targetDir) {
+// A build is only usable if this script can prove which source it came from,
+// that every file in it is the file the build wrote, and that it is the
+// desktop target. A marker file proves none of that: it can be copied onto a
+// web build, and it survives while the assets beside it go stale.
+export function assertDesktopDoor(dir, { expectedSha } = {}) {
+  const manifestPath = path.join(dir, MANIFEST);
+  let manifest;
+  try {
+    manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+  } catch {
+    manifest = null;
+  }
+  const refuse = (why) => {
+    throw new Error(`No group door in the build at ${dir}: ${why}. Run "npm run build:desktop" in the cipher repo root and stage dist-desktop.`);
+  };
+  if (!manifest || manifest.desktop !== true) refuse('this is a web build, and the desktop would quietly leave Tor for groups');
+  if (!manifest.sourceSha || typeof manifest.sourceSha !== 'string') refuse('the build does not say which source it came from');
+  if (!manifest.files || typeof manifest.files !== 'object' || !Object.keys(manifest.files).length) {
+    refuse('the build records no file list');
+  }
+
+  // Every file present must be a file the build wrote, unchanged, and every
+  // file the build wrote must still be present. An extra file is a build
+  // from somewhere else copied over this one; a hash mismatch is an asset
+  // edited after the fact; a missing file is a half-copied folder.
+  const onDisk = walk(dir).filter((rel) => rel !== MANIFEST).sort();
+  const recorded = Object.keys(manifest.files).sort();
+  const missing = recorded.filter((rel) => !onDisk.includes(rel));
+  const extra = onDisk.filter((rel) => !recorded.includes(rel));
+  if (missing.length) refuse(`the build is missing ${missing.slice(0, 3).join(', ')}`);
+  if (extra.length) refuse(`the folder holds files this build did not write (${extra.slice(0, 3).join(', ')})`);
+  for (const rel of recorded) {
+    if (sha256(path.join(dir, rel)) !== manifest.files[rel]) refuse(`${rel} does not match the build that recorded it`);
+  }
+
+  const want = String(expectedSha || '').trim();
+  if (!want) refuse('no source commit to check the build against (pass CIPHER_EXPECT_SHA, or stage a folder inside its checkout)');
+  if (manifest.sourceSha !== want) refuse(`the build is from ${manifest.sourceSha.slice(0, 12)}, not ${want.slice(0, 12)}`);
+  if (manifest.sourceDirty === true) refuse('the build came from a tree with uncommitted changes, so it matches no commit');
+  return manifest;
+}
+
+// The test seam (VITE_TEST_HOOKS=1) writes `__cipher` globals into the bundle
+// so Playwright can drive storage and identity directly. A shipping desktop
+// build must not carry it: the seam is a way to reach the vault from the
+// console. The web build the shell packages is the same build tested this
+// way, so the check belongs here, before anything is staged.
+export function assertNoTestHooks(dir) {
+  const offenders = [];
+  for (const rel of walk(dir)) {
+    if (!/\.(js|mjs|cjs|html|css|json|map)$/.test(rel)) continue;
+    if (fs.readFileSync(path.join(dir, rel), 'utf8').includes(HOOK_MARK)) offenders.push(rel);
+  }
+  if (offenders.length) {
+    throw new Error(`The build at ${dir} carries the test seam (${offenders.slice(0, 3).join(', ')}): it can reach the vault from the console and must not ship. Rebuild with "npm run build:desktop".`);
+  }
+}
+
+export function stageWeb(webBuildDir, targetDir, options = {}) {
   if (!fs.existsSync(path.join(webBuildDir, 'index.html'))) {
     throw new Error(`No build at ${webBuildDir}. Run "npm run build:desktop" in the cipher repo root first.`);
   }
-  assertDesktopDoor(webBuildDir);
+  const expectedSha = options.expectedSha
+    || process.env.CIPHER_EXPECT_SHA
+    || gitHead(webBuildDir);
+  assertDesktopDoor(webBuildDir, { expectedSha });
+  assertNoTestHooks(webBuildDir);
   fs.rmSync(targetDir, { recursive: true, force: true });
   fs.cpSync(webBuildDir, targetDir, { recursive: true });
 }

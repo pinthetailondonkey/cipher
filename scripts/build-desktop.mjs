@@ -4,8 +4,10 @@
 // onion at all. It writes to dist-desktop so it can never overwrite the web
 // build that becomes production; prepare-pack stages this folder and refuses
 // a folder this script did not write.
-import { spawn } from 'node:child_process';
-import { writeFileSync } from 'node:fs';
+import { spawn, execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
+import { readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import path from 'node:path';
 import { readAppEnv } from './with-app-env.mjs';
 
 // The group door's address is not in the repo. A desktop bundle without it
@@ -18,6 +20,47 @@ if (!/^wss:\/\/[a-z2-7]{16,56}\.onion$/.test(door)) {
   process.exit(1);
 }
 
+// What this build was made from. A marker alone says "a desktop build once
+// wrote here"; it cannot tell a fresh build from a stale folder, from a web
+// build with a copied marker, or from a build of a different source. The
+// manifest below records the source commit and a hash per file, and
+// prepare-pack recomputes both before it stages anything.
+function git(args) {
+  try {
+    return execFileSync('git', args, { cwd: process.cwd(), encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+  } catch {
+    return '';
+  }
+}
+
+const sourceSha = git(['rev-parse', 'HEAD']) || 'no-git';
+const sourceDirty = git(['status', '--porcelain', '--untracked-files=no']) !== '';
+
+function walk(dir, base = dir, out = []) {
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) walk(full, base, out);
+    else out.push(path.relative(base, full).split(path.sep).join('/'));
+  }
+  return out;
+}
+
+function manifestFor(dir) {
+  const files = {};
+  for (const rel of walk(dir).sort()) {
+    if (rel === 'cipher-desktop-build.json') continue;
+    files[rel] = createHash('sha256').update(readFileSync(path.join(dir, rel))).digest('hex');
+  }
+  return {
+    desktop: true,
+    builtAt: new Date().toISOString(),
+    sourceSha,
+    sourceDirty,
+    doorSha256: createHash('sha256').update(door).digest('hex'),
+    files,
+  };
+}
+
 const child = spawn('node', [
   'scripts/with-app-env.mjs', 'vite', '--config', 'vite.config.js', 'build',
   '--outDir', 'dist-desktop', '--emptyOutDir',
@@ -27,17 +70,24 @@ const child = spawn('node', [
   env: { ...process.env, CIPHER_DESKTOP_BUILD: '1' },
 });
 
-// The marker is what prepare-pack asks for. A string search for ".onion"
+// The manifest is what prepare-pack asks for. A string search for ".onion"
 // would not do: every bundle carries it in ordinary URL-parsing code, so a web
-// build would pass. A file only this script writes cannot be mistaken.
+// build would pass. A file with the source commit and a hash per built file
+// cannot be mistaken, and cannot be carried over to a different build.
 child.on('exit', (code) => {
   if (code !== 0) {
     process.exit(code ?? 1);
     return;
   }
+  const dir = 'dist-desktop';
+  if (!statSync(path.join(dir, 'index.html')).isFile()) {
+    console.error(`build:desktop: the build finished but wrote no ${dir}/index.html.`);
+    process.exit(1);
+  }
   writeFileSync(
-    'dist-desktop/cipher-desktop-build.json',
-    `${JSON.stringify({ desktop: true, builtAt: new Date().toISOString() })}\n`,
+    path.join(dir, 'cipher-desktop-build.json'),
+    `${JSON.stringify(manifestFor(dir), null, 2)}\n`,
   );
+  console.log(`build:desktop: ${dir}/ written from ${sourceSha}${sourceDirty ? ' (dirty tree)' : ''}`);
   process.exit(0);
 });

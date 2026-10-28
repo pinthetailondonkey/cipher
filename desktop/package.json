@@ -12,8 +12,9 @@
     "prepare:linux": "node scripts/prepare-pack.mjs linux",
     "prepare:win": "node scripts/prepare-pack.mjs win",
     "web": "npm --prefix .. run build:desktop",
-    "dist": "npm run web && npm run prepare:linux && electron-builder --linux",
-    "dist:win": "npm run web && npm run prepare:win && electron-builder --win"
+    "verify:asar": "node scripts/verify-asar.mjs",
+    "dist": "npm run web && npm run prepare:linux && electron-builder --linux && npm run verify:asar",
+    "dist:win": "npm run web && npm run prepare:win && electron-builder --win && npm run verify:asar"
   },
   "devDependencies": {
     "electron": "33.4.11",
