@@ -1,6 +1,6 @@
 // src/db.js
 import Dexie from 'dexie';
-import { mergeStoredMessage, patchStoredMessage, markReadThrough } from './lib/messageMerge';
+import { mergeStoredMessage, patchStoredMessage, markReadThrough, replacedTempId, planTempSweep } from './lib/messageMerge';
 import { createWriteQueue } from './lib/writeQueue';
 import {
   trySealMessageRow, openMessageRow, isSealedRow,
@@ -309,10 +309,35 @@ export const saveMessage = async (chatId, msg) => {
     await db.transaction('rw', 'messages', 'tombstones', async () => {
       const [existing, tombstone] = await Promise.all([db.messages.get(msg.id), db.tombstones.get(msg.id)]);
       const merged = mergeStoredMessage(existing, msg, chatId, { tombstoned: !!tombstone });
-      if (merged) await db.messages.put(merged);
+      if (merged) {
+        await db.messages.put(merged);
+        // The real row is in: the temporary one it replaces goes in the same
+        // transaction.
+        const temp = replacedTempId(merged);
+        if (temp) await db.messages.delete(temp);
+      }
     });
   } catch (error) {
     console.error('[db] Could not save message:', error);
+  }
+};
+
+// Settles temporary send rows a closed app left behind (see planTempSweep).
+// Returns the plan that was applied.
+export const sweepTempMessages = async () => {
+  if (!currentOwner()) return null;
+  try {
+    const [rows, outbox] = await Promise.all([db.messages.toArray(), db.outbox.toArray()]);
+    const plan = planTempSweep(rows, outbox.map((row) => row.event));
+    await db.transaction('rw', 'messages', async () => {
+      for (const id of plan.remove) await db.messages.delete(id);
+      for (const id of plan.queued) await db.messages.put({ ...rows.find((r) => r.id === id), deliveryStatus: 'queued' });
+      for (const id of plan.failed) await db.messages.put({ ...rows.find((r) => r.id === id), deliveryStatus: 'failed' });
+    });
+    return plan;
+  } catch (error) {
+    console.error('[db] Could not settle unsent messages:', error);
+    return null;
   }
 };
 

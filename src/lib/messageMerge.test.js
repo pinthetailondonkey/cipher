@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { mergeStoredMessage, patchStoredMessage, markReadThrough, receiptTime } from './messageMerge.js';
+import { mergeStoredMessage, patchStoredMessage, markReadThrough, receiptTime, replacedTempId, planTempSweep } from './messageMerge.js';
 
 const relayCopy = () => ({
   id: 'order-event',
@@ -105,4 +105,30 @@ test('a read receipt covers only our messages at or before its time', () => {
   assert.equal(receiptTime({ at: 50 }, 40), 40);
   assert.equal(receiptTime({ at: 30 }, 40), 30);
   assert.equal(receiptTime({}, 40), 40);
+});
+
+test('saving the real event row names the temporary row it replaces', () => {
+  assert.equal(replacedTempId({ id: 'ev1', clientId: 'temp-123', isSender: true }), 'temp-123');
+  assert.equal(replacedTempId({ id: 'temp-123', clientId: 'temp-123', isSender: true }), null);
+  assert.equal(replacedTempId({ id: 'ev1', clientId: 'abc', isSender: true }), null);
+  assert.equal(replacedTempId({ id: 'ev1', clientId: 'temp-123', isSender: false }), null);
+  assert.equal(replacedTempId({ id: 'ev1' }), null);
+});
+
+test('temporary rows a closed app left behind are settled by what sits beside them', () => {
+  const now = 1_000_000_000_000;
+  const old = now - 600_000;
+  const rows = [
+    { id: 'temp-1', clientId: 'temp-1', isSender: true, deliveryStatus: 'sending', local_timestamp: old },
+    { id: 'ev1', clientId: 'temp-1', isSender: true, deliveryStatus: 'sent' },
+    { id: 'temp-2', clientId: 'temp-2', isSender: true, deliveryStatus: 'sending', local_timestamp: old },
+    { id: 'temp-3', clientId: 'temp-3', isSender: true, deliveryStatus: 'sending', local_timestamp: old },
+    { id: 'temp-4', clientId: 'temp-4', isSender: true, deliveryStatus: 'sending', local_timestamp: now - 5_000 },
+    { id: 'temp-5', clientId: 'temp-5', isSender: true, deliveryStatus: 'securing', local_timestamp: old },
+  ];
+  const outbox = [{ id: 'ev2', tags: [['p', 'x'], ['client', 'temp-2']] }];
+  const plan = planTempSweep(rows, outbox, now);
+  assert.deepEqual(plan.remove, ['temp-1']);
+  assert.deepEqual(plan.queued, ['temp-2']);
+  assert.deepEqual(plan.failed, ['temp-3']);
 });

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { db, deletedMessageIds, saveMessage, openDBFor } from '../../db';
+import { db, deletedMessageIds, saveMessage, openDBFor, sweepTempMessages } from '../../db';
 import { getMyGroups } from '../../lib/myGroups';
 import { mergeReactions } from '../../lib/reactions';
 import { generalRelays, groupRelays, queryAllPages, queryWithTimeout } from '../../lib/relays';
@@ -317,6 +317,7 @@ export function useChatBootstrap({
       });
       (await deletedMessageIds()).forEach((id) => deleted.add(id));
       setDeletedMsgs(deleted);
+      await sweepTempMessages();
       const allDbMsgs = await db.messages.toArray();
       // The carried stamp dies first: a row whose own expires_at is past is
       // dead on load, whatever the local timer says — a local timer that is
