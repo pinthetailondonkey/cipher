@@ -19,6 +19,7 @@ import { enqueueNostrEvent, startOutboxSync } from '../lib/outbox';
 import { groupSocketUrl } from '../lib/egress';
 import { relaysForPeer } from '../lib/dmRelays';
 import { claimSecuringSend, dropSecuringSend, forgetPendingKeyRequest, queueSecuringSend, releaseSecuringSend, rememberPendingKeyRequest, resetKeyRequest, securingSendsFor } from '../lib/crypto/groupKeyRequest';
+import { approvalKeySend, clearKeyAsk, keyAskAt, rememberKeyAsk } from '../lib/crypto/groupKeyAsks';
 import { sortMessages, stampArrival } from '../features/chat/media';
 import { admitRelayRoster, isJoinDenied, joinRequestDecision, denyPendingJoin, dropPendingJoin, clearJoinDenial, loadPendingJoins, queuePendingJoin, withoutDenied } from '../lib/groupJoinQueue.js';
 import { allowsGroupJoins } from '../lib/privacy.js';
@@ -820,6 +821,47 @@ export function useNIP29Group({ identity }) {
       }
       return prev;
     });
+    // The standing ask: a member who asked for the key while their join was
+    // pending gets it here, at the approval itself, instead of waiting for
+    // their own retry ladder. The grant rules all re-run — the walls this
+    // approval just dropped were the only thing that refused them — and the
+    // send is the same explicit answer a live request gets: the rate window
+    // still applies inside distributeGroupKey, and the member's own install
+    // floor (a device installs only the key it asked for) is theirs,
+    // untouched. A refusal leaves the ask standing for their retry.
+    const askedAt = keyAskAt(groupId, memberPubkey);
+    if (askedAt !== null) {
+      try {
+        const current = await getCurrentGroupKey(groupId);
+        const record = await loadMemberSnapshotRecord(groupId);
+        const { creator } = await controlContext(groupId, identity.pk);
+        const decision = await grantKeyRequest({
+          groupId,
+          requester: memberPubkey,
+          creator,
+          selfCreated: useChatStore.getState().groups.some((it) => it.id === groupId && it.creator === identity.pk),
+          snapshot: record?.members || null,
+          updatedAt: record?.updatedAt,
+          keyObtainedAt: current?.obtainedAt,
+          fetchMembers: () => fetchRelayMemberSnapshot(identity, groupId),
+        });
+        const plan = approvalKeySend({ askedAt, hasKey: Boolean(current), decision });
+        if (plan.send) {
+          const prior = epochsToBackfill(await getAllGroupKeys(groupId), current.epoch);
+          await distributeGroupKey({
+            senderPrivkey: identity.sk, senderPubkey: identity.pk,
+            groupId, epoch: current.epoch, keyBytes: current.bytes,
+            recipients: [memberPubkey],
+            extraEpochs: prior,
+            answerRequest: true,
+            publish: (dmEvent) => publishKeyDm(identity, dmEvent),
+          });
+          clearKeyAsk(groupId, memberPubkey);
+        }
+      } catch (e) {
+        console.warn('[group-key] The key could not be sent at approval:', e);
+      }
+    }
   }, [identity, setGroupMembers, appendSystemMessage]);
 
   const updateGroupSettings = useCallback(async (groupId, updates) => {
@@ -1150,6 +1192,7 @@ export function useNIP29Group({ identity }) {
               keyObtainedAt: current?.obtainedAt,
               fetchMembers: () => fetchRelayMemberSnapshot(identity, groupId),
             });
+            let answered = false;
             if (decision === 'allow' && current) {
               const prior = epochsToBackfill(await getAllGroupKeys(groupId), current.epoch);
               await distributeGroupKey({
@@ -1162,7 +1205,14 @@ export function useNIP29Group({ identity }) {
                 answerRequest: true,
                 publish: (dmEvent) => publishKeyDm(identity, dmEvent),
               });
+              answered = true;
             }
+            // A request that could not be answered now — most often a member
+            // still pending, whose key the queue row refuses — is a standing
+            // ask: the owner's approval answers it instead of their retry
+            // ladder. An answered request clears any earlier ask.
+            if (answered) clearKeyAsk(groupId, event.pubkey);
+            else rememberKeyAsk(groupId, event.pubkey, event.created_at);
           }
         }
       } catch (e) {
