@@ -138,6 +138,18 @@ export function deviceKeyFailureMessage(error) {
   return 'This device no longer holds the key to this account. Nothing was counted and nothing was deleted. Restore the account with its 12 words.';
 }
 
+// Shown when the PIN was right but the account could not be locked to this
+// device. Nothing was changed and the person is not let in as they are.
+export function deviceLockUpgradeMessage(error) {
+  if (error instanceof DeviceKeyCancelled) {
+    return 'Your PIN is right, but this account must be locked to this device before it opens. The prompt was cancelled and nothing changed. Enter your PIN again to try once more.';
+  }
+  if (error instanceof DeviceKeyUnavailable) {
+    return 'Your PIN is right, but this device cannot lock an account to itself, and Cipher no longer opens accounts that are not locked. Nothing was deleted. Restore the account from its 12 words on a device that can.';
+  }
+  return 'Your PIN is right, but this account could not be locked to this device. Nothing changed and nothing was deleted. Try again, or restore the account from its 12 words.';
+}
+
 export function pinFailureMessage(remaining) {
   const left = remaining === 1 ? '1 attempt left' : `${remaining} attempts left`;
   const warning = remaining <= 2
