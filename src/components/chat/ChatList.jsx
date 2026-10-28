@@ -27,9 +27,7 @@ import { notifTotalOf, useChatStore } from '../../store/chatStore';
 import { boundReceipts } from '../../lib/vendorReviews';
 import { haptic } from '../../lib/haptics';
 import { noHexName } from '../../lib/npub';
-import Avatar from '../ui/Avatar';
 import IconButton from '../ui/IconButton';
-import ListRow from '../ui/ListRow';
 import Badge from '../ui/Badge';
 import EmptyState from '../ui/EmptyState';
 import { SkeletonList } from '../ui/Skeleton';
@@ -73,9 +71,13 @@ function MenuItem({ icon, children, onClick, danger = false }) {
   );
 }
 
-// One chat row. Swipe right pins, swipe left opens the mute durations;
-// both also live in the row kebab. The preview line is blurred until the
-// row is long-pressed; the reveal holds until you leave the list.
+// One chat row: 72px at normal text, taller when the reader's own type size
+// makes it taller — nothing is measured against a fixed height. Swipe right
+// pins, swipe left opens the mute durations; both also live in the row menu.
+// The menu is no longer a permanently visible three-dot: a long press, a
+// right click, or the Context Menu key (Shift+F10) opens it, so the row
+// keeps its actions without a button on every line. The preview stays
+// blurred until its own line is tapped, and that line says so in words.
 function ChatRow({
   chat,
   name,
@@ -90,10 +92,12 @@ function ChatRow({
   isRevealed,
   menuOpen,
   menuPanel,
+  divider,
   onOpen,
+  onReveal,
   onPressStart,
   onPressCancel,
-  onMenuToggle,
+  onMenuOpen,
   onMenuClose,
   onMenuBack,
   onOpenMuteMenu,
@@ -109,6 +113,7 @@ function ChatRow({
   const pinOpacity = useTransform(x, [12, SWIPE_TRIGGER], [0, 1]);
   const muteOpacity = useTransform(x, [-SWIPE_TRIGGER, -12], [1, 0]);
   const isDm = chat.type === 'dm';
+  const blurred = Boolean(previewText) && !isRevealed;
 
   const commitSwipe = (info) => {
     const offset = info.offset.x;
@@ -120,17 +125,69 @@ function ChatRow({
     else onOpenMuteMenu();
   };
 
+  // The keyboard door to the menu the mouse and the finger already have.
+  const menuKey = (event) => {
+    if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) {
+      event.preventDefault();
+      onMenuOpen();
+    }
+  };
+
   const timeLabel = formatRelativeTime(chat.lastMsg?.timestamp);
-  const avatar = isDm ? (
-    <Avatar src={chat.profile.picture} name={name} className="!h-10 !w-10 !text-[13px]" />
-  ) : (
-    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-line bg-panelAlt text-[13px] font-semibold text-accentText">
+  // A picture that fails to load leaves initials, never an empty hole.
+  const picture = isDm ? chat.profile.picture : null;
+  const [pictureFailed, setPictureFailed] = useState(false);
+  const showPicture = Boolean(picture) && !pictureFailed;
+  const initials = (
+    <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-line bg-panelAlt text-[15px] font-semibold text-accentText">
       {initialsOf(name)}
     </span>
   );
+  const avatar = showPicture ? (
+    <img
+      src={picture}
+      alt=""
+      onError={() => setPictureFailed(true)}
+      className="h-12 w-12 shrink-0 rounded-full border border-line object-cover"
+    />
+  ) : initials;
+
+  const preview = typing ? (
+    <span aria-label="typing" className="text-accentText transition-all duration-200 select-none">
+      <span className="inline-flex items-center gap-1">
+        typing
+        <span className="typing-dots inline-flex items-center gap-0.5 text-[15px] leading-none" aria-hidden="true">
+          <span>·</span><span>·</span><span>·</span>
+        </span>
+      </span>
+    </span>
+  ) : blurred ? (
+    /* The reveal explains itself: the words on the line are the control,
+       and the blurred copy stays behind them for context. */
+    <button
+      type="button"
+      onClick={onReveal}
+      aria-label="Show message preview"
+      className="flex min-w-0 flex-1 items-center gap-2 text-left"
+    >
+      <span aria-hidden="true" className="min-w-0 flex-1 truncate text-[14px] text-inkMuted blur-[5px] select-none">{previewText}</span>
+      <span className="shrink-0 text-[12px] font-semibold text-accentText">Tap to show</span>
+    </button>
+  ) : (
+    <button type="button" onClick={onOpen} className="min-w-0 flex-1 truncate text-left text-[14px] text-inkMuted">
+      {previewText || (isDm ? 'Tap to chat' : (chat.group.isChannel ? 'Channel' : 'Public group'))}
+    </button>
+  );
 
   return (
-    <div className="relative">
+    <div
+      className="relative"
+      onPointerDown={onPressStart}
+      onPointerUp={onPressCancel}
+      onPointerLeave={onPressCancel}
+      onPointerCancel={onPressCancel}
+      onContextMenu={(e) => { e.preventDefault(); onMenuOpen(); }}
+    >
       <motion.div style={{ opacity: pinOpacity }} className="pointer-events-none absolute inset-0 flex items-center gap-2 bg-accentSoft pl-5 text-accentText">
         {pinned ? <PinOff size={16} /> : <Pin size={16} />}
         <span className="text-[13px] font-semibold">{pinned ? 'Unpin' : 'Pin'}</span>
@@ -147,129 +204,100 @@ function ChatRow({
         dragElastic={0.25}
         onDragEnd={(e, info) => commitSwipe(info)}
       >
-        <ListRow
-          className="border-b border-line last:border-b-0"
-          dense={pinned}
-          leading={avatar}
-          onClick={() => {
-            if (Date.now() - lastDragAt.current < 300) return;
-            onOpen();
-          }}
-          onPointerDown={onPressStart}
-          onPointerUp={onPressCancel}
-          onPointerLeave={onPressCancel}
-          onPointerCancel={onPressCancel}
-          onContextMenu={(e) => e.preventDefault()}
-          title={(
-            <span className="flex items-baseline justify-between gap-2">
-              <span className="truncate text-[15px] font-semibold text-ink">{name}</span>
-              <span className="flex shrink-0 items-center gap-1">
-                {timeLabel && <span className="text-[11px] font-medium text-inkSubtle">{timeLabel}</span>}
-                {pinned && <Pin size={12} className="text-inkSubtle" />}
-              </span>
-            </span>
-          )}
-          subtitle={(
-            <span className="mt-0.5 flex items-center justify-between gap-2">
-              <span
-                aria-label={typing ? 'typing' : undefined}
-                className={`block truncate text-[13px] transition-all duration-200 select-none ${typing ? 'text-accentText' : 'text-inkMuted'} ${previewText && !isRevealed ? 'blur-[5px]' : ''}`}
+        {/* Avatar sits outside the bordered column, so the divider starts
+            under the text and never runs through the picture. */}
+        <div className="flex items-stretch gap-3 pl-4">
+          <span className="flex shrink-0 items-center">{avatar}</span>
+          <div className={`flex min-h-[72px] min-w-0 flex-1 items-center gap-2 pr-4 ${divider ? 'border-b border-line' : ''}`}>
+            <div className="min-w-0 flex-1 py-2.5">
+              <button
+                type="button"
+                onClick={() => {
+                  if (Date.now() - lastDragAt.current < 300) return;
+                  onOpen();
+                }}
+                onKeyDown={menuKey}
+                className="flex w-full items-baseline gap-2 text-left"
               >
-                {typing ? (
-                  <span className="inline-flex items-center gap-1">
-                    typing
-                    <span className="typing-dots inline-flex items-center gap-0.5 text-[15px] leading-none" aria-hidden="true">
-                      <span>·</span><span>·</span><span>·</span>
-                    </span>
-                  </span>
-                ) : (previewText || (isDm ? 'Tap to chat' : (chat.group.isChannel ? 'Channel' : 'Public group')))}
-              </span>
-              {chat.vendor && !typing && (
-                <span className="shrink-0 text-[12px] font-semibold text-accentText">Menu</span>
-              )}
-            </span>
-          )}
-          meta={(
+                <span className="min-w-0 flex-1 break-words text-[16px] font-semibold text-ink">{name}</span>
+                {pinned && <Pin size={12} className="shrink-0 text-inkSubtle" />}
+              </button>
+              <div className="mt-0.5 flex items-center gap-2">
+                {preview}
+                {chat.vendor && !typing && !blurred && (
+                  <span className="shrink-0 text-[12px] font-semibold text-accentText">Menu</span>
+                )}
+              </div>
+            </div>
             <span className="flex shrink-0 flex-col items-end gap-1">
+              {timeLabel && <span className="text-[12px] font-medium text-inkSubtle">{timeLabel}</span>}
               {unread > 0 ? (
                 <Badge tone="unread" title={`${unread} unread`}>{unread > 99 ? '99+' : unread}</Badge>
               ) : (muted && <BellOff size={12} className="text-inkSubtle" />)}
             </span>
-          )}
-          trailing={(
-            <span className="relative shrink-0">
-              <IconButton
-                icon={<MoreVertical size={16} />}
-                label="Chat options"
-                aria-expanded={menuOpen}
-                aria-haspopup="menu"
-                className="h-11 w-11"
-                onClick={onMenuToggle}
-              />
-              {menuOpen && (
-                <>
-                  <button
-                    type="button"
-                    aria-label="Close options"
-                    onClick={onMenuClose}
-                    className="fixed inset-0 z-fab cursor-default"
-                  />
-                  <div
-                    role="menu"
-                    onKeyDown={(e) => { if (e.key === 'Escape') onMenuClose(); }}
-                    className="absolute right-2 top-2 z-fab w-44 overflow-hidden rounded-xl border border-lineStrong bg-panelStrong shadow-lg"
-                  >
-                    {menuPanel === 'mute' ? (
-                      <>
-                        <MenuItem icon={<ArrowLeft size={14} className="text-inkMuted" />} onClick={onMenuBack}>
-                          Mute for
-                        </MenuItem>
-                        {MUTE_DURATIONS.map((duration) => (
-                          <MenuItem key={duration.label} onClick={() => { onMute(duration.ms); onMenuClose(); }}>
-                            {duration.label}
-                          </MenuItem>
-                        ))}
-                        {muted && <MenuItem icon={<Bell size={14} className="text-inkMuted" />} onClick={() => { onUnmute(); onMenuClose(); }}>Unmute</MenuItem>}
-                      </>
-                    ) : (
-                      <>
-                        <MenuItem
-                          icon={muted ? <Bell size={14} className="text-inkMuted" /> : <BellOff size={14} className="text-inkMuted" />}
-                          onClick={() => { if (muted) { onUnmute(); onMenuClose(); } else onOpenMuteMenu(); }}
-                        >
-                          {muted ? 'Unmute' : 'Mute'}
-                        </MenuItem>
-                        <MenuItem
-                          icon={pinned ? <PinOff size={14} className="text-inkMuted" /> : <Pin size={14} className="text-inkMuted" />}
-                          onClick={() => { onTogglePin(); onMenuClose(); }}
-                        >
-                          {pinned ? 'Unpin' : 'Pin'}
-                        </MenuItem>
-                        <MenuItem
-                          icon={archived ? <ArchiveRestore size={14} className="text-inkMuted" /> : <Archive size={14} className="text-inkMuted" />}
-                          onClick={() => { onToggleArchive(); onMenuClose(); }}
-                        >
-                          {archived ? 'Unarchive' : 'Archive'}
-                        </MenuItem>
-                        {isDm && menuDoor && (
-                          <MenuItem icon={<Store size={14} className="text-inkMuted" />} onClick={() => { onViewShop(); onMenuClose(); }}>
-                            Their menu
-                          </MenuItem>
-                        )}
-                        {isDm && (
-                          <MenuItem danger icon={<Ban size={14} className="text-danger" />} onClick={() => { onToggleBlock(); onMenuClose(); }}>
-                            {blocked ? 'Unblock peer' : 'Block peer'}
-                          </MenuItem>
-                        )}
-                      </>
-                    )}
-                  </div>
-                </>
-              )}
-            </span>
-          )}
-        />
+          </div>
+        </div>
       </motion.div>
+      {menuOpen && (
+        <>
+          <button
+            type="button"
+            aria-label="Close options"
+            onClick={onMenuClose}
+            className="fixed inset-0 z-fab cursor-default"
+          />
+          <div
+            role="menu"
+            onKeyDown={(e) => { if (e.key === 'Escape') onMenuClose(); }}
+            className="absolute right-3 top-3 z-fab w-44 overflow-hidden rounded-xl border border-lineStrong bg-panelStrong shadow-lg"
+          >
+            {menuPanel === 'mute' ? (
+              <>
+                <MenuItem icon={<ArrowLeft size={14} className="text-inkMuted" />} onClick={onMenuBack}>
+                  Mute for
+                </MenuItem>
+                {MUTE_DURATIONS.map((duration) => (
+                  <MenuItem key={duration.label} onClick={() => { onMute(duration.ms); onMenuClose(); }}>
+                    {duration.label}
+                  </MenuItem>
+                ))}
+                {muted && <MenuItem icon={<Bell size={14} className="text-inkMuted" />} onClick={() => { onUnmute(); onMenuClose(); }}>Unmute</MenuItem>}
+              </>
+            ) : (
+              <>
+                <MenuItem
+                  icon={muted ? <Bell size={14} className="text-inkMuted" /> : <BellOff size={14} className="text-inkMuted" />}
+                  onClick={() => { if (muted) { onUnmute(); onMenuClose(); } else onOpenMuteMenu(); }}
+                >
+                  {muted ? 'Unmute' : 'Mute'}
+                </MenuItem>
+                <MenuItem
+                  icon={pinned ? <PinOff size={14} className="text-inkMuted" /> : <Pin size={14} className="text-inkMuted" />}
+                  onClick={() => { onTogglePin(); onMenuClose(); }}
+                >
+                  {pinned ? 'Unpin' : 'Pin'}
+                </MenuItem>
+                <MenuItem
+                  icon={archived ? <ArchiveRestore size={14} className="text-inkMuted" /> : <Archive size={14} className="text-inkMuted" />}
+                  onClick={() => { onToggleArchive(); onMenuClose(); }}
+                >
+                  {archived ? 'Unarchive' : 'Archive'}
+                </MenuItem>
+                {isDm && menuDoor && (
+                  <MenuItem icon={<Store size={14} className="text-inkMuted" />} onClick={() => { onViewShop(); onMenuClose(); }}>
+                    Their menu
+                  </MenuItem>
+                )}
+                {isDm && (
+                  <MenuItem danger icon={<Ban size={14} className="text-danger" />} onClick={() => { onToggleBlock(); onMenuClose(); }}>
+                    {blocked ? 'Unblock peer' : 'Block peer'}
+                  </MenuItem>
+                )}
+              </>
+            )}
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -319,15 +347,22 @@ export default function ChatList({ onOpenChat, onRefresh }) {
     return () => window.clearInterval(tick);
   }, []);
 
+  // A long press is the row's menu now that the three-dot button is gone:
+  // the same panel the kebab used to open, with the same actions.
   const startPress = (id) => {
     cancelPress();
     pressTimer.current = window.setTimeout(() => {
-      setRevealed((prev) => {
-        const next = new Set(prev);
-        next.add(id);
-        return next;
-      });
+      haptic('light');
+      setMenuPanel('main');
+      setMenuFor(id);
     }, 450);
+  };
+  const reveal = (id) => {
+    setRevealed((prev) => {
+      const next = new Set(prev);
+      next.add(id);
+      return next;
+    });
   };
   const cancelPress = () => {
     if (pressTimer.current) {
@@ -445,7 +480,7 @@ export default function ChatList({ onOpenChat, onRefresh }) {
     return nameOf(chat).toLowerCase().includes(needle) || (previewOf(chat) || '').toLowerCase().includes(needle);
   });
 
-  const renderRow = (chat, { pinned = false } = {}) => (
+  const renderRow = (chat, { pinned = false, divider = true } = {}) => (
     <ChatRow
       key={chat.id}
       chat={chat}
@@ -461,12 +496,14 @@ export default function ChatList({ onOpenChat, onRefresh }) {
       isRevealed={revealed.has(chat.id)}
       menuOpen={menuFor === chat.id}
       menuPanel={menuPanel}
+      divider={divider}
       onOpen={() => open(chat.type, chat.id, chat.group)}
+      onReveal={() => reveal(chat.id)}
       onPressStart={() => startPress(chat.id)}
       onPressCancel={cancelPress}
-      onMenuToggle={() => {
+      onMenuOpen={() => {
         setMenuPanel('main');
-        setMenuFor(menuFor === chat.id ? null : chat.id);
+        setMenuFor(chat.id);
       }}
       onMenuClose={() => { setMenuFor(null); setMenuPanel('main'); }}
       onMenuBack={() => setMenuPanel('main')}
@@ -632,12 +669,14 @@ export default function ChatList({ onOpenChat, onRefresh }) {
       {pinnedRows.length > 0 && (
         <>
           <p className="px-1 pb-1 pt-3 text-[11px] font-semibold uppercase tracking-wider text-inkSubtle">Pinned</p>
-          <div className="overflow-hidden">{pinnedRows.map((chat) => renderRow(chat, { pinned: true }))}</div>
+          {/* No overflow clip here: a row's menu opens inside the row and
+              must not be cut off by the section that holds it. */}
+          <div>{pinnedRows.map((chat, i) => renderRow(chat, { pinned: true, divider: i < pinnedRows.length - 1 }))}</div>
         </>
       )}
 
       {regularRows.length > 0 && (
-        <div className={pinnedRows.length > 0 ? 'pt-2' : 'pt-3'}>{regularRows.map((chat) => renderRow(chat))}</div>
+        <div className={pinnedRows.length > 0 ? 'pt-2' : 'pt-3'}>{regularRows.map((chat, i) => renderRow(chat, { divider: i < regularRows.length - 1 }))}</div>
       )}
 
       {shownChats.length === 0 && (
@@ -659,7 +698,7 @@ export default function ChatList({ onOpenChat, onRefresh }) {
             {archivedOpen ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
             Archived
           </button>
-          {archivedOpen && <div className="overflow-hidden">{shownArchived.map((chat) => renderRow(chat))}</div>}
+          {archivedOpen && <div>{shownArchived.map((chat, i) => renderRow(chat, { divider: i < shownArchived.length - 1 }))}</div>}
         </>
       )}
     </div>

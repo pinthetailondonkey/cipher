@@ -346,6 +346,36 @@ test('the filter field always sits under the title and narrows the list as it is
   assert.deepEqual(rowNames(rows).sort(), ['Green Room', 'Plain Pat', 'Times Square', 'Vendor Vic'], 'the whole list comes back');
 });
 
+test('a row keeps its actions without a three-dot: a long press opens the menu', async () => {
+  globalThis.window = {
+    setInterval: () => 0,
+    clearInterval: () => {},
+    setTimeout: (fn, ms) => setTimeout(fn, ms),
+    clearTimeout: (id) => clearTimeout(id),
+  };
+  seedStore();
+  app.useChatStore.setState({ pinnedChats: [], archivedChats: [] });
+  const tree = createTree(app.ChatList, { onOpenChat: () => {}, onRefresh: null });
+
+  let { rows } = tree.render();
+  assert.equal(rows.length, 4, 'every chat has a row');
+  for (const row of rows) {
+    assert.equal(row.trailing, undefined, 'no row carries a permanently visible options button');
+    assert.equal(typeof row.onMenuOpen, 'function', 'the menu is still reachable from the row');
+    assert.equal(typeof row.onReveal, 'function', 'the blurred preview has a reveal of its own');
+  }
+  assert.deepEqual(rows.map((row) => row.divider), [true, true, true, false], 'the divider runs between rows, not past the last one');
+
+  rows[0].onPressStart();
+  await new Promise((resolve) => setTimeout(resolve, 520));
+  ({ rows } = tree.render());
+  assert.equal(rows.filter((row) => row.menuOpen).length, 1, 'a long press opens exactly one row menu');
+  const open = rows.find((row) => row.menuOpen);
+  open.onMenuClose();
+  ({ rows } = tree.render());
+  assert.equal(rows.filter((row) => row.menuOpen).length, 0, 'closing the menu puts it away');
+});
+
 test('the new message screen says what it searches and has a submit that works', () => {
   globalThis.window = globalThis.window || { setInterval: () => 0, clearInterval: () => {} };
   seedStore();
