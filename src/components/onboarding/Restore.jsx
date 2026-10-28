@@ -1,9 +1,9 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Fingerprint, KeyRound, RefreshCw } from 'lucide-react';
 import Button from '../ui/Button';
 import Input from '../ui/Input';
 import { MIN_EXISTING_PIN_LENGTH } from '../../lib/vaultLockout';
-import { hasStoredPasskey } from '../../lib/passkeyRecord';
+import { canOpenWithPasskey } from '../../lib/passkeyRecord';
 
 // Restore — handle + PIN, the by-relay recovery (§10). A saved passkey
 // record opens a second door on this device; the 12 words remain the only
@@ -13,7 +13,19 @@ export default function Restore({ identity, go }) {
   const [pin, setPin] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const canUsePasskey = hasStoredPasskey(localStorage);
+  // The door asks the same two questions the unlock will: a record for this
+  // account, and a device that can answer a PRF request. Offering it on the
+  // record alone promised an unlock that could never succeed.
+  const [canUsePasskey, setCanUsePasskey] = useState(false);
+  useEffect(() => {
+    let live = true;
+    (async () => {
+      const { isPRFSupported } = await import('nostr-passkey');
+      const open = await canOpenWithPasskey(localStorage, isPRFSupported);
+      if (live) setCanUsePasskey(open);
+    })().catch(() => { /* no support check, no door */ });
+    return () => { live = false; };
+  }, []);
 
   const handleBiometricRecover = async () => {
     if (loading) return;

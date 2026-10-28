@@ -17,3 +17,17 @@ export function hasStoredPasskey(storage) {
   } catch { /* storage unreadable: no door */ }
   return false;
 }
+
+// A record on this device is only half the question. The unlock asks the
+// authenticator for a PRF result, so a browser or device that cannot do PRF
+// fails no matter what is stored — the door would be a trap that always ends
+// in "No passkey identity found". Both halves must hold, and a capability
+// check that throws counts as no support, never as support.
+export async function canOpenWithPasskey(storage, supportCheck) {
+  if (!hasStoredPasskey(storage)) return false;
+  try {
+    return typeof supportCheck === 'function' ? (await supportCheck()) === true : false;
+  } catch {
+    return false;
+  }
+}

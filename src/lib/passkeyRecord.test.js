@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { hasStoredPasskey } from './passkeyRecord.js';
+import { canOpenWithPasskey, hasStoredPasskey } from './passkeyRecord.js';
 
 // The Face ID door must show exactly when the unlock path would find a
 // record: same key resolution (active pubkey first, then the biometric
@@ -71,4 +71,21 @@ test('malformed record does not light the door', () => {
 
 test('broken storage stays dark instead of throwing', () => {
   assert.equal(hasStoredPasskey({ getItem: () => { throw new Error('denied'); } }), false);
+});
+
+test('the door needs a device that can answer PRF, not just a saved record', async () => {
+  const withRecord = mockStorage([
+    ['cipher_active_pubkey', 'a'.repeat(64)],
+    ['cipher_passkey_' + 'a'.repeat(64), RECORD_A],
+  ]);
+  // Both halves hold: the door opens.
+  assert.equal(await canOpenWithPasskey(withRecord, async () => true), true);
+  // A record on a browser that cannot do PRF is a door that always fails.
+  assert.equal(await canOpenWithPasskey(withRecord, async () => false), false);
+  // A capability check that throws is not support.
+  assert.equal(await canOpenWithPasskey(withRecord, async () => { throw new Error('no crypto'); }), false);
+  // No check supplied, no door.
+  assert.equal(await canOpenWithPasskey(withRecord, undefined), false);
+  // No record, no door, whatever the device says it can do.
+  assert.equal(await canOpenWithPasskey(mockStorage([]), async () => true), false);
 });
