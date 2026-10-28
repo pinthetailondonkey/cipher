@@ -63,7 +63,7 @@ export default function SetupProfile({ identity, tempIdentity, initialHandle }) 
   return (
     <>
       <h1 className="mb-2 text-center text-2xl font-bold tracking-tight text-ink">Your Profile</h1>
-      <p className="mb-8 max-w-[280px] text-center text-[13px] leading-relaxed text-inkMuted">Set up your profile and start messaging.</p>
+      <p className="mb-5 max-w-[280px] text-center text-[13px] leading-relaxed text-inkMuted">Set up your profile and start messaging.</p>
 
       <form onSubmit={handleFinishSetup} className="flex w-full flex-col gap-4 rounded-3xl border border-line bg-panel p-6">
         <div className="group relative mx-auto mb-4 cursor-pointer">

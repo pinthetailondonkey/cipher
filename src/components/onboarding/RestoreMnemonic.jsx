@@ -44,7 +44,7 @@ export default function RestoreMnemonic({ identity, go }) {
   return (
     <>
       <h1 className="mb-2 text-center text-2xl font-bold tracking-tight text-ink">Restore with Recovery Phrase</h1>
-      <p className="mb-8 max-w-[280px] text-center text-[13px] leading-relaxed text-inkMuted">Enter your 12-word phrase and a new PIN ({MIN_PIN_LENGTH} digits).</p>
+      <p className="mb-5 max-w-[280px] text-center text-[13px] leading-relaxed text-inkMuted">Enter your 12-word phrase and a new PIN ({MIN_PIN_LENGTH} digits).</p>
 
       <form onSubmit={handleSubmit} className="flex w-full flex-col gap-4 rounded-3xl border border-line bg-panel p-6">
         <textarea placeholder="apple banana cherry ..." value={mnemonic} onChange={(e) => { setMnemonic(e.target.value); setError(''); }} className="w-full resize-none rounded-2xl border border-line bg-panelStrong p-5 text-[15px] text-ink placeholder:text-inkSubtle focus:border-accent focus:outline-none" autoCapitalize="none" autoCorrect="off" spellCheck="false" rows={4} />
@@ -56,7 +56,7 @@ export default function RestoreMnemonic({ identity, go }) {
         </Button>
       </form>
 
-      <div className="mt-8 flex flex-col items-center gap-4">
+      <div className="mt-6 flex flex-col items-center gap-4">
         <button type="button" onClick={() => go('restore')} className="flex items-center gap-1 text-sm font-medium text-inkMuted transition-colors hover:text-ink">
           <ChevronLeft size={14} aria-hidden="true" /> Back to handle restore
         </button>

@@ -29,7 +29,7 @@ export default function VerifyKey({ savedMnemonic, verifyIndices, onVerified }) 
   return (
     <>
       <h1 className="mb-2 text-center text-2xl font-bold tracking-tight text-ink">Verify Your Recovery Key</h1>
-      <p className="mb-8 max-w-[280px] text-center text-[13px] leading-relaxed text-inkMuted">Enter the words below to confirm you saved the phrase.</p>
+      <p className="mb-5 max-w-[280px] text-center text-[13px] leading-relaxed text-inkMuted">Enter the words below to confirm you saved the phrase.</p>
 
       <form onSubmit={handleVerifyKey} className="flex w-full flex-col gap-4 rounded-3xl border border-line bg-panel p-6">
         <p className="mb-1 text-sm text-inkMuted">Enter words #{verifyIndices.map(i => i + 1).join(', #')} from your recovery phrase</p>

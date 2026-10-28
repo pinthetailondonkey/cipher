@@ -109,20 +109,26 @@ export default function LockScreen({ identity }) {
   };
 
   return (
-    <div className="relative flex h-[100dvh] w-full flex-col items-center justify-center overflow-y-auto bg-scrim px-6 py-12">
+    // One scroll root for every lock and setup rung. The shell is pinned to the
+    // visible viewport (dvh, the same one the app shell uses) and scrolls its
+    // own content, with the safe areas as padding. The centred column uses
+    // auto margins, not justify-center: a centred overflow child gets its top
+    // clipped and cannot be scrolled back to, which is how the Unlock button
+    // and the restore door fell off short screens (2026-10-28).
+    <div className="relative flex h-[100dvh] w-full flex-col items-center overflow-y-auto overscroll-contain bg-scrim px-6 pt-[calc(env(safe-area-inset-top,0px)+1.25rem)] pb-[calc(env(safe-area-inset-bottom,0px)+1.25rem)]">
       <div className="pointer-events-none fixed inset-0" style={{
         background: 'radial-gradient(ellipse 55% 38% at 12% 0%, var(--glow-a), transparent 65%), radial-gradient(ellipse 50% 30% at 92% 100%, var(--glow-b), transparent 70%)',
       }} />
-      <div className="flex w-full max-w-sm flex-col items-center">
+      <div className="my-auto flex w-full max-w-sm flex-col items-center">
 
-        <div className="mb-8">
+        <div className="mb-6">
           <Logo size={72} />
         </div>
 
         {mode === 'unlock' ? (
           <>
             <h1 className="mb-2 text-center text-2xl font-bold tracking-tight text-ink">Unlock Cipher</h1>
-            <p className="mb-8 max-w-[280px] text-center text-[13px] leading-relaxed text-inkMuted">Enter your PIN, or use your saved device passkey. Five wrong PINs delete this account from the device, including the encrypted recovery phrase.</p>
+            <p className="mb-5 max-w-[280px] text-center text-[13px] leading-relaxed text-inkMuted">Enter your PIN, or use your saved device passkey. Five wrong PINs delete this account from the device, including the encrypted recovery phrase.</p>
 
             <form onSubmit={handleUnlock} className="flex w-full flex-col items-center gap-4">
               <Keypad
@@ -141,7 +147,7 @@ export default function LockScreen({ identity }) {
               </Button>
             </form>
 
-            <div className="mt-8 flex flex-col items-center gap-4">
+            <div className="mt-6 flex flex-col items-center gap-4">
               <button type="button" onClick={() => { setMode('restore'); setError(''); setPin('') }} className="text-sm font-medium text-inkMuted transition-colors hover:text-ink">
                 Forgot PIN? Restore account
               </button>

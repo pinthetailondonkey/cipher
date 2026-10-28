@@ -69,7 +69,7 @@ export default function Restore({ identity, go }) {
   return (
     <>
       <h1 className="mb-2 text-center text-2xl font-bold tracking-tight text-ink">Restore Account</h1>
-      <p className="mb-8 max-w-[280px] text-center text-[13px] leading-relaxed text-inkMuted">Enter your handle and PIN.</p>
+      <p className="mb-5 max-w-[280px] text-center text-[13px] leading-relaxed text-inkMuted">Enter your handle and PIN.</p>
 
       <form onSubmit={handleSubmit} className="flex w-full flex-col gap-4 rounded-3xl border border-line bg-panel p-6">
         <Input type="text" placeholder="yourhandle" value={handle} onChange={(e) => { setHandle(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, '')); setError(''); }} />
@@ -80,7 +80,7 @@ export default function Restore({ identity, go }) {
         </Button>
       </form>
 
-      <div className="mt-8 flex flex-col items-center gap-4">
+      <div className="mt-6 flex flex-col items-center gap-4">
         {canUsePasskey && (
           <button type="button" onClick={handleBiometricRecover} disabled={loading} className="flex items-center gap-1 text-sm font-medium text-inkMuted transition-colors hover:text-ink disabled:opacity-50">
             <Fingerprint size={14} aria-hidden="true" /> Use saved passkey
