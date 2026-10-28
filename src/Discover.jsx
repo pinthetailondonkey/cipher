@@ -3,6 +3,7 @@ import { Search, Users, Loader2 } from 'lucide-react';
 import { useChatStore } from './store/chatStore';
 import { joinGroup } from './lib/groupJoin';
 import { groupOnlyRelays } from './lib/relays';
+import Button from './components/ui/Button';
 
 // One row of the public directory. A menu's body opens the vendor's menu
 // home and its pill keeps the join / open-chat action; a group row opens
@@ -50,6 +51,9 @@ export default function Discover({ identity, onJoined }) {
   // screen keeps the groups this account already has and says which of the
   // two happened, so an empty directory is never claimed on a failed read.
   const [directoryFailed, setDirectoryFailed] = useState(false);
+  // A failed read is a question that can be asked again, so the screen offers
+  // the one button that asks it. Bumping this re-runs the same loader.
+  const [reloadKey, setReloadKey] = useState(0);
   const storeGroups = useChatStore((s) => s.groups);
   const groupKey = (storeGroups || []).map((group) => group.id).sort().join('|');
 
@@ -123,7 +127,7 @@ export default function Discover({ identity, onJoined }) {
 
     fetchGroups();
     return () => { alive = false; };
-  }, [groupKey]);
+  }, [groupKey, reloadKey]);
 
   const joinedIds = new Set((storeGroups || []).map((group) => group.id));
 
@@ -194,11 +198,32 @@ export default function Discover({ identity, onJoined }) {
         ) : displayGroups.length === 0 ? (
           <div className="mx-4 rounded-2xl border border-line bg-panel px-4 py-16 text-center">
             <Users size={28} className="mx-auto mb-3 text-inkSubtle" />
+            {/* Each emptiness names its own cause: a failed read, a search
+                that matched nothing, or a directory that really is empty.
+                "No groups" must never stand in for "could not ask". */}
             <p className="text-[15px] font-semibold text-ink">
-              {directoryFailed ? 'Could not reach the relay' : 'No menus or groups yet'}
+              {directoryFailed ? 'Could not reach the relay' : query.trim() ? 'Nothing matches that search' : 'No menus or groups yet'}
             </p>
-            {directoryFailed && (
-              <p className="mt-1 px-4 text-[13px] text-inkMuted">There may be menus and groups, but this screen could not ask.</p>
+            {directoryFailed ? (
+              <>
+                <p className="mt-1 px-4 text-[13px] text-inkMuted">There may be menus and groups, but this screen could not ask.</p>
+                <Button
+                  variant="secondary"
+                  size="md"
+                  className="mt-4"
+                  onClick={() => {
+                    setDirectoryFailed(false);
+                    setLoading(true);
+                    setReloadKey((key) => key + 1);
+                  }}
+                >
+                  Try again
+                </Button>
+              </>
+            ) : query.trim() ? (
+              <p className="mt-1 px-4 text-[13px] text-inkMuted">Try a different word, or clear the search to see everything.</p>
+            ) : (
+              <p className="mt-1 px-4 text-[13px] text-inkMuted">When a vendor opens a menu or someone starts a group, it shows up here.</p>
             )}
           </div>
         ) : (
