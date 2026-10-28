@@ -13,6 +13,10 @@
   --sat: env(safe-area-inset-top, 0px);
   --sab: env(safe-area-inset-bottom, 0px);
   --nav-h: 4rem;
+  /* The below-md bottom bar (15.1). Scroll roots under it pad by this plus
+     the safe area so the last row clears the bar; md+ has no bar, so the
+     padding utility collapses to breathing room there. */
+  --bar-h: 3.5rem;
   --app-edge: max(1.25rem, calc(50% - 14rem + 1.25rem));
   --bg: #000000;
   --bg-soft: #0a0a0a;
@@ -159,6 +163,13 @@ textarea::placeholder {
 @layer utilities {
   .pt-safe { padding-top: var(--sat); }
   .pb-safe { padding-bottom: var(--sab); }
+  /* Below md the tab bar owns the bottom edge: content pads by the bar plus
+     the safe area so the last row and the composer clear it. md+ has no bar,
+     so the same utility gives rows breathing room instead. */
+  .pb-bar { padding-bottom: calc(var(--bar-h) + var(--sab)); }
+  @media (min-width: 768px) {
+    .pb-bar { padding-bottom: calc(var(--sab) + 1rem); }
+  }
   .pb-sheet { padding-bottom: calc(1.5rem + var(--sab)); }
   .top-safe { top: calc(var(--sat) + 1rem); }
   .fab-pos { bottom: calc(var(--nav-h) + var(--sab) + 1.25rem); right: var(--app-edge); }

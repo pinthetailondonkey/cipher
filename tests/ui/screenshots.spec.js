@@ -24,12 +24,11 @@ test.describe('Visual regression', () => {
   test('screenshot: explore tab', async ({ page }) => {
     await page.goto('/');
     await expect(page.getByRole('heading', { name: 'Chats' })).toBeVisible({ timeout: 20000 });
-    // Phone project: the md+ rail is display-none here — navigation is the
-    // drawer, so open it and tap the Menus door inside it.
-    await page.getByRole('button', { name: 'Open menu' }).click();
-    const menusDoor = page.getByRole('button', { name: 'Menus' }).or(page.getByRole('button', { name: 'Explore' }));
-    await expect(menusDoor.first()).toBeVisible({ timeout: 10000 });
-    await menusDoor.first().click();
+    // Phone project: the md+ rail is display-none here — the bottom bar is
+    // the nav (15.1), so tap the Menus tab straight off it.
+    const menusDoor = page.getByRole('navigation', { name: 'Tabs' }).getByRole('button', { name: 'Menus' });
+    await expect(menusDoor).toBeVisible({ timeout: 10000 });
+    await menusDoor.click();
     await page.waitForTimeout(1000);
     await page.screenshot({ path: 'test-results/explore.png', fullPage: true });
   });
@@ -37,12 +36,10 @@ test.describe('Visual regression', () => {
   test('screenshot: profile tab', async ({ page }) => {
     await page.goto('/');
     await expect(page.getByRole('heading', { name: 'Chats' })).toBeVisible({ timeout: 20000 });
-    // Same phone door: the drawer's "Orders" entry opens the profile tab's
-    // Wallet view (the drawer's own label for it).
-    await page.getByRole('button', { name: 'Open menu' }).click();
-    const profileDoor = page.getByRole('button', { name: 'Orders' });
+    // Same phone nav: the bar's Profile tab opens the Wallet pane.
+    const profileDoor = page.getByRole('navigation', { name: 'Tabs' }).getByRole('button', { name: 'Profile' });
     await expect(profileDoor).toBeVisible({ timeout: 10000 });
-    await profileDoor.first().click();
+    await profileDoor.click();
     await page.waitForTimeout(1000);
     await page.screenshot({ path: 'test-results/profile.png', fullPage: true });
   });

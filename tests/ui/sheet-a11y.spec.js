@@ -22,8 +22,14 @@ test.describe('Sheet-class a11y on the boot flow', () => {
 
   const surfaces = [
     {
+      // Same rebuild fold 2da300c met for the New group sheet: these doors
+      // moved into the list header's kebab; the sheets under test are
+      // unchanged. The kebab click is the not-a11y door step.
       name: 'Saved viewer',
-      open: async (page) => page.getByRole('button', { name: 'Saved messages' }).click(),
+      open: async (page) => {
+        await page.getByRole('button', { name: 'Chat list menu' }).click();
+        await page.getByRole('button', { name: 'Saved messages' }).click();
+      },
       dialogLabel: 'Saved',
       closeFallback: async (page) => page.getByRole('button', { name: 'Back' }).click(),
     },
@@ -35,7 +41,10 @@ test.describe('Sheet-class a11y on the boot flow', () => {
     },
     {
       name: 'QR scanner',
-      open: async (page) => page.getByRole('button', { name: 'Scan QR code' }).click(),
+      open: async (page) => {
+        await page.getByRole('button', { name: 'Chat list menu' }).click();
+        await page.getByRole('button', { name: 'Scan QR code' }).click();
+      },
       dialogLabel: 'Scan QR code',
       closeFallback: async (page) => page.getByRole('button', { name: 'Back' }).click(),
     },

@@ -1,35 +1,25 @@
 import { test, expect } from '@playwright/test';
 import { seedVault } from './fixtures.js';
 
-// Every tab the bottom nav can reach, with the label on its nav button.
-// Chat needs a click too: the clipped-down assertion set must visit each tab
-// the same way so the run is identical no matter which tab is home.
+// Every tab the bottom bar can reach, with the label on its nav button
+// (15.1: Chats | Menus | Orders | Profile, fixed order). The clipped-down
+// assertion set must visit each tab the same way so the run is identical no
+// matter which tab is home.
 const TABS = [
   { key: 'chat', label: 'Chats' },
   { key: 'explore', label: 'Menus' },
+  { key: 'orders', label: 'Orders' },
   { key: 'profile', label: 'Profile' },
 ];
 
 async function openTab(page, tab) {
   await page.goto('/');
   await page.waitForTimeout(1000);
-  // The rebuilt phone shell opens destinations through the side drawer; the
-  // old bottom tab bar now rides the md+ rail only. Same three screens, same
-  // door: the drawer's menu button, then the matching row.
-  await page.getByRole('button', { name: 'Open menu' }).click();
-  await page.waitForTimeout(700);
-  const drawer = page.locator('aside', { hasText: 'Connections' }).first();
-  if (tab.key === 'profile') {
-    // Profile is the drawer's profile card, up top.
-    await drawer.locator('button').first().click();
-  } else {
-    const rows = { chat: 'Chats', explore: 'Menus' };
-    await drawer.locator('nav').locator(`button:has-text("${rows[tab.key]}")`).click();
-  }
+  // The phone shell's primary destinations ride the bottom bar: four
+  // labelled buttons, the same set the md+ rail maps. One tap each, straight
+  // through the bar the user actually uses.
+  await page.getByRole('navigation', { name: 'Tabs' }).getByRole('button', { name: tab.label }).click();
   await page.waitForTimeout(600);
-  // Picking a row closes the drawer itself; give the exit spring its beat.
-  await expect(drawer).toHaveCount(0, { timeout: 3000 });
-  await page.waitForTimeout(400);
   // Explore pulls listings from relays with its own 4s timeout; let the fetch
   // settle so the measured screen is the loaded one, not the spinner.
   if (tab.key === 'explore') {
@@ -42,10 +32,10 @@ test.describe('Safe area and viewport', () => {
     await page.addInitScript(seedVault);
   });
 
-  // The rebuild's shell is full-bleed: main spans the whole window and every
-  // pane scrolls inside it, while the bottom tab bar rides the md+ rail.
-  // The old 80px-short check measured that bar; keep the subject (main owns
-  // the phone window) without the bar's size.
+  // The rebuild's shell is full-bleed: main spans the whole window, every
+  // pane scrolls inside it, and the bottom bar floats over it fixed. The old
+  // 80px-short check measured a long-gone bar; keep the subject (main owns
+  // the phone window) without any bar's size.
   test('main spans the window and the panes scroll inside it', async ({ page }) => {
     await page.goto('/');
     await page.waitForTimeout(1000);
@@ -158,20 +148,21 @@ test.describe('Safe area and viewport', () => {
     await page.goto('/');
     await page.waitForTimeout(1000);
 
-    // The brief with the old bottom nav is gone on phone; the drawer carries
-    // the same destination buttons, so taps land on its menu rows.
-    await page.getByRole('button', { name: 'Open menu' }).click();
-    await page.waitForTimeout(700);
-    const drawerNav = page.locator('aside', { hasText: 'Connections' }).first().locator('nav').first();
-    const box = await drawerNav.boundingBox();
+    // The bottom bar is back on phone (15.1): the four destinations are its
+    // own buttons again, so the taps land on the bar itself.
+    const bar = page.getByRole('navigation', { name: 'Tabs' });
+    await expect(bar).toBeVisible();
+    const box = await bar.boundingBox();
 
     expect(box).toBeTruthy();
 
-    // Tap at vertical center using touchscreen
-    await page.touchscreen.tap(box.x + box.width / 2, box.y + box.height / 2);
-    await page.waitForTimeout(300);
+    // Walk all four tabs by tapping each button's centre in order.
+    for (let index = 0; index < TABS.length; index += 1) {
+      await page.touchscreen.tap(box.x + (box.width / TABS.length) * (index + 0.5), box.y + box.height / 2);
+      await page.waitForTimeout(300);
+    }
 
-    // Tap 4px above the row list's bottom edge
+    // Tap 4px above the bar's bottom edge, inside the safe-area pad.
     await page.touchscreen.tap(box.x + box.width / 2, box.y + box.height - 4);
     await page.waitForTimeout(300);
 

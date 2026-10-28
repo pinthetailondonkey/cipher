@@ -69,7 +69,7 @@ export default function Connections({ onBack }) {
   };
 
   return (
-    <div className="h-full overflow-y-auto bg-transparent pb-safe">
+    <div className="h-full overflow-y-auto bg-transparent">
       <ScreenHeader title="Connections" subtitle="Tor and your proxy" onBack={onBack} />
       <div className="space-y-4 p-4">
         <div className="overflow-hidden rounded-2xl border border-line bg-panel">

@@ -1,25 +1,22 @@
 import { AnimatePresence, motion } from 'framer-motion';
-import { Lock, MessageSquare, Package, Radio, ShieldCheck, Store, Users } from 'lucide-react';
+import { Lock, Radio, ShieldCheck, Users } from 'lucide-react';
 import Avatar from '../ui/Avatar';
 import Picture from '../ui/Picture';
-import { unreadTotalOf, useChatStore } from '../../store/chatStore';
 import { useProfiles } from '../../useProfiles';
 
-// The phone shell's side drawer: profile card up top, then the sections,
-// relay connections and the lock. The desktop left rail covers md+; this
+// The phone shell's side drawer: profile card up top, then the drawer's own
+// rows — Groups, relay connections, the lock. The four primary destinations
+// moved to the bottom bar (15.1), so they are not repeated here; the drawer
+// is what the bar does not cover. The desktop left rail covers md+; this
 // only ever mounts below md. onNavigate(tab, exploreMode, startView) hands
 // the tap back to AuthenticatedApp, which owns the tab state.
 export default function Drawer({ identity, open, onClose, onNavigate }) {
-  const unreadTotal = useChatStore(unreadTotalOf);
   const profiles = useProfiles([identity.pk]);
   const myProfile = profiles[identity.pk] || {};
   const defaultName = identity.npub ? identity.npub.slice(0, 10) : 'User';
   const name = myProfile.displayName || myProfile.name || defaultName;
 
   const sections = [
-    { key: 'chats', label: 'Chats', icon: MessageSquare, go: () => onNavigate('chat'), badge: unreadTotal },
-    { key: 'menus', label: 'Menus', icon: Store, go: () => onNavigate('explore', 'shop') },
-    { key: 'orders', label: 'Orders', icon: Package, go: () => onNavigate('profile', null, 'orders') },
     { key: 'groups', label: 'Groups', icon: Users, go: () => onNavigate('explore', 'groups') },
   ];
 
@@ -54,7 +51,9 @@ export default function Drawer({ identity, open, onClose, onNavigate }) {
               </span>
             </button>
 
-            <nav className="flex flex-col">
+            {/* Its own name, distinct from the bar's "Tabs": a screen reader
+                meets two landmarks, not one nav counted twice. */}
+            <nav aria-label="More" className="flex flex-col">
               {sections.map(({ key, label, icon: Icon, go, badge }) => (
                 <button key={key} type="button" onClick={go} className="flex min-h-[48px] w-full items-center gap-4 px-5 text-left text-[15px] font-semibold text-ink active:bg-ink/5">
                   <Icon size={24} className="text-inkMuted" />

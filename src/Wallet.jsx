@@ -298,7 +298,7 @@ export default function Wallet({ identity, onOpenChat, startView = 'main' }) {
 
   if (view === 'order_settings') {
     return (
-      <div className="h-full overflow-y-auto bg-transparent pb-safe">
+      <div className="h-full overflow-y-auto bg-transparent">
         <ScreenHeader title="Order settings" onBack={() => setView('main')} />
         <div className="space-y-4 p-4">
           <p className="text-[13px] text-inkMuted">Defaults for new orders and chain checks. Everything stays on this device.</p>
@@ -366,7 +366,7 @@ export default function Wallet({ identity, onOpenChat, startView = 'main' }) {
 
   if (view === 'vendor_setup') {
     return (
-      <div className="h-full overflow-y-auto bg-transparent pb-safe">
+      <div className="h-full overflow-y-auto bg-transparent">
         <ScreenHeader title="Start selling" onBack={() => setView('main')} />
         <form onSubmit={saveVendorSetup} className="space-y-4 p-4">
           <p className="text-[13px] text-inkMuted">Add at least one address. It stays on this device. Never enter a seed phrase or spending key.</p>
@@ -481,7 +481,7 @@ export default function Wallet({ identity, onOpenChat, startView = 'main' }) {
         </Card>
 
         <Card label="Trading">
-          <ListRow icon={Package} title="My Orders" subtitle="Purchases and shipping" onClick={() => setView('orders')} />
+          <ListRow icon={Package} title={isVendor ? 'Incoming Orders' : 'My Orders'} subtitle={isVendor ? 'What buyers send you' : 'Purchases and shipping'} onClick={() => setView('orders')} />
           <ListRow icon={Users} title="Message requests" subtitle="People you have not answered" onClick={() => setView('message_requests')} />
           {!isVendor ? (
             <ListRow icon={CreditCard} title="Start selling" subtitle="Take payment directly" onClick={() => { setStatus(''); setView('vendor_setup'); }} />

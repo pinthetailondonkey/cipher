@@ -13,7 +13,7 @@ export default function MessageRequests({ dms = {}, profiles = {}, onBack, onOpe
     .sort((a, b) => b.message.timestamp - a.message.timestamp);
 
   return (
-    <div className="h-full overflow-y-auto bg-transparent pb-safe">
+    <div className="h-full overflow-y-auto bg-transparent">
       <ScreenHeader title="Message Requests" onBack={onBack} />
       {requests.length === 0 ? (
         <div className="px-6 py-16 text-center">

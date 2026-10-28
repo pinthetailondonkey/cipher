@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { scopedGet, scopedSet } from '../lib/storage';
 import { markChatRead } from '../db';
+import { orderState } from '../lib/orderActions';
 
 const safeStorage = {
   getItem(key) {
@@ -83,6 +84,88 @@ export function unreadTotalOf(state) {
   let sum = 0;
   for (const key of Object.keys(counts)) sum += Number(counts[key]) || 0;
   unreadTotalCached = sum;
+  return sum;
+}
+
+// The bar's unread badge (founder order 2026-10-28): the bar is permanent,
+// so a mute has to mean something there. Same sum as unreadTotalOf, minus
+// what the user chose not to hear — a chat muted, muted forever, muted
+// until a future time, or archived pulls no badge. The predicate mirrors
+// ChatList's isMuted row truth line for line, so the badge and the row it
+// sits over can never disagree. Memoized on the four source identities,
+// like unreadTotalOf; the timed-mute check rides a coarse minute so an
+// expired mute costs at most a minute of stale badge, never a rescan per
+// store change. unreadTotalOf stays as-is for every other reader.
+let barCountsSource = null;
+let barArchivedSource = null;
+let barMutedSource = null;
+let barMutedUntilSource = null;
+let barMinute = -1;
+let barUnreadCached = 0;
+
+export function barUnreadTotalOf(state) {
+  const counts = state?.unreadCounts || EMPTY_COUNTS;
+  const archived = state?.archivedChats || EMPTY_LIST;
+  const muted = state?.mutedChats || EMPTY_LIST;
+  const mutedUntil = state?.mutedUntil || EMPTY_COUNTS;
+  const now = Date.now();
+  const minute = Math.floor(now / 60000);
+  if (
+    counts === barCountsSource
+    && archived === barArchivedSource
+    && muted === barMutedSource
+    && mutedUntil === barMutedUntilSource
+    && minute === barMinute
+  ) return barUnreadCached;
+  barCountsSource = counts;
+  barArchivedSource = archived;
+  barMutedSource = muted;
+  barMutedUntilSource = mutedUntil;
+  barMinute = minute;
+  let sum = 0;
+  for (const [id, count] of Object.entries(counts)) {
+    if (archived.includes(id)) continue;
+    const until = mutedUntil[id];
+    if (muted.includes(id) || until === 'forever' || (typeof until === 'number' && until > now)) continue;
+    sum += Number(count) || 0;
+  }
+  barUnreadCached = sum;
+  return sum;
+}
+
+// The Orders tab's badge (15.1). Presentation only: it re-reads the same
+// orderState the order cards read, never writes, and counts what waits on
+// THIS side — a buyer counts orders they asked for that are pending,
+// shipped or disputed; a vendor counts only requests still pending (the
+// accept is the act that unblocks them). Passive statuses never count:
+// check_chain and report_issue are nudges, not duties, and counting them
+// would pin the badge red forever. Memoized on the `dms` identity and the
+// vendor flag, exactly like unreadTotalOf above.
+let ordersSource = null;
+let ordersVendor = null;
+let ordersNeedActionCached = 0;
+const ORDER_ROW_TYPES = ['order_request', 'cipher_order'];
+const BUYER_NEEDS_ACTION = new Set(['pending', 'shipped', 'disputed']);
+
+export function ordersNeedActionOf(state) {
+  const dms = state?.dms || EMPTY_COUNTS;
+  const isVendor = state?.isVendor === true;
+  if (dms === ordersSource && isVendor === ordersVendor) return ordersNeedActionCached;
+  ordersSource = dms;
+  ordersVendor = isVendor;
+  let sum = 0;
+  for (const [peerPubkey, messages] of Object.entries(dms)) {
+    if (!Array.isArray(messages)) continue;
+    for (const message of messages) {
+      if (!ORDER_ROW_TYPES.includes(message?.data?.type)) continue;
+      // Buyer rows are the requests this device sent; vendor rows are the
+      // ones it received. isSender is the wire's own direction flag.
+      if (Boolean(message.isSender) === isVendor) continue;
+      const { status } = orderState(messages, message.id, message, null, peerPubkey);
+      if (isVendor ? status === 'pending' : BUYER_NEEDS_ACTION.has(status)) sum += 1;
+    }
+  }
+  ordersNeedActionCached = sum;
   return sum;
 }
 

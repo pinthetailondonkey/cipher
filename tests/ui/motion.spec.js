@@ -14,10 +14,12 @@ test.describe('Motion and accessibility', () => {
   test('respects prefers-reduced-motion', async ({ page }) => {
     await page.emulateMedia({ reducedMotion: 'reduce' });
     await page.goto('/');
-    // Wait for the tab bar: the app lazy-loads past the lock screen, so a
+    // Wait for the tab nav: the app lazy-loads past the lock screen, so a
     // fixed timeout races the mount. The nav transform is stable immediately
-    // once it exists, because reducedMotion="user" skips the spring.
-    const nav = page.locator('nav').last();
+    // once it exists, because reducedMotion="user" skips the spring. At this
+    // width the role matches the md+ rail alone (the below-md bar is
+    // display-none and getByRole skips it).
+    const nav = page.getByRole('navigation', { name: 'Tabs' });
     await nav.waitFor();
 
     // Sample nav transform twice 100ms apart - with MotionConfig reducedMotion="user",
@@ -31,9 +33,9 @@ test.describe('Motion and accessibility', () => {
 
   test('focusable elements show visible outline on tab', async ({ page }) => {
     await page.goto('/');
-    // Wait for the tab bar so the app is mounted before tabbing; a fixed
+    // Wait for the tab nav so the app is mounted before tabbing; a fixed
     // timeout let this race the lazy load and flake under suite load.
-    await page.locator('nav').last().waitFor();
+    await page.getByRole('navigation', { name: 'Tabs' }).waitFor();
 
     // Tab through first few focusable elements
     await page.keyboard.press('Tab');

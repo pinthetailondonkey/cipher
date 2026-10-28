@@ -1,7 +1,8 @@
 import React, { lazy, Suspense, useCallback, useEffect, useState } from 'react';
-import { MessageSquare, Compass, Menu, User } from 'lucide-react';
+import { Menu } from 'lucide-react';
 import TutorialModal from './components/TutorialModal';
 import Rail from './components/ui/Rail';
+import BottomBar from './components/ui/BottomBar';
 import Drawer from './components/chat/Drawer';
 import GlobalDialog from './components/GlobalDialog';
 import CallOverlay from './components/chat/CallOverlay';
@@ -10,16 +11,21 @@ import Toast from './components/ui/Toast';
 import Segmented from './components/ui/Segmented';
 import CommandPalette from './components/ui/CommandPalette';
 import { requestNotificationPermission } from './lib/notifications';
-import { unreadTotalOf, useChatStore } from './store/chatStore';
+import { TABS } from './lib/tabs.js';
+import { barUnreadTotalOf, ordersNeedActionOf, useChatStore } from './store/chatStore';
 
 const Menus = lazy(() => import('./Menus'));
 const Discover = lazy(() => import('./Discover'));
 const Chat = lazy(() => import('./Chat'));
 const Wallet = lazy(() => import('./Wallet'));
+const MyOrders = lazy(() => import('./components/chat/MyOrders'));
 
 export default function AuthenticatedApp({ identity }) {
   const [activeTab, setActiveTab] = useState('chat');
-  const unreadTotal = useChatStore(unreadTotalOf);
+  // The rail's badge reads the bar's selector: one mute-and-archive-aware
+  // number, so the two navs that show it can never disagree.
+  const unreadTotal = useChatStore(barUnreadTotalOf);
+  const needsAction = useChatStore(ordersNeedActionOf);
   const [exploreMode, setExploreMode] = useState('shop');
   const showDrawer = useChatStore((state) => state.showDrawer);
   // The drawer deep-links into Wallet views (Orders, Connections); the nonce
@@ -101,6 +107,24 @@ export default function AuthenticatedApp({ identity }) {
   }, [identity?.pk]);
   const tabFallback = <div className="flex h-full items-center justify-center bg-scrim"><div className="h-7 w-7 animate-spin rounded-full border-2 border-ink/20 border-t-blue-500" /></div>;
 
+  // The chat view decides the bar, not the tab: inside a conversation the
+  // thread owns the whole screen, so the bar steps aside; on every other
+  // tab the bar holds. The store's view is NOT reset on tab switches, so
+  // the gate has to name the chat tab, not just the view (UI-SPEC: the bar
+  // hides inside a conversation, nowhere else).
+  const chatView = useChatStore((state) => state.view);
+  const barHidden = activeTab === 'chat' && chatView !== 'list';
+  // The md+ rail and the below-md bar read the same set — tabs.js — so the
+  // two navs can never disagree about what exists or in what order. ⌘1–⌘4
+  // ride the items' positions in the Rail. Badge keys resolve to counts
+  // here once; both navs render them.
+  const badgeCounts = { unread: unreadTotal, needsAction };
+  const navItems = TABS.map((tab) => ({
+    ...tab,
+    badge: tab.badge ? badgeCounts[tab.badge] : undefined,
+    onSelect: () => setActiveTab(tab.id),
+  }));
+
   React.useEffect(() => {
     requestNotificationPermission();
   }, []);
@@ -147,7 +171,7 @@ export default function AuthenticatedApp({ identity }) {
           <div className="absolute inset-0 md:left-[72px]">
             <Suspense fallback={tabFallback}>
               {activeTab === 'explore' && (
-                <div className="relative mx-auto flex h-full w-full max-w-md flex-col md:border-x md:border-line">
+                <div className="relative mx-auto flex h-full w-full max-w-md flex-col pb-bar md:border-x md:border-line">
                   <div className="relative z-fab flex items-center px-4 pb-1 pt-3">
                     <button type="button" onClick={() => useChatStore.getState().setShowDrawer(true)} aria-label="Open menu" className="-ml-1 touch-target p-2 text-ink/50 hover:text-ink md:hidden"><Menu size={20} /></button>
                     <Segmented
@@ -165,8 +189,17 @@ export default function AuthenticatedApp({ identity }) {
                   </div>
                 </div>
               )}
+              {activeTab === 'orders' && (
+                <div className="mx-auto h-full w-full max-w-md pb-bar md:border-x md:border-line">
+                  {/* The Orders tab is MyOrders directly, no drawer detour and
+                      no back arrow: role-aware inside (buyer rows are the
+                      requests this device sent, vendor rows the ones it
+                      received), and the kebab opens the drawer for the rest. */}
+                  <MyOrders identity={identity} onOpenChat={openChatFromProfile} onMenu={() => useChatStore.getState().setShowDrawer(true)} />
+                </div>
+              )}
               {activeTab === 'profile' && (
-                <div className="mx-auto h-full w-full max-w-md md:border-x md:border-line">
+                <div className="mx-auto h-full w-full max-w-md pb-bar md:border-x md:border-line">
                   <Wallet key={profileNavNonce} identity={identity} onOpenChat={openChatFromProfile} startView={profileStartView} />
                 </div>
               )}
@@ -175,15 +208,8 @@ export default function AuthenticatedApp({ identity }) {
         )}
       </main>
 
-      <Rail
-        label="Tabs"
-        activeId={activeTab}
-        items={[
-          { id: 'chat', label: 'Chats', icon: MessageSquare, badge: unreadTotal, onSelect: () => setActiveTab('chat') },
-          { id: 'explore', label: 'Menus', icon: Compass, onSelect: () => setActiveTab('explore') },
-          { id: 'profile', label: 'Profile', icon: User, onSelect: () => setActiveTab('profile') },
-        ]}
-      />
+      <Rail label="Tabs" activeId={activeTab} items={navItems} />
+      {!barHidden && <BottomBar activeId={activeTab} onSelect={setActiveTab} />}
     </div>
   );
 }
