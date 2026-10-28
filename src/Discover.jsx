@@ -46,6 +46,10 @@ export default function Discover({ identity, onJoined }) {
   const [loading, setLoading] = useState(true);
   const [joiningId, setJoiningId] = useState('');
   const [error, setError] = useState('');
+  // A relay that could not be reached is not a relay that had nothing. The
+  // screen keeps the groups this account already has and says which of the
+  // two happened, so an empty directory is never claimed on a failed read.
+  const [directoryFailed, setDirectoryFailed] = useState(false);
   const storeGroups = useChatStore((s) => s.groups);
   const groupKey = (storeGroups || []).map((group) => group.id).sort().join('|');
 
@@ -57,6 +61,7 @@ export default function Discover({ identity, onJoined }) {
     let alive = true;
     const fetchGroups = async () => {
       setLoading(true);
+      setDirectoryFailed(false);
       try {
         const { SimplePool } = await import('nostr-tools');
         const pool = new SimplePool();
@@ -109,6 +114,7 @@ export default function Discover({ identity, onJoined }) {
       } catch (err) {
         console.error("Failed to fetch groups:", err);
         if (!alive) return;
+        setDirectoryFailed(true);
         setRealGroups(useChatStore.getState().groups || []);
       } finally {
         if (alive) setLoading(false);
@@ -174,6 +180,11 @@ export default function Discover({ identity, onJoined }) {
       </div>
 
       {error && <p role="alert" className="px-4 text-sm text-danger">{error}</p>}
+      {directoryFailed && (
+        <p role="status" className="px-4 pb-2 text-[13px] text-inkMuted">
+          The relay could not be reached. What is listed here is what this account already saved.
+        </p>
+      )}
       <div className="flex-1 overflow-y-auto pb-4">
         {loading ? (
           <div className="flex flex-col items-center justify-center mt-20 text-inkMuted">
@@ -183,7 +194,12 @@ export default function Discover({ identity, onJoined }) {
         ) : displayGroups.length === 0 ? (
           <div className="mx-4 rounded-2xl border border-line bg-panel px-4 py-16 text-center">
             <Users size={28} className="mx-auto mb-3 text-inkSubtle" />
-            <p className="text-[15px] font-semibold text-ink">No menus or groups yet</p>
+            <p className="text-[15px] font-semibold text-ink">
+              {directoryFailed ? 'Could not reach the relay' : 'No menus or groups yet'}
+            </p>
+            {directoryFailed && (
+              <p className="mt-1 px-4 text-[13px] text-inkMuted">There may be menus and groups, but this screen could not ask.</p>
+            )}
           </div>
         ) : (
           <>
