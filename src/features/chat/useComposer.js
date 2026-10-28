@@ -4,6 +4,7 @@ import { useChatStore } from '../../store/chatStore';
 import { scopedRemove } from '../../lib/storage';
 import { haptic } from '../../lib/haptics';
 import { sortMessages, stampArrival } from './media';
+import { sendOutcome } from '../../lib/sendOutcome';
 import { sendPrivateImage, uploadPrivateMedia } from '../../lib/mediaCrypto';
 import { blossomServers } from '../../lib/egress';
 
@@ -85,56 +86,57 @@ export function useComposer({ identity, sendDM, sendGroupMessage }) {
       });
       await saveMessage(activeGroup.id, newMsg);
       const result = await sendGroupMessage(activeGroup.id, msgPayload, tempId, replyId);
-      if (!result.success) {
-        if (result.error === 'NO_KEY') {
-          const securing = { ...newMsg, deliveryStatus: 'securing', securingSince: Date.now(), pending: false };
-          useChatStore.getState().setGroupMessages(prev => ({
-            ...prev,
-            [activeGroup.id]: (prev[activeGroup.id] || []).map((message) => (
-              message.id === tempId || message.clientId === tempId ? securing : message
-            )),
-          }));
-          await saveMessage(activeGroup.id, securing);
-          return 'securing';
-        } else {
-          useChatStore.getState().setGroupMessages(prev => ({
-            ...prev,
-            [activeGroup.id]: (prev[activeGroup.id] || []).filter((message) => message.id !== tempId && message.clientId !== tempId),
-          }));
-          try {
-            await db.messages.delete(tempId);
-          } catch (error) {
-            console.error('[Chat] Failed to remove unsent group message:', error);
-          }
-          setToast({ type: 'error', message: 'Failed to send to group' });
-          return 'failed';
-        }
-      } else if (result.event?.id) {
-        const outboxEntry = result.queued ? await db.outbox.get(result.event.id) : null;
-        const deliveryStatus = result.queued && outboxEntry ? 'queued' : 'sent';
-        let confirmedMessage;
+      // One place decides what the send did, so a refused or timed-out send
+      // cannot be read as success further up.
+      const outcome = sendOutcome(result);
+      if (outcome === 'securing') {
+        const securing = { ...newMsg, deliveryStatus: 'securing', securingSince: Date.now(), pending: false };
         useChatStore.getState().setGroupMessages(prev => ({
           ...prev,
-          [activeGroup.id]: (prev[activeGroup.id] || []).map((message) => {
-            if (message.clientId !== tempId) return message;
-            confirmedMessage = {
-              ...message,
-              id: result.event.id,
-              timestamp: result.event.created_at,
-              deliveryStatus,
-            };
-            return confirmedMessage;
-          }),
+          [activeGroup.id]: (prev[activeGroup.id] || []).map((message) => (
+            message.id === tempId || message.clientId === tempId ? securing : message
+          )),
         }));
-        await saveMessage(activeGroup.id, confirmedMessage || {
-          ...newMsg,
-          id: result.event.id,
-          timestamp: result.event.created_at,
-          deliveryStatus,
-        });
-        return 'sent';
+        await saveMessage(activeGroup.id, securing);
+        return 'securing';
       }
-      return 'failed';
+      if (outcome === 'failed') {
+        useChatStore.getState().setGroupMessages(prev => ({
+          ...prev,
+          [activeGroup.id]: (prev[activeGroup.id] || []).filter((message) => message.id !== tempId && message.clientId !== tempId),
+        }));
+        try {
+          await db.messages.delete(tempId);
+        } catch (error) {
+          console.error('[Chat] Failed to remove unsent group message:', error);
+        }
+        setToast({ type: 'error', message: 'Failed to send to group' });
+        return 'failed';
+      }
+      // 'sent': the relay's event replaces the placeholder bubble.
+      const outboxEntry = result.queued ? await db.outbox.get(result.event.id) : null;
+      const deliveryStatus = result.queued && outboxEntry ? 'queued' : 'sent';
+      let confirmedMessage;
+      useChatStore.getState().setGroupMessages(prev => ({
+        ...prev,
+        [activeGroup.id]: (prev[activeGroup.id] || []).map((message) => {
+          if (message.clientId !== tempId) return message;
+          confirmedMessage = {
+            ...message,
+            id: result.event.id,
+            timestamp: result.event.created_at,
+            deliveryStatus,
+          };
+          return confirmedMessage;
+        }),
+      }));
+      await saveMessage(activeGroup.id, confirmedMessage || {
+        ...newMsg,
+        id: result.event.id,
+        timestamp: result.event.created_at,
+        deliveryStatus,
+      });
+      return 'sent';
     }
     if (isDmView && activeDm) await saveMessage(activeDm, newMsg);
     setReplyingTo(null);
@@ -142,7 +144,9 @@ export function useComposer({ identity, sendDM, sendGroupMessage }) {
     if (activeGroup) scopedRemove(`draft-group-${activeGroup.id}`);
     if (activeDm) {
       const result = await sendDM(activeDm, msgPayload, tempId, replyId);
-      if (!result.success) {
+      // A direct message has no key-waiting state: anything but sent is failed.
+      const outcome = sendOutcome(result);
+      if (outcome !== 'sent') {
         setDms(prev => ({
           ...prev,
           [activeDm]: (prev[activeDm] || []).filter((message) => message.id !== tempId && message.clientId !== tempId),
@@ -154,7 +158,7 @@ export function useComposer({ identity, sendDM, sendGroupMessage }) {
         }
         setToast({ type: 'error', message: 'Failed to send: ' + (result.error || 'unknown') });
         return 'failed';
-      } else if (result.event?.id) {
+      } else {
         const outboxEntry = result.queued ? await db.outbox.get(result.event.id) : null;
         const deliveryStatus = result.queued && outboxEntry ? 'queued' : 'sent';
         let confirmedMessage;
@@ -179,7 +183,6 @@ export function useComposer({ identity, sendDM, sendGroupMessage }) {
         });
         return 'sent';
       }
-      return 'failed';
     }
     return 'failed';
   };

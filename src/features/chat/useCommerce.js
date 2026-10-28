@@ -12,13 +12,15 @@ import { activeUrl, entryById } from '../../lib/egress';
 import { publicReceipt, rememberPublicView, receiptBindsOrder, signPublicView, signReceipt } from '../../lib/proofOfTrade';
 import { frozenIssuedMethods, issuedPaymentMethods, newestOwnIssuedMethods, orderPaymentDetails, orderRecordForReceipt, orderState, reopenedStatus } from '../../lib/orderActions';
 import { stampArrival } from './media';
+import { createSingleFlight } from '../../lib/singleFlight';
 
 export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, openChat }) {
   // One order request per press. The Buy button has no disabled state, so a
   // second tap while the first is still sending used to post a second request
-  // and a second "sent" toast. A ref, not state: the guard must hold across
-  // the re-render the optimistic insert causes.
-  const orderInFlight = useRef(false);
+  // and a second "sent" toast. The guard lives in a ref so it holds across the
+  // re-render the optimistic insert causes; its behaviour is tested in
+  // src/lib/singleFlight.test.js.
+  const orderGuardRef = useRef(null);
   const setToast = useChatStore((s) => s.setToast);
   const setSelectedMessage = useChatStore((s) => s.setSelectedMessage);
   const setDms = useChatStore((s) => s.setDms);
@@ -748,16 +750,12 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
     });
   };
 
-  // Every caller goes through here. The flag clears in the finally however
-  // the send ends, so a failed request does not leave Buy locked out.
-  const startOrderWithVendor = async (...args) => {
-    if (orderInFlight.current) return;
-    orderInFlight.current = true;
-    try {
-      return await beginOrderWithVendor(...args);
-    } finally {
-      orderInFlight.current = false;
-    }
+  // Every caller goes through here. The guard clears however the send ends,
+  // so a failed request does not leave Buy locked out.
+  const startOrderWithVendor = (...args) => {
+    // Built on the first press, not during render.
+    if (!orderGuardRef.current) orderGuardRef.current = createSingleFlight();
+    return orderGuardRef.current(() => beginOrderWithVendor(...args));
   };
 
   const handleSaveEditedProduct = async (updatedProduct) => {
