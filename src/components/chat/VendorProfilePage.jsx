@@ -10,6 +10,7 @@ import { pushToast } from '../ui/toast';
 import { shortNpub, noHexName } from '../../lib/npub';
 import { haptic } from '../../lib/haptics';
 import { useReputation } from '../../hooks/useReputation';
+import { useChatStore } from '../../store/chatStore';
 import { riderComposeOf } from '../../lib/vendorReviews';
 import ProvenBanner from './ProvenBanner';
 import ReviewRow from './ReviewRow';
@@ -44,7 +45,6 @@ export default function VendorProfilePage({
   summary = { count: 0, average: '0.0' },
   loading = false,
   onBack,
-  onViewMenu,
 }) {
   const { sendRider } = useReputation({ identity });
   const [draft, setDraft] = useState(null);
@@ -106,11 +106,15 @@ export default function VendorProfilePage({
       </header>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-8">
-        {onViewMenu && (
-          <Button variant="secondary" fullWidth className="mt-3 w-full" onClick={onViewMenu} leadingIcon={<Store size={16} />}>
-            View menu
-          </Button>
-        )}
+        <Button
+          variant="secondary"
+          fullWidth
+          className="mt-3 w-full"
+          onClick={() => { haptic('light'); useChatStore.getState().setVendorStorefrontPubkey(vendorPubkey); }}
+          leadingIcon={<Store size={16} />}
+        >
+          View menu
+        </Button>
         {summary.count > 0 && (
           <section className="rounded-2xl border border-line bg-panelStrong px-4 py-4">
             <div className="flex items-center gap-3">
