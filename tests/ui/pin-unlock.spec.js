@@ -250,4 +250,49 @@ test.describe('The saved-passkey door on the restore screen', () => {
     await expect(door).toHaveCount(1);
     expect(platformAuthenticator).toBe(false);
   });
+
+  test("a refusal the browser words in spec-speak surfaces as one plain sentence", async ({ page }) => {
+    // Executes the whole plain-words wire in a real browser: a valid v2
+    // record the library will actually try, an authenticator that answers
+    // with Chrome's measured refusal, and a screen that must answer with
+    // the cancelled sentence — never the DOMException's name, wording, or
+    // spec URL — with the recovery door still standing beside it.
+    // (Learned the hard way: a bare {pubkey} stub is refused as 'no
+    // identity' before the browser is ever asked, so the record must be
+    // the full v2 shape measured reaching credentials.get.)
+    await page.addInitScript(({ pk, record }) => {
+      localStorage.setItem('cipher_passkey_' + pk, record);
+      localStorage.setItem('cipher_active_pubkey', pk);
+      localStorage.setItem('cipher_vault', JSON.stringify({ iv: [1], data: [2] }));
+      navigator.credentials.get = async () => {
+        throw Object.assign(
+          new Error('The operation either timed out or was not allowed. See: https://www.w3.org/TR/webauthn-2/#sec-assertion-privacy'),
+          { name: 'NotAllowedError' },
+        );
+      };
+    }, {
+      pk: PK,
+      record: JSON.stringify({
+        version: 2,
+        credentialId: Buffer.from('credential').toString('base64'),
+        encryptedNsec: Buffer.from('payload').toString('base64'),
+        pubkey: PK,
+        salt: Buffer.from('salt').toString('base64'),
+        rpId: 'ciphermessenger.org',
+      }),
+    });
+    await page.goto('/');
+    await expect(page.getByRole('heading', { name: 'Unlock Cipher' })).toBeVisible({ timeout: 15000 });
+    await page.getByRole('button', { name: 'Forgot PIN? Restore account' }).click();
+
+    await page.getByRole('button', { name: /Use saved passkey/ }).click();
+    const said = page.locator('p.text-danger');
+    await expect(said).toContainText('Passkey cancelled. Enter your PIN, or use your recovery phrase.', { timeout: 10000 });
+    // The browser's own phrasing never reaches the screen.
+    await expect(said).not.toContainText('NotAllowedError');
+    await expect(said).not.toContainText('timed out');
+    await expect(said).not.toContainText('https://');
+    // And the way back is still standing next to the failure.
+    await expect(page.getByRole('button', { name: 'Use Recovery Phrase' })).toBeVisible();
+  });
 });
