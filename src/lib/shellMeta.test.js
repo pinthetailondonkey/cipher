@@ -21,3 +21,20 @@ test('one theme colour, the app background', () => {
   assert.match(metas[0], /content="#050505"/, 'the theme colour is the app background');
   assert.equal(manifest.theme_color, '#050505', 'manifest theme_color agrees with the meta');
 });
+
+test('each manifest icon is declared once per purpose, never both at once', () => {
+  const purposes = new Map();
+  for (const icon of manifest.icons) {
+    const tokens = (icon.purpose || 'any').split(/\s+/).sort();
+    assert.ok(!tokens.includes('any') || !tokens.includes('maskable'),
+      `icon ${icon.src} must not claim any and maskable in one entry — a launcher that honours maskable crops it`);
+    const key = `${icon.src}|${tokens.join(' ')}`;
+    purposes.set(key, (purposes.get(key) || 0) + 1);
+    assert.equal(purposes.get(key), 1, `icon ${icon.src} declares purpose '${icon.purpose}' more than once`);
+  }
+  for (const size of ['192x192', '512x512']) {
+    const at = manifest.icons.filter((i) => i.sizes === size);
+    assert.ok(at.some((i) => (i.purpose || 'any') === 'any'), `size ${size} has an any icon`);
+    assert.ok(at.some((i) => i.purpose === 'maskable'), `size ${size} has a maskable icon`);
+  }
+});
