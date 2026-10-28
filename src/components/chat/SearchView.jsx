@@ -61,6 +61,7 @@ export default function SearchView({ handleSearch, joinGroupById, openChat }) {
                       joinGroupById(result.id, result.name, result.isChannel);
                     }
                   }}
+                  aria-label={result.type === 'group' ? `Join ${result.name}` : `Message ${result.name || noHexName(null, result.pubkey)}`}
                 >
                   <span className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full border border-line bg-panelStrong text-accentText">
                     <Picture

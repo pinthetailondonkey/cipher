@@ -68,6 +68,8 @@ export default function FloatingMenu() {
       <motion.button
         animate={{ rotate: showMenu ? 45 : 0 }}
         onClick={() => setShowMenu(!showMenu)}
+        aria-label="New chat menu"
+        aria-expanded={showMenu}
         className={`fixed right-6 bottom-[calc(1.25rem+env(safe-area-inset-bottom))] z-fab rounded-full bg-accent p-4 text-accentInk shadow-lg active:bg-accent md:absolute md:right-4 md:bottom-6 ${pressable}`}
       >
         <Plus size={24} strokeWidth={2.5} />
