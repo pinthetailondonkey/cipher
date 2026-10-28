@@ -43,4 +43,20 @@ test.describe('Visual regression', () => {
     await page.waitForTimeout(1000);
     await page.screenshot({ path: 'test-results/profile.png', fullPage: true });
   });
+
+  test('screenshot: onboarding', async ({ page }) => {
+    // No vault, no session: the first screen a new device shows. The seeded
+    // identity above must not run here, so the vault is cleared first.
+    await page.addInitScript(() => {
+      try {
+        localStorage.clear();
+        sessionStorage.clear();
+      } catch { /* a browser without storage still shows the first screen */ }
+    });
+    await page.goto('/');
+    // The first screen's own heading; the boot paint has none.
+    await expect(page.getByRole('heading', { name: 'Welcome to Cipher' })).toBeVisible({ timeout: 20000 });
+    await page.waitForTimeout(500);
+    await page.screenshot({ path: 'test-results/onboarding.png', fullPage: true });
+  });
 });
