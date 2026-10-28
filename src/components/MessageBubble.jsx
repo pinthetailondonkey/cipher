@@ -45,9 +45,11 @@ const EMPTY_THREAD = [];
 // defined here, so tapping it threw and nothing was shared. A payment link is
 // an address and an amount: copying the wallet URI is the honest share, and
 // the toast says which one was copied instead of claiming a share sheet.
-function sharePayment(currency, address, amount, uri) {
-  copyText(uri || address);
-  useChatStore.getState().setToast({ type: 'success', message: 'Payment link copied.' });
+async function sharePayment(currency, address, amount, uri) {
+  // copyText already says when the clipboard refused. Only a real copy earns
+  // the extra line that names what was copied.
+  const copied = await copyText(uri || address);
+  if (copied) useChatStore.getState().setToast({ type: 'success', message: 'Payment link copied.' });
 }
 
 function messageText(data) {
@@ -592,6 +594,9 @@ export default function MessageBubble({ message, data, onAction, senderName, ide
                     </a>
                   )}
                 </div>
+                {/* Sharing is a copy, not a send from here: the link leaves
+                    only when it is pasted somewhere. */}
+                <p className="mt-1 text-center text-[11px] leading-snug text-inkMuted">The link goes to whoever you paste it to.</p>
               </div>
             ))}
           </div>
