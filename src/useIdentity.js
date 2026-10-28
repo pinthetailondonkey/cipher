@@ -4,6 +4,7 @@ import { profileRelays as PROFILE_RELAYS } from './lib/relays'
 import { DeviceKeyMissing, getDeviceProvider, isDeviceKeyError, isDeviceVault, unwrapDeviceVault } from './lib/vaultEnvelope'
 import { destroyDeviceKeys, sealNewVault, upgradeStoredVault } from './lib/deviceLock'
 import { ensureDeviceProvider } from './lib/deviceProvider'
+import { confirmDraftAccount, isDraftEntry, pickUnlockAccount } from './lib/accountPick'
 import { runPanicWipe } from './lib/panicWipe'
 
 // Derive 32-byte secret key from BIP39 mnemonic
@@ -408,13 +409,10 @@ export function useIdentity() {
       confirmed: false,
     };
     saveVaults(vaults);
-    localStorage.setItem('cipher_active_pubkey', pk);
-
-    // Legacy fallback (for backwards compat). Byte-identical to the entry's
-    // vault on purpose: removeAccountVault matches it by string to know it
-    // belongs to the wiped account. The draft flag lives on the entry only.
-    localStorage.setItem('cipher_vault', JSON.stringify(encryptedLocal))
-    localStorage.setItem('cipher_handle', handle.toLowerCase().trim())
+    // A draft does not take the device. The active pointer, the single-vault
+    // mirror and the handle are set by confirmVault once the 12 words are
+    // confirmed; until then an abandoned creation leaves every other account
+    // and the Unlock screen exactly as they were.
     resetPinFailures(localStorage, pk)
 
     // (relay backup removed for security — recovery is phrase-only)
@@ -429,10 +427,9 @@ export function useIdentity() {
         const nsec = nip19.nsecEncode(sk);
         const passkey = await importPasskeyIdentityFromNsec(nsec, { rpName: 'Cipher', storageKey });
         if (passkey.pubkey !== pk) throw new Error('The passkey did not match the new account.');
-        localStorage.setItem('cipher_biometric_pubkey', pk);
-        localStorage.setItem('cipher_biometric_enabled', 'true');
+        // The passkey exists; the flags that make Unlock offer it are set by
+        // confirmVault, so an abandoned creation never offers a way in.
         biometricEnabled = true;
-        setHasBiometric(true);
       } catch (error) {
         console.warn('[identity] Could not enable biometric passkey:', error);
         biometricError = error?.message || 'Biometric passkey setup did not complete.';
@@ -442,23 +439,28 @@ export function useIdentity() {
         } catch (clearError) {
           console.error('[identity] Could not clear incomplete passkey setup:', clearError);
         }
-        localStorage.removeItem('cipher_biometric_pubkey');
-        localStorage.removeItem('cipher_biometric_enabled');
       }
     }
 
     return { sk, pk, npub: nip19.npubEncode(pk), handle, mnemonic, biometricEnabled, biometricError }
   }
 
-  // The 12-word confirm passed: this draft vault is a real account now.
-  // Only the active account can be confirmed, and only its own draft.
-  const confirmVault = () => {
-    const pk = getActivePubkey();
-    if (!pk) return;
-    const vaults = getVaults();
-    if (vaults[pk]) {
-      vaults[pk] = { ...vaults[pk], confirmed: true };
-      saveVaults(vaults);
+  // The 12-word confirm passed: this draft vault is a real account now, and
+  // only now does it become the device's active account, its single-vault
+  // mirror, and (with a passkey) the account Unlock offers the passkey for.
+  const confirmVault = async () => {
+    const confirmed = confirmDraftAccount(localStorage);
+    if (!confirmed) return;
+    const { pk } = confirmed;
+    try {
+      const { hasStoredPasskeyIdentity } = await import('nostr-passkey');
+      if (hasStoredPasskeyIdentity({ storageKey: `cipher_passkey_${pk}` })) {
+        localStorage.setItem('cipher_biometric_pubkey', pk);
+        localStorage.setItem('cipher_biometric_enabled', 'true');
+        setHasBiometric(true);
+      }
+    } catch (error) {
+      console.warn('[identity] Could not check the new passkey:', error);
     }
   };
 
@@ -496,23 +498,15 @@ export function useIdentity() {
   }
 
   const unlock = async (pin) => {
-    const failureAccount = getActivePubkey() || null
+    // The account Unlock opens, and the one a wrong PIN counts against, is a
+    // finished account: a draft is never it (see lib/accountPick.js).
+    const picked = pickUnlockAccount(getVaults(), getActivePubkey(), localStorage.getItem('cipher_vault'))
+    const failureAccount = picked?.pk || null
+    const activePk = picked?.pk || getActivePubkey()
     try {
-      // Multi-account: use the active account's vault
-      const activePk = getActivePubkey();
-      const vaults = getVaults();
-      let vault;
-      
-      if (activePk && vaults[activePk]) {
-        vault = vaults[activePk].vault;
-      } else {
-        // Fallback to legacy single vault
-        const vaultStr = localStorage.getItem('cipher_vault');
-        if (!vaultStr) throw new Error("No local vault found");
-        vault = JSON.parse(vaultStr);
-      }
-      
-      const skArray = await openVault(vault, pin, activePk)
+      if (!picked) throw new Error("No local vault found");
+      const vault = picked.vault;
+      const skArray = await openVault(vault, pin, picked.pk)
       
       const { getPublicKey, nip19 } = await import('nostr-tools')
       const sk = Uint8Array.from(skArray)
@@ -559,6 +553,9 @@ export function useIdentity() {
       const { secretKey, pubkey } = await unlockPasskeyIdentity(undefined, storageKey ? { storageKey } : undefined)
       if (activePk && pubkey !== activePk) throw new Error('The saved passkey belongs to a different account.');
       const vaults = getVaults();
+      // An account whose 12 words were never confirmed is a draft, not an
+      // account: a passkey must not let anyone into it.
+      if (isDraftEntry(vaults[pubkey])) throw new Error('This account was never finished. Restore it with its 12 words, or create a new one.');
       if (!vaults[pubkey]) {
         if (!isAcceptableNewPin(newPin)) throw new Error(`Enter a new PIN (at least ${MIN_PIN_LENGTH} digits) to restore this account on this device.`);
         const vault = await sealNewAccountVault(pubkey, newPin, Array.from(secretKey));
@@ -631,7 +628,7 @@ export function useIdentity() {
 
     // 1. Search in multi-account vaults
     for (const [pk, data] of Object.entries(vaults)) {
-      if (data.handle === handle) {
+      if (data.handle === handle && !isDraftEntry(data)) {
         targetPk = pk;
         targetVault = data.vault;
         break;
@@ -872,7 +869,7 @@ export function useIdentity() {
   const switchAccount = async (targetPk, pin) => {
     try {
       const vaults = getVaults();
-      if (!vaults[targetPk]) throw new Error('Account not found');
+      if (!vaults[targetPk] || isDraftEntry(vaults[targetPk])) throw new Error('Account not found');
 
       let skArray;
       try {

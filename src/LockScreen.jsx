@@ -4,6 +4,7 @@ import { RefreshCw } from "lucide-react";
 import Button from './components/ui/Button';
 import Keypad from './components/ui/Keypad';
 import { MIN_PIN_LENGTH } from './lib/vaultLockout';
+import { passkeyOffered } from './lib/accountPick';
 import Create from './components/onboarding/Create';
 import SaveKey from './components/onboarding/SaveKey';
 import VerifyKey from './components/onboarding/VerifyKey';
@@ -24,7 +25,7 @@ export default function LockScreen({ identity }) {
       const hasVault = Object.keys(vaults).length > 0
         ? Object.values(vaults).some((v) => v && v.confirmed !== false)
         : !!localStorage.getItem('cipher_vault');
-      return hasVault || localStorage.getItem('cipher_biometric_enabled') === 'true' ? 'unlock' : 'create';
+      return hasVault || passkeyOffered(localStorage) ? 'unlock' : 'create';
     } catch (e) { return 'create'; }
   });
 
@@ -141,7 +142,7 @@ export default function LockScreen({ identity }) {
           <SaveKey savedMnemonic={savedMnemonic} biometricNotice={biometricNotice} onContinue={() => setMode('verify_key')} />
         )}
         {mode === 'verify_key' && (
-          <VerifyKey savedMnemonic={savedMnemonic} verifyIndices={verifyIndices} onVerified={() => { identity.confirmVault(); setMode('setup_profile'); }} />
+          <VerifyKey savedMnemonic={savedMnemonic} verifyIndices={verifyIndices} onVerified={async () => { await identity.confirmVault(); setMode('setup_profile'); }} />
         )}
         {mode === 'setup_profile' && (
           <SetupProfile identity={identity} tempIdentity={tempIdentity} initialHandle={createdHandle} />
