@@ -178,23 +178,47 @@ export function unitsToCoins(units, currency) {
   return frac ? `${units / factor}.${frac}` : `${units / factor}`;
 }
 
-// The amount an acceptance locks in. Both sides of the deal read the amount
-// by one rule now — the same one the watcher path uses — so an order can
-// never carry a coin string the chain check cannot confirm. (security S7)
-// Trailing zeros are representation and are trimmed the way receipts spell
-// amounts. Nothing here rounds: half-up rounding stays where a report of a
-// real transaction needs it, never in a demand.
-export function acceptAmount(value, currency) {
+// Half up, to the coin's own scale, as integers — never a float, never a
+// dropped digit (CLAUDE.md: "Round half up, never drop"). One rule for every
+// rail: 0.123456785 BTC is 0.12345679, the ninth place being the half that
+// carries. This is the one place a digit may be invented, so it is the one
+// place that states the rule.
+export function roundToScale(value, currency) {
   const text = normalizeAmount(value);
   const unit = String(currency || '').toLowerCase();
   const asset = assetOf(unit);
   if (!asset) {
     throw new Error(`Accept in a coin this device checks on chain. ${String(currency).toUpperCase()} is not one of them.`);
   }
-  if (decimalUnits(text, asset.scale) == null) {
-    throw new Error(`${text} is finer than ${unit.toUpperCase()} can count. The chain check could never confirm it, so ask for an amount with at most ${asset.scale} decimal places.`);
+  const [whole, frac = ''] = text.split('.');
+  const factor = 10n ** BigInt(asset.scale);
+  if (frac.length <= asset.scale) {
+    return unitsToCoins(BigInt(whole) * factor + BigInt((frac || '0').padEnd(asset.scale, '0')), unit);
   }
-  return text;
+  const kept = frac.slice(0, asset.scale);
+  const dropped = frac.slice(asset.scale);
+  let units = BigInt(whole) * factor + BigInt(kept.padEnd(asset.scale, '0'));
+  // Half up: a five in the first dropped place carries, and so does anything
+  // above it. Ties never round to the even digit — the vendor asked for that
+  // figure, and "never drop" means the last unit goes up, not away.
+  if (Number(dropped[0]) >= 5) units += 1n;
+  if (units === 0n) {
+    // Rounding to nothing is a dropped amount wearing a zero. A price of zero
+    // cannot be confirmed by any chain check, so it is refused here rather
+    // than accepted and left short forever.
+    throw new Error(`${text} is smaller than one ${unit.toUpperCase()} unit, so it rounds away to nothing. Ask for at least ${unitsToCoins(1n, unit)} ${unit.toUpperCase()}.`);
+  }
+  return unitsToCoins(units, unit);
+}
+
+// The amount an acceptance locks in. Both sides of the deal read the amount
+// by one rule now — the same one the watcher path uses — so an order can
+// never carry a coin string the chain check cannot confirm. (security S7)
+// Trailing zeros are representation and are trimmed the way receipts spell
+// amounts. An amount finer than the coin can count is rounded half up to the
+// coin's own scale, by the shared rule above.
+export function acceptAmount(value, currency) {
+  return roundToScale(value, currency);
 }
 
 export function amountCovers(reported, expected, currency) {

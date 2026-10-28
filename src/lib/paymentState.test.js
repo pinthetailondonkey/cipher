@@ -80,16 +80,19 @@ test('the accept-time parser and the watcher parser read an amount the same way'
   assert.equal(acceptAmount('0.001', 'btc'), '0.001');
   assert.equal(acceptAmount(' 0.010000000000 ', 'btc'), '0.01');
   assert.equal(acceptAmount('0.000000000001', 'xmr'), '0.000000000001');
-  // and rejects what it cannot: over-scale decimals would sit short of the
-  // order forever, so they never enter an acceptance
-  assert.throws(() => acceptAmount('0.10000000000000000000000009', 'btc'), /finer than BTC can count/);
-  assert.throws(() => acceptAmount('0.1000000001', 'btc'), /decimal places/);
-  assert.throws(() => acceptAmount('0.0000000000001', 'btc'), /finer than BTC can count/);
-  assert.throws(() => acceptAmount('0.0000000000000001', 'xmr'), /finer than XMR can count/);
+  // and rounds what the coin cannot express, half up, to the coin's own
+  // scale — CLAUDE.md's "round half up, never drop" — so a float's noise
+  // cannot sit short of the order forever
+  assert.equal(acceptAmount('0.10000000000000000000000009', 'btc'), '0.1');
+  assert.equal(acceptAmount('0.1000000001', 'btc'), '0.1');
+  assert.equal(acceptAmount('0.123456785', 'btc'), '0.12345679', 'a five in the first dropped place carries');
+  assert.equal(acceptAmount('0.123456784', 'btc'), '0.12345678', 'a four in the first dropped place does not');
+  assert.equal(acceptAmount('0.999999995', 'btc'), '1', 'the carry rolls into the whole coin');
+  assert.equal(acceptAmount('0.0000000000015', 'xmr'), '0.000000000002');
   assert.throws(() => acceptAmount('0.1e3', 'btc'), /decimal string/);
-  // nothing rounds at acceptance: a nine on the far edge is refused, not
-  // carried up, because half-up belongs to a report of a real transaction
-  assert.throws(() => acceptAmount('0.999999995', 'btc'), /finer than BTC can count/);
+  // rounding to nothing is a dropped amount wearing a zero, so it is refused
+  assert.throws(() => acceptAmount('0.0000000000001', 'btc'), /rounds away to nothing/);
+  assert.throws(() => acceptAmount('0.0000000000000001', 'xmr'), /rounds away to nothing/);
   assert.throws(() => acceptAmount('1', 'usd'), /not one of them/, 'a dollar price never reads as a coin the device checks');
 });
 
