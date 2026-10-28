@@ -5,6 +5,7 @@ import {
   MIN_PIN_LENGTH,
   MIN_EXISTING_PIN_LENGTH,
   isAcceptableNewPin,
+  isDamagedVault,
   PIN_FAILURE_LIMIT,
   pinFailureKey,
   pinFailureMessage,
@@ -160,4 +161,19 @@ test('a new PIN needs 8 digits; an existing account keeps its shorter PIN', () =
   // account made before this change still opens with its 6-digit PIN.
   assert.equal(MIN_EXISTING_PIN_LENGTH, 6);
   assert.ok(MIN_EXISTING_PIN_LENGTH < MIN_PIN_LENGTH);
+});
+
+test('a damaged vault is answered, not charged to the PIN counter', () => {
+  // The unlock path only counts a failure when the PIN fails to decrypt.
+  // These shapes can never decrypt, so they must be caught first: charging
+  // them would spend one of the five attempts that delete the account.
+  assert.equal(isDamagedVault(null), true);
+  assert.equal(isDamagedVault(undefined), true);
+  assert.equal(isDamagedVault('{"iv":[1],"data":[2]}'), true);
+  assert.equal(isDamagedVault({ iv: [1] }), true);
+  assert.equal(isDamagedVault({ data: [2] }), true);
+  assert.equal(isDamagedVault({ iv: 'nope', data: [2] }), true);
+  // A real envelope — legacy (no salt) or current (with salt) — is not damaged.
+  assert.equal(isDamagedVault({ iv: [1], data: [2] }), false);
+  assert.equal(isDamagedVault({ iv: [1], data: [2], salt: [3], iter: 600000 }), false);
 });

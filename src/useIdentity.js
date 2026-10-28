@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { LOCKED_OUT_MESSAGE, MIN_PIN_LENGTH, failPinAttempt, isAcceptableNewPin, pinFailureMessage, removeAccountKeys, resetPinFailures } from './lib/vaultLockout'
+import { LOCKED_OUT_MESSAGE, MIN_PIN_LENGTH, failPinAttempt, isAcceptableNewPin, isDamagedVault, pinFailureMessage, removeAccountKeys, resetPinFailures } from './lib/vaultLockout'
 import { profileRelays as PROFILE_RELAYS } from './lib/relays'
 import { runPanicWipe } from './lib/panicWipe'
 
@@ -435,23 +435,47 @@ export function useIdentity() {
 
   const unlock = async (pin) => {
     const failureAccount = getActivePubkey() || null
+    // Reading the vault is not a PIN attempt. Five wrong PINs delete an
+    // account here, so only a PIN that actually failed to decrypt may spend
+    // one: a missing vault, an unreadable one, or a damaged envelope answers
+    // on its own and leaves the counter where it was.
+    const activePk = getActivePubkey();
+    const vaults = getVaults();
+    let vault;
+
+    if (activePk && vaults[activePk]) {
+      vault = vaults[activePk].vault;
+    } else {
+      // Fallback to legacy single vault
+      const vaultStr = localStorage.getItem('cipher_vault');
+      if (!vaultStr) return { success: false, error: 'No local vault found' };
+      try { vault = JSON.parse(vaultStr); } catch { return { success: false, error: 'No local vault found' }; }
+    }
+
+    if (isDamagedVault(vault)) {
+      return { success: false, error: 'This device holds a damaged copy of the account. Use your 12 words.' };
+    }
+
+    let skArray;
     try {
-      // Multi-account: use the active account's vault
-      const activePk = getActivePubkey();
-      const vaults = getVaults();
-      let vault;
-      
-      if (activePk && vaults[activePk]) {
-        vault = vaults[activePk].vault;
-      } else {
-        // Fallback to legacy single vault
-        const vaultStr = localStorage.getItem('cipher_vault');
-        if (!vaultStr) throw new Error("No local vault found");
-        vault = JSON.parse(vaultStr);
+      skArray = await decryptKey(vault, pin)
+    } catch (e) {
+      // The one failure that is a wrong PIN.
+      let failure = { lockedOut: false, remaining: 0 }
+      try {
+        failure = failPinAttempt(localStorage, failureAccount)
+      } catch (wipeErr) { console.error('Lockout wipe failed:', wipeErr) }
+      if (failure.lockedOut) {
+        sessionStorage.removeItem('cipher_session_sk');
+        await deleteLockedOutDatabase(failureAccount);
+        window.location.reload();
       }
-      
-      const skArray = await decryptKey(vault, pin)
-      
+      return { success: false, error: pinFailureMessage(failure.remaining), remaining: failure.remaining }
+    }
+
+    // The PIN opened the vault. Nothing below may consume an attempt, so a
+    // relay import or a key-derivation error cannot lock an account out.
+    try {
       const { getPublicKey, nip19 } = await import('nostr-tools')
       const sk = Uint8Array.from(skArray)
       const pk = getPublicKey(sk)
@@ -469,22 +493,13 @@ export function useIdentity() {
           }
         } catch (upgradeErr) { console.warn('Vault upgrade skipped:', upgradeErr) }
       }
-      
+
       sessionStorage.setItem('cipher_session_sk', JSON.stringify(Array.from(sk)))
       resetPinFailures(localStorage, pk)
       setKeys({ sk, pk, npub: nip19.npubEncode(pk) })
       return { success: true }
     } catch (e) {
-      let failure = { lockedOut: false, remaining: 0 }
-      try {
-        failure = failPinAttempt(localStorage, failureAccount)
-      } catch (wipeErr) { console.error('Lockout wipe failed:', wipeErr) }
-      if (failure.lockedOut) {
-        sessionStorage.removeItem('cipher_session_sk');
-        await deleteLockedOutDatabase(failureAccount);
-        window.location.reload();
-      }
-      return { success: false, error: pinFailureMessage(failure.remaining), remaining: failure.remaining }
+      return { success: false, error: e?.message || 'Could not open this account on this device.' }
     }
   }
 

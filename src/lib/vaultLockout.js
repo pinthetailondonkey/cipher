@@ -15,6 +15,14 @@ export function isAcceptableNewPin(pin) {
   return typeof pin === 'string' && /^[0-9]{8}$/.test(pin);
 }
 
+// A vault envelope this device can still try to open. Anything else is a
+// damaged copy, and asking a PIN of it would read the refusal as a wrong PIN
+// and spend one of the five attempts that delete the account.
+export function isDamagedVault(vault) {
+  return !vault || typeof vault !== 'object'
+    || !Array.isArray(vault.iv) || !Array.isArray(vault.data);
+}
+
 export function pinFailureKey(pubkey) {
   return pubkey ? `cipher_fails_${pubkey}` : 'cipher_fails_legacy';
 }
