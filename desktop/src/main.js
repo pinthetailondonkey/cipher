@@ -18,7 +18,9 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
-const { buildTorArgs, parseOsRelease, socksPortFromTorrc } = require('./tor.js');
+const {
+  buildTorArgs, parseOsRelease, socksPortFromTorrc, pickSocksPort, createRestartLimiter,
+} = require('./tor.js');
 const { createUiServer } = require('./uiServer.js');
 const { dataDirBeside, resolveAppRoot, createDataDir } = require('./paths.js');
 const { applyWindowPolicy } = require('./windowPolicy.js');
@@ -33,17 +35,31 @@ const appRoot = resolveAppRoot(process.execPath, {
 // only honors switches read that early, and the promise this program makes
 // is that no page ever sees any other route. The bypass is ONLY the
 // loopback UI server; nothing else is exempt.
-// The SOCKS port to speak to: env wins, then on Tails the system tor's own
-// torrc is the truth, then the default both ship with today.
+// The SOCKS port to speak to. TOR_SOCKS in the environment always wins. On
+// Tails the system tor's own torrc is the truth (its default is 9050). Anywhere
+// else the shell starts its OWN tor, so the port is one we know is free: 9050
+// if nothing holds it, otherwise a random free one. We never point the proxy
+// at whatever happens to listen on 9050, and the same number goes to the
+// proxy switch below and to the tor we spawn, so the two cannot disagree.
 function resolveSocksPort() {
   if (process.env.TOR_SOCKS) return Number(process.env.TOR_SOCKS);
-  try {
-    const fromTorrc = socksPortFromTorrc(fs.readFileSync('/etc/tor/torrc', 'utf8'));
-    if (fromTorrc) return fromTorrc;
-  } catch {
-    // no torrc (or unreadable): the default stands
+  if (tailsMode()) {
+    try {
+      const fromTorrc = socksPortFromTorrc(fs.readFileSync('/etc/tor/torrc', 'utf8'));
+      if (fromTorrc) return fromTorrc;
+    } catch {
+      // no torrc (or unreadable): the default stands
+    }
+    return 9050;
   }
-  return 9050;
+  try {
+    const { port, moved } = pickSocksPort({ preferred: 9050 });
+    if (moved) console.log(`[desktop] port 9050 is in use; this Cipher's tor will use ${port}`);
+    return port;
+  } catch (e) {
+    failLoudly('tor port', e.message);
+    return 9050; // the app is quitting; no tor is started on it
+  }
 }
 
 const socksPort = resolveSocksPort();
@@ -90,10 +106,24 @@ function tailsMode() {
 
 let tor = null;
 let torDataDir = null;
+let torStopping = false; // true once the shell itself is stopping tor (quit, window closed)
+let torStderr = ''; // the last lines tor wrote to stderr, for the message
+const torRestarts = createRestartLimiter({ max: 3, windowMs: 10 * 60 * 1000 });
+
+// A message that does not block the app and does not quit it. Every
+// connection already fails while tor is down (the proxy points at a dead
+// port), which is the safe state; the message says so in plain words.
+function tellTorDown(text) {
+  console.warn(`[desktop] ${text}`);
+  dialog.showMessageBox({ type: 'warning', title: 'Cipher', message: text }).catch(() => {});
+}
 
 // On Tails we NEVER spawn tor: a second client would route inside a route
 // (docs/DESKTOP.md). Anywhere else the shell owns the tor lifecycle:
 // spawn on start with an ephemeral data dir, kill on quit, delete the dir.
+// If tor dies on its own, restart it up to three times in ten minutes on the
+// SAME port (the proxy switch cannot change after launch), then stop and say
+// so. At no point does anything go direct: while tor is down, connections fail.
 function startTor() {
   if (tailsMode()) {
     console.log(`[desktop] tails: using the system tor on 127.0.0.1:${socksPort}`);
@@ -106,22 +136,36 @@ function startTor() {
   ].filter(Boolean);
   const bin = candidates.find((c) => c.includes(path.sep) ? fs.existsSync(c) : true);
   torDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cipher-tor-'));
+  torStderr = '';
   console.log(`[desktop] tor: starting ${bin} on 127.0.0.1:${socksPort} (temporary data folder, deleted on quit)`);
-  tor = spawn(bin, buildTorArgs(torDataDir, socksPort), { stdio: ['ignore', 'ignore', 'pipe'] });
-  tor.on('error', (e) => console.warn(`[desktop] tor could not start (${e.message}). `
-    + 'Every connection will fail instead of leaking. Cipher has no clearnet fallback.'));
-  tor.on('exit', (code) => {
-    tor = null;
-    console.log(`[desktop] tor stopped (code ${code})`);
-  });
-  return tor;
+  const child = spawn(bin, buildTorArgs(torDataDir, socksPort), { stdio: ['ignore', 'ignore', 'pipe'] });
+  tor = child;
+  // Read stderr so a chatty tor can never fill the pipe and stall, and keep
+  // the tail for the message.
+  child.stderr.on('data', (d) => { torStderr = (torStderr + d).slice(-400); });
+  let handled = false;
+  const down = (why, canRestart) => {
+    if (handled) return; // 'error' and 'exit' can both fire for one failure
+    handled = true;
+    if (tor === child) tor = null;
+    if (torStopping) return;
+    const tail = torStderr.trim() ? ` Tor said: ${torStderr.trim().split('\n').slice(-2).join(' / ')}` : '';
+    if (canRestart && torRestarts.allow()) {
+      tellTorDown(`Tor stopped (${why}). Cipher is starting it again. Until it is back, nothing connects - Cipher never sends anything outside Tor.${tail}`);
+      removeTorDataDir();
+      setTimeout(() => { if (!torStopping) startTor(); }, 2000);
+    } else {
+      tellTorDown(`Tor stopped (${why}) and Cipher could not bring it back. Nothing will connect until you close and reopen Cipher - it never sends anything outside Tor.${tail}`);
+    }
+  };
+  // A tor that cannot be launched at all (missing file, no permission) will
+  // not be fixed by trying again; a tor that ran and exited might be.
+  child.on('error', (e) => down(`it could not start: ${e.message}`, false));
+  child.on('exit', (code, signal) => down(`it exited with ${signal ? `signal ${signal}` : `code ${code}`}`, true));
+  return child;
 }
 
-function stopTor() {
-  if (tor) {
-    tor.kill();
-    tor = null;
-  }
+function removeTorDataDir() {
   if (torDataDir) {
     try {
       fs.rmSync(torDataDir, { recursive: true, force: true });
@@ -130,6 +174,15 @@ function stopTor() {
     }
     torDataDir = null;
   }
+}
+
+function stopTor() {
+  torStopping = true;
+  if (tor) {
+    tor.kill();
+    tor = null;
+  }
+  removeTorDataDir();
 }
 
 function failLoudly(title, message) {

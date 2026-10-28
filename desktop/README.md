@@ -101,7 +101,8 @@ quit; the system tor on Tails is never ours to touch.
   `web/` in the bundle).
 - `TOR_BIN` - tor executable (default: the bundled `vendor/tor/tor/tor`,
   else `tor` on PATH).
-- `TOR_SOCKS` - socks port, default 9050.
+- `TOR_SOCKS` - socks port. Default: 9050 on Tails (or the system torrc's
+  port); elsewhere 9050 if free, otherwise a random free port for our own tor.
 - `TAILS=1` - force system-tor mode.
 - `CIPHER_CALLS=1` - development escape hatch ONLY: re-enables WebRTC in
   private mode. Ships disabled.
@@ -114,6 +115,11 @@ quit; the system tor on Tails is never ours to touch.
   (`disable_non_proxied_udp`) and mic/camera permission is refused, so a
   call refuses to start rather than failing halfway. The page-level refusal
   in `src/lib/voiceCall.js` stays as the second lock.
+- If the bundled tor exits on its own, the shell says so and restarts it on
+  the same port, at most three times in ten minutes; then it says it gave up.
+  While tor is down every connection fails. If 9050 is already taken, the
+  shell and its own tor use a random free port instead of pointing at
+  whatever listens on 9050.
 - If tor cannot start, the app fails loudly and every connection fails
   instead of leaking. There is no clearnet fallback, ever.
 - Data resolution is deterministic and unit-tested; if the folder beside
