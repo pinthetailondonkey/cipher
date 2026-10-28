@@ -563,7 +563,6 @@ export function useIdentity() {
       console.error('[identity] Could not load the opened account:', e)
       return { success: false, error: 'Could not open this account on this device.' }
     }
-    }
   }
 
   const unlockWithBiometric = async (newPin = '') => {
