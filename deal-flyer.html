@@ -1,0 +1,295 @@
+<title>Deal Flyer</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+
+<!--
+  One-look dark poster, grounded in the app's own palette (#121417 ground,
+  warm ink, stamp green). Display: Anton for handbill energy. Body: Archivo.
+  Papers and the title chain: IBM Plex Mono, because papers travel as paste.
+  One orchestrated motion: the REAL OWNER stamp thuds onto the worked example.
+-->
+
+<style>
+  :root {
+    --bg: #121417;
+    --panel: #1b1e23;
+    --panel-2: #22262c;
+    --ink: #f2f0ec;
+    --mute: #9aa1ab;
+    --line: #2a2f36;
+    --stamp: #5dd39e;
+    --stamp-ink: #0c1f16;
+    color-scheme: dark;
+  }
+  @media (prefers-color-scheme: light) { :root:not([data-theme]) { color-scheme: dark; } }
+
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: 'Archivo', system-ui, sans-serif;
+    font-size: 16px;
+    line-height: 1.55;
+  }
+
+  .poster {
+    max-width: 680px;
+    margin: 0 auto;
+    padding-block: 24px 56px;
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+  }
+
+  .eyebrow {
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--mute);
+  }
+
+  header { padding-top: 28px; }
+  h1 {
+    font-family: 'Anton', 'Archivo', sans-serif;
+    font-size: clamp(76px, 22vw, 150px);
+    line-height: 0.95;
+    letter-spacing: 0.01em;
+    margin: 10px 0 18px;
+    text-wrap: balance;
+  }
+  .tagline {
+    font-family: 'Anton', sans-serif;
+    font-size: clamp(24px, 6vw, 34px);
+    line-height: 1.18;
+    font-weight: 400;
+    letter-spacing: 0.01em;
+    text-wrap: balance;
+    margin: 0 0 14px;
+  }
+  .deck { max-width: 34em; color: var(--ink); margin: 0; }
+  .deck .check { color: var(--stamp); font-weight: 700; }
+
+  section { border-top: 1px solid var(--line); margin-top: 44px; padding-top: 26px; }
+  section > .eyebrow { display: block; margin-bottom: 20px; }
+
+  /* the tap sequence */
+  .steps { display: grid; gap: 0; }
+  .step { display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 18px; padding: 18px 0; border-bottom: 1px solid var(--line); }
+  .step:last-child { border-bottom: 0; padding-bottom: 0; }
+  .step-num {
+    font-family: 'Anton', sans-serif;
+    font-size: 44px;
+    line-height: 1;
+    color: var(--stamp);
+  }
+  .step h3 { margin: 2px 0 6px; font-size: 19px; font-weight: 700; letter-spacing: 0.01em; }
+  .step p { margin: 0; color: var(--mute); max-width: 32em; }
+  .step p strong { color: var(--ink); font-weight: 600; }
+
+  /* worked example + stamp */
+  .deal-card { position: relative; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 22px 22px 18px; }
+  .deal-card-meta { display: flex; flex-wrap: wrap; gap: 6px 16px; align-items: baseline; margin-bottom: 16px; padding-bottom: 14px; border-bottom: 1px dashed var(--line); padding-right: 104px; }
+  .deal-no { font-family: 'IBM Plex Mono', monospace; font-size: 13px; color: var(--mute); }
+  .deal-item { font-family: 'Anton', sans-serif; font-size: 22px; letter-spacing: 0.02em; }
+  .example-note { display: block; margin-top: 12px; font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--mute); }
+  .chain { font-family: 'IBM Plex Mono', monospace; font-size: 13.5px; font-variant-numeric: tabular-nums; }
+  .chain-row { display: grid; grid-template-columns: minmax(74px, auto) minmax(96px, auto) minmax(0, 1fr); gap: 6px 18px; padding: 9px 0; border-bottom: 1px solid var(--line); }
+  .chain-row:last-child { border-bottom: 0; }
+  .chain-evt { color: var(--ink); font-weight: 600; }
+  .chain-when { color: var(--mute); white-space: nowrap; }
+  .chain-note { color: var(--mute); min-width: 0; }
+  .chain-row.now .chain-evt { color: var(--stamp); }
+  .chain-row.now .chain-note { color: var(--ink); }
+
+  .stamp {
+    position: absolute;
+    top: -22px;
+    right: 18px;
+    width: 108px;
+    height: 108px;
+    border: 3px solid var(--stamp);
+    border-radius: 999px;
+    display: grid;
+    place-items: center;
+    text-align: center;
+    color: var(--stamp);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    line-height: 1.45;
+    transform: rotate(-14deg);
+    background: var(--bg);
+    outline: 1px solid var(--stamp);
+    outline-offset: -9px;
+    animation: thud 0.5s cubic-bezier(0.2, 0.9, 0.3, 1.3) 0.6s backwards;
+  }
+  @keyframes thud {
+    from { transform: rotate(2deg) scale(1.7); opacity: 0; }
+    55% { transform: rotate(-16deg) scale(0.97); opacity: 1; }
+    to { transform: rotate(-14deg) scale(1); opacity: 1; }
+  }
+  @media (prefers-reduced-motion: reduce) { .stamp { animation: none; } }
+
+  /* the papers */
+  .papers { display: grid; gap: 14px; }
+  .paper { display: grid; grid-template-columns: 118px minmax(0, 1fr); gap: 16px; padding-bottom: 14px; border-bottom: 1px solid var(--line); }
+  .paper:last-child { border-bottom: 0; padding-bottom: 0; }
+  .paper-name { font-family: 'Anton', sans-serif; font-size: 17px; letter-spacing: 0.04em; }
+  .paper p { margin: 0; color: var(--mute); }
+  .paper p strong { color: var(--ink); font-weight: 600; }
+
+  .paste-quote {
+    margin: 22px 0 0;
+    background: var(--panel);
+    border-left: 3px solid var(--stamp);
+    border-radius: 0 10px 10px 0;
+    padding: 16px 18px;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 14px;
+    color: var(--ink);
+    overflow-x: auto;
+  }
+  .paste-quote small { display: block; margin-top: 8px; color: var(--mute); font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; font-family: 'Archivo', sans-serif; }
+
+  /* checks */
+  .checks { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 14px; }
+  .check-tile { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px; }
+  .check-line { color: var(--stamp); font-weight: 700; font-size: 17px; margin-bottom: 6px; }
+  .check-tile p { margin: 0; color: var(--mute); font-size: 14px; }
+
+  footer { border-top: 1px solid var(--line); margin-top: 44px; padding-top: 30px; text-align: center; }
+  footer .big {
+    font-family: 'Anton', sans-serif;
+    font-size: clamp(30px, 8vw, 46px);
+    letter-spacing: 0.01em;
+    margin: 0 0 12px;
+  }
+  footer .locked { color: var(--mute); font-size: 13px; letter-spacing: 0.06em; margin: 0; }
+  footer .locked .check { color: var(--stamp); font-weight: 700; }
+
+  @media (max-width: 480px) {
+    .paper { grid-template-columns: 1fr; gap: 4px; }
+    .stamp { width: 92px; height: 92px; font-size: 11px; top: -18px; right: 12px; }
+    .deal-card-meta { padding-right: 80px; }
+    .chain-row { grid-template-columns: 74px 1fr; }
+    .chain-note { grid-column: 1 / -1; padding-left: 1px; }
+  }
+</style>
+
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Anton&family=Archivo:wght@400;600;700&family=IBM+Plex+Mono:wght@400;600;700&display=swap">
+
+<main class="poster">
+
+  <header>
+    <span class="eyebrow">Ownership, settled between two phones</span>
+    <h1>Deal</h1>
+    <p class="tagline">A car title for everything, moved by tapping two phones.</p>
+    <p class="deck">Mint a title for anything you own. Sell it with a tap. The buyer signs on their own phone and the title answers:
+      <strong class="check">Real owner ✓</strong> — and every sale before this one stays written down.</p>
+  </header>
+
+  <section>
+    <span class="eyebrow">How a deal moves</span>
+    <div class="steps">
+      <div class="step">
+        <span class="step-num" aria-hidden="true">1</span>
+        <div>
+          <h3>Name it</h3>
+          <p>Issue title. Name the item — <strong>a car, a trailer, a guitar</strong>. The title and its papers live with you, and you carry the owner's code.</p>
+        </div>
+      </div>
+      <div class="step">
+        <span class="step-num" aria-hidden="true">2</span>
+        <div>
+          <h3>Tap phones</h3>
+          <p>Your code and the buyer's cross in one tap. <strong>No account to make, no middleman, nothing in the mail.</strong> No tap handy? Paste the code, or scan it off the screen.</p>
+        </div>
+      </div>
+      <div class="step">
+        <span class="step-num" aria-hidden="true">3</span>
+        <div>
+          <h3>Say it back</h3>
+          <p>The buyer signs their end and the title countersigns it back. <strong>Real owner ✓</strong> — the title has a new holder, and it cannot be sold twice.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <span class="eyebrow">A title, read out loud</span>
+    <div class="deal-card">
+      <div role="img" aria-label="Rubber stamp reading Real Owner" class="stamp">REAL<br>OWNER<br>✓</div>
+      <div class="deal-card-meta">
+        <span class="deal-no">TITLE Nº 0007</span>
+        <span class="deal-item">1974 Land Cruiser</span>
+      </div>
+      <div class="chain" role="table" aria-label="Ownership chain of the example title">
+        <div class="chain-row" role="row">
+          <span class="chain-evt" role="cell">MINTED</span>
+          <span class="chain-when" role="cell">MAY 2026</span>
+          <span class="chain-note" role="cell">first owner names it, papers attached</span>
+        </div>
+        <div class="chain-row" role="row">
+          <span class="chain-evt" role="cell">SOLD</span>
+          <span class="chain-when" role="cell">AUG 12, 2026</span>
+          <span class="chain-note" role="cell">tap → second owner</span>
+        </div>
+        <div class="chain-row" role="row">
+          <span class="chain-evt" role="cell">SOLD</span>
+          <span class="chain-when" role="cell">OCT 27, 2026</span>
+          <span class="chain-note" role="cell">tap → third owner</span>
+        </div>
+        <div class="chain-row now" role="row">
+          <span class="chain-evt" role="cell">HELD NOW</span>
+          <span class="chain-when" role="cell">—</span>
+          <span class="chain-note" role="cell">every holder so far, still readable here</span>
+        </div>
+      </div>
+      <small class="example-note">Worked example — every title reads exactly this way</small>
+    </div>
+  </section>
+
+  <section>
+    <span class="eyebrow">The papers</span>
+    <div class="papers">
+      <div class="paper">
+        <span class="paper-name">SELL PAPER</span>
+        <p>Made when you sell. The buyer <strong>pastes it, taps it back</strong>, and owns the thing. Sold — the paper moved on. History keeps the line.</p>
+      </div>
+      <div class="paper">
+        <span class="paper-name">SHOW PAPER</span>
+        <p>Proves you hold the title <strong>without selling anything</strong> — hand it over to check, keep holding the title.</p>
+      </div>
+      <div class="paper">
+        <span class="paper-name">BACKUP</span>
+        <p>Titles and their chains <strong>save separately</strong>, so a new phone takes the same collection for nothing lost.</p>
+      </div>
+    </div>
+    <blockquote class="paste-quote">Too much paper for one picture — the paste still carries it.
+      <small>straight from the app</small>
+    </blockquote>
+  </section>
+
+  <section>
+    <span class="eyebrow">What you can check, every time</span>
+    <div class="checks">
+      <div class="check-tile">
+        <p class="check-line">Real owner ✓</p>
+        <p>The title says who holds it right now, and the holder signed it back to you themselves.</p>
+      </div>
+      <div class="check-tile">
+        <p class="check-line">Real paper ✓</p>
+        <p>The papers behind it are checked before the deal is called done.</p>
+      </div>
+      <div class="check-tile">
+        <p class="check-line">Clean history ✓</p>
+        <p>Every sale leaves a line in the open. The record shows the whole chain, mint to you.</p>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <p class="big">Tap in and own it.</p>
+    <p class="locked"><strong class="check">Real owner ✓</strong> · Clean history</p>
+  </footer>
+
+</main>
