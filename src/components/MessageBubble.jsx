@@ -142,6 +142,11 @@ function OrderReceipt({ content, isBuyer = false, disputeReason = '' }) {
   const address = content.shippingAddress || content.address || content.shipTo || '';
   const pill = orderLabel(content);
   const nextStep = nextStepOf(content, isBuyer);
+  // The quote the card is allowed to draw. It is re-derived on this device by
+  // escrowForCard, never read off the peer's payload, and only when escrow is
+  // wired in at all: with the switch off the card draws no escrow words, so a
+  // peer cannot put them there by sending one.
+  const escrow = ESCROW_WIRING_LANDED ? escrowForCard(content) : null;
   return (
     // Telegram's attached card: the card takes the full bubble width, up
     // to 280px, and the product shot crops flat to 28:9.
