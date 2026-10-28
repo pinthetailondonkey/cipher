@@ -3,6 +3,7 @@ import { LOCKED_OUT_MESSAGE, MIN_PIN_LENGTH, PIN_TOO_SHORT_MESSAGE, isPlausibleP
 import { profileRelays as PROFILE_RELAYS } from './lib/relays'
 import { DeviceKeyMissing, getDeviceProvider, isDeviceKeyError, isDeviceVault, unwrapDeviceVault } from './lib/vaultEnvelope'
 import { destroyDeviceKeys, sealNewVault, upgradeStoredVault } from './lib/deviceLock'
+import { COMMIT_FAILED_MESSAGE, commitWithRollback } from './lib/vaultCommit'
 import { ensureDeviceProvider } from './lib/deviceProvider'
 import { confirmDraftAccount, isDraftEntry, pickUnlockAccount } from './lib/accountPick'
 import { runPanicWipe } from './lib/panicWipe'
@@ -597,12 +598,22 @@ export function useIdentity() {
           displayName: legacyHandle,
           createdAt: Date.now(),
         };
-        saveVaults(vaults);
-        localStorage.setItem('cipher_vault', JSON.stringify(vault));
-        localStorage.setItem('cipher_handle', legacyHandle);
-        setActivePubkey(pubkey);
-        localStorage.setItem('cipher_biometric_pubkey', pubkey);
-        localStorage.setItem('cipher_biometric_enabled', 'true');
+        // The same one-commit rule as a restore: every slot this landing
+        // writes goes together or not at all. A failure says the plain
+        // sentence below, not the browser's words, and charges no PIN.
+        try {
+          commitWithRollback(localStorage, [
+            { key: 'cipher_vaults', value: JSON.stringify(vaults) },
+            { key: 'cipher_vault', value: JSON.stringify(vault) },
+            { key: 'cipher_handle', value: legacyHandle },
+            { key: 'cipher_active_pubkey', value: pubkey },
+            { key: 'cipher_biometric_pubkey', value: pubkey },
+            { key: 'cipher_biometric_enabled', value: 'true' },
+          ]);
+        } catch (storageError) {
+          console.error('[identity] Could not save the passkey account:', storageError);
+          throw Object.assign(new Error(COMMIT_FAILED_MESSAGE), { passkeyCode: 'save-failed' });
+        }
       }
       // An old PIN vault on disk is wrapped even though the PIN was not typed:
       // left alone it would stay openable by a stolen copy and a PIN guess.
@@ -787,11 +798,28 @@ export function useIdentity() {
         // relaunch and threaten the restored account with a second flow).
         confirmed: true,
       }
-      saveVaults(vaults)
-      setActivePubkey(pk)
-      localStorage.setItem('cipher_vault', JSON.stringify(newLocalVault))
+      // The account lands as one commit — table, active pointer, mirror —
+      // or it does not land. Storage that refuses part way puts every slot
+      // back exactly as it was, so the account that was on this device
+      // stays usable and no half-restore is left looking like the account.
+      try {
+        // The session key rides first: a storage that refuses even it fails
+        // before the account has touched anything.
+        sessionStorage.setItem('cipher_session_sk', JSON.stringify(Array.from(sk)))
+        commitWithRollback(localStorage, [
+          { key: 'cipher_vaults', value: JSON.stringify(vaults) },
+          { key: 'cipher_active_pubkey', value: pk },
+          { key: 'cipher_vault', value: JSON.stringify(newLocalVault) },
+        ])
+      } catch (storageError) {
+        console.error('[identity] Could not save the restored account:', storageError)
+        // The session key went in first; it comes back out, so "nothing was
+        // changed" is true of the whole store, not just the account slots.
+        // (lockApp empties this slot too — a locked device holds no session.)
+        try { sessionStorage.removeItem('cipher_session_sk') } catch { /* the words below still hold */ }
+        return { success: false, error: COMMIT_FAILED_MESSAGE }
+      }
       resetPinFailures(localStorage, pk)
-      sessionStorage.setItem('cipher_session_sk', JSON.stringify(Array.from(sk)))
       setKeys({ sk, pk, npub: nip19.npubEncode(pk) })
       setHasVault(true)
       return { success: true }
