@@ -53,7 +53,7 @@ export default function LockScreen({ identity }) {
   const handleBiometricUnlock = async () => {
     if (biometricLoading || loading) return;
     if (!identity?.hasVault && pin.length < MIN_PIN_LENGTH) {
-      failAttempt(`Enter a new PIN (at least ${MIN_PIN_LENGTH} digits) before recovering this account on the device.`);
+      failAttempt(`Enter a new PIN (exactly ${MIN_PIN_LENGTH} digits) before recovering this account on the device.`);
       return;
     }
     setBiometricLoading(true);
