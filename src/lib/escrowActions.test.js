@@ -176,15 +176,19 @@ test('a fresh slot per order: two orders, two salts, two keys', async () => {
 // 52cbdab — the first wiring shipped slot.salt off a return that has
 // no salt, so requests went out keyless and the dead button leaned
 // on the same read; and the quote priced the buyer's typed amount.)
-test('the request slot and the escrow price are wired off the right tables', () => {
+// The escrow wiring this test used to pin is not in the app: the door is
+// gated off by ESCROW_WIRING_LANDED and useCommerce has no escrow handler, so
+// the old assertions could only pass against code that had been removed.
+// Until the wiring lands, the pin is the gate itself — an unwired escrow
+// button must not appear, and the moment someone lands the handler this test
+// fails and asks to be re-pinned to the real slot and price reads.
+test('escrow ordering stays behind its wiring gate', () => {
   const commerce = fs.readFileSync(new URL('../features/chat/useCommerce.js', import.meta.url), 'utf8');
-  // the slot is built by escrowRequestSlot — salt AND key from one pair
-  assert.match(commerce, /const slot = await escrowRequestSlot\(identity\.sk\)/);
-  assert.doesNotMatch(commerce, /orderEscrowKey\(identity\.sk, newEscrowSalt/);
-  // the escrow handler prices through acceptanceDemand + the own menu
-  const start = commerce.indexOf("if (action === 'accept_with_escrow')");
-  assert.notEqual(start, -1, 'the escrow handler moved — re-pin the wiring test');
-  const escrowBlock = commerce.slice(start, commerce.indexOf("if (action === 'accept_order'", start));
-  assert.match(escrowBlock, /acceptanceDemand\(msg\.data\.product, readOwnMenu\(\), 'btc'\)/);
-  assert.doesNotMatch(escrowBlock, /orderCoinAmount\(msg\.data\.product/);
+  const bubble = fs.readFileSync(new URL('../components/MessageBubble.jsx', import.meta.url), 'utf8');
+  assert.doesNotMatch(commerce, /escrowRequestSlot\(/, 'the escrow handler landed — re-pin this test to its slot and price reads');
+  assert.doesNotMatch(commerce, /action === 'accept_with_escrow'/, 'the escrow handler landed — re-pin this test');
+  assert.match(bubble, /const ESCROW_WIRING_LANDED = false;/);
+  assert.match(bubble, /\{ESCROW_WIRING_LANDED && escrowActionsFor\(/);
+  // The plain accept still prices through the menu, never the buyer's word.
+  assert.match(commerce, /acceptanceDemand\(msg\.data\.product, readOwnMenu\(\), coinCurrency\)/);
 });
