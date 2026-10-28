@@ -16,7 +16,7 @@ test('calls are off: an offer is refused, nothing rings, nothing routes', async 
   assert.equal(getCallSnapshot(), null);
 
   // A live offer from a modern or old peer: one reject back, no session, no ring.
-  await handleCallSignal({ data: { type: 'call', action: 'offer', callId: 'live', sdp: {} }, from: 'peer-c' });
+  await handleCallSignal({ data: { type: 'call', action: 'offer', callId: 'live', sdp: {} }, from: 'peer-c', known: true });
   assert.equal(getCallSnapshot(), null);
   assert.equal(sent.length, 1);
   assert.equal(sent[0].payload.action, 'reject');
@@ -27,5 +27,17 @@ test('calls are off: an offer is refused, nothing rings, nothing routes', async 
   await handleCallSignal({ data: { type: 'call', action: 'ice', callId: 'live', candidate: {} }, from: 'peer-c' });
   await handleCallSignal({ data: { type: 'call', action: 'answer', callId: 'live', sdp: {} }, from: 'peer-c' });
   await handleCallSignal({ data: { type: 'call', action: 'offer' }, from: '' });
+  assert.equal(sent.length, 1);
+});
+
+test('a stranger\'s call offer gets silence, not a signed reject', async () => {
+  const sent = [];
+  bindCallTransport(async (peer, payload) => { sent.push({ peer, payload }); return { success: true }; });
+  const offer = { type: 'call', action: 'offer', callId: 'probe', sdp: {} };
+  await handleCallSignal({ data: offer, from: 'stranger' });
+  await handleCallSignal({ data: offer, from: 'stranger', known: false });
+  await handleCallSignal({ data: offer, from: 'stranger', known: 'yes' });
+  assert.equal(sent.length, 0);
+  await handleCallSignal({ data: offer, from: 'friend', known: true });
   assert.equal(sent.length, 1);
 });
