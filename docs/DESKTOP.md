@@ -63,7 +63,7 @@ buzz stays the gateway's job, unchanged.
 
 ## Out of version 1, on purpose
 
-- Phone packaging. Parked until the desktop shipstatic is real.
+- Phone packaging. Parked until ciphermessenger.org serves the desktop build.
 - Auto-update. Fetching new builds over the network is a supply-chain
   surface; version 1 updates the manual way, and every update stays a
   reviewable artifact.

@@ -116,4 +116,4 @@ Done when:
 - Save_key mode's vestigial PIN field removed or wired (audit NIT-3).
 
 ## 13. Docs catch-up
-Done when: README names the canonical host (shipstatic) not stale Vercel; the watcher instructions do not reference the removed Connections row; STAGE2's "Test 3 approval screen does not exist" line is corrected (the gate merged at 3a2e57b); docs/VISION.md section 4's built/not-built lists get filled.
+Done when: README names the canonical host (ciphermessenger.org) not stale Vercel; the watcher instructions do not reference the removed Connections row; STAGE2's "Test 3 approval screen does not exist" line is corrected (the gate merged at 3a2e57b); docs/VISION.md section 4's built/not-built lists get filled.
