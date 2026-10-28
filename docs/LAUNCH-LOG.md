@@ -213,7 +213,7 @@ Proof the pipeline itself was sound, without a deploy: the live deployment of `5
 
 ### Three checks, verbatim
 
-Deployed `dpl_FyRxwahNWfouREB7TuQooxniHJbr` — **https://cipher-leck6tmem-cipher.vercel.app**, aliased to `https://www.ciphermessenger.org`. This is the rollback: `vercel alias set cipher-leck6tmem-cipher.vercel.app www.ciphermessenger.org`.
+Deployed `dpl_FyRxwahNWfouREB7TuQooxniHJbr`, aliased to `https://www.ciphermessenger.org`. This is the rollback: point that alias back at this deployment id in the Vercel dashboard, or `vercel alias set dpl_FyRxwahNWfouREB7TuQooxniHJbr www.ciphermessenger.org`. The deployment's full URL carries the account name, so it is not written here.
 
 ```
 verify:live — https://www.ciphermessenger.org
