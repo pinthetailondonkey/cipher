@@ -228,6 +228,26 @@ export function dropSecuringSend(pubkey, id, storage) {
   );
 }
 
+// One flush at a time per waiting send. A key landing fires the same event at
+// two listeners (the bootstrap and the group hook), and both used to read the
+// whole queue before either dropped a row, so the message went out twice. The
+// claim lives in memory only: the row itself stays in storage until it is sent.
+const claimedSends = new Set();
+const claimKey = (pubkey, id) => `${pubkey}:${id}`;
+
+export function claimSecuringSend(pubkey, id) {
+  if (!pubkey || !id) return false;
+  const key = claimKey(pubkey, id);
+  if (claimedSends.has(key)) return false;
+  claimedSends.add(key);
+  return true;
+}
+
+export function releaseSecuringSend(pubkey, id) {
+  if (!pubkey || !id) return;
+  claimedSends.delete(claimKey(pubkey, id));
+}
+
 export function securingSendsFor(pubkey, groupId, storage) {
   return loadSecuringSends(pubkey, storage).filter((item) => item.groupId === groupId);
 }

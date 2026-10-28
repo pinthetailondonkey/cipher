@@ -5,6 +5,7 @@ import {
   GKEY_RETRY_JITTER,
   GKEY_RETRY_MAX_ATTEMPTS,
   SECURING_STUCK_MS,
+  claimSecuringSend,
   dropSecuringSend,
   exhaustKeyRequest,
   groupKeyRequestPending,
@@ -13,6 +14,7 @@ import {
   loadPendingKeyRequests,
   loadSecuringSends,
   queueSecuringSend,
+  releaseSecuringSend,
   resetKeyRequest,
   resumeKeyRequestIds,
   retryBaseDelay,
@@ -182,6 +184,21 @@ test('a send waiting on a key survives reload and stays on the account that queu
   }), []);
   dropSecuringSend(pubkey, 'temp-1', storage);
   assert.equal(loadSecuringSends(pubkey, storage).length, 0);
+});
+
+test('a waiting send is claimed by one flush only, so a key arriving twice sends it once', () => {
+  const pubkey = 'd'.repeat(64);
+  // The key-updated event reaches two listeners; both flush the same queue.
+  assert.equal(claimSecuringSend(pubkey, 'temp-1'), true, 'the first flush takes the send');
+  assert.equal(claimSecuringSend(pubkey, 'temp-1'), false, 'the second flush finds it taken');
+  assert.equal(claimSecuringSend(pubkey, 'temp-2'), true, 'another send is its own claim');
+  assert.equal(claimSecuringSend('e'.repeat(64), 'temp-1'), true, 'another account is its own claim');
+  // A flush that did not publish gives the send back, so a later key still sends it.
+  releaseSecuringSend(pubkey, 'temp-1');
+  assert.equal(claimSecuringSend(pubkey, 'temp-1'), true, 'a released send can be claimed again');
+  // A send that went out is dropped; its claim goes with it.
+  releaseSecuringSend(pubkey, 'temp-1');
+  releaseSecuringSend(pubkey, 'temp-2');
 });
 
 test('the ladder stops at the attempt cap and a reload does not start it over', async () => {

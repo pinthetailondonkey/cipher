@@ -18,7 +18,7 @@ import { distributeGroupKey, epochsToBackfill } from '../lib/crypto/groupKeyDist
 import { enqueueNostrEvent, startOutboxSync } from '../lib/outbox';
 import { groupSocketUrl } from '../lib/egress';
 import { relaysForPeer } from '../lib/dmRelays';
-import { dropSecuringSend, forgetPendingKeyRequest, queueSecuringSend, rememberPendingKeyRequest, resetKeyRequest, securingSendsFor } from '../lib/crypto/groupKeyRequest';
+import { claimSecuringSend, dropSecuringSend, forgetPendingKeyRequest, queueSecuringSend, releaseSecuringSend, rememberPendingKeyRequest, resetKeyRequest, securingSendsFor } from '../lib/crypto/groupKeyRequest';
 import { sortMessages, stampArrival } from '../features/chat/media';
 import { admitRelayRoster, isJoinDenied, joinRequestDecision, denyPendingJoin, dropPendingJoin, clearJoinDenial, loadPendingJoins, queuePendingJoin, withoutDenied } from '../lib/groupJoinQueue.js';
 import { allowsGroupJoins } from '../lib/privacy.js';
@@ -434,23 +434,31 @@ export async function flushSecuringGroupSends(identity, groupId) {
   if (!identity?.sk || !groupId) return;
   const items = securingSendsFor(identity.pk, groupId);
   for (const item of items) {
-    const encoded = await encodeGroupPayload({ groupId: item.groupId, payload: item.payload, senderPubkey: identity.pk });
-    if (encoded.pending) return;
-    const tags = withGroupTag(item.groupId, encoded.tags);
-    if (item.id) tags.push(['client', item.id]);
-    if (item.replyId) tags.push(['e', item.replyId, '', 'reply']);
-    const event = finalizeEvent({
-      kind: 9,
-      created_at: Math.floor(Date.now() / 1000),
-      tags,
-      content: encoded.content,
-    }, identity.sk);
+    // A second flush for the same key skips what the first has taken.
+    if (!claimSecuringSend(identity.pk, item.id)) continue;
     try {
-      await publishAuthedGroupEvent(identity, event);
-      dropSecuringSend(identity.pk, item.id);
-    } catch (error) {
-      console.warn('[group-key] Waiting message did not go out:', error);
-      return;
+      // Taken after the other flush already sent and dropped it: nothing left to send.
+      if (!securingSendsFor(identity.pk, groupId).some((row) => row.id === item.id)) continue;
+      const encoded = await encodeGroupPayload({ groupId: item.groupId, payload: item.payload, senderPubkey: identity.pk });
+      if (encoded.pending) return;
+      const tags = withGroupTag(item.groupId, encoded.tags);
+      if (item.id) tags.push(['client', item.id]);
+      if (item.replyId) tags.push(['e', item.replyId, '', 'reply']);
+      const event = finalizeEvent({
+        kind: 9,
+        created_at: Math.floor(Date.now() / 1000),
+        tags,
+        content: encoded.content,
+      }, identity.sk);
+      try {
+        await publishAuthedGroupEvent(identity, event);
+        dropSecuringSend(identity.pk, item.id);
+      } catch (error) {
+        console.warn('[group-key] Waiting message did not go out:', error);
+        return;
+      }
+    } finally {
+      releaseSecuringSend(identity.pk, item.id);
     }
   }
   if (items.length && (await getCurrentGroupKey(groupId)) && securingSendsFor(identity.pk, groupId).length === 0) {
