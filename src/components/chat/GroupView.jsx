@@ -16,6 +16,7 @@ import { securingPhase, securingSendsFor } from '../../lib/crypto/groupKeyReques
 import { haptic } from '../../lib/haptics';
 import { noHexName } from '../../lib/npub';
 import { stampArrival } from '../../features/chat/media';
+import { sendOutcome } from '../../lib/sendOutcome';
 import Picture from '../ui/Picture';
 
 function GroupStorefront({ items, pinnedId, canList, onBuy, onList, pendingLists = [], now = 0, onRetrySecure }) {
@@ -239,11 +240,16 @@ export default function GroupView({
     }
   }, [activeGroup?.id, fetchPinnedMessage]);
 
-  const sendGroupText = async (text) => {
+  // The same contract as the composer's sendMessage (src/features/chat/
+  // useComposer.js): it takes text and an optional payload, and it answers
+  // with an outcome word. It used to answer with the raw result object and to
+  // ignore the payload, so a document sent from a group view posted an empty
+  // text message and no outcome ever matched 'sent'.
+  const sendGroupText = async (text, customPayload = null) => {
     const groupId = activeGroup?.id;
-    if (!groupId) return;
+    if (!groupId) return 'failed';
     const replyId = replyingTo?.id || null;
-    const payload = { type: 'text', message: text };
+    const payload = customPayload || { type: 'text', message: text };
     const seconds = disappearingSeconds(useChatStore.getState().disappearingTimers?.[groupId]);
     if (seconds > 0) payload.expires_at = Math.floor(Date.now() / 1000) + seconds;
     const tempId = `temp-${Date.now()}`;
@@ -275,7 +281,7 @@ export default function GroupView({
           )),
         }));
         await saveMessage(groupId, securing);
-        return result;
+        return 'securing';
       }
       useChatStore.getState().setGroupMessages((prev) => ({
         ...prev,
@@ -283,7 +289,7 @@ export default function GroupView({
       }));
       try { await db.messages.delete(tempId); } catch (error) { console.error('[GroupView] Failed to remove unsent message:', error); }
       useChatStore.getState().setToast({ type: 'error', message: 'Failed to send to group' });
-      throw new Error(result?.error || 'Failed to send to group');
+      return 'failed';
     }
     if (result.event?.id) {
       let confirmed = null;
@@ -304,7 +310,7 @@ export default function GroupView({
     }
     setReplyingTo(null);
     scopedRemove(`draft-group-${groupId}`);
-    return result;
+    return sendOutcome(result);
   };
 
   const visibleMessages = messages.filter((message) => !(deletedMsgs instanceof Set && deletedMsgs.has(message.id)));
