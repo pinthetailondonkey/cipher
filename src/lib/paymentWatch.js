@@ -144,17 +144,45 @@ export function moneroRows(rows) {
 // send is dropped even if the wallet filed it in the wrong bucket. A
 // direction-blind answer would let the vendor's own outgoing spend satisfy an
 // inbound payment check. (security S3)
-export function incomingMoneroTransfers(result) {
+export function incomingMoneroTransfers(result, { nowSec = Math.floor(Date.now() / 1000) } = {}) {
   const rows = [];
   for (const bucket of [result?.in, result?.pool]) {
     for (const row of (Array.isArray(bucket) ? bucket : [])) {
       if (!row) continue;
       const label = String(row.type ?? row.direction ?? '').toLowerCase();
       if (!(label === '' || label === 'in' || label === 'pool')) continue;
+      if (!moneroRowCountable(row, nowSec)) continue;
       rows.push(row);
     }
   }
   return moneroRows(rows);
+}
+
+// A Monero row can arrive and still not be money in hand. `double_spend_seen`
+// says the wallet saw a conflicting spend of the same inputs, so the row may
+// never mine. `unlock_time` locks the output: below 500,000,000 it is a block
+// height and the output is locked until the chain reaches it; at or above it
+// is a unix time, locked until the clock passes it. Either way the row is held
+// out of the count, so the order reads it as not arrived yet and the next
+// check, once it unlocks, counts it. A mined row's tip is its block height plus
+// its confirmations minus one; a pool row has no block, so a height-style lock
+// on it cannot be shown to have passed and it stays held. A value that is not a
+// plain count of blocks or seconds is held too. Fail closed.
+const UNLOCK_TIME_IS_UNIX = 500000000;
+
+function moneroRowCountable(row, nowSec) {
+  const flag = row.double_spend_seen;
+  if (flag === true || flag === 1 || String(flag ?? '').toLowerCase() === 'true') return false;
+  if (row.unlock_time == null) return true;
+  const text = String(row.unlock_time).trim();
+  if (!/^\d+$/.test(text)) return false;
+  const unlock = Number(text);
+  if (unlock === 0) return true;
+  if (unlock >= UNLOCK_TIME_IS_UNIX) return !(unlock > Number(nowSec));
+  const height = Number(row.height);
+  const confirmations = Number(row.confirmations);
+  if (!Number.isInteger(height) || height < 1 || !Number.isInteger(confirmations) || confirmations < 1) return false;
+  return unlock <= height + confirmations - 1;
 }
 
 export function rowsFromScan(scan, address) {

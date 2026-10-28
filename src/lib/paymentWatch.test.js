@@ -507,3 +507,26 @@ test('a transfer time that is not a sane unix second carries no weight', async (
   });
   assert.equal(future.report?.time, undefined);
 });
+
+test('a locked or double-spent Monero row is held out of the count', async () => {
+  const now = 1_800_000_000;
+  const arrived = { txid: 'ok', address: '8sub', amount: 500000000000, type: 'in', height: 1000, confirmations: 10, unlock_time: 0 };
+  const ids = (result) => incomingMoneroTransfers(result, { nowSec: now }).map((row) => row.txid);
+  assert.deepEqual(ids({ in: [arrived] }), ['ok']);
+  // A block-height lock is held until the chain reaches it (tip here is 1009).
+  assert.deepEqual(ids({ in: [{ ...arrived, txid: 'h1', unlock_time: 1010 }] }), []);
+  assert.deepEqual(ids({ in: [{ ...arrived, txid: 'h2', unlock_time: 1009 }] }), ['h2']);
+  // A unix-time lock is held until the clock passes it.
+  assert.deepEqual(ids({ in: [{ ...arrived, txid: 't1', unlock_time: now + 3600 }] }), []);
+  assert.deepEqual(ids({ in: [{ ...arrived, txid: 't2', unlock_time: now - 3600 }] }), ['t2']);
+  // A pool row has no block, so a height lock on it cannot be shown to have passed.
+  assert.deepEqual(ids({ pool: [{ txid: 'p1', address: '8sub', amount: 1, type: 'pool', confirmations: 0, unlock_time: 5 }] }), []);
+  assert.deepEqual(ids({ pool: [{ txid: 'p0', address: '8sub', amount: 1, type: 'pool', confirmations: 0, unlock_time: 0 }] }), ['p0']);
+  // A garbled lock fails closed.
+  assert.deepEqual(ids({ in: [{ ...arrived, txid: 'g', unlock_time: 'soon' }] }), []);
+  // A pool row the wallet saw double-spent never counts.
+  assert.deepEqual(ids({ pool: [{ txid: 'ds', address: '8sub', amount: 1, type: 'pool', double_spend_seen: true }] }), []);
+  // So a locked payment reads as nothing arrived yet, not as a confirmed one.
+  const locked = incomingMoneroTransfers({ in: [{ ...arrived, txid: 'lk', unlock_time: 99999999 }] }, { nowSec: now });
+  assert.deepEqual(reportFromTransfers(locked, '8sub', 'xmr'), { pending: true });
+});
