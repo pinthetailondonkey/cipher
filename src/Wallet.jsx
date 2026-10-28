@@ -565,13 +565,14 @@ export default function Wallet({ identity, onOpenChat, startView = 'main' }) {
         </button>
       </Sheet>
 
-      {/* EDIT PROFILE — the editor wears a Sheet now, not a page. The Sheet's
-          own heading is the editor's ScreenHeader, so the label is spoken
-          only: the dialog still needs a name a screen reader can announce. */}
+      {/* EDIT PROFILE — the editor wears a Sheet now, not a page. The sheet
+          draws the one heading and the one dismiss control for every sheet,
+          so the editor carries no page header of its own; `label` is the
+          name the dialog announces. */}
       {view === 'profile_editor' && (
         <Sheet open onClose={() => setView('main')} label="Edit Profile">
           <Suspense fallback={<div className="flex h-48 items-center justify-center"><div className="h-7 w-7 animate-spin rounded-full border-2 border-ink/20 border-t-accentText" /></div>}>
-            <ProfileEditor identity={identity} onClose={() => setView('main')} />
+            <ProfileEditor identity={identity} />
           </Suspense>
         </Sheet>
       )}

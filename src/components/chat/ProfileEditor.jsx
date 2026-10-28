@@ -2,12 +2,13 @@ import { useState } from 'react';
 import { useProfiles, updateProfileCache } from '../../useProfiles';
 import { useChatStore } from '../../store/chatStore';
 import { getPrivacy } from '../../lib/privacy';
-import ScreenHeader from '../ui/ScreenHeader';
 import { AtSign, Image, Type, User } from 'lucide-react';
 
 import { profileEditorRelays } from '../../lib/relays';
 
-export default function ProfileEditor({ identity, onClose }) {
+// The sheet it lives in draws the heading and the dismiss control, so this
+// file is the fields and the publish action, nothing else.
+export default function ProfileEditor({ identity }) {
   const profiles = useProfiles([identity?.pk]);
   const profile = profiles[identity?.pk] || {};
   const [draft, setDraft] = useState(null);
@@ -71,10 +72,9 @@ export default function ProfileEditor({ identity, onClose }) {
   const field = 'w-full bg-transparent text-[15px] text-ink outline-none placeholder:text-inkSubtle';
 
   return (
-    <div className="h-full overflow-y-auto bg-transparent pb-8">
+    <div className="pb-2">
       <form onSubmit={publishProfile} className="space-y-4">
-        <ScreenHeader title="Edit Profile" onBack={onClose} />
-        <div className="space-y-4 px-4">
+        <div className="space-y-4">
           <div className="overflow-hidden rounded-2xl border border-line bg-panel">
             <label className="flex items-center gap-3 border-b border-line p-4">
               <AtSign size={24} className="shrink-0 text-inkSubtle" />
