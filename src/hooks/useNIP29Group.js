@@ -10,7 +10,7 @@ import { shortNpub } from '../lib/npub';
 import { getMyGroups, setMyGroups } from '../lib/myGroups';
 import { encodeGroupPayload, decodeGroupEvent } from '../lib/crypto/groupMessageCodec';
 import { getAllGroupKeys, getCurrentGroupKey, putGroupKey } from '../lib/crypto/groupKeyStore';
-import { authorizeGroupControl, authorizeGroupPin, authorizeMemberSnapshot, groupRelayPubkey, groupTimelinePlans, isRestrictedRelayClose, pickMemberSnapshot, pinnedMessageOf, trustedGroupCreator } from '../lib/crypto/groupMembership';
+import { authorizeGroupControl, authorizeGroupPin, authorizeMemberSnapshot, groupFrameAccepted, groupRelayPubkey, groupTimelinePlans, isRestrictedRelayClose, pickMemberSnapshot, pinnedMessageOf, trustedGroupCreator } from '../lib/crypto/groupMembership';
 import { grantKeyRequest, loadMemberSnapshot, loadMemberSnapshotRecord, memberKey, patchMemberSnapshot, rememberMembers, rotateGroupEpoch } from '../lib/crypto/groupKeyRotation';
 import { generateGroupKey } from '../lib/crypto/groupCipher';
 import { heldGroupRow } from '../lib/groupJoin';
@@ -246,6 +246,10 @@ function handleGroupSocketFrame(session, raw) {
     console.warn('[NIP29] Ignoring malformed group relay frame:', error);
     return;
   }
+  if (!Array.isArray(msg)) {
+    console.warn('[NIP29] Ignoring a group relay frame that is not an array.');
+    return;
+  }
 
   if (msg[0] === 'AUTH') {
     const challenge = typeof msg[1] === 'string' ? msg[1] : msg[1]?.challenge;
@@ -278,6 +282,13 @@ function handleGroupSocketFrame(session, raw) {
       if (accepted) waiter.resolve(msg);
       else waiter.reject(new Error(reason || 'relay rejected event'));
     }
+  }
+
+  // Every EVENT frame is verified (id and signature) before any listener
+  // sees it: a forged frame is dropped here, at the point of entry.
+  if (!groupFrameAccepted(msg)) {
+    console.warn('[NIP29] Dropped a group relay event with a bad id or signature:', msg?.[2]?.id);
+    return;
   }
 
   for (const listener of session.listeners) {

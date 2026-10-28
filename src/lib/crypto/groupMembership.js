@@ -1,3 +1,4 @@
+import { verifyEvent } from 'nostr-tools';
 import { groupRelayHttp } from '../egress';
 
 const HEX_PUBKEY = /^[0-9a-f]{64}$/;
@@ -179,8 +180,35 @@ export function memberSnapshotGroupId(event) {
   return tags.find((tag) => tag[0] === 'd')?.[1] || tags.find((tag) => tag[0] === 'h')?.[1] || '';
 }
 
+// Audit finding: a socket frame's `pubkey` field is only a claim until the
+// event id and signature check out. Without this, anyone who could put a
+// frame on the group socket (a relay, or a hop that is not the relay) wrote
+// a 39002 naming the relay's pubkey and it was believed. True only when the
+// id is the hash of the event and the signature verifies against its pubkey.
+export function eventSignatureValid(event) {
+  if (!event || typeof event !== 'object') return false;
+  try {
+    // A plain copy of the seven wire fields: nostr-tools caches "verified" on
+    // the object itself, and an object spread from a verified event carries
+    // that mark along with edited tags. Only the wire fields are trusted.
+    const { id, pubkey, created_at, kind, tags, content, sig } = event;
+    return verifyEvent({ id, pubkey, created_at, kind, tags, content, sig }) === true;
+  } catch {
+    return false;
+  }
+}
+
+// The point of entry for the group socket: every EVENT frame is verified
+// before any listener sees it. Frames that are not EVENT carry no signed
+// event and pass through; an EVENT frame with a bad id or signature does not.
+export function groupFrameAccepted(msg) {
+  if (!Array.isArray(msg) || msg[0] !== 'EVENT') return true;
+  return eventSignatureValid(msg[2]);
+}
+
 export function authorizeMemberSnapshot({ event, relayPubkey = GROUP_RELAY_PUBKEY } = {}) {
   if (!event || event.kind !== 39002) return false;
+  if (!eventSignatureValid(event)) return false;
   if (String(event.pubkey || '').toLowerCase() !== String(relayPubkey || '').toLowerCase()) return false;
   if (!memberSnapshotGroupId(event)) return false;
   const people = (event.tags || []).filter((tag) => tag[0] === 'p');
