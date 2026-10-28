@@ -61,6 +61,9 @@ function MenuTile({ item, onBuy, onCopyLink }) {
         >
           Copy link
         </button>
+        {/* A menu link is public: whoever holds it can open the menu. Said
+            once, small, above the tap rather than after it. */}
+        <p className="mt-0.5 text-center text-[11px] leading-snug text-inkSubtle">Anyone with the link can open this menu.</p>
       </div>
     </article>
   );
