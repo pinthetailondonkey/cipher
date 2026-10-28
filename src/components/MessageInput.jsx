@@ -126,7 +126,10 @@ export default function MessageInput({ sendMessage, handleImageUpload, startReco
   };
   const basePlusItems = [
     { key: 'photo', icon: Image, label: 'Photo gallery' },
-    { key: 'camera', icon: Camera, label: 'Camera' },
+    // The control opens the QR scanner, so it says so. Photography is the
+    // Photo gallery row above it; a picture taken with the camera app lands
+    // in that picker too.
+    { key: 'camera', icon: Camera, label: 'Scan QR code' },
     { key: 'document', icon: FileText, label: 'Document' },
   ];
   const plusItems = (activeGroup?.id ? basePlusItems : [
