@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { unreadCountsFor } from '../../lib/unreadCounts';
 import { db, deletedMessageIds, saveMessage, openDBFor, sweepTempMessages } from '../../db';
 import { getMyGroups } from '../../lib/myGroups';
-import { mergeReactions } from '../../lib/reactions';
+import { mergeReactions, reactionFiltersFor, reactionFromEvent, withoutDeletedReactions } from '../../lib/reactions';
 import { generalRelays, groupRelays, queryAllPages, queryWithTimeout } from '../../lib/relays';
 import { getAuthenticatedPool } from '../../lib/pool';
 import { useChatStore } from '../../store/chatStore';
@@ -265,9 +265,8 @@ export function useChatBootstrap({
     if (showLoader) setLoading(true);
     try {
       const pool = await getAuthenticatedPool(identity);
-      const [groupMetaEvents, reactionsEvents, delEvents] = await Promise.all([
+      const [groupMetaEvents, delEvents] = await Promise.all([
         queryWithTimeout(pool, groupRelays, { kinds: [39000, 9002], limit: 100 }),
-        queryWithTimeout(pool, generalRelays, { kinds: [7], limit: 500 }),
         queryWithTimeout(pool, generalRelays, { kinds: [5], authors: [identity.pk], limit: 500 }),
       ]);
       const localGroupsNow = getMyGroups(identity.pk);
@@ -300,15 +299,6 @@ export function useChatBootstrap({
       });
       setGroups(Array.from(allGroupsMap.values()));
       const dmPubkeys = await fetchDMs();
-      const reactionMap = {};
-      reactionsEvents.forEach(ev => {
-        const targetId = ev.tags.find(t => t[0] === 'e')?.[1];
-        if (targetId) {
-          if (!reactionMap[targetId]) reactionMap[targetId] = [];
-          reactionMap[targetId].push({ emoji: ev.content, pubkey: ev.pubkey });
-        }
-      });
-      setReactions((prev) => mergeReactions(prev, reactionMap));
       const deleted = new Set();
       delEvents.forEach(ev => {
         if (ev.pubkey === identity.pk) {
@@ -317,6 +307,32 @@ export function useChatBootstrap({
         }
       });
       (await deletedMessageIds()).forEach((id) => deleted.add(id));
+      // Reactions to the messages this device holds, asked for by id in
+      // batches (newest first, capped). The old query took the latest 500
+      // reactions of anyone, which held almost none of ours. A reaction whose
+      // event we deleted stays gone.
+      try {
+        const held = (await db.messages.toArray())
+          .filter((m) => m && typeof m.id === 'string')
+          .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0))
+          .map((m) => m.id);
+        const batches = await Promise.allSettled(
+          reactionFiltersFor(held).map((filter) => queryWithTimeout(pool, generalRelays, filter)),
+        );
+        const reactionMap = {};
+        for (const batch of batches) {
+          if (batch.status !== 'fulfilled') continue;
+          withoutDeletedReactions(batch.value, deleted).forEach((ev) => {
+            const targetId = ev.tags.find(t => t[0] === 'e')?.[1];
+            if (!targetId) return;
+            if (!reactionMap[targetId]) reactionMap[targetId] = [];
+            reactionMap[targetId].push(reactionFromEvent(ev));
+          });
+        }
+        setReactions((prev) => mergeReactions(prev, reactionMap));
+      } catch (error) {
+        console.warn('[reactions] Could not load reactions for the messages on this device:', error);
+      }
       setDeletedMsgs(deleted);
       await sweepTempMessages();
       const allDbMsgs = await db.messages.toArray();
