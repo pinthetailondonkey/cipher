@@ -158,3 +158,24 @@ The interface the product ships behind. The spec was written by the founder on 2
 - **Order of work:** shared components first (they are the reuse contract), then the four destinations in spec order, then the eight reference screens, then the quality pass at real phone widths.
 - **Hard gates for this phase, from the brief:** 0 hex colours in JSX outside `index.css`, 0 `z-[...]` literals, 0 duplicate toast systems, 0 unwired buttons, and the guard test bans the banned words.
 - **Never in this phase:** invented data, invented order states, a cart, a public marketplace, calls, escrow the code does not have, a replaced nav, or a redrawn logo.
+
+
+## Phase 8 — docs, and the doors found along the way
+
+Landed and pushed, one change per commit, every gate green at each one:
+
+- `2550bdf` — `roundToScale` in `src/lib/paymentState.js`; acceptance rounds half up to the coin's own scale instead of refusing, and refuses only what rounds away to nothing. This is the M2 gap from Phase 1 and the only real money defect found by execution.
+- `fdc6f0a` — Connections carries the Payment watcher and Push gateway rows again, writing through the pinned `setRelayOverride` from `src/lib/egress.js` with no change to it. Closes "a payment can never become confirmed": the missing piece was a screen, not a mechanism.
+- `d5560ff` — a scanned group, menu item, chat or burn note opens, through the same boot path a tapped link uses (`src/lib/scannedTarget.js`, 7 tests). Closes the scanner item.
+- `b825493` — Phase 9 above, spec into the repo.
+- `8f3b2ce` — Share link on a payment block called `sharePayment`, which was defined nowhere: a tap threw a ReferenceError. Fixed.
+- `08d6d85` — edit history is a row in the message menu, so the record the app already wrote can be read. Closes that item.
+- `d277e77` — README: a real front page, run commands, and the deploy-verification law. The hosting section no longer claims three Vercel projects and no canonical domain; the canonical address is `https://ciphermessenger.org`. `t=order` was already in the push docs.
+- `b0e7f39` — `AGENTS.md` was a different product's sandbox contract (App Builder workspace: scaffold TanStack Start, keep a third-party branding pill, deploy to Vercel). Replaced with a Cipher brief pointing at CLAUDE.md. The old text is recoverable at blob `bec0e5b`.
+
+Still open, and each one needs a decision rather than code:
+
+- **Safety numbers never change.** `markSafetyChange` has no caller. There is no handle-to-key map in the app to hang a trigger on, so wiring one would mean inventing the trigger. Question: should a changed safety number be raised on opening a chat with a known key, and is a toast enough?
+- **Escrow stays off.** `ESCROW_WIRING_LANDED = false` in `src/components/MessageBubble.jsx`. Nothing was wired.
+- **Live host is 887 commits behind** the current `main` as of 2026-10-28; the check and its evidence are in README.md.
+- **`cipher-70` never filed a report** for the work it took.
