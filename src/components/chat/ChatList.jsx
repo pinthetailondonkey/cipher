@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { motion, useMotionValue, useTransform, animate } from 'framer-motion';
 import {
   Archive,
@@ -24,6 +24,7 @@ import {
   X,
 } from 'lucide-react';
 import { notifTotalOf, useChatStore } from '../../store/chatStore';
+import { boundReceipts } from '../../lib/vendorReviews';
 import { haptic } from '../../lib/haptics';
 import { noHexName } from '../../lib/npub';
 import Logo from '../Logo';
@@ -88,6 +89,7 @@ function ChatRow({
   pinned,
   archived,
   blocked,
+  menuDoor,
   isRevealed,
   menuOpen,
   menuPanel,
@@ -252,7 +254,7 @@ function ChatRow({
                         >
                           {archived ? 'Unarchive' : 'Archive'}
                         </MenuItem>
-                        {isDm && (
+                        {isDm && menuDoor && (
                           <MenuItem icon={<Store size={14} className="text-inkMuted" />} onClick={() => { onViewShop(); onMenuClose(); }}>
                             Their menu
                           </MenuItem>
@@ -358,13 +360,30 @@ export default function ChatList({ onOpenChat, onRefresh }) {
   // moment a new account needs those doors most. Regression: the empty
   // return used to sit above the header render, which stranded those
   // buttons on exactly the screen where they matter.
+  // A menu door belongs only where there is a menu behind it: a key this
+  // device has bought from (a bound receipt names them the vendor) or one
+  // whose product or order already arrived in the thread. The old gate read
+  // the thread alone, so a vendor met through a shared link and never
+  // messaged had no door at all.
+  const soldTo = useMemo(() => {
+    const vendors = new Set();
+    try {
+      for (const row of boundReceipts()) {
+        const vendor = String(row?.receipt?.body?.vendor || '').toLowerCase();
+        if (vendor) vendors.add(vendor);
+      }
+    } catch { /* no storage, no claim */ }
+    return vendors;
+  }, [dms]);
+
   const dmList = Object.entries(dms).map(([pubkey, msgs]) => {
     const profile = profiles[pubkey];
     const safeProfile = (profile && profile.name && !/^[0-9a-f]{8,64}$/i.test(profile.name))
       ? profile
       : { displayName: noHexName(profile, pubkey), picture: null, name: noHexName(profile, pubkey) };
     const commercial = msgs.some((m) => m.data?.type === 'cipher_order' || m.data?.type === 'order_request' || m.data?.type === 'product');
-    return { type: 'dm', id: pubkey, lastMsg: msgs[msgs.length - 1], profile: safeProfile, vendor: commercial };
+    const menuDoor = commercial || soldTo.has(pubkey.toLowerCase());
+    return { type: 'dm', id: pubkey, lastMsg: msgs[msgs.length - 1], profile: safeProfile, vendor: commercial, menuDoor };
   });
 
   const groupList = groups.map(g => ({
@@ -440,6 +459,7 @@ export default function ChatList({ onOpenChat, onRefresh }) {
       pinned={pinned}
       archived={archivedChats.includes(chat.id)}
       blocked={chat.type === 'dm' && blockedUsers.includes(chat.id)}
+      menuDoor={chat.menuDoor === true}
       isRevealed={revealed.has(chat.id)}
       menuOpen={menuFor === chat.id}
       menuPanel={menuPanel}
