@@ -106,6 +106,7 @@ export default function MessageInput({ sendMessage, handleImageUpload, startReco
       const entry = await uploadPrivateMedia(file);
       const outcome = await sendMessage('', { type: 'audio', ...entry, name: file.name });
       if (outcome === 'sent') setToast({ type: 'success', message: 'File sent!' });
+      else if (outcome === 'queued') setToast({ type: 'success', message: 'File queued. It will send when a relay answers.' });
     } catch (error) {
       console.error('[media] Encrypted file upload failed:', error);
       setToast({ type: 'error', message: 'The file was not sent. No media host took the encrypted file.' });

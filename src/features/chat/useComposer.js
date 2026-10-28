@@ -113,9 +113,10 @@ export function useComposer({ identity, sendDM, sendGroupMessage }) {
         setToast({ type: 'error', message: 'Failed to send to group' });
         return 'failed';
       }
-      // 'sent': the relay's event replaces the placeholder bubble.
-      const outboxEntry = result.queued ? await db.outbox.get(result.event.id) : null;
-      const deliveryStatus = result.queued && outboxEntry ? 'queued' : 'sent';
+      // 'sent' or 'queued': the signed event replaces the placeholder bubble.
+      // The outcome already says whether a relay took it, so the bubble never
+      // says sent on the strength of an outbox row alone.
+      const deliveryStatus = outcome === 'queued' ? 'queued' : 'sent';
       let confirmedMessage;
       useChatStore.getState().setGroupMessages(prev => ({
         ...prev,
@@ -136,7 +137,7 @@ export function useComposer({ identity, sendDM, sendGroupMessage }) {
         timestamp: result.event.created_at,
         deliveryStatus,
       });
-      return 'sent';
+      return outcome;
     }
     if (isDmView && activeDm) await saveMessage(activeDm, newMsg);
     setReplyingTo(null);
@@ -202,6 +203,10 @@ export function useComposer({ identity, sendDM, sendGroupMessage }) {
       const outcome = await sendMessage(caption, { type: 'album', media, message: caption });
       if (outcome === 'sent') {
         setToast({ type: 'success', message: media.length > 1 ? 'Album sent!' : 'Image sent!' });
+      } else if (outcome === 'queued') {
+        // The encrypted file reached a host and the message is in the outbox,
+        // but no relay has it: say queued, not sent.
+        setToast({ type: 'success', message: media.length > 1 ? 'Album queued. It will send when a relay answers.' : 'Image queued. It will send when a relay answers.' });
       }
     } catch (err) {
       console.error('[media] Encrypted photo upload failed:', err);
@@ -232,6 +237,7 @@ export function useComposer({ identity, sendDM, sendGroupMessage }) {
           const entry = await uploadPrivateMedia(file, blossomServers());
           const outcome = await sendMessage('', { type: 'audio', ...entry });
           if (outcome === 'sent') setToast({ type: 'success', message: 'Voice note sent!' });
+          else if (outcome === 'queued') setToast({ type: 'success', message: 'Voice note queued. It will send when a relay answers.' });
         } catch (err) {
           console.error('[media] Encrypted voice upload failed:', err);
           setToast({ type: 'error', message: 'The voice note was not sent. No media host took the encrypted file.' });

@@ -6,9 +6,15 @@ import { sendOutcome } from './sendOutcome.js';
 // These are the answers a send can come back with, including the two that
 // used to be indistinguishable from success at the call site.
 
-test('a send with a relay event is sent', () => {
+test('a send a relay took is sent', () => {
   assert.equal(sendOutcome({ success: true, event: { id: 'abc' } }), 'sent');
-  assert.equal(sendOutcome({ success: true, queued: true, event: { id: 'abc' } }), 'sent');
+  assert.equal(sendOutcome({ success: true, queued: false, event: { id: 'abc' } }), 'sent');
+});
+
+// The outbox holding the signed event is progress, not delivery: no relay
+// has it, so the bubble says queued and no sent toast is shown.
+test('a send the outbox is holding is queued, not sent', () => {
+  assert.equal(sendOutcome({ success: true, queued: true, event: { id: 'abc' } }), 'queued');
 });
 
 test('success without an event is not sent', () => {
