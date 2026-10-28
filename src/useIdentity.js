@@ -602,6 +602,12 @@ export function useIdentity() {
       return { success: false, error: 'Account not found on this device. Use your 12-word recovery phrase if you are on a new device.' };
     }
 
+    // Same damaged-copy answer as unlock(): a vault no PIN could open is not
+    // a wrong PIN, and this path charges attempts exactly like unlock does.
+    if (isDamagedVault(targetVault)) {
+      return { success: false, error: 'This device holds a damaged copy of the account. Use your 12 words.' };
+    }
+
     let skArray;
     try {
       skArray = await decryptKey(targetVault, pin);

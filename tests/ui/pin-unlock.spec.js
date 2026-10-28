@@ -156,6 +156,29 @@ test.describe('PIN unlock against real vaults', () => {
     await expect(page.getByRole('alert')).toContainText('Wrong PIN. 4 attempts left.');
     expect(await storedFails(page)).toBe('1');
   });
+
+  test('salt metadata of the wrong shape is a damaged copy, not a wrong PIN', async ({ page }) => {
+    // A non-array salt fails PBKDF2 before any PIN is tried. Before the
+    // guard grew eyes for metadata, this charged one of the five attempts
+    // against a copy no PIN could ever open.
+    const vault = await vaultFor('87654321');
+    vault.salt = 'sixteen-bytes';
+    await seedAccount(page, { vault });
+    await typePin(page, '87654321');
+    await pressUnlock(page);
+    await expect(page.getByRole('alert')).toContainText('damaged copy');
+    expect(await storedFails(page)).toBeNull();
+  });
+
+  test('iter metadata of the wrong shape is a damaged copy, not a wrong PIN', async ({ page }) => {
+    const vault = await vaultFor('87654321');
+    vault.iter = 'lots';
+    await seedAccount(page, { vault });
+    await typePin(page, '87654321');
+    await pressUnlock(page);
+    await expect(page.getByRole('alert')).toContainText('damaged copy');
+    expect(await storedFails(page)).toBeNull();
+  });
 });
 
 test.describe('Restore by handle keeps what the entry already held', () => {
@@ -180,6 +203,21 @@ test.describe('Restore by handle keeps what the entry already held', () => {
     expect(entry.displayName).toBe('Alice');
     expect(entry.createdAt).toBe(1700000000000);
     expect(entry.confirmed).toBe(true);
+  });
+
+  test('a damaged vault found by handle answers damaged, not wrong PIN', async ({ page }) => {
+    // The relay path charges attempts exactly like unlock, so it needs the
+    // same damaged-copy answer: no PIN could open this shape, and none of
+    // the five attempts may be spent finding that out.
+    const vault = await vaultFor('87654321');
+    vault.salt = 'sixteen-bytes';
+    await seedAccount(page, { vault, handle: 'alice' });
+    await page.getByRole('button', { name: 'Forgot PIN? Restore account' }).click();
+    await page.getByPlaceholder('yourhandle').fill('alice');
+    await page.getByPlaceholder('PIN (6+ digits)').fill('87654321');
+    await page.getByRole('button', { name: 'Continue' }).click();
+    await expect(page.getByText(/damaged copy/)).toBeVisible({ timeout: 10000 });
+    expect(await storedFails(page)).toBeNull();
   });
 });
 

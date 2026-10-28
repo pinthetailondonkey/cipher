@@ -19,8 +19,19 @@ export function isAcceptableNewPin(pin) {
 // damaged copy, and asking a PIN of it would read the refusal as a wrong PIN
 // and spend one of the five attempts that delete the account.
 export function isDamagedVault(vault) {
-  return !vault || typeof vault !== 'object'
-    || !Array.isArray(vault.iv) || !Array.isArray(vault.data);
+  if (!vault || typeof vault !== 'object') return true;
+  if (!Array.isArray(vault.iv) || !Array.isArray(vault.data)) return true;
+  // KDF metadata: a current envelope carries salt (a non-empty byte array)
+  // and iter (a positive number); a legacy envelope carries neither. A
+  // present field of the wrong shape fails PBKDF2 before any PIN is tried,
+  // so it answers damaged here rather than spend an attempt. What no guard
+  // can see: metadata that is shaped right but wrong in value — a salt of
+  // three bytes, say — derives a key that fails only at the GCM tag, exactly
+  // like a wrong PIN. That failure is charged like one and cannot be told
+  // apart; the lock-screen spec measures it.
+  if (vault.salt !== undefined && !(Array.isArray(vault.salt) && vault.salt.length > 0)) return true;
+  if (vault.iter !== undefined && !(typeof vault.iter === 'number' && Number.isFinite(vault.iter) && vault.iter >= 1)) return true;
+  return false;
 }
 
 export function pinFailureKey(pubkey) {
