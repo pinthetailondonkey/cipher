@@ -14,6 +14,8 @@ export function mergeStoredMessage(existing, incoming, chatId, { tombstoned = fa
   if (Object.keys(patch).length) {
     merged.localPatch = patch;
     merged.data = { ...(incoming?.data ?? existing?.data ?? {}), ...patch };
+    // The bubble reads the top-level flag, so an edit patch carries it up.
+    if (patch.edited) merged.edited = true;
   }
   return merged;
 }

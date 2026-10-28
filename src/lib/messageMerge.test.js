@@ -66,3 +66,19 @@ test('a deleted message is not written again when the relay copy is re-saved', a
   assert.match(bootstrap, /kinds: \[5\], authors: \[identity\.pk\]/);
   assert.match(bootstrap, /\(await deletedMessageIds\(\)\)\.forEach\(\(id\) => deleted\.add\(id\)\)/);
 });
+
+test('a local edit survives the history fetch that serves the original text again', async () => {
+  const original = () => ({ id: 'm-edit', isSender: true, pubkey: 'me', timestamp: 10, data: { type: 'text', message: 'original' } });
+  const stored = mergeStoredMessage(undefined, original(), 'peer');
+  const edited = patchStoredMessage(stored, { message: 'EDITED', edited: true });
+  assert.equal(edited.data.message, 'EDITED');
+  assert.equal(edited.edited, true);
+  const refetched = mergeStoredMessage(edited, original(), 'peer');
+  assert.equal(refetched.data.message, 'EDITED');
+  assert.equal(refetched.data.edited, true);
+  assert.equal(refetched.edited, true);
+  const fs = await import('node:fs');
+  const commands = fs.readFileSync(new URL('../features/chat/useMessageCommands.js', import.meta.url), 'utf8');
+  assert.match(commands, /patchMessage\(msg\.id, \{ message: newText, edited: true \}\)/);
+  assert.equal(/db\.messages\.put\(updated\)/.test(commands), false);
+});
