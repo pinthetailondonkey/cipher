@@ -1,19 +1,26 @@
-# React + Vite
+# Cipher
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+An encrypted messenger and direct-deal menu, in a browser or an installed app. No phone number, no account server, no custody of anyone's money. The product brief is [docs/VISION.md](docs/VISION.md); the words rules are [docs/VOICE.md](docs/VOICE.md); the launch order is [docs/LAUNCH-LOG.md](docs/LAUNCH-LOG.md).
 
-Currently, two official plugins are available:
+## Run it
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+```
+npm install
+npm run dev        # http://0.0.0.0:8080
+npm run build      # dist/, and the bundle name the live-host check below looks for
+npm test           # the unit suite
+npm run test:ui    # builds with the test seam, then the browser suite
+npm run lint       # oxlint
+npm run self-host  # serves the built app on PORT (8080 by default)
+```
 
-## React Compiler
+A fresh checkout sets the commit scanner once: `git config core.hooksPath .githooks`. Commit as the project's noreply identity, never a personal address. No secret, key, token or credential file enters a commit — `.env.local`, `dist/`, `.vercel/` and `android/` stay untracked.
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## Verify a deploy by the page, never a status code
 
-## Expanding the Oxlint configuration
+HTTP 200 proves nothing: a redirect, a gate or another project's page all answer 200. A deploy is proven by `<title>Cipher</title>` from `index.html` **and** an asset bundle that matches a build of the checked-out commit. Read the deployed `/assets/index-*.js` name, run `npm run build` on the commit you believe is live, and compare the two names. If they differ, the host is serving something else.
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and Oxlint's TypeScript related rules in your project.
+What that check last found is in [docs/LAUNCH-LOG.md](docs/LAUNCH-LOG.md).
 
 ## Commerce and native notifications
 
@@ -23,35 +30,20 @@ If you are developing a production application, we recommend using TypeScript wi
 - While the app is open, local notifications fire for messages and orders. A locked phone is the push box's job. APNs is in: iOS has no other way to buzz. The gateway sends for `t=msg`, `t=order`, and `t=call` only when `APNS_KEY_PATH`, `APNS_KEY_ID`, `APNS_TEAM_ID`, and `APNS_TOPIC` are all set. They are not set in this repo, and no iPhone was buzzed, so the installed app does not notify.
 - The Nostr outbox persists rejected events, displays delivery state, retries with capped exponential backoff, and flushes on network/relay reconnection. A service worker caches the app shell and same-origin build assets for offline reopening; relay delivery still requires a connection.
 - Content-Security-Policy allows HTTPS images (`img-src` includes `https:`), so remote profile pictures and Blossom images can render. Remote audio and video stay blocked: `media-src` is `'self' blob:` only. `connect-src` still allows `https:` plus the listed Nostr relays.
-- `Strict-Transport-Security` is `max-age=63072000; includeSubDomains; preload`. The production host already sends that policy; `vercel.json` now declares it as well.
-- The installed shell loads the bundled files in `dist`. `capacitor.config.json` has no `server.url`. Putting that field back on `https://sonic-cobalt-4m6q5vj.vercel.app` makes every native open hit Vercel. The website is still that Vercel host until you serve the mirror yourself. `vercel.json` no longer matches the live response: `upgrade-insecure-requests` is gone, and `connect-src` now allows `http:`, `ws:`, `stun:`, `stuns:`, `turn:`, and `turns:` so a pasted relay or `.onion` is not blocked. `img-src` allows `https:` and `http://*.onion` only, so a clearnet `http` image does not load. The live host keeps the old policy until the next deploy. What the Vercel projects are, which one is canonical, and how a deploy is verified: see [Vercel](#vercel).
+- `Strict-Transport-Security` is `max-age=63072000; includeSubDomains; preload`. `vercel.json` declares that policy and the rest of the current one; the live host only sends it after a redeploy picks the file up.
+- The installed shell loads the bundled files in `dist`. `capacitor.config.json` has no `server.url`, and it must stay that way: a `server.url` makes every native open fetch a remote page instead of the files in the app.
 
-## Vercel
+## Hosts
 
-The team sits under the Vercel org id `team_Bv4z3VGkmdizi5WrM1btO2ih` and holds three projects. That comes from the dashboard, not from this repo: `.vercel/` is gitignored (the checkout carries `.vercel/repo.json`, not git), so the repo can name only one of the three.
+The site is served from **https://ciphermessenger.org**. The root is the app itself. `/download` is a separate page pointing at the install files. The WebSocket relays are not behind that domain: the group relay stays on `groups.ciphertele.com`, and the rest of the hosts the app contacts are the rows in `src/lib/egress.js`, which is the only list that is authoritative.
 
-- `cipher` is the project this repo links to. `.vercel/repo.json` in the checkout names it with `prj_mlaczix1ryrdsu5cuO0Bqy5n4JA1` under that org id. Its host is `https://sonic-cobalt-4m6q5vj.vercel.app`, listed in `src/lib/egress.js` as the App host.
-- `https://cipher-beta-eight.vercel.app` is one of the other two. Older text called it a different project serving a different build (rechecked 2026-10-24: HTTP 200, `/assets/index-DuivEAWZ.js`, no `Content-Security-Policy`, no `X-Content-Type-Options`) and said to treat it as live until the hostname was attached to this project. That claim is stale. Rechecked 2026-10-25, the hostname is attached and this repo's `vercel.json` redirect now runs on it: it answers 308 with `location: https://sonic-cobalt-4m6q5vj.vercel.app/`. It is not reachable as an app anymore.
-- The third project is not named anywhere in the repo. Its name and role is an open question below.
+A deploy is proven by the page, never by a status code — see [above](#verify-a-deploy-by-the-page-never-a-status-code). What that check last found on the host that was live before the domain moved (2026-10-28):
 
-Canonical: `vercel.json` declares a permanent 308 from `cipher-beta-eight.vercel.app` to `https://sonic-cobalt-4m6q5vj.vercel.app/$1`, so sonic is the destination this repo points every other host at, and the redirect now takes effect on the one other host it governs. Whether any further host must redirect, and which of the three projects the other hostnames belong to, the repo does not establish. Nothing here makes sonic canonical beyond being that redirect destination.
+- It answers `<title>Cipher</title>`, and it loads `assets/index-Cu7vDotz.js`, last-modified 2026-10-24 19:25 UTC. No build of the current `main` produces that bundle name. The live page is 887 commits behind: everything merged since 2026-10-24 is not on it.
+- It still sends the older page policy (`upgrade-insecure-requests` present, `img-src` without `http://*.onion`, `connect-src` `https:` plus the relay list), so `vercel.json` and the live response disagree until a redeploy.
+- What it does send, matching `vercel.json`: `Strict-Transport-Security` `max-age=63072000; includeSubDomains; preload`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, and the `Permissions-Policy` line.
 
-Checks made on 2026-10-25, live:
-
-- A deploy is verified by the page itself, never by a status code. Reading HTTP 200 as success is what left the stale beta-eight text standing: a redirect page, a gate, or another project's page can all answer 200. The page that proves the deploy is the one this repo ships: `<title>Cipher</title>` from `index.html`, and the asset bundle it loads matches a build of the checked-out commit.
-- The live page at sonic answers with `<title>Cipher</title>`, and its bundle is `assets/index-Cu7vDotz.js`, last-modified 2026-10-24 19:25:57 UTC. No build of this repo's current `main` produces that bundle name, so the live deploy predates main as it stands now.
-- The live host still sends the old policy: `upgrade-insecure-requests` present, `img-src` without `http://*.onion`, `connect-src` `https:` plus the relay list. `vercel.json` and the live response still disagree until a redeploy picks the current file up.
-- What the live host does send, matching `vercel.json`: `Strict-Transport-Security` `max-age=63072000; includeSubDomains; preload`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, and the `Permissions-Policy` line.
-
-There is no custom domain. No domain other than the two hosts above appears anywhere in the repo or in `vercel.json`.
-
-SSO protection (`ssoProtection`) is disabled on the projects. That is a dashboard fact; the repo cannot confirm it, and a project with it on would answer the page fetch with a Vercel sign-in screen instead of `<title>Cipher</title>` — which is exactly the check the bullets above run.
-
-Open questions, nothing here settles them:
-
-- What are the other two Vercel projects' names, and which, if any, still serves traffic of its own?
-- What is the team's human name behind `team_Bv4z3VGkmdizi5WrM1btO2ih`?
-- Which commit is the live sonic deploy cut from, and when does a redeploy carry the current `vercel.json` — the new CSP — onto the host?
+`vercel.json` in this repo also redirects the older app hosts to one destination. That redirect is the repo's record of where traffic used to be pointed; it does not make any of those hosts the canonical address above. Which of them still answer, and with which build, is not established here. Deploys are made by hand, so nothing in this repo proves what the live host runs — only the title-and-bundle check does.
 
 ## Tor
 
@@ -119,7 +111,7 @@ Image proxying and a copy-paste onion-plus-TURN deploy recipe are not required n
 
 Media hosts are the three Blossom rows. Replace one, or type `off` to stop using it. Cipher does not fetch files on your behalf: a browser upload still comes from the device. Point the row at a Blossom server you run if that server should be the only one that sees the file.
 
-One command serves the built app. Vercel is optional.
+One command serves the built app. A hosting platform is optional.
 
 ```
 npm run self-host
@@ -147,7 +139,7 @@ What was checked without Tor Browser, and what was not:
 - The service worker is same-origin (`/sw.js`). Registration failure is logged and the app still opens. Tor Browser may refuse service workers. It registers only in production. That was not rechecked on an onion.
 - Voice calls use public STUN unless you paste a call relay. STUN shows your real IP. Calls use UDP, so Tor Browser alone does not cover them. Orbot’s VPN mode does. No TURN server was deployed. The call screen says this.
 
-Android: install Orbot and turn on VPN mode before opening Cipher. The installed shell no longer loads the Vercel host, so Orbot covers the webview without a remote page at launch. iOS is weaker. Orbot cannot force every other app through Tor. Use Onion Browser or the HTTP onion mirror. Do not put the Vercel host back into `server.url`.
+Android: install Orbot and turn on VPN mode before opening Cipher. The installed shell loads its own bundled files and no remote page at launch, so Orbot covers the webview. iOS is weaker. Orbot cannot force every other app through Tor. Use Onion Browser or the HTTP onion mirror. Do not put a remote host back into `server.url`.
 
 No VPN SDK and no Tor-in-webview library were added.
 
@@ -156,4 +148,4 @@ No VPN SDK and no Tor-in-webview library were added.
 - A kick is eventual, not instant. It takes full effect only once the new epoch has propagated to every member who is still in the group. Until that happens, and through a relay blip where the group falls back to the old epoch, the removed member may still decrypt. History from epochs they already held still decrypts for everyone who has those keys.
 - Five wrong PINs delete that account's on-device vault, including the encrypted recovery phrase stored on the device. Other accounts are not counted or deleted. The counter is stored per account and resets after a successful PIN unlock, biometric unlock, restore-by-handle, or restore-by-mnemonic. The lock screen says this before it happens, and the PIN error repeats it when two or fewer attempts remain. Only the 12 words that were written down can restore a wiped account. The minimum PIN is 6 digits.
 - `android/` is gitignored, so the native Android project is not in version control. `capacitor.config.json` is what records the packaged web host.
-- `.idea/`, `.vercel/`, and `.env.local` are not in the repo. `.env.local` had carried a `VERCEL_OIDC_TOKEN`. That token does not belong in git.
+- `.idea/`, `.vercel/` and `.env.local` are not in the repo, and are gitignored so they stay that way. One `.env.local` had carried a short-lived deployment token. It was removed from the working tree and from the repository's history. Removing a file does not un-copy a value: any token that was ever written down is rotated at the platform, not just deleted.
