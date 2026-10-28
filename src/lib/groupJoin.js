@@ -17,6 +17,31 @@ export function heldGroupRow(local, incoming) {
   };
 }
 
+// Bug #9 root cause (owner cannot approve): GroupView refreshed the open
+// group with { ...current, ...profile }. loadGroupProfile has no creator to
+// give (metadata never names one, on purpose), so it returns creator: '' and
+// the spread erased the creator this device knew - the owner's own group
+// lost its owner, and Join requests and Approve disappeared with it. A
+// profile refresh now merges only the fields the profile actually carries,
+// and a creator already known is never replaced or emptied by it.
+//
+// Returns { changed, next }; `changed` compares words with undefined and ''
+// as the same thing (a new group has no picture field at all).
+export function mergeGroupProfile(current, profile) {
+  const held = current && typeof current === 'object' ? current : {};
+  const incoming = profile && typeof profile === 'object' ? profile : {};
+  const word = (value) => (typeof value === 'string' ? value : '');
+  const next = { ...held };
+  for (const field of ['name', 'about', 'picture']) {
+    if (word(incoming[field])) next[field] = incoming[field];
+  }
+  if (!word(held.creator) && word(incoming.creator)) next.creator = incoming.creator;
+  if (held.isChannel == null && incoming.isChannel != null) next.isChannel = incoming.isChannel;
+  const changed = ['name', 'about', 'picture', 'creator'].some((field) => word(held[field]) !== word(next[field]))
+    || (held.isChannel == null) !== (next.isChannel == null);
+  return { changed, next };
+}
+
 // The one way into a group, from an invite link, search, or Discover. The
 // relay sees the NIP-29 join (kind 9021) before the group is saved here, so
 // nobody is left in a group the relay does not count them in, waiting for a

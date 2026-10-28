@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
-import { heldGroupRow, joinGroup } from './groupJoin.js';
+import { heldGroupRow, joinGroup, mergeGroupProfile } from './groupJoin.js';
 import { getMyGroups } from './myGroups.js';
 
 function memoryStorage() {
@@ -81,4 +81,44 @@ test('a held row keeps the words it holds; a new row takes the incoming ones', (
   assert.equal(halfHeld.isChannel, null, 'isChannel falls through when the held row says nothing');
   // No held row: the incoming one passes through untouched.
   assert.deepEqual(heldGroupRow(null, incoming), incoming);
+});
+
+// Bug #9 root cause: the profile refresh spread creator: '' over the creator
+// the device knew, so the owner's group lost its owner and the Join requests
+// panel and Approve button vanished.
+test('a profile refresh never erases a known creator, and undefined picture equals empty', () => {
+  const OWNER = 'ab'.repeat(32);
+  // A new group: no picture field at all, creator known.
+  const current = { id: 'g1', name: 'Room', about: '', creator: OWNER };
+  const profile = { id: 'g1', name: 'Room', about: '', picture: '', isChannel: false, creator: '' };
+  const { changed, next } = mergeGroupProfile(current, profile);
+  assert.equal(next.creator, OWNER);
+  assert.equal(changed, true, 'isChannel is learned once');
+  // The old merge, for the witness: the spread wipes the creator.
+  assert.equal({ ...current, ...profile }.creator, '');
+  // Once settled, the same refresh changes nothing (undefined !== '' no longer loops).
+  assert.equal(mergeGroupProfile(next, profile).changed, false);
+});
+
+test('a profile refresh merges only the words the profile has, and a joiner can still learn a creator', () => {
+  const OWNER = 'ab'.repeat(32);
+  const OTHER = 'cd'.repeat(32);
+  const held = { id: 'g1', name: 'Old', about: 'about', picture: 'p.png', creator: OWNER, isChannel: false };
+  const renamed = mergeGroupProfile(held, { id: 'g1', name: 'New', about: '', picture: '', creator: '' });
+  assert.deepEqual(renamed.next, { ...held, name: 'New' });
+  assert.equal(renamed.changed, true);
+  // A creator already known is not replaced by a profile's claim.
+  assert.equal(mergeGroupProfile(held, { id: 'g1', name: 'Old', creator: OTHER }).next.creator, OWNER);
+  // A row with no creator takes one the profile actually carries (an invite author).
+  assert.equal(mergeGroupProfile({ id: 'g1', name: 'Old' }, { id: 'g1', name: 'Old', creator: OTHER }).next.creator, OTHER);
+  // Nothing in, nothing changed.
+  assert.equal(mergeGroupProfile(held, { id: 'g1' }).changed, false);
+  assert.deepEqual(mergeGroupProfile(null, null).next, {});
+});
+
+test('GroupView refreshes the open group through the merge, not a spread', () => {
+  const view = fs.readFileSync(new URL('../components/chat/GroupView.jsx', import.meta.url), 'utf8');
+  assert.match(view, /mergeGroupProfile\(current, profile\)/);
+  assert.doesNotMatch(view, /\.\.\.current, \.\.\.profile/);
+  assert.doesNotMatch(view, /\.\.\.group, \.\.\.profile/);
 });
