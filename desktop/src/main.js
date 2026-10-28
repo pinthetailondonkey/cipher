@@ -21,6 +21,7 @@ const path = require('node:path');
 const { buildTorArgs, parseOsRelease, socksPortFromTorrc } = require('./tor.js');
 const { createUiServer } = require('./uiServer.js');
 const { dataDirBeside, resolveAppRoot, createDataDir } = require('./paths.js');
+const { applyWindowPolicy } = require('./windowPolicy.js');
 
 const uiPort = 9151;
 const appRoot = resolveAppRoot(process.execPath, {
@@ -164,6 +165,19 @@ app.whenReady().then(() => {
   });
   engine.setUserAgent(`Cipher/${app.getVersion()}`);
 
+  // Every webContents electron ever creates gets the same locks, before it
+  // loads anything: window.open denied, navigation off the UI origin
+  // cancelled, and WebRTC hard-off in private mode (src/windowPolicy.js).
+  // The WebRTC policy is a webContents setting. Chromium's switch has no
+  // 'never': disable_non_proxied_udp is the strictest, and because SOCKS
+  // carries no UDP it leaves candidate gathering nowhere to go; TCP-only
+  // TURN through the proxy still exists in theory, which is why this same
+  // file's refusal of the mic permission stays the second lock.
+  // CIPHER_CALLS=1 is the dev hatch.
+  app.on('web-contents-created', (_event, contents) => {
+    applyWindowPolicy(contents, { uiPort, allowCalls: devCalls });
+  });
+
   const ui = createUiServer(dist, uiPort);
   ui.on('error', (e) => {
     failLoudly('Cipher', `${e.code === 'EADDRINUSE' ? 'Another Cipher is already running' : 'The UI server could not start'}. (${e.message})`);
@@ -181,13 +195,6 @@ app.whenReady().then(() => {
       webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
     });
     win.removeMenu();
-    // WebRTC hard-off in private mode, per page before it loads anything.
-    // The policy is a webContents setting. Chromium's switch has no 'never':
-    // disable_non_proxied_udp is the strictest, and because SOCKS carries no
-    // UDP it leaves candidate gathering nowhere to go; TCP-only TURN through
-    // the proxy still exists in theory, which is why this same file's refusal
-    // of the mic permission stays the second lock. CIPHER_CALLS=1 is the dev hatch.
-    if (!devCalls) win.webContents.setWebRTCIPHandlingPolicy('disable_non_proxied_udp');
     win.loadURL(`http://127.0.0.1:${uiPort}/`);
     console.log(`[desktop] window up. Tor route: socks5://127.0.0.1:${socksPort}`
       + ` (default for every backend connection); WebRTC ${devCalls ? 'allowed (development escape hatch)' : 'engine-disabled'};`
