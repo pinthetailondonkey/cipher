@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
-import { LOCKED_OUT_MESSAGE, MIN_PIN_LENGTH, failPinAttempt, isAcceptableNewPin, pinFailureMessage, removeAccountKeys, resetPinFailures } from './lib/vaultLockout'
+import { LOCKED_OUT_MESSAGE, MIN_PIN_LENGTH, deviceKeyFailureMessage, failUnlockAttempt, isAcceptableNewPin, pinFailureMessage, removeAccountKeys, resetPinFailures } from './lib/vaultLockout'
 import { profileRelays as PROFILE_RELAYS } from './lib/relays'
-import { DeviceKeyMissing, getDeviceProvider, isDeviceVault, unwrapDeviceVault } from './lib/vaultEnvelope'
+import { DeviceKeyMissing, getDeviceProvider, isDeviceKeyError, isDeviceVault, unwrapDeviceVault } from './lib/vaultEnvelope'
 
 // Derive 32-byte secret key from BIP39 mnemonic
 export async function deriveSkFromMnemonic(mnemonic) {
@@ -87,6 +87,14 @@ export async function decryptKey(encryptedObj, secret, opts = {}) {
   )
   const dec = new TextDecoder()
   return JSON.parse(dec.decode(decrypted))
+}
+
+// The one way every unlock path opens a stored vault. pk names the account
+// the vault belongs to (the device layer is bound to it); a vault from the
+// older single-vault slot has no pk until it is opened, and only a device
+// vault needs one.
+export async function openVault(vault, pin, pk) {
+  return decryptKey(vault, pin, { pk })
 }
 
 const getVaults = () => {
@@ -249,7 +257,7 @@ export async function getMnemonicFromVault(sk, pk) {
   }
 }
 
-// Storage cleanup happens inside failPinAttempt. The database needs IndexedDB.
+// Storage cleanup happens inside failUnlockAttempt. The database needs IndexedDB.
 async function deleteLockedOutDatabase(pubkey) {
   if (!pubkey) return
   try {
@@ -461,7 +469,7 @@ export function useIdentity() {
         vault = JSON.parse(vaultStr);
       }
       
-      const skArray = await decryptKey(vault, pin)
+      const skArray = await openVault(vault, pin, activePk)
       
       const { getPublicKey, nip19 } = await import('nostr-tools')
       const sk = Uint8Array.from(skArray)
@@ -486,9 +494,13 @@ export function useIdentity() {
       setKeys({ sk, pk, npub: nip19.npubEncode(pk) })
       return { success: true }
     } catch (e) {
+      if (isDeviceKeyError(e)) {
+        const left = failUnlockAttempt(localStorage, failureAccount, e)
+        return { success: false, error: deviceKeyFailureMessage(e), remaining: left.remaining, deviceKey: e.code }
+      }
       let failure = { lockedOut: false, remaining: 0 }
       try {
-        failure = failPinAttempt(localStorage, failureAccount)
+        failure = failUnlockAttempt(localStorage, failureAccount, e)
       } catch (wipeErr) { console.error('Lockout wipe failed:', wipeErr) }
       if (failure.lockedOut) {
         sessionStorage.removeItem('cipher_session_sk');
@@ -596,9 +608,13 @@ export function useIdentity() {
 
     let skArray;
     try {
-      skArray = await decryptKey(targetVault, pin);
-    } catch {
-      const { lockedOut, remaining } = failPinAttempt(localStorage, targetPk);
+      skArray = await openVault(targetVault, pin, targetPk);
+    } catch (error) {
+      if (isDeviceKeyError(error)) {
+        failUnlockAttempt(localStorage, targetPk, error);
+        return { success: false, error: deviceKeyFailureMessage(error) };
+      }
+      const { lockedOut, remaining } = failUnlockAttempt(localStorage, targetPk, error);
       if (lockedOut) await deleteLockedOutDatabase(targetPk);
       return { success: false, error: lockedOut ? LOCKED_OUT_MESSAGE : pinFailureMessage(remaining) };
     }
@@ -859,9 +875,13 @@ export function useIdentity() {
 
       let skArray;
       try {
-        skArray = await decryptKey(vaults[targetPk].vault, pin);
-      } catch {
-        const { lockedOut, remaining } = failPinAttempt(localStorage, targetPk);
+        skArray = await openVault(vaults[targetPk].vault, pin, targetPk);
+      } catch (error) {
+        if (isDeviceKeyError(error)) {
+          failUnlockAttempt(localStorage, targetPk, error);
+          return { success: false, error: deviceKeyFailureMessage(error) };
+        }
+        const { lockedOut, remaining } = failUnlockAttempt(localStorage, targetPk, error);
         if (lockedOut) await deleteLockedOutDatabase(targetPk);
         return { success: false, error: lockedOut ? LOCKED_OUT_MESSAGE : pinFailureMessage(remaining) };
       }

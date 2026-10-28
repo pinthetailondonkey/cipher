@@ -1,3 +1,5 @@
+import { DeviceKeyCancelled, DeviceKeyError, DeviceKeyUnavailable } from './vaultEnvelope.js';
+
 export const PIN_FAILURE_LIMIT = 5;
 // A NEW PIN (create, restore from words, recover on a fresh device) needs 8.
 // An account made before that keeps its shorter PIN: unlocking never checks
@@ -107,6 +109,33 @@ export function failPinAttempt(storage, pubkey) {
     removeAccountKeys(storage, pubkey);
   }
   return result;
+}
+
+// The unlock paths call this for every failed open. Only a wrong PIN is a
+// guess and only a guess counts toward the wipe. A cancelled device prompt, a
+// missing device key or an unusable provider is not a PIN guess: it never
+// touches the counter, so the wipe cannot be triggered by closing a dialog or
+// by moving the files, and a real lockout still needs the device in hand.
+export function failUnlockAttempt(storage, pubkey, error) {
+  if (error instanceof DeviceKeyError) {
+    return {
+      counted: false,
+      lockedOut: false,
+      remaining: Math.max(0, PIN_FAILURE_LIMIT - readPinFailures(storage, pubkey)),
+      deviceKey: error.code,
+    };
+  }
+  return { counted: true, ...failPinAttempt(storage, pubkey) };
+}
+
+export function deviceKeyFailureMessage(error) {
+  if (error instanceof DeviceKeyCancelled) {
+    return 'The device prompt was cancelled, so nothing was counted. Try again when you are ready.';
+  }
+  if (error instanceof DeviceKeyUnavailable) {
+    return 'This device cannot lock an account to itself, so it cannot open this one. Restore the account from its 12 words on a device that can.';
+  }
+  return 'This device no longer holds the key to this account. Nothing was counted and nothing was deleted. Restore the account with its 12 words.';
 }
 
 export function pinFailureMessage(remaining) {

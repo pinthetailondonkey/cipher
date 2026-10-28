@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { decryptKey, encryptKey, isLegacyVault } from '../useIdentity.js';
+import { decryptKey, encryptKey, isLegacyVault, openVault } from '../useIdentity.js';
 import {
   DeviceKeyCancelled,
   DeviceKeyError,
@@ -9,6 +9,7 @@ import {
   deviceVaultAad,
   isDeviceVault,
   makeSecretProvider,
+  setDeviceProvider,
   wrapDeviceVault,
 } from './vaultEnvelope.js';
 
@@ -143,4 +144,20 @@ test('a v3 vault wrapping a v3 vault is refused, when built and when opened', as
   const sealedTwice = await provider.seal(PK_A, dk, new TextEncoder().encode(JSON.stringify(once)), aad);
   const twice = { v: 3, dk, ...sealedTwice };
   await assert.rejects(() => decryptKey(twice, '12345678', { pk: PK_A, provider }), DeviceKeyMissing);
+});
+
+test('openVault, the one door every unlock path uses, uses the page provider and keeps the failure types apart', async () => {
+  const provider = fakeProvider();
+  const sk = newSk();
+  const { vault } = await sealed(provider, PK_A, '12345678', sk);
+  setDeviceProvider(provider);
+  try {
+    assert.deepEqual(await openVault(vault, '12345678', PK_A), sk);
+    await assert.rejects(() => openVault(vault, '00000000', PK_A), (e) => !(e instanceof DeviceKeyError));
+  } finally {
+    setDeviceProvider(null);
+  }
+  await assert.rejects(() => openVault(vault, '12345678', PK_A), DeviceKeyMissing);
+  const v2 = await encryptKey(sk, '12345678');
+  assert.deepEqual(await openVault(v2, '12345678', null), sk);
 });

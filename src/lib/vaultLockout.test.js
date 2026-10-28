@@ -11,10 +11,13 @@ import {
   readPinFailures,
   recordPinFailure,
   failPinAttempt,
+  failUnlockAttempt,
+  deviceKeyFailureMessage,
   removeAccountKeys,
   removeAccountVault,
   resetPinFailures,
 } from './vaultLockout.js';
+import { DeviceKeyCancelled, DeviceKeyMissing, DeviceKeyUnavailable } from './vaultEnvelope.js';
 
 function memoryStorage(seed = {}) {
   const data = new Map(Object.entries(seed));
@@ -155,4 +158,38 @@ test('a new PIN needs 8 digits; an existing account keeps its shorter PIN', () =
   // account made before this change still opens with its 6-digit PIN.
   assert.equal(MIN_EXISTING_PIN_LENGTH, 6);
   assert.ok(MIN_EXISTING_PIN_LENGTH < MIN_PIN_LENGTH);
+});
+
+test('only a wrong PIN counts toward the wipe: a cancelled prompt or a missing device key never does', () => {
+  const storage = memoryStorage({ cipher_fails_pk: '4' });
+  for (const error of [new DeviceKeyCancelled(), new DeviceKeyMissing('no-provider'), new DeviceKeyMissing('wrong-key'), new DeviceKeyUnavailable()]) {
+    for (let i = 0; i < 10; i += 1) {
+      const result = failUnlockAttempt(storage, 'pk', error);
+      assert.equal(result.counted, false);
+      assert.equal(result.lockedOut, false);
+      assert.equal(result.remaining, 1);
+      assert.equal(result.deviceKey, error.code);
+    }
+  }
+  assert.equal(readPinFailures(storage, 'pk'), 4);
+  assert.equal(storage.getItem('cipher_vaults'), null);
+});
+
+test('a plain crypto failure still counts, and the fifth still wipes the account', () => {
+  const vaults = JSON.stringify({ pk: { vault: { v: 3 } } });
+  const storage = memoryStorage({ cipher_vaults: vaults, cipher_active_pubkey: 'pk' });
+  let last;
+  for (let i = 0; i < 5; i += 1) last = failUnlockAttempt(storage, 'pk', new Error('OperationError'));
+  assert.equal(last.counted, true);
+  assert.equal(last.lockedOut, true);
+  assert.equal(JSON.parse(storage.getItem('cipher_vaults')).pk, undefined);
+  assert.equal(storage.getItem('cipher_active_pubkey'), null);
+});
+
+test('a device key failure says what happened in plain words and never mentions a wrong PIN', () => {
+  assert.match(deviceKeyFailureMessage(new DeviceKeyCancelled()), /nothing was counted/i);
+  assert.match(deviceKeyFailureMessage(new DeviceKeyMissing()), /12 words/);
+  for (const error of [new DeviceKeyCancelled(), new DeviceKeyMissing(), new DeviceKeyUnavailable()]) {
+    assert.doesNotMatch(deviceKeyFailureMessage(error), /wrong pin/i);
+  }
 });
