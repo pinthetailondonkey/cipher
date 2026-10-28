@@ -525,7 +525,7 @@ export default function ChatList({ onOpenChat, onRefresh }) {
        the screen's name in the middle, one compose on the right. Everything
        the old row of icons and the drawer did lives inside the overflow, so
        every door still opens and nothing crowds the title. */
-    <div className="pt-safe md:px-3">
+    <div className="sticky top-0 z-fab -mx-4 bg-base px-4 pt-safe md:px-3">
       <div className="flex h-14 items-center gap-1">
         <span className="relative">
           <IconButton
