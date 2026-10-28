@@ -1,3 +1,4 @@
+import { useRef } from 'react';
 import { useChatStore } from '../../store/chatStore';
 import { db, patchMessage, saveMessage } from '../../db';
 import { scopedGet, scopedSet } from '../../lib/storage';
@@ -13,6 +14,11 @@ import { frozenIssuedMethods, issuedPaymentMethods, newestOwnIssuedMethods, orde
 import { stampArrival } from './media';
 
 export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, openChat }) {
+  // One order request per press. The Buy button has no disabled state, so a
+  // second tap while the first is still sending used to post a second request
+  // and a second "sent" toast. A ref, not state: the guard must hold across
+  // the re-render the optimistic insert causes.
+  const orderInFlight = useRef(false);
   const setToast = useChatStore((s) => s.setToast);
   const setSelectedMessage = useChatStore((s) => s.setSelectedMessage);
   const setDms = useChatStore((s) => s.setDms);
@@ -666,7 +672,7 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
     return true;
   };
 
-  const startOrderWithVendor = async (vendorPubkey, product, listingId) => {
+  const beginOrderWithVendor = async (vendorPubkey, product, listingId) => {
     if (!identity?.sk || !vendorPubkey) {
       setToast({ type: 'error', message: 'Unlock your account to contact the seller.' });
       return;
@@ -741,6 +747,19 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
       message: result.queued ? 'Order saved and will send when connected.' : 'Order request sent to seller.',
     });
   };
+
+  // Every caller goes through here. The flag clears in the finally however
+  // the send ends, so a failed request does not leave Buy locked out.
+  const startOrderWithVendor = async (...args) => {
+    if (orderInFlight.current) return;
+    orderInFlight.current = true;
+    try {
+      return await beginOrderWithVendor(...args);
+    } finally {
+      orderInFlight.current = false;
+    }
+  };
+
   const handleSaveEditedProduct = async (updatedProduct) => {
     if (!editingProduct) return;
     try {
