@@ -3,7 +3,13 @@
     {
       "source": "/(.*)",
       "has": [{ "type": "host", "value": "cipher-beta-eight.vercel.app" }],
-      "destination": "https://sonic-cobalt-4m6q5vj.vercel.app/$1",
+      "destination": "https://ciphermessenger.org/$1",
+      "permanent": true
+    },
+    {
+      "source": "/(.*)",
+      "has": [{ "type": "host", "value": "sonic-cobalt-4m6q5vj.vercel.app" }],
+      "destination": "https://ciphermessenger.org/$1",
       "permanent": true
     }
   ],
