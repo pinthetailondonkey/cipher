@@ -197,7 +197,12 @@ guards and network delivery are outside it.
   The only actionable owner action it found is flipping two pinned literals
   from `wss` to `ws` in `src/lib/egress.js:43` and the same string in
   `egress.test.js` — no certificate, no server change. That is a founder
-  decision and is not taken here.
+  decision and is not taken here. AUDITOR added the caution that decides
+  where it could even apply: on an `https` page a `ws://` socket is blocked
+  as mixed content, so the flip helps only an `http://<onion>` origin, not
+  the https clearnet PWA. OPSEC's attached drill — create, join, message each
+  way, reconnect through a restart — is the two-account exchange itself; only
+  a green drill would earn the words "groups work".
 
 ### Two branches under one name
 
