@@ -40,6 +40,15 @@ import './chat/thread.css';
 const EMPTY_REACTIONS = [];
 const EMPTY_THREAD = [];
 
+// Share link, on the bubble's payment block. It called a name that was never
+// defined here, so tapping it threw and nothing was shared. A payment link is
+// an address and an amount: copying the wallet URI is the honest share, and
+// the toast says which one was copied instead of claiming a share sheet.
+function sharePayment(currency, address, amount, uri) {
+  copyText(uri || address);
+  useChatStore.getState().setToast({ type: 'success', message: 'Payment link copied.' });
+}
+
 function messageText(data) {
   if (!data) return '';
   if (typeof data === 'string') {
