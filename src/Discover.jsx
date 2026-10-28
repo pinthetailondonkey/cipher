@@ -3,6 +3,8 @@ import { Search, Users, Loader2 } from 'lucide-react';
 import { useChatStore } from './store/chatStore';
 import { joinGroup } from './lib/groupJoin';
 import { groupOnlyRelays } from './lib/relays';
+import { readDirectory, whyUnavailable, READ_OK } from './lib/relayDirectoryRead';
+import { haptic } from './lib/haptics';
 import Button from './components/ui/Button';
 
 // One row of the public directory. A menu's body opens the vendor's menu
@@ -50,10 +52,23 @@ export default function Discover({ identity, onJoined }) {
   // A relay that could not be reached is not a relay that had nothing. The
   // screen keeps the groups this account already has and says which of the
   // two happened, so an empty directory is never claimed on a failed read.
-  const [directoryFailed, setDirectoryFailed] = useState(false);
+  // Empty string means the read completed; anything else is the reason it
+  // did not, worded for the person reading it.
+  const [directoryUnavailable, setDirectoryUnavailable] = useState('');
+  const directoryFailed = directoryUnavailable !== '';
   // A failed read is a question that can be asked again, so the screen offers
-  // the one button that asks it. Bumping this re-runs the same loader.
+  // the one button that asks it wherever the failure is shown. Bumping this
+  // re-runs the same loader.
   const [reloadKey, setReloadKey] = useState(0);
+  // One retry at a time: a second tap while the first is out would start a
+  // second read of the same relays.
+  const [retrying, setRetrying] = useState(false);
+  const retry = () => {
+    if (loading || retrying) return;
+    haptic('light');
+    setRetrying(true);
+    setReloadKey((key) => key + 1);
+  };
   const storeGroups = useChatStore((s) => s.groups);
   const groupKey = (storeGroups || []).map((group) => group.id).sort().join('|');
 
@@ -65,24 +80,25 @@ export default function Discover({ identity, onJoined }) {
     let alive = true;
     const fetchGroups = async () => {
       setLoading(true);
-      setDirectoryFailed(false);
+      setDirectoryUnavailable('');
       try {
-        const { SimplePool } = await import('nostr-tools');
-        const pool = new SimplePool();
-
-        const timeoutPromise = new Promise((_, reject) =>
-          setTimeout(() => reject(new Error('Network timeout')), 4000)
-        );
-
-        const fetchPromise = pool.querySync(
+        // The reader says which happened: a completed read that found
+        // nothing, or a read that never completed. pool.querySync cannot tell
+        // those apart — it hands back [] for both.
+        const read = await readDirectory(
           groupOnlyRelays,
-          { kinds: [39000, 9002], limit: 50 }
+          { kinds: [39000, 9002], limit: 50 },
+          { timeoutMs: 4000 }
         );
-
-        const events = await Promise.race([fetchPromise, timeoutPromise]);
         if (!alive) return;
+        if (read.status !== READ_OK) {
+          setDirectoryUnavailable(whyUnavailable(read.answers));
+          setRealGroups(useChatStore.getState().groups || []);
+          return;
+        }
+        setDirectoryUnavailable('');
 
-        const parsed = events.map(ev => {
+        const parsed = read.events.map(ev => {
           const getTag = (name) => ev.tags.find(t => t[0] === name)?.[1];
           return {
             id: getTag('h') || getTag('d') || ev.id,
@@ -118,10 +134,14 @@ export default function Discover({ identity, onJoined }) {
       } catch (err) {
         console.error("Failed to fetch groups:", err);
         if (!alive) return;
-        setDirectoryFailed(true);
+        setDirectoryUnavailable('The relay did not answer this screen.');
         setRealGroups(useChatStore.getState().groups || []);
       } finally {
-        if (alive) setLoading(false);
+        if (alive) {
+          setLoading(false);
+          // The retry door reopens whether the read worked or not.
+          setRetrying(false);
+        }
       }
     };
 
@@ -185,9 +205,17 @@ export default function Discover({ identity, onJoined }) {
 
       {error && <p role="alert" className="px-4 text-sm text-danger">{error}</p>}
       {directoryFailed && (
-        <p role="status" className="px-4 pb-2 text-[13px] text-inkMuted">
-          The relay could not be reached. What is listed here is what this account already saved.
-        </p>
+        /* The failure and its door stand together, and stand here rather
+           than inside the empty list: when this account already has saved
+           groups the list is not empty, and the retry must still be here. */
+        <div role="status" className="mx-4 mb-2 flex items-center gap-3 rounded-xl border border-line bg-panel px-3 py-2">
+          <p className="min-w-0 flex-1 text-[13px] text-inkMuted">
+            {directoryUnavailable} What is listed here is what this account already saved.
+          </p>
+          <Button variant="secondary" size="sm" className="shrink-0" disabled={loading || retrying} onClick={retry}>
+            {retrying || loading ? 'Trying…' : 'Try again'}
+          </Button>
+        </div>
       )}
       <div className="flex-1 overflow-y-auto pb-4">
         {loading ? (
@@ -205,21 +233,7 @@ export default function Discover({ identity, onJoined }) {
               {directoryFailed ? 'Could not reach the relay' : query.trim() ? 'Nothing matches that search' : 'No menus or groups yet'}
             </p>
             {directoryFailed ? (
-              <>
-                <p className="mt-1 px-4 text-[13px] text-inkMuted">There may be menus and groups, but this screen could not ask.</p>
-                <Button
-                  variant="secondary"
-                  size="md"
-                  className="mt-4"
-                  onClick={() => {
-                    setDirectoryFailed(false);
-                    setLoading(true);
-                    setReloadKey((key) => key + 1);
-                  }}
-                >
-                  Try again
-                </Button>
-              </>
+              <p className="mt-1 px-4 text-[13px] text-inkMuted">There may be menus and groups, but this screen could not ask. Use Try again above.</p>
             ) : query.trim() ? (
               <p className="mt-1 px-4 text-[13px] text-inkMuted">Try a different word, or clear the search to see everything.</p>
             ) : (
