@@ -11,6 +11,9 @@ import { readPublicViews } from '../lib/proofOfTrade';
 import { noHexName, shortNpub } from '../lib/npub';
 import { useChatStore } from '../store/chatStore';
 
+// Stable id so the sheet can name its dialog from the name it shows.
+const NAME_ID = 'profile-card-name';
+
 export default function ProfileModal({ pubkey, identity, onClose, onMessage }) {
   const profiles = useProfiles(pubkey ? [pubkey] : []);
   const profile = profiles[pubkey] || {};
@@ -74,13 +77,16 @@ export default function ProfileModal({ pubkey, identity, onClose, onMessage }) {
     });
   };
 
+  // The card draws its own header: the person's name. bareHeader keeps the
+  // shared bar from drawing a second one, and labelledBy names the dialog
+  // from the heading that is actually on screen.
   return (
-    <Sheet open={!!pubkey} onClose={onClose} label="Profile">
+    <Sheet open={!!pubkey} onClose={onClose} label="Profile" labelledBy={NAME_ID} bareHeader>
       <section className="px-6 pb-6 pt-4">
         <div className="flex items-center gap-4">
           <Avatar src={profile.picture} name={profile.displayName || profile.name || pubkey} className="!h-16 !w-16 text-xl" />
           <div className="min-w-0">
-            <h2 className="truncate text-2xl font-bold tracking-tight text-ink">{noHexName(profile, pubkey)}</h2>
+            <h2 id={NAME_ID} className="truncate text-2xl font-bold tracking-tight text-ink">{noHexName(profile, pubkey)}</h2>
             <p className="truncate text-[13px] text-ink/40">{shortNpub(pubkey)}</p>
           </div>
         </div>

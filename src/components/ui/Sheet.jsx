@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from 'framer-motion';
-import { useEffect, useRef } from 'react';
+import { useEffect, useId, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useModalA11y } from './modal';
 
@@ -14,7 +14,10 @@ const openSheets = [];
 // `heading` and `ariaLabel` are aliases of `title` and `label`: the earlier
 // converted screens call them by the first pair. A sheet that names only its
 // spoken label still gets the shared heading bar from that label, so no sheet
-// has to draw its own title and dismiss control inside the body.
+// has to draw its own title and dismiss control inside the body. A sheet that
+// already draws its own header opts out with `bareHeader`: it gets the drag
+// handle and no bar, and names itself through `labelledBy` pointing at the
+// heading it renders, or through `label` when it has no heading to point at.
 //
 // The overlay renders through a portal on document.body, not inside the app
 // tree. The shell wraps every tab in <main class="z-fab">, which is a
@@ -29,14 +32,19 @@ export default function Sheet({
   title,
   heading = null,
   children,
-  labelledBy,
+  labelledBy: labelledByProp,
   label = null,
   ariaLabel = null,
   closeLabel = 'Close',
+  bareHeader = false,
   className = '',
   bodyClassName = '',
 }) {
-  const headingText = title || heading || (typeof label === 'string' && label ? label : null);
+  const autoId = useId();
+  // A sheet that renders its own header keeps it: no shared bar, and the
+  // dialog is named by the heading the sheet points at, or by its label.
+  const headingText = bareHeader ? null : (title || heading || (typeof label === 'string' && label ? label : null));
+  const labelledBy = labelledByProp || (headingText ? `${autoId}-title` : null);
   const spokenLabel = label || ariaLabel || title || heading;
   const uid = useRef(null);
   // Only the topmost open sheet answers Escape; deeper sheets keep theirs
