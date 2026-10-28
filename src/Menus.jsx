@@ -1,10 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { ORDER_STATUS } from './lib/paymentState';
 import { Search, ChevronRight, ShoppingBag } from 'lucide-react';
 import OneTapCheckout from './components/OneTapCheckout';
 import { useNIP44DM } from './hooks/useNIP44DM';
 import { useChatStore } from './store/chatStore';
-import { saveMessage } from './db';
+import { saveMessage, db } from './db';
 import { haptic } from './lib/haptics';
 import { copyText } from './lib/copyText';
 import { generalRelays } from './lib/relays';
@@ -14,7 +14,8 @@ import Avatar from './components/ui/Avatar';
 import EmptyState from './components/ui/EmptyState';
 import { pressable } from './components/ui/Button';
 import { SkeletonGrid } from './components/ui/Skeleton';
-import { listingFromEvent, orderProduct, priceLabel } from './lib/listing';
+import { listingFromEvent, orderProduct, priceLabel, productShareLink } from './lib/listing';
+import { discardRejectedOrder } from './lib/orderLedger';
 import { stampArrival } from './features/chat/media';
 import { noHexName } from './lib/npub';
 
@@ -78,46 +79,51 @@ export default function Menus({ identity, setActiveTab }) {
   const profiles = useChatStore((state) => state.profiles);
   const { sendDM } = useNIP44DM({ identity });
 
-  useEffect(() => {
-    const fetchMarketplace = async () => {
-      setLoading(true);
-      setError('');
-      try {
-        const { SimplePool } = await import('nostr-tools');
-        const pool = new SimplePool();
+  // One loader, named so the error state can call it again. The ref guard
+  // stops a second tap from starting a fetch while the first is still out.
+  const loadingRef = useRef(false);
+  const loadMenu = useCallback(async () => {
+    if (loadingRef.current) return;
+    loadingRef.current = true;
+    setLoading(true);
+    setError('');
+    try {
+      const { SimplePool } = await import('nostr-tools');
+      const pool = new SimplePool();
 
-        const timeoutPromise = new Promise((_, reject) =>
-          setTimeout(() => reject(new Error('Network timeout')), 4000)
-        );
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Network timeout')), 4000)
+      );
 
-        const fetchPromise = pool.querySync(
-          generalRelays,
-          { kinds: [30402], '#t': ['cipher_marketplace'], limit: 50 }
-        );
+      const fetchPromise = pool.querySync(
+        generalRelays,
+        { kinds: [30402], '#t': ['cipher_marketplace'], limit: 50 }
+      );
 
-        const events = await Promise.race([fetchPromise, timeoutPromise]);
+      const events = await Promise.race([fetchPromise, timeoutPromise]);
 
-        const parsed = events.map(listingFromEvent).filter((item) => Number(item.price) > 0);
+      const parsed = events.map(listingFromEvent).filter((item) => Number(item.price) > 0);
 
-        const unique = Array.from(new Map(parsed.map((item) => [item.id, item])).values());
-        setProducts(unique);
-        pool.close(generalRelays);
-      } catch (fetchError) {
-        console.error('Failed to fetch marketplace:', fetchError);
-        setError('Could not load this menu. Check your connection and try again.');
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchMarketplace();
+      const unique = Array.from(new Map(parsed.map((item) => [item.id, item])).values());
+      setProducts(unique);
+      pool.close(generalRelays);
+    } catch (fetchError) {
+      console.error('Failed to fetch marketplace:', fetchError);
+      setError('Could not load this menu. Check your connection and try again.');
+    } finally {
+      loadingRef.current = false;
+      setLoading(false);
+    }
   }, []);
 
-  const shareProduct = async (product) => {
-    const link = `${window.location.origin}${window.location.pathname}?product=${encodeURIComponent(product.id)}&vendor=${product.vendorPubkey}`;
-    const ok = await copyText(link);
-    return ok;
-  };
+  useEffect(() => {
+    loadMenu();
+  }, [loadMenu]);
+
+  // The share link is built on the canonical app host the egress table names,
+  // not on this window's origin: inside the desktop build the origin is a
+  // loopback address, and that link opens nowhere else.
+  const shareProduct = async (product) => copyText(productShareLink(product, APP_HOST_URL));
 
   const confirmOrder = async (order) => {
     const payload = order?.type === 'cipher_order' ? order : {
@@ -148,11 +154,19 @@ export default function Menus({ identity, setActiveTab }) {
     await saveMessage(vendorPubkey, optimistic);
     const result = await sendDM(vendorPubkey, payload, tempId);
     if (!result?.success) {
-      useChatStore.getState().setDms((current) => ({
-        ...current,
-        [vendorPubkey]: (current[vendorPubkey] || []).filter((message) => message.clientId !== tempId),
-      }));
-      throw new Error(result?.error || 'The order request could not be sent.');
+      // The order was written twice — the visible list and the database. Both
+      // go, so a reload cannot read the failed order back. A queued order
+      // never reaches here; it is a send, and it stays.
+      const cleanup = await discardRejectedOrder({
+        vendorPubkey,
+        tempId,
+        setDms: useChatStore.getState().setDms,
+        removeStored: (id) => db.messages.delete(id),
+      });
+      const reason = result?.error || 'The order request could not be sent.';
+      throw new Error(cleanup.cleared
+        ? reason
+        : `${reason} The saved copy could not be removed from this device, so a reload may show it again.`);
     }
     const confirmed = {
       ...optimistic,
@@ -212,6 +226,13 @@ export default function Menus({ identity, setActiveTab }) {
           <div className="mx-4 mt-2 rounded-2xl border border-line bg-panel px-4 py-16 text-center">
             <p className="text-[15px] font-semibold text-ink">Menus unavailable</p>
             <p className="mt-1 text-[13px] text-ink/40">{error}</p>
+            <button
+              type="button"
+              onClick={() => { haptic('light'); loadMenu(); }}
+              className="mt-4 min-h-[44px] rounded-full border border-line px-5 text-[13px] font-bold text-accentText"
+            >
+              Try again
+            </button>
           </div>
         )}
         {!loading && !error && sections.length === 0 && (

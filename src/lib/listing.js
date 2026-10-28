@@ -74,6 +74,26 @@ export const PRODUCT_DELIVERY_WORDS = {
   unconfirmed: 'Not found on the relays we just asked.',
 };
 
+// A product card's share link. The base is the canonical app host the egress
+// table names, never the origin the window happens to carry: the desktop
+// build serves from a loopback address, and such a link only opens on the
+// machine that made it. The boot reader already opens ?product=&vendor=.
+export function productShareLink(product, base = '') {
+  const id = String(product?.id ?? '').trim();
+  const vendor = String(product?.vendorPubkey ?? '').trim();
+  if (!id || !vendor) return '';
+  const root = String(base || '').trim()
+    || (typeof window !== 'undefined' ? String(window.location?.origin || '') : '');
+  try {
+    const url = new URL(root);
+    url.searchParams.set('product', id);
+    url.searchParams.set('vendor', vendor);
+    return url.toString();
+  } catch {
+    return '';
+  }
+}
+
 export function markCachedProductDelivery(productId, delivery) {
   const rows = readCachedProducts();
   const next = rows.map((row) => (row && row.id === productId ? { ...row, delivery } : row));
