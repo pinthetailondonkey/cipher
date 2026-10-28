@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { ORDER_STATUS } from '../lib/paymentState';
-import { deliveryMisses, emptyDelivery, sealedNoteText } from '../lib/deliveryAddress';
+import { deliveryMissMap, deliveryMisses, emptyDelivery, sealedNoteText, withFieldMiss } from '../lib/deliveryAddress';
 import { createDeadDropNote } from '../lib/deadDrop';
 import { getAuthenticatedPool } from '../lib/pool';
 import { generalRelays } from '../lib/relays';
@@ -78,28 +78,12 @@ export default function OneTapCheckout({ product, open = true, onConfirmOrder, o
   const title = order.product.title;
   const image = product?.image || '';
 
-  const checkDelivery = (next, touchedField) => {
-    const list = deliveryMisses(next);
-    const map = {};
-    for (const miss of list) map[miss.field] = miss.message;
-    setMisses((current) => {
-      // While typing, a field with no miss goes quiet at once; the rest
-      // only speak after Send taps them.
-      if (touchedField && !map[touchedField]) {
-        const kept = { ...current };
-        delete kept[touchedField];
-        return kept;
-      }
-      return map;
-    });
-    return list;
-  };
-
   const confirmOrder = async () => {
     if (confirmed || sending) return;
-    const list = deliveryMisses(delivery);
-    checkDelivery(delivery);
-    if (list.length) return; // the misses under the fields are the gate
+    // Send is the one moment every required field speaks at once.
+    const map = deliveryMissMap(delivery);
+    setMisses(map);
+    if (deliveryMisses(delivery).length) return; // the misses under the fields are the gate
     setSending(true);
     setOrderError('');
     try {
@@ -170,9 +154,14 @@ export default function OneTapCheckout({ product, open = true, onConfirmOrder, o
               onChange={(event) => {
                 const next = { ...delivery, [spec.field]: event.target.value };
                 setDelivery(next);
-                checkDelivery(next, spec.field);
+                // Typing may clear or update this field's own line. A field
+                // that has not spoken yet stays quiet — the others never
+                // light up from a keystroke.
+                setMisses((current) => (
+                  spec.field in current ? withFieldMiss(current, next, spec.field) : current
+                ));
               }}
-              onBlur={() => checkDelivery(delivery)}
+              onBlur={() => setMisses((current) => withFieldMiss(current, delivery, spec.field))}
             />
           ))}
         </div>

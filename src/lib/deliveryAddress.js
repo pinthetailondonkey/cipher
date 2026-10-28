@@ -76,6 +76,25 @@ export function deliveryMisses(form) {
   return misses;
 }
 
+// The form's misses as a field-keyed map, for the moment Send is tapped: every
+// required field speaks at once.
+export function deliveryMissMap(form) {
+  const map = {};
+  for (const miss of deliveryMisses(form)) map[miss.field] = miss.message;
+  return map;
+}
+
+// One field's turn. A field speaks only after it has been left (blur) or Send
+// was tapped — typing in one field must not paint the others. This refreshes
+// that one field's line and leaves every other field exactly as it was.
+export function withFieldMiss(current, form, field) {
+  const next = { ...(current || {}) };
+  const miss = deliveryMisses(form).find((item) => item.field === field);
+  if (miss) next[field] = miss.message;
+  else delete next[field];
+  return next;
+}
+
 // ————— vendor side: the sealed text read back out —————
 
 // The note text sealedNoteText wrote ({name, lines, city, region, postal,
