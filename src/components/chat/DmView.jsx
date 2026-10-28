@@ -8,9 +8,17 @@ import ForwardPicker from './ForwardPicker';
 import { useThreadActions } from './useThreadActions';
 import { useChatStore } from '../../store/chatStore';
 
+const EMPTY_THREAD = [];
+
 export default function DmView({ identity, sendMessage, handleMessageAction, handleImageUpload, startRecording, stopRecording, sendDM }) {
   const activeDm = useChatStore((state) => state.activeDm);
-  const messages = useChatStore((state) => state.dms[state.activeDm] || []);
+  const thread = useChatStore((state) => state.dms[state.activeDm]);
+  // The fallback has to live OUTSIDE the selector: a fresh `[]` handed to
+  // getState() on every read makes the snapshot differ on every check and
+  // React re-renders until it throws "Maximum update depth exceeded" —
+  // exactly what happened when a chat was opened before any message of
+  // its thread had loaded into the store.
+  const messages = thread || EMPTY_THREAD;
   const deletedMsgs = useChatStore((state) => state.deletedMsgs);
   const profiles = useChatStore((state) => state.profiles);
   const replyingTo = useChatStore((state) => state.replyingTo);

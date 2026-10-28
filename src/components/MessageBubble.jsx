@@ -38,6 +38,7 @@ import { jumpToMessage } from './chat/threadMotion';
 import './chat/thread.css';
 
 const EMPTY_REACTIONS = [];
+const EMPTY_THREAD = [];
 
 function messageText(data) {
   if (!data) return '';
@@ -254,7 +255,11 @@ export default function MessageBubble({ message, data, onAction, senderName, ide
   const activeDm = useChatStore((state) => state.activeDm);
   const chatMessages = useChatStore((state) => (state.view === 'dm' ? state.dms[state.activeDm] : undefined));
   // The reply quote reads its parent from THIS thread's list, dm or group.
-  const replyThread = useChatStore((state) => (state.view === 'group' ? state.groupMessages[state.activeGroup?.id] : state.dms[state.activeDm]) || []);
+  // The fallback stays outside the selector: `|| []` in the selector hands
+  // getState() a fresh array every read, the snapshot never matches itself,
+  // and React renders until it throws "Maximum update depth exceeded".
+  const replyThreadRaw = useChatStore((state) => (state.view === 'group' ? state.groupMessages[state.activeGroup?.id] : state.dms[state.activeDm]));
+  const replyThread = replyThreadRaw || EMPTY_THREAD;
   // The review offer composes only where it can: this device holds the
   // bound receipt, the viewer is its buyer, and the deal reads completed.
   // Anything else and no door renders.
