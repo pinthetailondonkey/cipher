@@ -1,7 +1,9 @@
 # Cipher Desktop
 
-The desktop shell design. Design only — nothing in this file is built yet.
-Decisions below were made by the founder on 2026-10-26; they are locked
+The desktop shell design. Built so far (see desktop/README.md): the Linux and
+Windows portable bundles, the always-on bundled Tor, the loopback UI server and
+the window locks. Not built yet: macOS, the Privacy switch and its banner, an
+icon, the system-Tor path being tested on a real Tails. Decisions below were made by the founder on 2026-10-26; they are locked
 unless the founder changes them.
 
 ## What it is

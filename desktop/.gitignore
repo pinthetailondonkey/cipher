@@ -4,6 +4,10 @@ node_modules/
 vendor/
 # Dev data (docs/DESKTOP.md: keys, chats, settings live in data/ beside the app)
 data/
-# The web app build staged for packaging (copied from the repo's dist/)
+# The web app build staged for packaging (copied from the repo's dist/ by
+# scripts/prepare-pack.mjs) and electron-builder's output folder
+web/
+out/
+# Old staging and output folder, from before they were split
 dist/
 desktop/node_modules/

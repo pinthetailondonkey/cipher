@@ -6,7 +6,7 @@
 // Tor cannot start, every connection fails instead of leaking.
 //
 // Env:
-//   CIPHER_DIST   path to a built dist/        (default: sibling dist/ in dev, dist/ in the bundle)
+//   CIPHER_DIST   path to a built dist/        (default: sibling dist/ in dev, web/ in the bundle)
 //   TOR_BIN       tor executable               (default: the bundled vendor/tor/tor/tor, else 'tor' on PATH)
 //   TOR_SOCKS     socks port to speak to       (default 9050)
 //   TAILS=1       use the SYSTEM tor, never spawn one (also detected from /etc/os-release)
@@ -53,10 +53,10 @@ app.commandLine.appendSwitch('no-proxy-server-wpad');
 
 // The web build the shell serves. Packaged, it lives inside the asar next
 // to src (electron's fs reads asar paths transparently); in dev it is the
-// sibling dist the repo's build emits. CIPHER_DIST always wins.
+// sibling dist the repo's build emits; packaged, web/ staged by scripts/prepare-pack.mjs. CIPHER_DIST always wins.
 const dist = path.resolve(
   process.env.CIPHER_DIST
-  || (app.isPackaged ? path.join(__dirname, '..', 'dist') : path.join(appRoot, '..', 'dist')),
+  || (app.isPackaged ? path.join(__dirname, '..', 'web') : path.join(appRoot, '..', 'dist')),
 );
 // The bundled tor arrives via extraResources, outside the asar: a packed
 // archive cannot be spawned. Dev, it is staged by scripts/fetch-tor.sh.
