@@ -34,6 +34,32 @@ export const EGRESS = [
   { id: 'apns', role: 'iOS push', url: 'https://api.push.apple.com', sees: 'Nothing from the phone. The push box you run delivers a message or a call here when an APNs key is set. The text is not included.', called: false },
 ];
 
+// The founder's own onion door for groups. The address is never written in
+// this file: it lives on the deploy machine as VITE_GROUP_ONION in an
+// untracked .env.local, and the build turns it into a constant. Empty means
+// the shipped clearnet address holds, which is what every checkout and every
+// published build has unless the founder built it with the door set. A fresh
+// door is one folder and one rebuild away, and the name can change with it.
+const DEPLOY_GROUP_DOOR = (() => {
+  try {
+    return String(import.meta.env?.VITE_GROUP_ONION || '').trim();
+  } catch {
+    return '';
+  }
+})();
+
+// A value that is not a ws(s) .onion address is ignored rather than pasted
+// into a page policy: a typo must leave the default relay holding, not point
+// the group socket at nothing.
+export const FOUNDER_GROUP_ONION = /^wss?:\/\/[a-z2-7]{56}\.onion$/i.test(DEPLOY_GROUP_DOOR) ? DEPLOY_GROUP_DOOR : '';
+
+// Which group socket wins. A device's own paste wins, then the door the build
+// was made with, then the shipped address. `off` never reaches here — it is
+// answered before this, so typing off still drops the host.
+export function groupDoorUrl(override, door = FOUNDER_GROUP_ONION) {
+  return String(override || '').trim() || String(door || '').trim();
+}
+
 export const RELAY_SETS = {
   general: ['dm-relay'],
   group: ['group-relay'],
@@ -143,6 +169,10 @@ export function activeUrl(entry, config = readNetworkConfig()) {
   if (!entry || entry.called === false || entry.dynamic) return '';
   const override = String(config.overrides?.[entry.id] || '').trim();
   if (override === 'off') return '';
+  // The founder's own door outranks the shipped default, and a device's
+  // own paste outranks both. `off` was answered above, so it still drops the
+  // host even when a build carries the door.
+  if (entry.id === 'group-relay') return groupDoorUrl(override) || String(entry.url || '').trim();
   return override || String(entry.url || '').trim();
 }
 

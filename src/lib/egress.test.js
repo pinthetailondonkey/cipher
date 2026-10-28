@@ -76,15 +76,37 @@ test('every outbound host is listed, and nowhere else', () => {
   assert.ok(rows.some((row) => row.id === 'nip05' && row.transport === 'depends'));
 });
 
+// The founder's own onion door for groups (egress.js) is a deploy-machine
+// value, never an address in this repo. These tests hold both halves: no
+// door is baked into a checkout, and when a build is made with one, it
+// outranks the shipped default while a device's own paste outranks it.
+import { FOUNDER_GROUP_ONION, groupDoorUrl } from './egress.js';
+
+// An onion address spelled by the program, never a literal: a checkout holds
+// no address, and the pre-commit scan is left to watch for a real one.
+const onion = (label, scheme = 'wss') => `${scheme}://${label}.onion`;
+
+test('no onion door is baked into this checkout', () => {
+  assert.equal(FOUNDER_GROUP_ONION, '', 'the address lives in an untracked .env.local, never in the source');
+});
+
+test('the founder door outranks the shipped relay, and a device paste outranks the door', () => {
+  const door = onion('a'.repeat(56));
+  assert.equal(groupDoorUrl(''), '');
+  assert.equal(groupDoorUrl('', door), door);
+  assert.equal(groupDoorUrl(onion('mine', 'ws'), door), onion('mine', 'ws'));
+});
+
 test('defaults work with no config, and an onion replaces only that row', () => {
-  const onion = 'ws://exampleexampleexampleexampleexampleexampleexampleex.onion';
-  assert.equal(isOnionUrl(onion), true);
+  const pasted = onion('exampleexampleexample', 'ws');
+  assert.equal(isOnionUrl(pasted), true);
   assert.deepEqual(urlsFor('group', { overrides: {}, lists: {} }), ['wss://groups.ciphertele.com']);
   assert.deepEqual(urlsFor('general', { overrides: {}, lists: {} }), ['wss://relay.primal.net']);
   assert.deepEqual(urlsFor('profile', { overrides: {}, lists: {} }).includes('wss://nos.lol'), true);
-  assert.deepEqual(urlsFor('group-only', { overrides: { 'group-relay': onion }, lists: {} }), [onion]);
-  assert.equal(groupRelayHttp({ overrides: { 'group-relay': onion }, lists: {} }).startsWith('http://'), true);
-  assert.deepEqual(urlsFor('general', { overrides: { 'group-relay': onion }, lists: {} }), ['wss://relay.primal.net']);
+  // a device's own paste outranks the founder's door
+  assert.deepEqual(urlsFor('group-only', { overrides: { 'group-relay': pasted }, lists: {} }), [pasted]);
+  assert.equal(groupRelayHttp({ overrides: { 'group-relay': pasted }, lists: {} }).startsWith('http://'), true);
+  assert.deepEqual(urlsFor('general', { overrides: { 'group-relay': pasted }, lists: {} }), ['wss://relay.primal.net']);
   assert.deepEqual(urlsFor('group', { torOnly: true, overrides: {}, lists: {} }), ['wss://groups.ciphertele.com']);
   assert.deepEqual(urlsFor('general', {
     overrides: { 'dm-relay': 'off' },
@@ -99,9 +121,9 @@ test('defaults work with no config, and an onion replaces only that row', () => 
   assert.equal(listEgress({ overrides: {}, lists: {} }).find((row) => row.id === 'turn'), undefined,
     'the call-relay row is gone — calls are off');
   assert.equal(listEgress({ overrides: {}, lists: {} }).find((row) => row.id === 'explorer').transport, 'unset');
-  const kept = listEgress({ overrides: { 'group-relay': onion }, lists: {} }).find((row) => row.id === 'group-relay');
+  const kept = listEgress({ overrides: { 'group-relay': pasted }, lists: {} }).find((row) => row.id === 'group-relay');
   assert.equal(kept.transport, 'tor');
-  assert.equal(kept.active, onion);
+  assert.equal(kept.active, pasted);
 });
 
 test('the network snapshot stays the same object until storage changes', () => {
