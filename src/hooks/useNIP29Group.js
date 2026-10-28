@@ -1101,6 +1101,12 @@ export function useNIP29Group({ identity }) {
       let isPending = false;
       let decEpoch = null;
       const decoded = await decodeGroupEvent({ event, groupId });
+      if (decoded.refused) {
+        // Unencrypted content in a group that holds a key: dropped, never
+        // shown as the sender's message.
+        console.warn('[group] Dropped an unencrypted message in an encrypted group', event.id);
+        return;
+      }
       if (decoded.pending) { isPending = true; decEpoch = decoded.epoch; }
       else if (decoded.error) {
         console.warn('[group-decrypt] failed', decoded.reason);
