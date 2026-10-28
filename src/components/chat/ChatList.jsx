@@ -26,6 +26,7 @@ import {
 import { notifTotalOf, useChatStore } from '../../store/chatStore';
 import { haptic } from '../../lib/haptics';
 import { noHexName } from '../../lib/npub';
+import { groupSystemText } from '../../lib/crypto/groupMessageCodec';
 import Logo from '../Logo';
 import Avatar from '../ui/Avatar';
 import Button from '../ui/Button';
@@ -395,10 +396,12 @@ export default function ChatList({ onOpenChat, onRefresh }) {
   const previewOf = (chat) => {
     const m = chat.lastMsg;
     if (!m) return null;
+    // A group's system note ("abc was kicked from the group") shows its
+    // words, not the JSON they are stored in.
     const text = m.data?.type === 'cipher_order' ? 'Order'
       : m.data?.type === 'image' ? 'Photo'
       : m.data?.type === 'audio' ? 'Voice note'
-      : (m.data?.message || m.rawContent || 'Message');
+      : (m.data?.message || groupSystemText(m) || m.rawContent || 'Message');
     if (chat.type === 'group' && m.pubkey) {
       const sender = m.isSender ? 'You' : noHexName(profiles[m.pubkey], m.pubkey);
       return `${sender}: ${text}`;

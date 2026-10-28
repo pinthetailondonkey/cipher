@@ -47,6 +47,18 @@ export function isGroupControlRow(row) {
   return isGroupControlBody(body);
 }
 
+// A group's own note ("abc was kicked from the group") keeps its words
+// inside the row's JSON. Readers that want the plain line — the chat
+// list's preview — read it here instead of showing the JSON itself.
+// A row that is not a system note gives null.
+export function groupSystemText(row) {
+  if (!row?.isGroup || typeof row.rawContent !== 'string') return null;
+  let body;
+  try { body = JSON.parse(row.rawContent); } catch { return null; }
+  if (!body || typeof body !== 'object' || body.type !== 'system' || typeof body.message !== 'string') return null;
+  return body.message;
+}
+
 // Audit finding: a kind-9 with no 'ep' tag used to decode as plaintext in
 // every group, so anyone who could write to the group relay could post a
 // message that read as the sender's, with no key, no AAD and no epoch.

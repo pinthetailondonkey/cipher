@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { decodeGroupEvent, isGroupControlBody, isGroupControlRow } from './groupMessageCodec.js';
+import { decodeGroupEvent, groupSystemText, isGroupControlBody, isGroupControlRow } from './groupMessageCodec.js';
 import { encryptGroupMessage, generateGroupKey } from './groupCipher.js';
 
 const GROUP = 'codec-group';
@@ -106,4 +106,17 @@ test('a stored group row holding a control body is recognized, a real message is
   assert.equal(isGroupControlRow({ isGroup: true, rawContent: 'not json' }), false);
   assert.equal(isGroupControlRow({ isGroup: false, data: { type: 'gkey_req' } }), false);
   assert.equal(isGroupControlRow(null), false);
+});
+
+test('a stored system row gives its plain words, everything else gives none', () => {
+  // The chat list shows the last row of each group; a system note keeps
+  // its words inside the row's JSON, and showing that JSON raw was the bug.
+  const systemRow = { isGroup: true, type: 'system', rawContent: JSON.stringify({ type: 'system', message: 'abc was kicked from the group' }) };
+  assert.equal(groupSystemText(systemRow), 'abc was kicked from the group');
+  assert.equal(groupSystemText({ isGroup: true, rawContent: JSON.stringify({ type: 'text', message: 'hi' }) }), null);
+  assert.equal(groupSystemText({ isGroup: true, rawContent: JSON.stringify({ type: 'system' }) }), null);
+  assert.equal(groupSystemText({ isGroup: true, rawContent: 'not json' }), null);
+  assert.equal(groupSystemText({ isGroup: true, rawContent: null }), null);
+  assert.equal(groupSystemText({ isGroup: false, rawContent: JSON.stringify({ type: 'system', message: 'x' }) }), null);
+  assert.equal(groupSystemText(null), null);
 });
