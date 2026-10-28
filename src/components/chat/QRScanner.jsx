@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { CameraOff, Check, Copy, Scan, UserRound } from 'lucide-react';
 import ScreenHeader from '../ui/ScreenHeader';
 import Sheet from '../ui/Sheet';
-import useDialogA11y from '../ui/dialogA11y';
+import { useModalA11y } from '../ui/modal';
 import { writeClipboard } from '../../lib/copyText';
 import { pubkeyFromScanned } from '../../lib/npub';
 import { haptic } from '../../lib/haptics';
@@ -12,7 +12,7 @@ export default function QRScanner({ onClose }) {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const decodedRef = useRef('');
-  useDialogA11y(true, () => onClose?.());
+  const panelRef = useModalA11y(true, onClose);
   const setProfilePubkey = useChatStore((state) => state.setProfilePubkey);
   const [error, setError] = useState('');
   const [decodedValue, setDecodedValue] = useState('');
@@ -128,7 +128,7 @@ export default function QRScanner({ onClose }) {
 
   return (
     <>
-    <div className="fixed inset-0 z-call flex flex-col bg-scrim pt-safe pb-safe md:items-center md:justify-center md:bg-scrim/70" role="dialog" aria-modal="true" aria-label="Scan QR code">
+    <div ref={panelRef} tabIndex={-1} className="fixed inset-0 z-call flex flex-col bg-scrim pt-safe pb-safe md:items-center md:justify-center md:bg-scrim/70" role="dialog" aria-modal="true" aria-label="Scan QR code">
       <div className="pointer-events-none absolute inset-0" style={{
         background: 'radial-gradient(ellipse 55% 38% at 12% 0%, var(--glow-a), transparent 65%), radial-gradient(ellipse 50% 30% at 92% 100%, var(--glow-b), transparent 70%)',
       }} />

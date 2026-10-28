@@ -4,7 +4,7 @@ import ScreenHeader from '../ui/ScreenHeader';
 import ListRow from '../ui/ListRow';
 import Badge from '../ui/Badge';
 import EmptyState from '../ui/EmptyState';
-import useDialogA11y from '../ui/dialogA11y';
+import { useModalA11y } from '../ui/modal';
 import { useChatStore } from '../../store/chatStore';
 import { db } from '../../db';
 
@@ -27,7 +27,7 @@ function previewText(message) {
 
 export default function NotificationCenter({ onClose, onJump }) {
   const unreadCounts = useChatStore((state) => state.unreadCounts);
-  useDialogA11y(true, () => onClose?.());
+  const panelRef = useModalA11y(true, onClose);
   const dms = useChatStore((state) => state.dms);
   const groupMessages = useChatStore((state) => state.groupMessages);
   const groups = useChatStore((state) => state.groups);
@@ -65,7 +65,7 @@ export default function NotificationCenter({ onClose, onJump }) {
   };
 
   return (
-    <div className="fixed inset-0 z-sheet flex flex-col bg-scrim md:right-auto md:left-[72px] md:top-0 md:bottom-0 md:w-[340px] md:bg-base md:border-r md:border-line md:shadow-2xl" role="dialog" aria-modal="true" aria-label="Notifications">
+    <div ref={panelRef} tabIndex={-1} className="fixed inset-0 z-sheet flex flex-col bg-scrim md:right-auto md:left-[72px] md:top-0 md:bottom-0 md:w-[340px] md:bg-base md:border-r md:border-line md:shadow-2xl" role="dialog" aria-modal="true" aria-label="Notifications">
       <div className="pointer-events-none absolute inset-0" style={{
         background: 'radial-gradient(ellipse 55% 38% at 12% 0%, var(--glow-a), transparent 65%), radial-gradient(ellipse 50% 30% at 92% 100%, var(--glow-b), transparent 70%)',
       }} />

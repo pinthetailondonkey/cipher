@@ -1,9 +1,9 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { MessageSquare, Radio, X } from 'lucide-react';
 import { useChatStore } from '../../store/chatStore';
 import Button, { pressable } from '../ui/Button';
 import Input from '../ui/Input';
-import useDialogA11y from '../ui/dialogA11y';
+import { useModalA11y } from '../ui/modal';
 
 export default function CreateGroupModal({ isOpen, onClose, createGroup }) {
   const name = useChatStore((state) => state.newGroupName);
@@ -14,8 +14,14 @@ export default function CreateGroupModal({ isOpen, onClose, createGroup }) {
   const setIsChannel = useChatStore((state) => state.setIsChannel);
   const [creating, setCreating] = useState(false);
   const [listed, setListed] = useState(true);
-  const panelRef = useRef(null);
-  useDialogA11y(isOpen, onClose, panelRef);
+  const panelRef = useModalA11y(isOpen, onClose);
+
+  // The shared floor focuses the panel when the surface opens; the name
+  // field is where the caret lived before, so it is focused right after
+  // (the hook's effect is declared first and runs first).
+  useEffect(() => {
+    if (isOpen) panelRef.current?.querySelector('input')?.focus();
+  }, [isOpen, panelRef]);
 
   if (!isOpen) return null;
 
@@ -34,7 +40,7 @@ export default function CreateGroupModal({ isOpen, onClose, createGroup }) {
     <div className="fixed inset-0 z-sheet flex items-end justify-center bg-scrim/80 p-0 sm:items-center sm:p-4" role="presentation" onMouseDown={(event) => {
       if (event.target === event.currentTarget) onClose();
     }}>
-      <form ref={panelRef} onSubmit={submit} role="dialog" aria-modal="true" aria-labelledby="create-group-title" className="max-h-[calc(100dvh-env(safe-area-inset-top)-0.5rem)] w-full max-w-md overflow-y-auto rounded-t-3xl border border-line bg-panel p-5 pb-safe shadow-lg sm:rounded-3xl sm:p-6">
+      <form ref={panelRef} tabIndex={-1} onSubmit={submit} role="dialog" aria-modal="true" aria-labelledby="create-group-title" className="max-h-[calc(100dvh-env(safe-area-inset-top)-0.5rem)] w-full max-w-md overflow-y-auto rounded-t-3xl border border-line bg-panel p-5 pb-safe shadow-lg sm:rounded-3xl sm:p-6">
         <div className="mb-5 flex items-center justify-between">
           <div>
             <h2 id="create-group-title" className="text-2xl font-bold tracking-tight text-ink">Create a space</h2>
