@@ -8,7 +8,7 @@ import { useChatStore } from '../../store/chatStore';
 import { scopedGet, scopedSet } from '../../lib/storage';
 import { shortNpub } from '../../lib/npub';
 import { getPrivacy, allowsTyping } from '../../lib/privacy';
-import { decodeGroupEvent } from '../../lib/crypto/groupMessageCodec';
+import { decodeGroupEvent, isGroupControlBody, isGroupControlRow } from '../../lib/crypto/groupMessageCodec';
 import { resumeKeyRequestIds } from '../../lib/crypto/groupKeyRequest';
 import { useGroupKeyReconciler } from '../../hooks/useGroupKeyReconciler';
 import { flushSecuringGroupSends } from '../../hooks/useNIP29Group';
@@ -69,6 +69,8 @@ export function useChatBootstrap({
         console.warn('[Chat] Could not decrypt group history event:', event.id, decoded.reason);
         continue;
       }
+      // A key request or typing ping is a signal, not a message: never a row.
+      if (isGroupControlBody(decoded.parsed)) continue;
       const replyTag = event.tags.find((tag) => tag[0] === 'e' && tag[3] === 'reply');
       const clientId = event.tags.find((tag) => tag[0] === 'client')?.[1];
       const message = {
@@ -330,7 +332,15 @@ export function useChatBootstrap({
       if (expiredIds.length) {
         db.messages.bulkDelete(expiredIds).catch((error) => console.error('[disappearing] Could not delete expired messages:', error));
       }
-      const liveDbMsgs = expiredIds.length ? allDbMsgs.filter((msg) => !expiredIds.includes(msg.id)) : allDbMsgs;
+      // Rows saved by earlier versions from key requests and typing pings are
+      // not messages. They leave the database too, so the clean-up survives
+      // the next load and a history fetch cannot bring them back as bubbles.
+      const controlIds = allDbMsgs.filter((msg) => !expiredIds.includes(msg.id) && isGroupControlRow(msg)).map((msg) => msg.id);
+      if (controlIds.length) {
+        db.messages.bulkDelete(controlIds).catch((error) => console.error('[group] Could not clear saved key-request rows:', error));
+      }
+      const gone = new Set([...expiredIds, ...controlIds]);
+      const liveDbMsgs = gone.size ? allDbMsgs.filter((msg) => !gone.has(msg.id)) : allDbMsgs;
       const reads = await db.chatReads.toArray();
       const readMap = {};
       reads.forEach(r => { readMap[r.chatId] = r.lastRead; });

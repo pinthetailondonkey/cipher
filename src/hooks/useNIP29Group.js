@@ -8,7 +8,7 @@ import { groupRelays, generalRelays, groupOnlyRelays, queryWithTimeout } from '.
 import { allowsTyping } from '../lib/privacy';
 import { shortNpub } from '../lib/npub';
 import { getMyGroups, setMyGroups } from '../lib/myGroups';
-import { encodeGroupPayload, decodeGroupEvent } from '../lib/crypto/groupMessageCodec';
+import { encodeGroupPayload, decodeGroupEvent, isGroupControlBody } from '../lib/crypto/groupMessageCodec';
 import { getAllGroupKeys, getCurrentGroupKey, putGroupKey } from '../lib/crypto/groupKeyStore';
 import { authorizeGroupControl, authorizeGroupPin, authorizeMemberSnapshot, groupFrameAccepted, groupRelayPubkey, groupTimelinePlans, isRestrictedRelayClose, pickMemberSnapshot, pinnedMessageOf, trustedGroupCreator } from '../lib/crypto/groupMembership';
 import { grantKeyRequest, loadMemberSnapshot, loadMemberSnapshotRecord, memberKey, patchMemberSnapshot, rememberMembers, rotateGroupEpoch } from '../lib/crypto/groupKeyRotation';
@@ -1246,7 +1246,7 @@ export function useNIP29Group({ identity }) {
           const decoded = await decodeGroupEvent({ event, groupId: gid });
           if (decoded.pending || decoded.error) continue;
           const parsed = decoded.parsed || {};
-          if (parsed.type === 'typing') continue;
+          if (isGroupControlBody(parsed)) continue;
           // A row unwrapped now is a row arriving now: a stamp already
           // dead is not saved, and a carried stamp is honored only as far
           // as the roster promised — the same rule the live receive path

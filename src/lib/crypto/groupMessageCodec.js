@@ -30,6 +30,23 @@ function parseBody(plaintext) {
   return normalizeParsed(value, plaintext);
 }
 
+// Kind-9 events that carry a protocol signal, not a chat message: a key
+// request and a typing ping. They ride the same kind as messages, so every
+// place that turns kind-9 events into saved rows has to ask first.
+const GROUP_CONTROL_TYPES = new Set(['gkey_req', 'typing']);
+
+export function isGroupControlBody(parsed) {
+  return !!parsed && typeof parsed === 'object' && GROUP_CONTROL_TYPES.has(parsed.type);
+}
+
+// A row an earlier version already saved from one of those events.
+export function isGroupControlRow(row) {
+  if (!row?.isGroup || typeof row.rawContent !== 'string') return false;
+  let body;
+  try { body = JSON.parse(row.rawContent); } catch { return false; }
+  return isGroupControlBody(body);
+}
+
 // Audit finding: a kind-9 with no 'ep' tag used to decode as plaintext in
 // every group, so anyone who could write to the group relay could post a
 // message that read as the sender's, with no key, no AAD and no epoch.

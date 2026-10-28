@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { decodeGroupEvent } from './groupMessageCodec.js';
+import { decodeGroupEvent, isGroupControlBody, isGroupControlRow } from './groupMessageCodec.js';
 import { encryptGroupMessage, generateGroupKey } from './groupCipher.js';
 
 const GROUP = 'codec-group';
@@ -83,4 +83,27 @@ test('JSON bodies that are not objects become text bodies, on both paths', async
   assert.equal(s.parsed.message, 's');
   const five = await decodeGroupEvent({ event: ev('5'), groupId: GROUP, store: keyless });
   assert.equal(five.parsed.message, '5');
+});
+
+test('a key request and a typing ping are control bodies, never chat messages', async () => {
+  assert.equal(isGroupControlBody({ type: 'gkey_req' }), true);
+  assert.equal(isGroupControlBody({ type: 'typing' }), true);
+  assert.equal(isGroupControlBody({ type: 'text', message: 'gkey_req' }), false);
+  assert.equal(isGroupControlBody({ type: 'system', message: 'x' }), false);
+  assert.equal(isGroupControlBody(null), false);
+  assert.equal(isGroupControlBody(undefined), false);
+  // The key request really does decode as one, with no key held (its sender has none).
+  const out = await decodeGroupEvent({ event: ev(JSON.stringify({ type: 'gkey_req' })), groupId: GROUP, store: storeHolding(new Map()) });
+  assert.equal(isGroupControlBody(out.parsed), true);
+});
+
+test('a stored group row holding a control body is recognized, a real message is not', () => {
+  assert.equal(isGroupControlRow({ isGroup: true, rawContent: JSON.stringify({ type: 'gkey_req' }) }), true);
+  assert.equal(isGroupControlRow({ isGroup: true, rawContent: JSON.stringify({ type: 'typing' }) }), true);
+  assert.equal(isGroupControlRow({ isGroup: true, rawContent: JSON.stringify({ type: 'text', message: 'hi' }) }), false);
+  assert.equal(isGroupControlRow({ isGroup: true, rawContent: JSON.stringify({ type: 'system', message: 'a joined' }) }), false);
+  assert.equal(isGroupControlRow({ isGroup: true, rawContent: null, ciphertext: '{"v":1}' }), false);
+  assert.equal(isGroupControlRow({ isGroup: true, rawContent: 'not json' }), false);
+  assert.equal(isGroupControlRow({ isGroup: false, data: { type: 'gkey_req' } }), false);
+  assert.equal(isGroupControlRow(null), false);
 });
