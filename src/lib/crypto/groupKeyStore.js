@@ -49,7 +49,22 @@ export async function getGrantedEpochsFor(groupId, pubkey) {
   const rows = await db.groupKeyGrants.where('[groupId+pubkey+epoch]').between([groupId, pubkey, -Infinity], [groupId, pubkey, Infinity]).toArray();
   return new Set(rows.map(r => r.epoch));
 }
-export async function recordGrant(groupId, pubkey, epoch) {
+// Every grant the ledger holds, with when it was sent and, separately, when
+// it last answered an explicit request (rate limiting counts only answers).
+export async function getGrantRecords(groupId, pubkey) {
+  if (!ready()) return new Map();
+  const rows = await db.groupKeyGrants.where('[groupId+pubkey+epoch]').between([groupId, pubkey, -Infinity], [groupId, pubkey, Infinity]).toArray();
+  return new Map(rows.map((row) => [row.epoch, { sentAt: row.sentAt, answeredAt: row.answeredAt }]));
+}
+export async function recordGrant(groupId, pubkey, epoch, { answered = false } = {}) {
   if (!ready()) return;
-  await db.groupKeyGrants.put({ groupId, pubkey, epoch, sentAt: Math.floor(Date.now() / 1000) });
+  const sentAt = Math.floor(Date.now() / 1000);
+  // Upsert on the pair: the unique [groupId+pubkey+epoch] index refuses a
+  // second insert, and a re-grant to a member who asked again is a rewrite.
+  const held = await db.groupKeyGrants.where('[groupId+pubkey+epoch]').equals([groupId, pubkey, epoch]).first();
+  await db.groupKeyGrants.put({
+    groupId, pubkey, epoch, sentAt,
+    ...(answered ? { answeredAt: sentAt } : (held?.answeredAt ? { answeredAt: held.answeredAt } : {})),
+    ...(held ? { id: held.id } : {}),
+  });
 }

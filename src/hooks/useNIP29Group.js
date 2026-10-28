@@ -1108,12 +1108,19 @@ export function useNIP29Group({ identity }) {
                 groupId, epoch: current.epoch, keyBytes: current.bytes,
                 recipients: [event.pubkey],
                 extraEpochs: prior,
+                // An explicit request is answered whatever the ledger says
+                // was sent before (rate limited inside distributeGroupKey).
+                answerRequest: true,
                 publish: (dmEvent) => publishKeyDm(identity, dmEvent),
               });
             }
           }
         }
-      } catch (e) {}
+      } catch (e) {
+        // A silent catch here left a member on Securing forever with no
+        // trace of why the request went unanswered.
+        if (isGkeyReq) console.warn('[group-key] A key request was not answered:', e);
+      }
       if (isGkeyReq) return;
 
       let parsed = {};
