@@ -46,6 +46,10 @@
         {
           "key": "Cross-Origin-Opener-Policy",
           "value": "same-origin"
+        },
+        {
+          "key": "Onion-Location",
+          "value": "http://lurdcki4pyn75ozckwhydggocy4jllxxm5oexzg6cyx2k36kfonpkcqd.onion/"
         }
       ]
     }
