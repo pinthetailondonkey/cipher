@@ -17,7 +17,7 @@ import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 
-const DEFAULT_URL = 'https://ciphermessenger.org';
+const DEFAULT_URL = 'https://www.ciphermessenger.org';
 const ENTRY = /(?:^|\/)assets\/(index-[A-Za-z0-9_-]+\.js)/;
 
 const args = process.argv.slice(2);
