@@ -1,5 +1,20 @@
 const CACHE_NAME = 'cipher-shell-v1';
 
+// A hashed asset that a deploy removed comes back from the host as the SPA
+// fallback: 200 with index.html. Caching that under the asset's URL pins a
+// page where a script or stylesheet should be, and an old tab then fails on
+// the wrong MIME type every time it asks again. Only a response whose type
+// fits what was asked for is kept.
+function isCacheableAsset(request, url, response) {
+  if (!response.ok) return false;
+  if (url.pathname !== '/sw.js' && !url.pathname.startsWith('/assets/')) return false;
+  const type = (response.headers.get('content-type') || '').toLowerCase();
+  if (type.includes('text/html')) return false;
+  if (request.destination === 'script') return /javascript|ecmascript/.test(type);
+  if (request.destination === 'style') return type.includes('text/css');
+  return true;
+}
+
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME)
@@ -44,7 +59,7 @@ self.addEventListener('fetch', (event) => {
     caches.match(request).then(async (cached) => {
       if (cached) return cached;
       const response = await fetch(request);
-      if (response.ok && (url.pathname.startsWith('/assets/') || url.pathname === '/sw.js')) {
+      if (isCacheableAsset(request, url, response)) {
         const copy = response.clone();
         await caches.open(CACHE_NAME)
           .then((cache) => cache.put(request, copy))
