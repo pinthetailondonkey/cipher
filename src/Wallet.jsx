@@ -29,7 +29,7 @@ import { copyText } from './lib/copyText';
 import { scopedGet, scopedSet } from './lib/storage';
 import { pushToast } from './components/ui/toast';
 import { productRelays } from './lib/relays';
-import { readCachedProducts } from './lib/listing';
+import { listingPublishOutcome, readCachedProducts } from './lib/listing';
 import { blossomServers } from './lib/egress';
 
 const VendorDashboard = lazy(() => import('./components/chat/VendorDashboard'));
@@ -60,7 +60,10 @@ export default function Wallet({ identity, onOpenChat, startView = 'main' }) {
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [price, setPrice] = useState('')
-  const [currency, setCurrency] = useState('USD')
+  // A coin price is the one the accepted order can collect against. A dollar
+  // price is allowed on the card, but the chain check has no dollar amount to
+  // match, so it waits for a coin order. No conversion happens here.
+  const [currency, setCurrency] = useState('BTC')
   const [image, setImage] = useState('')
 
   const [btcAddress, setBtcAddress] = useState(() => readPaymentAddresses().btc)
@@ -194,12 +197,17 @@ export default function Wallet({ identity, onOpenChat, startView = 'main' }) {
     }
   }
 
-  const copyNpub = () => {
-    if (identity.npub) {
-      copyText(identity.npub);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+  const copyNpub = async () => {
+    if (!identity.npub) return;
+    // "Copied!" waits for the write to land. copyText says what went wrong
+    // when it does not, so a refused clipboard never wears a success word.
+    const ok = await copyText(identity.npub);
+    if (!ok) {
+      setCopied(false);
+      return;
     }
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
   }
 
   const saveProfile = async (e, overridePicture = null) => {
@@ -260,24 +268,33 @@ export default function Wallet({ identity, onOpenChat, startView = 'main' }) {
       ])
       const accepted = Boolean(Array.isArray(results)
         && results.some((result) => result.status === 'fulfilled'))
+      let queued = false
       if (!accepted) {
-        // The event is queued, not lost: the outbox retries it with the
-        // product relays it was born for. The words say queued.
+        // The outbox's own row is the only proof a retry exists. The queued
+        // words below wait for that write to land.
         try {
           const { enqueueNostrEvent } = await import('./lib/outbox')
           await enqueueNostrEvent(ev, relays)
+          queued = true
         } catch (queueError) {
           console.warn('[product] Could not queue the listing for retry:', queueError)
         }
       }
+      // A relay took it, the outbox holds it, or neither happened. Only the
+      // first two are a send; the form keeps every field for the third.
+      const outcome = listingPublishOutcome(accepted, queued)
+      if (!outcome.ok) {
+        setStatus(outcome.status)
+        return
+      }
 
       // `d` is kept beside the event id because store orders name the menus by
       // the d tag, not by the event id. (security F5)
-      const newProduct = { id: ev.id, d: dTag, name: title, description, price, currency, image: image || '/app-icon-512.png', stock: '1', vendorPubkey: identity.pk, created_at: ev.created_at, delivery: accepted ? 'published' : 'queued', event: { kind: ev.kind, created_at: ev.created_at, tags: ev.tags, content: ev.content, pubkey: ev.pubkey } }
+      const newProduct = { id: ev.id, d: dTag, name: title, description, price, currency, image: image || '/app-icon-512.png', stock: '1', vendorPubkey: identity.pk, created_at: ev.created_at, delivery: outcome.delivery, event: { kind: ev.kind, created_at: ev.created_at, tags: ev.tags, content: ev.content, pubkey: ev.pubkey } }
       const cached = readCachedProducts()
       localStorage.setItem('cipher_cached_products', JSON.stringify([newProduct, ...cached.filter(p => p.id !== ev.id)]))
 
-      setStatus(accepted ? 'Published.' : 'Saved and will send.')
+      setStatus(outcome.status)
       setTitle(''); setDescription(''); setPrice(''); setImage('')
       setView('main')
     } catch (err) { setStatus('Error: ' + err.message) } 
@@ -436,10 +453,13 @@ export default function Wallet({ identity, onOpenChat, startView = 'main' }) {
           <div className="flex gap-3">
             <input placeholder="Price" type="number" value={price} onChange={e => setPrice(e.target.value)} className="flex-1 border border-line bg-panelStrong shadow-lg rounded-2xl p-4 text-sm focus:border-accent outline-none" />
             <select value={currency} onChange={e => setCurrency(e.target.value)} className="border border-line bg-panelStrong shadow-lg rounded-2xl px-4 text-sm focus:border-accent outline-none">
-              <option value="USD">USD</option><option value="BTC">BTC</option><option value="XMR">XMR</option>
+              <option value="BTC">BTC</option><option value="XMR">XMR</option><option value="USD">USD</option>
             </select>
           </div>
-          
+          <p className="px-1 text-[12px] leading-relaxed text-inkSubtle">
+            BTC and XMR prices can be checked on the chain. A USD price is a dollar figure only — the payment check has nothing to match, so it takes a coin order.
+          </p>
+
           <button onClick={publishProduct} disabled={isPublishing || uploadingImage} className="w-full py-4 bg-accent text-accentInk rounded-2xl font-bold text-sm mt-4 flex justify-center items-center gap-2 hover:bg-accent transition-colors">
             {isPublishing ? <RefreshCw size={16} className="animate-spin"/> : 'Publish to Store'}
           </button>
@@ -493,9 +513,19 @@ export default function Wallet({ identity, onOpenChat, startView = 'main' }) {
                 title="Switch to buyer mode"
                 onClick={async () => {
                   setIsVendor(false);
-                  // Leaving vendor mode clears what the mode saved: the leftover
-                  // receiving addresses were the bug — they stuck around on this
-                  // device and made the app bounce like a stuck error.
+                  // Leaving vendor mode clears what the mode saved. The words
+                  // below wait for that write to land: a wipe that failed
+                  // leaves the settings on this device, and the notice says so
+                  // instead of claiming they are gone.
+                  try {
+                    await saveVendorPaymentConfig(identity, { btcXpub: '', xmrPrivateViewKey: '', btcNetwork: 'bc' });
+                  } catch (wipeError) {
+                    useChatStore.getState().setToast({
+                      type: 'error',
+                      message: `Switched to buyer mode. The saved payment settings could not be cleared and are still on this device. ${wipeError?.message || ''}`.trim(),
+                    });
+                    return;
+                  }
                   setBtcAddress('');
                   setXmrAddress('');
                   // The advanced-payment form state would otherwise still hold the
@@ -504,11 +534,6 @@ export default function Wallet({ identity, onOpenChat, startView = 'main' }) {
                   setXmrPrivateViewKey('');
                   setBtcNetwork('bc');
                   savePaymentAddresses({ btc: '', xmr: '' });
-                  try {
-                    await saveVendorPaymentConfig(identity, { btcXpub: '', xmrPrivateViewKey: '', btcNetwork: 'bc' });
-                  } catch (wipeError) {
-                    useChatStore.getState().setToast({ type: 'error', message: `Could not clear vendor payment settings. ${wipeError?.message || ''}`.trim() });
-                  }
                   useChatStore.getState().setToast({ type: 'success', message: 'Switched to buyer mode. Payment details were cleared from this device.' });
                 }}
               />
@@ -540,9 +565,11 @@ export default function Wallet({ identity, onOpenChat, startView = 'main' }) {
         </button>
       </Sheet>
 
-      {/* EDIT PROFILE — the editor wears a Sheet now, not a page */}
+      {/* EDIT PROFILE — the editor wears a Sheet now, not a page. The Sheet's
+          own heading is the editor's ScreenHeader, so the label is spoken
+          only: the dialog still needs a name a screen reader can announce. */}
       {view === 'profile_editor' && (
-        <Sheet open onClose={() => setView('main')}>
+        <Sheet open onClose={() => setView('main')} label="Edit Profile">
           <Suspense fallback={<div className="flex h-48 items-center justify-center"><div className="h-7 w-7 animate-spin rounded-full border-2 border-ink/20 border-t-accentText" /></div>}>
             <ProfileEditor identity={identity} onClose={() => setView('main')} />
           </Suspense>

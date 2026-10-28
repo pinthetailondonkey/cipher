@@ -74,6 +74,20 @@ export const PRODUCT_DELIVERY_WORDS = {
   unconfirmed: 'Not found on the relays we just asked.',
 };
 
+// What a publish can honestly say, in the order the facts arrive: a relay
+// took it, the outbox holds it, or neither happened. The last case is not a
+// queue, so it never borrows the queued words — a send that could not be
+// saved for retry must not promise one.
+export function listingPublishOutcome(accepted, queued) {
+  if (accepted) return { delivery: 'published', status: 'Published.', ok: true };
+  if (queued) return { delivery: 'queued', status: PRODUCT_DELIVERY_WORDS.queued, ok: true };
+  return {
+    delivery: null,
+    status: 'Could not send it, and it could not be saved to send later. It is still here, so you can try again.',
+    ok: false,
+  };
+}
+
 // A product card's share link. The base is the canonical app host the egress
 // table names, never the origin the window happens to carry: the desktop
 // build serves from a loopback address, and such a link only opens on the
