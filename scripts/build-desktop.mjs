@@ -6,9 +6,16 @@
 // a folder this script did not write.
 import { spawn, execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { readAppEnv } from './with-app-env.mjs';
+
+// Packaging refuses a folder without this manifest, so the manifest is also
+// the only thing that can make an OLD folder look fresh. It is destroyed
+// before anything else runs, which means a build that refuses or falls over
+// leaves its previous output unusable rather than packable: the way to a
+// stageable dist-desktop is a build that finished, at this source.
+rmSync(path.join('dist-desktop', 'cipher-desktop-build.json'), { force: true });
 
 // The group door's address is not in the repo. A desktop bundle without it
 // would take groups off Tor and onto the clear address without a word, so the
