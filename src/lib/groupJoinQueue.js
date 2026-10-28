@@ -236,10 +236,18 @@ export function admitRelayRoster({ previous, incoming, isOwner, selfPk = '' } = 
 //   ignore - denied, or already waiting in the queue
 //   deny   - joins are off (the Groups setting is Nobody)
 //   known  - a member of record re-stating a join (no queue, no change)
-//   queue  - a request for the owner
-export function joinRequestDecision({ isSelf, denied, pending, allowsJoins, inSnapshot } = {}) {
+//   queue  - a request for the owner, on the owner's own device
+//   pass   - a request on a device that cannot approve it: not this
+//            device's business, no queue row is written. A member device
+//            that queued it could never act on the row, and the row is not
+//            inert — the key grant path reads it (grantKeyRequest) and would
+//            deny the sender a key there even after the owner approves
+//            them. Membership reaches a member device with the relay's
+//            roster, which is that device's evidence of record.
+export function joinRequestDecision({ isSelf, denied, pending, allowsJoins, inSnapshot, isOwner = false } = {}) {
   if (isSelf) return 'self';
   if (denied || pending) return 'ignore';
   if (!allowsJoins) return 'deny';
-  return inSnapshot ? 'known' : 'queue';
+  if (inSnapshot) return 'known';
+  return isOwner ? 'queue' : 'pass';
 }

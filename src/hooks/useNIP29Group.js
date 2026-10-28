@@ -963,6 +963,12 @@ export function useNIP29Group({ identity }) {
       if (event.kind === 9021) {
         const pk = event.pubkey;
         const members = await loadMemberSnapshot(groupId);
+        // Only the owner's device can approve or deny a request, so only it
+        // holds the queue; a member device that wrote the row could never
+        // act on it, and the row would deny the sender a key on the grant
+        // path there (grantKeyRequest reads the queue) even after the owner
+        // approves them.
+        const owned = useChatStore.getState().groups.some((g) => g.id === groupId && g.creator === identity.pk);
         // One pure decision, in a fixed order (joinRequestDecision): a denied
         // or already-queued sender is stopped BEFORE the roster is looked at,
         // and presence in the stored roster is not approval — on the owner's
@@ -974,6 +980,7 @@ export function useNIP29Group({ identity }) {
           pending: Boolean(loadPendingJoins()[groupId]?.some((row) => row.pubkey === pk)),
           allowsJoins: allowsGroupJoins(),
           inSnapshot: Array.isArray(members) && members.some((member) => memberKey(member) === pk),
+          isOwner: owned,
         });
         if (decision === 'ignore') {
           // Denied senders stay out even when this device's snapshot has been
@@ -991,18 +998,21 @@ export function useNIP29Group({ identity }) {
           denyPendingJoin(groupId, pk);
           return;
         }
+        if (decision === 'pass') {
+          // Another member's join is the owner's business. This device
+          // neither queues nor admits them: membership arrives with the
+          // relay's roster, which a non-owner device admits as its evidence.
+          return;
+        }
         if (decision === 'queue') {
-          // First join request from this sender: it goes to the pending queue
-          // for owner approval instead of onto the snapshot. Nothing auto-adds
-          // a stranger, so their key request reads a snapshot that does not
-          // name them and is denied. The requester keeps seeing ciphertext, as
-          // any keyless member does, until the owner approves them.
+          // First join request from this sender, on the owner's own device:
+          // it goes to the pending queue for owner approval instead of onto
+          // the snapshot. Nothing auto-adds a stranger, so their key request
+          // reads a snapshot that does not name them and is denied. The
+          // requester keeps seeing ciphertext, as any keyless member does,
+          // until the owner approves them.
           const queued = queuePendingJoin(groupId, { pubkey: pk, eventId: event.id, at: event.created_at });
-          if (queued) {
-            const owned = useChatStore.getState().groups.some((g) => g.id === groupId && g.creator === identity.pk);
-            if (owned) appendSystemMessage(groupId, `${shortNpub(pk)} wants to join. Approve it in Join requests.`, event.id);
-            else console.log('[group] Join request queued for', groupId.slice(0, 6), 'from', pk.slice(0, 6));
-          }
+          if (queued) appendSystemMessage(groupId, `${shortNpub(pk)} wants to join. Approve it in Join requests.`, event.id);
           return;
         }
         // 'self' (the creator's bootstrap join echo) and 'known' (a member of

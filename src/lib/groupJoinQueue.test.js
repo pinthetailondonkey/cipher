@@ -194,7 +194,21 @@ test('the 9021 decision keeps its order: self, denied or queued, joins off, then
   assert.equal(decide({ pending: true, inSnapshot: true }), 'ignore');
   assert.equal(decide({ allowsJoins: false, inSnapshot: false }), 'deny');
   assert.equal(decide({ inSnapshot: true }), 'known');
-  assert.equal(decide({ inSnapshot: false }), 'queue');
+  assert.equal(decide({ isOwner: true, inSnapshot: false }), 'queue');
+});
+
+test('a join request is queued on the owner device only', () => {
+  // Only the owner can approve or deny, so only the owner holds the queue.
+  // A member device that wrote the row could never act on it, and the row
+  // is not inert: the key grant path reads it (grantKeyRequest) and would
+  // deny the sender a key on that device even after the owner approves
+  // them. Membership reaches a member device with the relay's roster.
+  assert.equal(decide({ isOwner: true, inSnapshot: false }), 'queue');
+  assert.equal(decide({ isOwner: false, inSnapshot: false }), 'pass');
+  // A device that does not say it is the owner is not the owner.
+  assert.equal(decide({ inSnapshot: false }), 'pass');
+  // Owner or not, a member of record re-stating a join is known.
+  assert.equal(decide({ isOwner: false, inSnapshot: true }), 'known');
 });
 
 // Audit finding: the pending and deny stores grew without limit, and a full
