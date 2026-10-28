@@ -22,6 +22,7 @@ import { claimSecuringSend, dropSecuringSend, forgetPendingKeyRequest, queueSecu
 import { sortMessages, stampArrival } from '../features/chat/media';
 import { admitRelayRoster, isJoinDenied, joinRequestDecision, denyPendingJoin, dropPendingJoin, clearJoinDenial, loadPendingJoins, queuePendingJoin, withoutDenied } from '../lib/groupJoinQueue.js';
 import { allowsGroupJoins } from '../lib/privacy.js';
+import { clearMemberRemoval, recordMemberRemoval, sentAfterRemoval } from '../lib/groupRemoval.js';
 import { groupMetaAnnouncement } from '../lib/groupMetaAnnouncement.js';
 import { clampGroupBody } from '../lib/disappearing';
 
@@ -422,6 +423,26 @@ async function publishAuthedGroupEvent(identity, event) {
   return event;
 }
 
+// A removal is read after some of the removed member's late messages were
+// already saved (history can arrive before the kick does). The rule is the
+// same either way, so what they sent after the line leaves the store and the
+// database too, and a reload cannot bring it back.
+async function purgeSentAfterRemoval(groupId, pubkey, at) {
+  try {
+    const rows = await db.messages.where('chatId').equals(groupId).toArray();
+    const late = rows.filter((row) => row.pubkey === pubkey && !row.isSender && row.timestamp > at).map((row) => row.id);
+    if (late.length) await db.messages.bulkDelete(late);
+    const gone = new Set(late);
+    useChatStore.getState().setGroupMessages((prev) => {
+      const list = prev[groupId] || [];
+      const kept = list.filter((message) => !(message.pubkey === pubkey && !message.isSender && message.timestamp > at) && !gone.has(message.id));
+      return kept.length === list.length ? prev : { ...prev, [groupId]: kept };
+    });
+  } catch (error) {
+    console.error('[group] Could not clear a removed member\'s late messages:', error);
+  }
+}
+
 const shouldSuppressGroup = (groupId) => {
   const state = useChatStore.getState();
   const mutedUntil = state.mutedUntil?.[groupId];
@@ -753,6 +774,8 @@ export function useNIP29Group({ identity }) {
       tags: [['h', groupId], ['p', memberPubkey]], content: ''
     }, identity.sk);
     await Promise.allSettled(pool.publish(groupRelays, ev));
+    recordMemberRemoval(groupId, memberPubkey, ev.created_at);
+    await purgeSentAfterRemoval(groupId, memberPubkey, ev.created_at);
     setGroupMembers(prev => prev.filter(m => m.pubkey !== memberPubkey));
     appendSystemMessage(groupId, `${shortNpub(memberPubkey)} was kicked from the group`, ev.id);
   }, [identity, setGroupMembers, appendSystemMessage]);
@@ -787,6 +810,7 @@ export function useNIP29Group({ identity }) {
     // D1-E/D3-B) — a pending row for them stops it too.
     dropPendingJoin(groupId, memberPubkey);
     clearJoinDenial(groupId, memberPubkey);
+    clearMemberRemoval(groupId, memberPubkey, ev.created_at);
     const snapshot = await loadMemberSnapshot(groupId);
     await rememberMembers(groupId, [...new Set([...(snapshot || []), memberPubkey, identity.pk])]);
     appendSystemMessage(groupId, `${shortNpub(memberPubkey)} was added to the group`, ev.id);
@@ -996,6 +1020,8 @@ export function useNIP29Group({ identity }) {
       }
       if (event.kind === 9022) {
         const pk = event.pubkey;
+        recordMemberRemoval(groupId, pk, event.created_at);
+        await purgeSentAfterRemoval(groupId, pk, event.created_at);
         await patchMemberSnapshot(groupId, (members) => members.filter((member) => member !== pk));
         if (useChatStore.getState().activeGroup?.id === groupId) {
           setGroupMembers(prev => Array.isArray(prev) ? prev.filter(m => m.pubkey !== pk) : []);
@@ -1010,6 +1036,7 @@ export function useNIP29Group({ identity }) {
         // addresses to THIS device is what clears its own removal record —
         // nothing else on this device un-walls it (drills D2 receiver arm).
         if (pk && String(pk) === String(identity.pk)) clearJoinDenial(groupId, identity.pk);
+        if (pk) clearMemberRemoval(groupId, pk, event.created_at);
         if (pk) await patchMemberSnapshot(groupId, (members) => (members.includes(pk) ? members : [...members, pk]));
         if (useChatStore.getState().activeGroup?.id === groupId) {
           setGroupMembers(prev => {
@@ -1032,6 +1059,10 @@ export function useNIP29Group({ identity }) {
         // clears the record. The kick is authorized above — a plain roster
         // row cannot write it.
         if (pk && String(pk) === String(identity.pk)) denyPendingJoin(groupId, identity.pk);
+        if (pk) {
+          recordMemberRemoval(groupId, pk, event.created_at);
+          await purgeSentAfterRemoval(groupId, pk, event.created_at);
+        }
         if (pk) await patchMemberSnapshot(groupId, (members) => members.filter((member) => member !== pk));
         if (useChatStore.getState().activeGroup?.id === groupId) {
           setGroupMembers(prev => Array.isArray(prev) ? prev.filter(m => m.pubkey !== pk) : []);
@@ -1135,6 +1166,12 @@ export function useNIP29Group({ identity }) {
       let plaintext = event.content;
       let isPending = false;
       let decEpoch = null;
+      // A removed member's message made after their removal is not accepted,
+      // whatever key they still hold. Their older messages are kept.
+      if (event.pubkey !== identity.pk && sentAfterRemoval(groupId, event.pubkey, event.created_at)) {
+        console.warn('[group] Dropped a message sent after its sender was removed', event.id);
+        return;
+      }
       const decoded = await decodeGroupEvent({ event, groupId });
       if (decoded.refused) {
         // Unencrypted content in a group that holds a key: dropped, never
@@ -1243,6 +1280,7 @@ export function useNIP29Group({ identity }) {
         const pool = await getAuthenticatedPool(identity);
         const events = await queryWithTimeout(pool, groupRelays, { kinds: [9], '#h': [gid], limit: 100 }, 4000);
         for (const event of events) {
+          if (event.pubkey !== identity.pk && sentAfterRemoval(gid, event.pubkey, event.created_at)) continue;
           const decoded = await decodeGroupEvent({ event, groupId: gid });
           if (decoded.pending || decoded.error) continue;
           const parsed = decoded.parsed || {};

@@ -9,6 +9,7 @@ import { scopedGet, scopedSet } from '../../lib/storage';
 import { shortNpub } from '../../lib/npub';
 import { getPrivacy, allowsTyping } from '../../lib/privacy';
 import { decodeGroupEvent, isGroupControlBody, isGroupControlRow } from '../../lib/crypto/groupMessageCodec';
+import { sentAfterRemoval } from '../../lib/groupRemoval.js';
 import { resumeKeyRequestIds } from '../../lib/crypto/groupKeyRequest';
 import { useGroupKeyReconciler } from '../../hooks/useGroupKeyReconciler';
 import { flushSecuringGroupSends } from '../../hooks/useNIP29Group';
@@ -64,6 +65,8 @@ export function useChatBootstrap({
     const syncedMessages = [];
 
     for (const event of events) {
+      // History from a member who was removed: what they made after the line is not kept.
+      if (event.pubkey !== syncIdentity.pk && sentAfterRemoval(groupId, event.pubkey, event.created_at)) continue;
       const decoded = await decodeGroupEvent({ event, groupId });
       if (decoded.error) {
         console.warn('[Chat] Could not decrypt group history event:', event.id, decoded.reason);
