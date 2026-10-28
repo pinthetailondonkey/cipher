@@ -438,7 +438,12 @@ export async function readStoredRows() {
   return queryMessages(_current.messages).toArray();
 }
 
-if (typeof window !== "undefined") {
+// The seam is compiled in only when the build asks for it
+// (VITE_TEST_HOOKS=1, `npm run build:ui-test`, which `npm run test:ui` runs
+// first). An ordinary build, the one that ships, carries no window.__cipher:
+// a page script or an extension could otherwise read every opened message row
+// and write messages through it.
+if (typeof window !== "undefined" && import.meta.env?.VITE_TEST_HOOKS === '1') {
   window.__cipher = {
     saveMessage, patchMessage, readStoredRows,
     // Test seam: closeDB + openDBFor re-open the account's database. Writes

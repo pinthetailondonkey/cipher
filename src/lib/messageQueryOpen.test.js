@@ -29,3 +29,12 @@ test('rows read through where().equals() come back opened, not as sealed shells'
   assert.equal((await query().sortBy('timestamp'))[0].data.type, 'order_request');
   assert.equal((await query().filter(() => true).toArray())[0].data.status, 'accepted');
 });
+
+test('the window.__cipher test seam is compiled in only for a build that asks for it', async () => {
+  const fs = await import('node:fs');
+  const dbSource = fs.readFileSync(new URL('../db.js', import.meta.url), 'utf8');
+  assert.match(dbSource, /typeof window !== "undefined" && import\.meta\.env\?\.VITE_TEST_HOOKS === '1'\) \{\n  window\.__cipher = \{/);
+  assert.equal(/if \(typeof window !== "undefined"\) \{\n  window\.__cipher/.test(dbSource), false);
+  const pkg = JSON.parse(fs.readFileSync(new URL('../../package.json', import.meta.url), 'utf8'));
+  assert.match(pkg.scripts['test:ui'], /build-ui-test/);
+});
