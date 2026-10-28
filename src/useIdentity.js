@@ -729,7 +729,15 @@ export function useIdentity() {
         try {
           targetVault = await lockStoredVault({ pk, vault: targetVault, pin, skArray, activePk: getActivePubkey() });
         } catch (upgradeErr) {
-          if (isDeviceKeyError(upgradeErr)) return { success: false, error: deviceLockUpgradeMessage(upgradeErr) };
+          if (isDeviceKeyError(upgradeErr)) {
+            // A wrap whose write was refused rolled itself back and destroyed
+            // only the key it made for itself, so nothing on disk changed —
+            // this is the storage refusing, not the device being unable, and
+            // the plain save-failure words answer instead of sending the
+            // person to another device for a full disk.
+            if (upgradeErr?.code === 'write-failed') return { success: false, error: COMMIT_FAILED_MESSAGE };
+            return { success: false, error: deviceLockUpgradeMessage(upgradeErr) };
+          }
           throw upgradeErr;
         }
       }
@@ -744,13 +752,25 @@ export function useIdentity() {
         handle,
         now: Date.now(),
       });
-      saveVaults(newVaults);
-
-      setActivePubkey(pk);
+      // One commit, or nothing — the same rule as the other doors: table,
+      // pointer, mirror and handle land together, and a storage that refuses
+      // part way is shown to have kept everything it had.
+      try {
+        // The session key rides first: a storage that refuses even it fails
+        // before the account has touched anything.
+        sessionStorage.setItem('cipher_session_sk', JSON.stringify(Array.from(sk)))
+        commitWithRollback(localStorage, [
+          { key: 'cipher_vaults', value: JSON.stringify(newVaults) },
+          { key: 'cipher_active_pubkey', value: pk },
+          { key: 'cipher_vault', value: JSON.stringify(targetVault) },
+          { key: 'cipher_handle', value: handle },
+        ])
+      } catch (storageError) {
+        console.error('[identity] Could not save the restored account:', storageError)
+        try { sessionStorage.removeItem('cipher_session_sk') } catch { /* the words below still hold */ }
+        return { success: false, error: COMMIT_FAILED_MESSAGE }
+      }
       resetPinFailures(localStorage, pk);
-      sessionStorage.setItem('cipher_session_sk', JSON.stringify(Array.from(sk)));
-      localStorage.setItem('cipher_vault', JSON.stringify(targetVault));
-      localStorage.setItem('cipher_handle', handle);
       
       setKeys({ sk, pk, npub: nip19.npubEncode(pk) });
       setHasVault(true);
