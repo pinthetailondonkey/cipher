@@ -176,4 +176,18 @@ test('a damaged vault is answered, not charged to the PIN counter', () => {
   // A real envelope — legacy (no salt) or current (with salt) — is not damaged.
   assert.equal(isDamagedVault({ iv: [1], data: [2] }), false);
   assert.equal(isDamagedVault({ iv: [1], data: [2], salt: [3], iter: 600000 }), false);
+  // KDF metadata of the wrong shape never reaches a PIN check: PBKDF2
+  // refuses it first, so charging would spend an attempt on a copy no PIN
+  // could ever open. A legacy envelope keeps its right to carry iter alone.
+  assert.equal(isDamagedVault({ iv: [1], data: [2], salt: 'sixteen-bytes' }), true);
+  assert.equal(isDamagedVault({ iv: [1], data: [2], salt: [] }), true);
+  assert.equal(isDamagedVault({ iv: [1], data: [2], salt: null }), true);
+  assert.equal(isDamagedVault({ iv: [1], data: [2], iter: '600000' }), true);
+  assert.equal(isDamagedVault({ iv: [1], data: [2], iter: 0 }), true);
+  assert.equal(isDamagedVault({ iv: [1], data: [2], iter: -1 }), true);
+  // Metadata shaped right but wrong in value is NOT damaged: the KDF runs,
+  // the GCM tag fails, and that is indistinguishable from a wrong PIN —
+  // measured in the lock-screen spec, charged like a wrong PIN.
+  assert.equal(isDamagedVault({ iv: [1], data: [2], salt: [1, 2, 3] }), false);
+  assert.equal(isDamagedVault({ iv: [1], data: [2], iter: 100000 }), false);
 });
