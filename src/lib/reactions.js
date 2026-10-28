@@ -1,10 +1,49 @@
 export function addReaction(list, reaction) {
   const existing = Array.isArray(list) ? list : [];
   if (!reaction?.pubkey || !reaction?.emoji) return existing;
-  if (existing.some((item) => item.pubkey === reaction.pubkey && item.emoji === reaction.emoji)) {
-    return existing;
+  const entry = { emoji: reaction.emoji, pubkey: reaction.pubkey, ...(reaction.id ? { id: reaction.id } : {}) };
+  const at = existing.findIndex((item) => item.pubkey === reaction.pubkey && item.emoji === reaction.emoji);
+  if (at >= 0) {
+    // The same reaction again is a no-op, except that it may bring the event id
+    // a copy made before publishing did not have yet: un-react needs it.
+    if (existing[at].id || !reaction.id) return existing;
+    const next = [...existing];
+    next[at] = entry;
+    return next;
   }
-  return [...existing, { emoji: reaction.emoji, pubkey: reaction.pubkey }];
+  return [...existing, entry];
+}
+
+// One kind 7 event as the reaction the screen keeps. The event id rides along:
+// taking a reaction back means deleting that event.
+export function reactionFromEvent(ev) {
+  return { emoji: ev?.content, pubkey: ev?.pubkey, id: ev?.id };
+}
+
+// Kind 7 events for the messages we hold, in filters of `size` ids. The old
+// query asked every relay for the latest 500 reactions of anyone, which holds
+// almost none of ours; `#e` asks for exactly the messages on this device.
+export function reactionFiltersFor(messageIds, size = 100, max = 2000) {
+  const ids = [...new Set((messageIds || []).filter((id) => typeof id === 'string' && /^[0-9a-f]{64}$/i.test(id)))].slice(0, max);
+  const filters = [];
+  for (let i = 0; i < ids.length; i += size) {
+    filters.push({ kinds: [7], '#e': ids.slice(i, i + size), limit: 500 });
+  }
+  return filters;
+}
+
+// Reactions whose event we deleted (here or from another device) stay gone.
+export function withoutDeletedReactions(events, deletedIds) {
+  const deleted = deletedIds instanceof Set ? deletedIds : new Set(deletedIds || []);
+  return (events || []).filter((ev) => !deleted.has(ev?.id));
+}
+
+// Takes one account's reaction off a message. Returns the new list and the
+// removed entries, so the caller can delete their events.
+export function removeReaction(list, { pubkey, emoji }) {
+  const existing = Array.isArray(list) ? list : [];
+  const removed = existing.filter((item) => item.pubkey === pubkey && item.emoji === emoji);
+  return { list: existing.filter((item) => !(item.pubkey === pubkey && item.emoji === emoji)), removed };
 }
 
 // Kind 7 arrives on the per-message subscription and on the all-groups

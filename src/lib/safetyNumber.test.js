@@ -9,6 +9,7 @@ if (!globalThis.localStorage) {
     setItem: (k, v) => { backing[k] = String(v); },
     removeItem: (k) => { delete backing[k]; },
     clear: () => { backing = {}; },
+    _dump: () => backing,
   };
 }
 
@@ -99,4 +100,43 @@ test('verifySafetyNumber clears the changed flag, code stays pinned', async () =
 test('verifySafetyNumber on an unknown contact is a no-op null', () => {
   localStorage.clear();
   assert.equal(verifySafetyNumber(PK_B), null);
+});
+
+test('safety records are per account and leave with the account', async () => {
+  const { removeAccountKeys } = await import('./vaultLockout.js');
+  localStorage.clear();
+  const ME = 'c'.repeat(64);
+  const OTHER = 'd'.repeat(64);
+  const pointer = (pk) => { localStorage.setItem('cipher_active_pubkey', pk); };
+  pointer(ME);
+  await noteFirstSeen(PK_A, RELAYS, NOW);
+  pointer(OTHER);
+  assert.equal(safetyRecord(PK_A), null, 'another account does not see this account\'s contact');
+  await noteFirstSeen(PK_B, RELAYS, NOW);
+  pointer(ME);
+  assert.equal(safetyRecord(PK_B), null);
+  assert.ok(safetyRecord(PK_A));
+  // The wipe of one account removes its records and leaves the other's.
+  const keys = [];
+  const storage = {
+    get length() { return Object.keys(localStorage._dump()).length; },
+    key: (i) => Object.keys(localStorage._dump())[i] ?? null,
+    getItem: (k) => localStorage.getItem(k),
+    removeItem: (k) => { keys.push(k); localStorage.removeItem(k); },
+  };
+  removeAccountKeys(storage, ME);
+  assert.ok(keys.includes(`cipher_${ME}_safety_numbers_v1`));
+  pointer(OTHER);
+  assert.ok(safetyRecord(PK_B));
+  pointer(ME);
+  assert.equal(safetyRecord(PK_A), null);
+});
+
+test('the old global record is adopted once by the first account and then removed', async () => {
+  localStorage.clear();
+  const legacy = { [PK_A]: { relays: ['relay.one'], firstSeenAt: NOW, safetyNumber: '111 222 333 444 555', changed: false } };
+  localStorage.setItem('safety_numbers_v1', JSON.stringify(legacy));
+  localStorage.setItem('cipher_active_pubkey', 'e'.repeat(64));
+  assert.equal(safetyRecord(PK_A).firstSeenAt, NOW);
+  assert.equal(localStorage.getItem('safety_numbers_v1'), null);
 });

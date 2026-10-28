@@ -1,4 +1,4 @@
-import { db, deleteMessageForGood } from '../../db';
+import { db, deleteMessageForGood, patchMessage } from '../../db';
 import { getAuthenticatedPool } from '../../lib/pool';
 import { generalRelays } from '../../lib/relays';
 import { useChatStore } from '../../store/chatStore';
@@ -113,10 +113,10 @@ export function useMessageCommands({
           if (!newText || newText === msg.text) return;
           useChatStore.getState().addMessageEdit(msg.id, { previousText: msg.text || msg.data?.message || '' });
           try {
-            const original = await db.messages.get(msg.id);
-            if (original) {
-              const updated = { ...original, data: { ...original.data, message: newText, edited: true }, edited: true };
-              await db.messages.put(updated);
+            // A local patch, not a plain write: the next history fetch serves
+            // the original text again and the patch is laid back over it.
+            if (await patchMessage(msg.id, { message: newText, edited: true })) {
+              const updated = await db.messages.get(msg.id);
               if (activeDm) setDms(prev => ({ ...prev, [activeDm]: (prev[activeDm] || []).map(m => m.id === msg.id ? updated : m) }));
               else if (activeGroup) setGroupMessages(prev => ({ ...prev, [activeGroup.id]: (prev[activeGroup.id] || []).map(m => m.id === msg.id ? updated : m) }));
             }
