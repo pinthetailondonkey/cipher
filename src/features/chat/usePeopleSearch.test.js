@@ -10,6 +10,8 @@ const IDENTITY = { pk: 'a'.repeat(64), npub: nip19.npubEncode('a'.repeat(64)), s
 
 const runSearch = async (query) => {
   useChatStore.getState().setSearchQuery(query);
+  // The factory keeps no hook state; it hands back the one search function.
+  // oxlint-disable-next-line react-hooks/rules-of-hooks
   const { handleSearch } = usePeopleSearch({ identity: IDENTITY });
   await handleSearch();
   return useChatStore.getState().searchResults;
