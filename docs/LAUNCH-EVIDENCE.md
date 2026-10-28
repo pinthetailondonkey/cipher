@@ -7,11 +7,13 @@ outside the tree. Nothing here is pushed, deployed or released.
 
 - Base: `origin/main` = `1b0fb053f5695cc729b390948c7635b320606fa1` (fetched 2026-10-28).
 - Branch: `release/launch-v1`, cut from that SHA.
-- Candidate HEAD: `61f35c0dc7731bc45ccd52ecdb519e088fac74cb`. Nine local
+- Candidate HEAD: `25ce9f7615598577643159ebe1db9c28d953cf61`. Ten local
   commits, none pushed, per the founder's release order that overrides "push
   each commit":
   `cbc2037` `5b12a30` `4dc0df0` `7042cb5` `298ef9b` `574a299` `54be472`
-  `fb7d6cf` `61f35c0`.
+  `fb7d6cf` `61f35c0` `e1cdc54` `25ce9f7`. The last three are docs only; the
+  source candidate AUDITOR gated is `61f35c0`, and `git diff --stat
+  61f35c0..25ce9f7` touches `docs/LAUNCH-EVIDENCE.md` and nothing else.
 
 ## Milestone 1 — auth and recovery
 
@@ -109,6 +111,16 @@ requiring a platform authenticator would hide the door for roaming keys.
   gates carry to this candidate. It asked to carry two additions, both
   re-measured here: `vaultEntry` merge and the restore test are "not defects,
   checked, stands"; `deviceEnvelope` is test-only on this branch.
+- BITCH2, passkey instrumented tap (`/tmp/bitch2-authcheck`, `doorcheck5.mjs`,
+  build at `574a299`; `Restore.jsx` is byte-identical through `25ce9f7`).
+  EXECUTED: the tap calls `navigator.credentials.get` (rpId, allowCredentials,
+  PRF eval), a rejection shows immediately in the error line, the button never
+  sticks disabled, nothing hangs. It first watched `credentials.create` — the
+  wrong function — and retracted its "no error after 15s" note as an
+  instrument bug. The error text is the browser's raw exception message,
+  because `Restore.jsx:37` passes `err?.message` through verbatim; the plain
+  fallback only appears when the exception carries no message. Lane verdict:
+  not a blocker, matches the finding above.
 - OPSEC, transport: onion 80 open / 443 dead, clearnet 443 refused / 8080
   open; preference, overrides and "off" unchanged; no automatic clearnet
   fallback, no TLS bypass. Socket OPEN is not group messaging — no lane has
@@ -152,12 +164,27 @@ passed GCM authentication after corruption.
 
 ## Not done, and not claimed
 
-- Not pushed. Not deployed. Not released. Production still serves `1b0fb05`
-  or older; no deployment of this branch exists.
-- `feat/device-lock` not merged and not reviewed to a verdict beyond the risk
-  read below.
+- Not pushed. Not deployed. Not released. No deployment of this branch
+  exists: the served entry is `index-C8I3GXXT.js`, the candidate builds
+  `index-CNxR3c1G.js`.
+- `feat/device-lock` not merged, and refused for launch on the risk read below.
 - Redesign, `/download`, `/privacy`, desktop builds, Tor bundles, orphaned
   test runners: untouched, per the order to complete only milestone 1.
+
+## Promises not proven by any execution here
+
+Stated so nobody reads this file as more than it is:
+
+- A removed member cannot read a post-removal message: asserted only in
+  pieces (`groupKeyGrant.test.js` rotation backfill, `groupMembership.test.js`
+  "a kick refuses a grant from a pre-rotation list"). No test executes a
+  removal followed by a post-removal message. It needs a two-account drill.
+- Two accounts exchanging a group message on any transport: not done. Every
+  transport statement in this file stops at socket behaviour.
+- A keyring-less device under `feat/device-lock`: CODE-WALK, twice
+  independently, never executed on such a device.
+- Passkey cancellation against a real authenticator: the tap was driven with
+  an instrumented rejection, not a human pressing cancel.
 
 ## Device-lock risk read (read-only; no merge)
 
