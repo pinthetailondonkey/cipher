@@ -1,4 +1,4 @@
-const CACHE_NAME = 'cipher-shell-v1';
+const CACHE_NAME = 'cipher-shell-__BUILD_ID__';
 
 // A hashed asset that a deploy removed comes back from the host as the SPA
 // fallback: 200 with index.html. Caching that under the asset's URL pins a
