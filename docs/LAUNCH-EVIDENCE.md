@@ -7,8 +7,11 @@ outside the tree. Nothing here is pushed, deployed or released.
 
 - Base: `origin/main` = `1b0fb053f5695cc729b390948c7635b320606fa1` (fetched 2026-10-28).
 - Branch: `release/launch-v1`, cut from that SHA.
-- Candidate HEAD: `ec9b0c5c2dce4d18a287ec42d383cd1838cbcfe9`. Fifteen local
-  commits (`git rev-list --count 1b0fb05..HEAD` → 15), none pushed
+- Source candidate: `ec9b0c5c2dce4d18a287ec42d383cd1838cbcfe9`. The branch
+  HEAD is this file's own round-2 update, one docs-only commit later; re-run
+  `git diff --stat ec9b0c5..HEAD` and it names `docs/LAUNCH-EVIDENCE.md`
+  alone. Sixteen local commits above base at `ec9b0c5`
+  (`git rev-list --count 1b0fb05..HEAD` → 16), none pushed
   (`git ls-remote origin 'refs/heads/release/*'` → empty), per the founder's
   release order that overrides "push each commit":
   `cbc2037` `5b12a30` `4dc0df0` `7042cb5` `298ef9b` `574a299` `54be472`
