@@ -51,7 +51,9 @@ export default function Drawer({ identity, open, onClose, onNavigate }) {
               </span>
             </button>
 
-            <nav className="flex flex-col">
+            {/* Its own name, distinct from the bar's "Tabs": a screen reader
+                meets two landmarks, not one nav counted twice. */}
+            <nav aria-label="More" className="flex flex-col">
               {sections.map(({ key, label, icon: Icon, go, badge }) => (
                 <button key={key} type="button" onClick={go} className="flex min-h-[48px] w-full items-center gap-4 px-5 text-left text-[15px] font-semibold text-ink active:bg-ink/5">
                   <Icon size={24} className="text-inkMuted" />
