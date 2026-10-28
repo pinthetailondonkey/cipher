@@ -31,6 +31,39 @@ call to `createVault` with ten digits would have passed. No UI could
 type those digits, so no vault from the app carries them. Not a bug;
 recorded so nobody has to re-dig.
 
+## Every vault writer, and where its PIN came from
+
+A vault's PIN length is set by the field it was typed into, so the
+question is whether any field that ever fed `encryptKey` accepted a
+ninth digit. Each writer, with the read that bounds it:
+
+- **Create** — `createVault(handle, pin)`; the PIN field is born at
+  `a911eee` with `slice(0, 8)` + `maxLength={8}`.
+- **Restore from words** — the new-PIN field in RestoreMnemonic, born
+  at `a911eee` with the same cap.
+- **Restore by handle** — decrypts a vault that was already written; the
+  PIN field in Restore, born at `a911eee` with the same cap, and the
+  stored vault keeps whatever length its own writer gave it.
+- **Unlock's transparent legacy upgrade** — re-encrypts with the PIN
+  just typed on the keypad, born at `a911eee` with eight slots.
+- **Passkey recovery on a fresh device** — the new PIN comes from the
+  Restore/lock-screen fields above, and `isAcceptableNewPin` bounds it
+  at the centre (`>=` from `1c7aba4`, exactly 8 from `cbc2037`).
+
+The `>=` window at the centre could not be reached with a longer PIN by
+any caller: every field that feeds it has capped at eight since before
+the window opened. `git log --all -S 'setPin(e.target.value'` lists
+every commit that ever touched a PIN setter; each one carries the same
+`slice(0, 8)` + `maxLength={8}` pair.
+
+## The executed half
+
+`tests/ui/pin-unlock.spec.js` runs the proof the other way: it seeds a
+real 9-digit vault, drives five actual UI unlock attempts with the only
+typeable prefix, and watches the account wipe — the 12 words left as
+the only way back. Seeding is the test's own construction; the wipe is
+the app's own behavior.
+
 ## Consequences
 
 - The eight-slot unlock keypad locks nobody out: every vault the app
