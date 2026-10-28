@@ -32,7 +32,6 @@ const GRANDFATHERED_CLEARNET = new Map([
   ['blossom-band', 'https://blossom.band'],
   ['link-preview', 'https://api.microlink.io'],
   ['dead-drop', 'https://cipherlinkhere.com'],
-  ['app-host', 'https://sonic-cobalt-4m6q5vj.vercel.app'],
 ]);
 
 test('a clearnet row the founder never named does not ship', () => {
