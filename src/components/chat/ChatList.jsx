@@ -500,11 +500,6 @@ export default function ChatList({ onOpenChat, onRefresh }) {
               className="md:hidden"
               onClick={() => setShowDrawer(true)}
             />
-            <IconButton
-              icon={<Bookmark size={20} />}
-              label="Saved messages"
-              onClick={() => setShowBookmarks(true)}
-            />
             <span className="relative">
               <IconButton
                 icon={<Bell size={20} />}
@@ -517,11 +512,6 @@ export default function ChatList({ onOpenChat, onRefresh }) {
                 </span>
               )}
             </span>
-            <IconButton
-              icon={<QrCode size={20} />}
-              label="Scan QR code"
-              onClick={() => setShowQRScanner(true)}
-            />
             {onRefresh && (
               <IconButton
                 icon={<RefreshCw size={20} className={loading ? 'animate-spin' : undefined} />}
@@ -564,6 +554,12 @@ export default function ChatList({ onOpenChat, onRefresh }) {
                     </MenuItem>
                     <MenuItem icon={<Flame size={14} className="text-inkMuted" />} onClick={() => { setHeaderMenuOpen(false); setShowDeadDrop(true); }}>
                       Burn note
+                    </MenuItem>
+                    <MenuItem icon={<Bookmark size={14} className="text-inkMuted" />} onClick={() => { setHeaderMenuOpen(false); setShowBookmarks(true); }}>
+                      Saved messages
+                    </MenuItem>
+                    <MenuItem icon={<QrCode size={14} className="text-inkMuted" />} onClick={() => { setHeaderMenuOpen(false); setShowQRScanner(true); }}>
+                      Scan QR code
                     </MenuItem>
                   </div>
                 </>
