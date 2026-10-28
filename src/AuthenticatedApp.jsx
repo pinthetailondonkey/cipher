@@ -12,7 +12,7 @@ import Segmented from './components/ui/Segmented';
 import CommandPalette from './components/ui/CommandPalette';
 import { requestNotificationPermission } from './lib/notifications';
 import { TABS } from './lib/tabs.js';
-import { ordersNeedActionOf, unreadTotalOf, useChatStore } from './store/chatStore';
+import { barUnreadTotalOf, ordersNeedActionOf, useChatStore } from './store/chatStore';
 
 const Menus = lazy(() => import('./Menus'));
 const Discover = lazy(() => import('./Discover'));
@@ -22,7 +22,9 @@ const MyOrders = lazy(() => import('./components/chat/MyOrders'));
 
 export default function AuthenticatedApp({ identity }) {
   const [activeTab, setActiveTab] = useState('chat');
-  const unreadTotal = useChatStore(unreadTotalOf);
+  // The rail's badge reads the bar's selector: one mute-and-archive-aware
+  // number, so the two navs that show it can never disagree.
+  const unreadTotal = useChatStore(barUnreadTotalOf);
   const needsAction = useChatStore(ordersNeedActionOf);
   const [exploreMode, setExploreMode] = useState('shop');
   const showDrawer = useChatStore((state) => state.showDrawer);

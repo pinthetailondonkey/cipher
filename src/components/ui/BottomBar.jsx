@@ -1,6 +1,6 @@
 import { haptic } from '../../lib/haptics';
 import { TABS } from '../../lib/tabs.js';
-import { ordersNeedActionOf, unreadTotalOf, useChatStore } from '../../store/chatStore';
+import { barUnreadTotalOf, ordersNeedActionOf, useChatStore } from '../../store/chatStore';
 
 // The below-md shell bar (15.1, UI-SPEC): the four primary destinations in
 // the founder's fixed order, pinned under whatever pane is active. The set
@@ -10,7 +10,7 @@ import { ordersNeedActionOf, unreadTotalOf, useChatStore } from '../../store/cha
 // nothing here ever fights a thread for the bottom edge. Badges ride Chats
 // and Orders only — tabs.js says which — and a zero hides, never renders 0.
 export default function BottomBar({ activeId, onSelect }) {
-  const unread = useChatStore(unreadTotalOf);
+  const unread = useChatStore(barUnreadTotalOf);
   const needsAction = useChatStore(ordersNeedActionOf);
   const counts = { unread, needsAction };
 
