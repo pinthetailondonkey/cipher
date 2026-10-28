@@ -95,7 +95,7 @@ export default function MyOrders({ dms = null, profiles = null, onBack, onOpenCh
                     <button
                       type="button"
                       onClick={() => { haptic('light'); setReceipt(message.id); }}
-                      className="flex min-h-[36px] w-full items-center gap-1.5 px-4 pb-1 text-[13px] font-semibold text-accentText"
+                      className="flex min-h-[44px] w-full items-center gap-1.5 px-4 pb-1 text-[13px] font-semibold text-accentText"
                     >
                       <ReceiptText size={14} /> View receipt
                     </button>
