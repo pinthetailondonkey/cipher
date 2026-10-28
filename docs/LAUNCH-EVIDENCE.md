@@ -37,6 +37,71 @@ Run in the founder's checkout, production build (no test hooks):
 - `npm test` — 434 tests, 434 pass, 0 fail
 - `__cipher` absent from every built asset (test-hook build not used)
 
+## Milestone 1 close-out — UI-level unlock evidence
+
+`tests/ui/pin-unlock.spec.js`, run in Chromium against the candidate's own
+bundle (`npm run build:ui-test` + `npx playwright test`, 1 worker):
+
+```
+10 passed (1.5m)
+```
+
+Each test seeds a finished account and drives the real lock screen. What they
+prove, and what they do not:
+
+- 6-digit PIN opens a vault in today's salted format, and a 6-digit PIN in a
+  vault from before per-vault salts opens and is upgraded to
+  `salt` 16 bytes / `iter` 600000. EXECUTED.
+- 8-digit PIN opens. EXECUTED.
+- A ninth digit is refused (8 dots stay filled). Every PIN field and the pad
+  have capped at 8 since the initial commit `6d83b48`, so no build in this
+  history can create a longer PIN; a 9-digit vault, were one to exist, could
+  not be opened here and each try would spend an attempt. EXECUTED.
+- A wrong PIN spends an attempt ("4 attempts left", `cipher_fails_<pk>` = 1);
+  a reload after it does not spend another. EXECUTED.
+- A damaged vault answers "damaged copy" five times and spends none; the
+  entry is still there afterwards. EXECUTED.
+- A missing vault answers "No local vault found" and spends none. EXECUTED.
+- A local restore (handle + PIN) keeps `mnemonicEnc`, `deviceEnvelope`,
+  `displayName`, `createdAt` and `confirmed`. EXECUTED.
+- A vault with whole `iv`/`data` but a damaged `salt` still reads as a wrong
+  PIN and spends an attempt: GCM cannot tell that from a bad PIN. Recorded
+  as measured, not as a promise. EXECUTED.
+
+What causes the five-attempt wipe, stated exactly: each press of Unlock (or a
+restore/switch submit) that hands a PIN to decryption and fails. A reload
+alone neither counts nor wipes — proven above. An earlier report of mine said
+"five reloads"; that was wrong.
+
+Passkey residual finding: the restore screen's capability check is
+nostr-passkey's `isPRFSupported()` (`dist/chunk-ZKAH7U4Z.js:129`), which asks
+only whether the browser has WebAuthn. In headless Chromium it returns true
+while `isUserVerifyingPlatformAuthenticatorAvailable()` returns false, and the
+Face ID door is offered anyway. The record-only door is closed; the
+no-authenticator door is not. A cancelled or failing authenticator then ends
+in the screen's error line. Not changed here — it is a founder decision, since
+requiring a platform authenticator would hide the door for roaming keys.
+
+## Lane ownership (one row per worker; no overlap)
+
+| Lane | Scope | Where | Blocker |
+|------|-------|-------|---------|
+| BOSS | integration, candidate, this evidence file | `/home/aegis/cipher`, `release/launch-v1` | none |
+| BITCH2 | read-only auth verification | `/tmp/bitch2-verify` @ `ca1c6a0`, detached, dirty: M package.json, LockScreen.jsx, Create.jsx, Restore.jsx, RestoreMnemonic.jsx, SaveKey.jsx; ?? src/lib/passkeyRecord.js and its test; own clone `/tmp/bitch2-authcheck` | none |
+| AUDITOR | independent candidate check | `/tmp/audit-ui/tree` @ `cc6accc`, `/tmp/audit-ui/wt` @ `d83d452` | none |
+| OPSEC | transport matrix, device-lock risks | read-only; own worktree if needed | none |
+
+## Independent review of the counter change
+
+BITCH2, whose surfaces these touch, read `5b12a30` against the real vault
+shapes and returned HOLDS: `encryptKey` emits `{iv, data, salt, iter}`, a
+legacy vault is the same minus `salt`, and `decryptKey` reads `iv`/`data`
+the same way in both, so the damaged-vault guard rejects only envelopes that
+would have thrown before the PIN mattered. Two narrow edges remain, both
+pre-existing and not introduced here: a vault with intact `iv`/`data` but a
+damaged `salt` still counts as a wrong PIN, and so would a ciphertext that
+passed GCM authentication after corruption.
+
 ## Not done, and not claimed
 
 - Not pushed. Not deployed. Not released. Production still serves `1b0fb05`
