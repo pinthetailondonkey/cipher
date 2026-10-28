@@ -66,8 +66,11 @@ export default function LockScreen({ identity }) {
     try {
       const res = await identity.unlock(pin);
       // res.error is the lockout copy straight from lib/vaultLockout —
-      // "Wrong PIN. N attempts left." — shown word for word here.
-      if (!res.success) failAttempt(res.error || 'Invalid PIN');
+      // "Wrong PIN. N attempts left." — shown word for word here. The wrong
+      // digits are cleared so the retry starts empty: with dots as the only
+      // display, staling them turns one careless miss into repeat strikes
+      // toward the five-wrong-PINs wipe without the user ever seeing why.
+      if (!res.success) { setPin(''); failAttempt(res.error || 'Invalid PIN'); }
     } catch (err) {
       failAttempt(err?.message || 'Something went wrong');
     }
