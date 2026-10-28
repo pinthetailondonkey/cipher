@@ -37,3 +37,16 @@ test('a packed archive with no manifest cannot be traced and is refused', () => 
 test('a packed archive from a different source commit is refused', () => {
   assert.throws(() => verifyAsar(asar(), { expectedSha: 'e'.repeat(40) }), /stale or from another tree/);
 });
+
+// The packaging scripts call this without a variable set more often than not,
+// which used to mean the SHA was never compared. Now an unset expectation is
+// a refusal, not a pass.
+test('an archive with no source commit to check against is refused', () => {
+  const env = process.env.CIPHER_EXPECT_SHA;
+  delete process.env.CIPHER_EXPECT_SHA;
+  try {
+    assert.throws(() => verifyAsar(asar(), {}), /cannot be checked against a source commit/);
+  } finally {
+    if (env !== undefined) process.env.CIPHER_EXPECT_SHA = env;
+  }
+});

@@ -14,6 +14,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { gitHead } from './prepare-pack.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -32,8 +33,14 @@ export function verifyAsar(asarPath, { expectedSha } = {}) {
   if (/cipher-desktop-build\.json/.test(text) === false) {
     throw new Error(`${asarPath} has no build manifest inside it, so it cannot be traced to a source commit.`);
   }
-  const want = String(expectedSha || '').trim();
-  if (want && !text.includes(want)) {
+  // No caller may skip this check by leaving the variable unset: the archive
+  // is checked against the commit this checkout is on unless someone says
+  // otherwise, and with nothing to compare against it is refused.
+  const want = String(expectedSha || process.env.CIPHER_EXPECT_SHA || '').trim();
+  if (!want) {
+    throw new Error(`${asarPath} cannot be checked against a source commit: set CIPHER_EXPECT_SHA, or run this inside the checkout the build came from.`);
+  }
+  if (!text.includes(want)) {
     throw new Error(`${asarPath} does not carry the source commit ${want.slice(0, 12)}; it is stale or from another tree.`);
   }
   return { asarPath, bytes: bytes.length, expectedSha: want || null };
@@ -44,7 +51,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     const given = process.argv[2];
     const asarPath = given ? path.resolve(given) : CANDIDATES.map((p) => path.join(root, p)).find((p) => fs.existsSync(p));
     if (!asarPath) throw new Error(`No packed app.asar found. Build first, then run this, or pass the path: node scripts/verify-asar.mjs <app.asar>`);
-    const result = verifyAsar(asarPath, { expectedSha: process.env.CIPHER_EXPECT_SHA });
+    const result = verifyAsar(asarPath, { expectedSha: process.env.CIPHER_EXPECT_SHA || gitHead(root) });
     console.log(`Checked ${path.relative(root, result.asarPath)}: no test seam, manifest present${result.expectedSha ? `, source ${result.expectedSha.slice(0, 12)}` : ''}.`);
   } catch (e) {
     console.error(e.message);
