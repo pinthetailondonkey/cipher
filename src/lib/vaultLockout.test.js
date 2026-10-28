@@ -6,16 +6,22 @@ import {
   MIN_EXISTING_PIN_LENGTH,
   isAcceptableNewPin,
   isDamagedVault,
+  isPlausiblePin,
+  PIN_TOO_SHORT_MESSAGE,
   PIN_FAILURE_LIMIT,
   pinFailureKey,
   pinFailureMessage,
   readPinFailures,
   recordPinFailure,
   failPinAttempt,
+  failUnlockAttempt,
+  deviceKeyFailureMessage,
+  deviceLockUpgradeMessage,
   removeAccountKeys,
   removeAccountVault,
   resetPinFailures,
 } from './vaultLockout.js';
+import { DeviceKeyCancelled, DeviceKeyMissing, DeviceKeyUnavailable } from './vaultEnvelope.js';
 
 function memoryStorage(seed = {}) {
   const data = new Map(Object.entries(seed));
@@ -190,4 +196,80 @@ test('a damaged vault is answered, not charged to the PIN counter', () => {
   // measured in the lock-screen spec, charged like a wrong PIN.
   assert.equal(isDamagedVault({ iv: [1], data: [2], salt: [1, 2, 3] }), false);
   assert.equal(isDamagedVault({ iv: [1], data: [2], iter: 100000 }), false);
+});
+
+test('only a wrong PIN counts toward the wipe: a cancelled prompt or a missing device key never does', () => {
+  const storage = memoryStorage({ cipher_fails_pk: '4' });
+  for (const error of [new DeviceKeyCancelled(), new DeviceKeyMissing('no-provider'), new DeviceKeyMissing('wrong-key'), new DeviceKeyUnavailable()]) {
+    for (let i = 0; i < 10; i += 1) {
+      const result = failUnlockAttempt(storage, 'pk', error);
+      assert.equal(result.counted, false);
+      assert.equal(result.lockedOut, false);
+      assert.equal(result.remaining, 1);
+      assert.equal(result.deviceKey, error.code);
+    }
+  }
+  assert.equal(readPinFailures(storage, 'pk'), 4);
+  assert.equal(storage.getItem('cipher_vaults'), null);
+});
+
+test('a plain crypto failure still counts, and the fifth still wipes the account', () => {
+  const vaults = JSON.stringify({ pk: { vault: { v: 3 } } });
+  const storage = memoryStorage({ cipher_vaults: vaults, cipher_active_pubkey: 'pk' });
+  let last;
+  for (let i = 0; i < 5; i += 1) last = failUnlockAttempt(storage, 'pk', new Error('OperationError'));
+  assert.equal(last.counted, true);
+  assert.equal(last.lockedOut, true);
+  assert.equal(JSON.parse(storage.getItem('cipher_vaults')).pk, undefined);
+  assert.equal(storage.getItem('cipher_active_pubkey'), null);
+});
+
+test('a device key failure says what happened in plain words and never mentions a wrong PIN', () => {
+  assert.match(deviceKeyFailureMessage(new DeviceKeyCancelled()), /nothing was counted/i);
+  assert.match(deviceKeyFailureMessage(new DeviceKeyMissing()), /12 words/);
+  for (const error of [new DeviceKeyCancelled(), new DeviceKeyMissing(), new DeviceKeyUnavailable()]) {
+    assert.doesNotMatch(deviceKeyFailureMessage(error), /wrong pin/i);
+  }
+});
+
+test('an upgrade that could not lock the account says nothing changed and points to the 12 words', () => {
+  for (const error of [new DeviceKeyCancelled(), new DeviceKeyMissing(), new DeviceKeyUnavailable()]) {
+    const message = deviceLockUpgradeMessage(error);
+    assert.match(message, /nothing/i);
+    assert.doesNotMatch(message, /wrong pin/i);
+  }
+  assert.match(deviceLockUpgradeMessage(new DeviceKeyUnavailable()), /12 words/);
+  assert.match(deviceLockUpgradeMessage(new DeviceKeyMissing()), /12 words/);
+});
+
+test('the device key record goes with the account on a lockout and on removal, and only that account\'s', () => {
+  const vault = { v: 3 };
+  const seed = {
+    cipher_vaults: JSON.stringify({ pkaaaaaaaaaaaaaaaa: { vault }, pkbbbbbbbbbbbbbbbb: { vault } }),
+    cipher_vault: JSON.stringify(vault),
+    cipher_active_pubkey: 'pkaaaaaaaaaaaaaaaa',
+    cipher_devkey_pkaaaaaaaaaaaaaaaa: 'record-a',
+    cipher_devkey_pkbbbbbbbbbbbbbbbb: 'record-b',
+  };
+  const wiped = memoryStorage(seed);
+  for (let i = 0; i < 5; i += 1) failUnlockAttempt(wiped, 'pkaaaaaaaaaaaaaaaa', new Error('OperationError'));
+  assert.equal(wiped.getItem('cipher_devkey_pkaaaaaaaaaaaaaaaa'), null);
+  assert.equal(wiped.getItem('cipher_devkey_pkbbbbbbbbbbbbbbbb'), 'record-b');
+
+  const vaultOnly = memoryStorage(seed);
+  removeAccountVault(vaultOnly, 'pkaaaaaaaaaaaaaaaa');
+  assert.equal(vaultOnly.getItem('cipher_devkey_pkaaaaaaaaaaaaaaaa'), null);
+  assert.equal(vaultOnly.getItem('cipher_devkey_pkbbbbbbbbbbbbbbbb'), 'record-b');
+
+  const removed = memoryStorage(seed);
+  assert.ok(removeAccountKeys(removed, 'pkbbbbbbbbbbbbbbbb').includes('cipher_devkey_pkbbbbbbbbbbbbbbbb'));
+  assert.equal(removed.getItem('cipher_devkey_pkaaaaaaaaaaaaaaaa'), 'record-a');
+});
+
+test('an empty or half-typed PIN is refused before it can count as a guess', () => {
+  for (const pin of ['', '1', '12345', '     ', null, undefined, 123456]) assert.equal(isPlausiblePin(pin), false, String(pin));
+  for (const pin of ['123456', '12345678', '1234567890']) assert.equal(isPlausiblePin(pin), true, pin);
+  assert.match(PIN_TOO_SHORT_MESSAGE, /nothing was counted/i);
+  // An account made before the 8-digit rule keeps its 6-digit PIN.
+  assert.equal(isPlausiblePin('0'.repeat(MIN_EXISTING_PIN_LENGTH)), true);
 });

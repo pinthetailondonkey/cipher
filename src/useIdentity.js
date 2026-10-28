@@ -1,6 +1,10 @@
 import { useState, useEffect } from 'react'
-import { LOCKED_OUT_MESSAGE, MIN_PIN_LENGTH, failPinAttempt, isAcceptableNewPin, isDamagedVault, pinFailureMessage, removeAccountKeys, resetPinFailures } from './lib/vaultLockout'
+import { LOCKED_OUT_MESSAGE, MIN_PIN_LENGTH, PIN_TOO_SHORT_MESSAGE, isPlausiblePin, deviceKeyFailureMessage, deviceLockUpgradeMessage, failUnlockAttempt, isAcceptableNewPin, isDamagedVault, pinFailureMessage, removeAccountKeys, resetPinFailures } from './lib/vaultLockout'
 import { profileRelays as PROFILE_RELAYS } from './lib/relays'
+import { DeviceKeyMissing, getDeviceProvider, isDeviceKeyError, isDeviceVault, unwrapDeviceVault } from './lib/vaultEnvelope'
+import { destroyDeviceKeys, sealNewVault, upgradeStoredVault } from './lib/deviceLock'
+import { ensureDeviceProvider } from './lib/deviceProvider'
+import { confirmDraftAccount, isDraftEntry, pickUnlockAccount } from './lib/accountPick'
 import { runPanicWipe } from './lib/panicWipe'
 import { mergeRestoredEntry } from './lib/vaultEntry'
 import { PASSKEY_WRONG_ACCOUNT, passkeyFailureCode } from './lib/passkeyMessages'
@@ -51,7 +55,9 @@ async function getKey(secret, salt = LEGACY_SALT, iterations = LEGACY_ITERATIONS
   )
 }
 
-export const isLegacyVault = (encryptedObj) => !encryptedObj?.salt
+// A device vault (v3) has no salt of its own: the PIN vault sits inside it.
+// It must never be taken for a no-salt legacy vault.
+export const isLegacyVault = (encryptedObj) => !encryptedObj?.salt && !isDeviceVault(encryptedObj)
 
 export async function encryptKey(skArray, secret) {
   const salt = crypto.getRandomValues(new Uint8Array(16))
@@ -69,7 +75,16 @@ export async function encryptKey(skArray, secret) {
   }
 }
 
-export async function decryptKey(encryptedObj, secret) {
+// opts.pk and opts.provider matter only for a device vault (v3): the device
+// layer opens first (a failure there is a DeviceKeyError, never a wrong PIN),
+// then the PIN vault inside opens exactly as a v2 or legacy vault always did.
+export async function decryptKey(encryptedObj, secret, opts = {}) {
+  if (isDeviceVault(encryptedObj)) {
+    const provider = opts.provider || getDeviceProvider()
+    if (!provider) throw new DeviceKeyMissing('no-provider')
+    const inner = await unwrapDeviceVault(encryptedObj, opts.pk, provider)
+    return decryptKey(inner, secret)
+  }
   const key = isLegacyVault(encryptedObj)
     ? await getKey(secret)
     : await getKey(secret, new Uint8Array(encryptedObj.salt), encryptedObj.iter || KDF_ITERATIONS)
@@ -78,6 +93,34 @@ export async function decryptKey(encryptedObj, secret) {
   )
   const dec = new TextDecoder()
   return JSON.parse(dec.decode(decrypted))
+}
+
+// The one way every unlock path opens a stored vault. pk names the account
+// the vault belongs to (the device layer is bound to it); a vault from the
+// older single-vault slot has no pk until it is opened, and only a device
+// vault needs one.
+export async function openVault(vault, pin, pk) {
+  await ensureDeviceProvider()
+  return decryptKey(vault, pin, { pk })
+}
+
+// Every vault this device keeps is locked to the device. A new account's PIN
+// vault is born inside the device envelope (no device key, no account); an old
+// PIN vault is wrapped in place at its next unlock. pin === null means the
+// account was opened by its passkey and the PIN is not known.
+const deviceLockDeps = async () => ({
+  provider: await ensureDeviceProvider(),
+  encrypt: encryptKey,
+  open: (vault, pin, pk) => decryptKey(vault, pin, { pk }),
+  isLegacy: isLegacyVault,
+})
+
+async function sealNewAccountVault(pk, pin, skArray) {
+  return sealNewVault({ ...(await deviceLockDeps()), pk, pin, skArray })
+}
+
+async function lockStoredVault({ pk, vault, pin, skArray, activePk }) {
+  return upgradeStoredVault({ ...(await deviceLockDeps()), storage: localStorage, pk, vault, pin, skArray, activePk })
 }
 
 const getVaults = () => {
@@ -240,9 +283,24 @@ export async function getMnemonicFromVault(sk, pk) {
   }
 }
 
-// Storage cleanup happens inside failPinAttempt. The database needs IndexedDB.
+// The account's device key is destroyed wherever it lives (a passkey record,
+// the OS store, the Keystore). With the key gone, any old copy of the vault
+// is dead ciphertext: a wipe is then an erasure, not a deleted file.
+async function destroyDeviceKey(pubkey) {
+  if (!pubkey) return
+  try {
+    const failed = await destroyDeviceKeys(await ensureDeviceProvider(), [pubkey])
+    if (failed.length) console.error('[identity] The device key may remain on this device.')
+  } catch (error) {
+    console.error('[identity] Could not destroy the device key:', error)
+  }
+}
+
+// Storage cleanup happens inside failUnlockAttempt. The database needs IndexedDB.
+// Every path that removes an account (lockout, remove) also ends its device key.
 async function deleteLockedOutDatabase(pubkey) {
   if (!pubkey) return
+  await destroyDeviceKey(pubkey)
   try {
     const { deleteAccountDatabase } = await import('./db')
     if (!(await deleteAccountDatabase(pubkey))) {
@@ -326,15 +384,20 @@ export function useIdentity() {
     // Use the handle (lowercased) as the lookup ID for restoring
     const lookupId = await sha256(handle.toLowerCase().trim())
 
-    // Encrypt with PIN locally
-    const encryptedLocal = await encryptKey(Array.from(sk), pin)
+    // PIN vault inside the device envelope. Without a device key the account
+    // is not created: nothing has been written to storage yet.
+    const encryptedLocal = await sealNewAccountVault(pk, pin, Array.from(sk))
     
     // Multi-account support: store vaults by pubkey
     const vaults = getVaults();
     // Earlier abandoned drafts are not accounts: drop them so they never
     // pile up in the switcher or the counters that read this table.
     for (const key of Object.keys(vaults)) {
-      if (vaults[key]?.confirmed === false) delete vaults[key];
+      if (vaults[key]?.confirmed === false) {
+        delete vaults[key];
+        // The abandoned draft's device key goes with it.
+        await destroyDeviceKey(key);
+      }
     }
     vaults[pk] = {
       vault: encryptedLocal,
@@ -348,13 +411,10 @@ export function useIdentity() {
       confirmed: false,
     };
     saveVaults(vaults);
-    localStorage.setItem('cipher_active_pubkey', pk);
-
-    // Legacy fallback (for backwards compat). Byte-identical to the entry's
-    // vault on purpose: removeAccountVault matches it by string to know it
-    // belongs to the wiped account. The draft flag lives on the entry only.
-    localStorage.setItem('cipher_vault', JSON.stringify(encryptedLocal))
-    localStorage.setItem('cipher_handle', handle.toLowerCase().trim())
+    // A draft does not take the device. The active pointer, the single-vault
+    // mirror and the handle are set by confirmVault once the 12 words are
+    // confirmed; until then an abandoned creation leaves every other account
+    // and the Unlock screen exactly as they were.
     resetPinFailures(localStorage, pk)
 
     // (relay backup removed for security — recovery is phrase-only)
@@ -369,10 +429,9 @@ export function useIdentity() {
         const nsec = nip19.nsecEncode(sk);
         const passkey = await importPasskeyIdentityFromNsec(nsec, { rpName: 'Cipher', storageKey });
         if (passkey.pubkey !== pk) throw new Error('The passkey did not match the new account.');
-        localStorage.setItem('cipher_biometric_pubkey', pk);
-        localStorage.setItem('cipher_biometric_enabled', 'true');
+        // The passkey exists; the flags that make Unlock offer it are set by
+        // confirmVault, so an abandoned creation never offers a way in.
         biometricEnabled = true;
-        setHasBiometric(true);
       } catch (error) {
         console.warn('[identity] Could not enable biometric passkey:', error);
         biometricError = error?.message || 'Biometric passkey setup did not complete.';
@@ -382,23 +441,28 @@ export function useIdentity() {
         } catch (clearError) {
           console.error('[identity] Could not clear incomplete passkey setup:', clearError);
         }
-        localStorage.removeItem('cipher_biometric_pubkey');
-        localStorage.removeItem('cipher_biometric_enabled');
       }
     }
 
     return { sk, pk, npub: nip19.npubEncode(pk), handle, mnemonic, biometricEnabled, biometricError }
   }
 
-  // The 12-word confirm passed: this draft vault is a real account now.
-  // Only the active account can be confirmed, and only its own draft.
-  const confirmVault = () => {
-    const pk = getActivePubkey();
-    if (!pk) return;
-    const vaults = getVaults();
-    if (vaults[pk]) {
-      vaults[pk] = { ...vaults[pk], confirmed: true };
-      saveVaults(vaults);
+  // The 12-word confirm passed: this draft vault is a real account now, and
+  // only now does it become the device's active account, its single-vault
+  // mirror, and (with a passkey) the account Unlock offers the passkey for.
+  const confirmVault = async () => {
+    const confirmed = confirmDraftAccount(localStorage);
+    if (!confirmed) return;
+    const { pk } = confirmed;
+    try {
+      const { hasStoredPasskeyIdentity } = await import('nostr-passkey');
+      if (hasStoredPasskeyIdentity({ storageKey: `cipher_passkey_${pk}` })) {
+        localStorage.setItem('cipher_biometric_pubkey', pk);
+        localStorage.setItem('cipher_biometric_enabled', 'true');
+        setHasBiometric(true);
+      }
+    } catch (error) {
+      console.warn('[identity] Could not check the new passkey:', error);
     }
   };
 
@@ -436,64 +500,57 @@ export function useIdentity() {
   }
 
   const unlock = async (pin) => {
-    const failureAccount = getActivePubkey() || null
+    if (!isPlausiblePin(pin)) return { success: false, error: PIN_TOO_SHORT_MESSAGE, notCounted: true }
+    // The account Unlock opens, and the one a wrong PIN counts against, is a
+    // finished account: a draft is never it (see lib/accountPick.js).
+    const picked = pickUnlockAccount(getVaults(), getActivePubkey(), localStorage.getItem('cipher_vault'))
     // Reading the vault is not a PIN attempt. Five wrong PINs delete an
     // account here, so only a PIN that actually failed to decrypt may spend
-    // one: a missing vault, an unreadable one, or a damaged envelope answers
-    // on its own and leaves the counter where it was.
-    const activePk = getActivePubkey();
-    const vaults = getVaults();
-    let vault;
-
-    if (activePk && vaults[activePk]) {
-      vault = vaults[activePk].vault;
-    } else {
-      // Fallback to legacy single vault
-      const vaultStr = localStorage.getItem('cipher_vault');
-      if (!vaultStr) return { success: false, error: 'No local vault found' };
-      try { vault = JSON.parse(vaultStr); } catch { return { success: false, error: 'No local vault found' }; }
+    // one: a missing vault or a damaged envelope answers on its own.
+    if (!picked) return { success: false, error: 'No local vault found' }
+    if (isDamagedVault(picked.vault)) {
+      return { success: false, error: 'This device holds a damaged copy of the account. Use your 12 words.' }
     }
-
-    if (isDamagedVault(vault)) {
-      return { success: false, error: 'This device holds a damaged copy of the account. Use your 12 words.' };
-    }
-
-    let skArray;
+    const failureAccount = picked.pk || null
+    const activePk = picked.pk || getActivePubkey()
+    // The PIN's own failure is counted here and nowhere else: only a PIN
+    // that failed to decrypt may spend one of the five attempts.
+    let skArray
     try {
-      skArray = await decryptKey(vault, pin)
+      skArray = await openVault(picked.vault, pin, picked.pk)
     } catch (e) {
-      // The one failure that is a wrong PIN.
+      if (isDeviceKeyError(e)) {
+        const left = failUnlockAttempt(localStorage, failureAccount, e)
+        return { success: false, error: deviceKeyFailureMessage(e), remaining: left.remaining, deviceKey: e.code }
+      }
       let failure = { lockedOut: false, remaining: 0 }
       try {
-        failure = failPinAttempt(localStorage, failureAccount)
+        failure = failUnlockAttempt(localStorage, failureAccount, e)
       } catch (wipeErr) { console.error('Lockout wipe failed:', wipeErr) }
       if (failure.lockedOut) {
-        sessionStorage.removeItem('cipher_session_sk');
-        await deleteLockedOutDatabase(failureAccount);
-        window.location.reload();
+        sessionStorage.removeItem('cipher_session_sk')
+        await deleteLockedOutDatabase(failureAccount)
+        window.location.reload()
       }
       return { success: false, error: pinFailureMessage(failure.remaining), remaining: failure.remaining }
     }
 
-    // The PIN opened the vault. Nothing below may consume an attempt, so a
-    // relay import or a key-derivation error cannot lock an account out.
+    // The vault is open. Nothing below may consume an attempt.
     try {
+      const vault = picked.vault
       const { getPublicKey, nip19 } = await import('nostr-tools')
       const sk = Uint8Array.from(skArray)
       const pk = getPublicKey(sk)
 
-      if (isLegacyVault(vault)) {
+      // The PIN was right. A vault that is not locked to this device is not
+      // let in as it is: it is wrapped now, or the person is told why not.
+      if (!isDeviceVault(vault)) {
         try {
-          const upgraded = await encryptKey(skArray, pin)
-          const current = getVaults()
-          if (current[pk]) {
-            current[pk].vault = upgraded
-            saveVaults(current)
-          }
-          if (!activePk || activePk === pk) {
-            localStorage.setItem('cipher_vault', JSON.stringify(upgraded))
-          }
-        } catch (upgradeErr) { console.warn('Vault upgrade skipped:', upgradeErr) }
+          await lockStoredVault({ pk, vault, pin, skArray, activePk })
+        } catch (upgradeErr) {
+          if (!isDeviceKeyError(upgradeErr)) throw upgradeErr
+          return { success: false, needsDeviceLock: true, error: deviceLockUpgradeMessage(upgradeErr), remaining: undefined, deviceKey: upgradeErr.code }
+        }
       }
 
       sessionStorage.setItem('cipher_session_sk', JSON.stringify(Array.from(sk)))
@@ -516,9 +573,12 @@ export function useIdentity() {
       const { secretKey, pubkey } = await unlockPasskeyIdentity(undefined, storageKey ? { storageKey } : undefined)
       if (activePk && pubkey !== activePk) throw Object.assign(new Error(PASSKEY_WRONG_ACCOUNT), { passkeyCode: 'wrong-account' });
       const vaults = getVaults();
+      // An account whose 12 words were never confirmed is a draft, not an
+      // account: a passkey must not let anyone into it.
+      if (isDraftEntry(vaults[pubkey])) throw new Error('This account was never finished. Restore it with its 12 words, or create a new one.');
       if (!vaults[pubkey]) {
         if (!isAcceptableNewPin(newPin)) throw Object.assign(new Error(`Enter a new PIN (exactly ${MIN_PIN_LENGTH} digits) to restore this account on this device.`), { passkeyCode: 'new-pin' });
-        const vault = await encryptKey(Array.from(secretKey), newPin);
+        const vault = await sealNewAccountVault(pubkey, newPin, Array.from(secretKey));
         const legacyHandle = localStorage.getItem('cipher_handle') || 'restored';
         vaults[pubkey] = {
           vault,
@@ -533,6 +593,11 @@ export function useIdentity() {
         localStorage.setItem('cipher_biometric_pubkey', pubkey);
         localStorage.setItem('cipher_biometric_enabled', 'true');
       }
+      // An old PIN vault on disk is wrapped even though the PIN was not typed:
+      // left alone it would stay openable by a stolen copy and a PIN guess.
+      if (vaults[pubkey] && !isDeviceVault(vaults[pubkey].vault)) {
+        await lockStoredVault({ pk: pubkey, vault: vaults[pubkey].vault, pin: null, skArray: Array.from(secretKey), activePk: getActivePubkey() })
+      }
       // A passkey-bound account that unlocks with no device pointer claims
       // it — otherwise its writes land in the guest scope.
       // (security re-attack)
@@ -545,9 +610,14 @@ export function useIdentity() {
       setHasVault(true)
       setHasBiometric(true)
       return { success: true }
+    } catch (e) {
+      // A device key that is cancelled or unavailable is not the person's
+      // PIN being wrong; it is said plainly and nothing is counted.
+      if (isDeviceKeyError(e)) return { success: false, error: deviceLockUpgradeMessage(e), code: e?.code }
       // A code travels with the failure, so the screen can say a plain
       // sentence instead of the browser's or the library's own words.
-    } catch (e) { return { success: false, error: e.message, code: e?.passkeyCode || passkeyFailureCode(e) } }
+      return { success: false, error: e.message, code: e?.passkeyCode || passkeyFailureCode(e) }
+    }
   }
 
   const enableBiometric = async () => {
@@ -579,13 +649,14 @@ export function useIdentity() {
   };
 
   const restoreFromRelays = async (handle, pin) => {
+    if (!isPlausiblePin(pin)) return { success: false, error: PIN_TOO_SHORT_MESSAGE };
     const vaults = getVaults();
     let targetPk = null;
     let targetVault = null;
 
     // 1. Search in multi-account vaults
     for (const [pk, data] of Object.entries(vaults)) {
-      if (data.handle === handle) {
+      if (data.handle === handle && !isDraftEntry(data)) {
         targetPk = pk;
         targetVault = data.vault;
         break;
@@ -613,9 +684,13 @@ export function useIdentity() {
 
     let skArray;
     try {
-      skArray = await decryptKey(targetVault, pin);
-    } catch {
-      const { lockedOut, remaining } = failPinAttempt(localStorage, targetPk);
+      skArray = await openVault(targetVault, pin, targetPk);
+    } catch (error) {
+      if (isDeviceKeyError(error)) {
+        failUnlockAttempt(localStorage, targetPk, error);
+        return { success: false, error: deviceKeyFailureMessage(error) };
+      }
+      const { lockedOut, remaining } = failUnlockAttempt(localStorage, targetPk, error);
       if (lockedOut) await deleteLockedOutDatabase(targetPk);
       return { success: false, error: lockedOut ? LOCKED_OUT_MESSAGE : pinFailureMessage(remaining) };
     }
@@ -626,6 +701,16 @@ export function useIdentity() {
       const pk = getPublicKey(sk);
 
       if (targetPk && pk !== targetPk) throw new Error('Invalid PIN');
+
+      // Locked to this device before it is re-admitted (see unlock).
+      if (!isDeviceVault(targetVault)) {
+        try {
+          targetVault = await lockStoredVault({ pk, vault: targetVault, pin, skArray, activePk: getActivePubkey() });
+        } catch (upgradeErr) {
+          if (isDeviceKeyError(upgradeErr)) return { success: false, error: deviceLockUpgradeMessage(upgradeErr) };
+          throw upgradeErr;
+        }
+      }
 
       // Update multi-account store just in case it was legacy. The entry keeps
       // everything it already held — the encrypted 12 words above all — so a
@@ -678,7 +763,7 @@ export function useIdentity() {
       const sk = await deriveSkFromMnemonic(normalizedMnemonic)
       const { getPublicKey, nip19 } = await import('nostr-tools')
       const pk = getPublicKey(sk)
-      const newLocalVault = await encryptKey(Array.from(sk), newPin)
+      const newLocalVault = await sealNewAccountVault(pk, newPin, Array.from(sk))
       const vaults = getVaults()
       vaults[pk] = {
         vault: newLocalVault,
@@ -758,6 +843,7 @@ export function useIdentity() {
       indexedDB: typeof indexedDB !== 'undefined' ? indexedDB : undefined,
       serviceWorker: 'serviceWorker' in navigator ? navigator.serviceWorker : undefined,
       caches: 'caches' in window ? window.caches : undefined,
+      destroyKeys: async (pubkeys) => destroyDeviceKeys(await ensureDeviceProvider(), pubkeys),
       reload: () => window.location.reload(),
     });
   }
@@ -813,15 +899,20 @@ export function useIdentity() {
   };
 
   const switchAccount = async (targetPk, pin) => {
+    if (!isPlausiblePin(pin)) return { success: false, error: PIN_TOO_SHORT_MESSAGE };
     try {
       const vaults = getVaults();
-      if (!vaults[targetPk]) throw new Error('Account not found');
+      if (!vaults[targetPk] || isDraftEntry(vaults[targetPk])) throw new Error('Account not found');
 
       let skArray;
       try {
-        skArray = await decryptKey(vaults[targetPk].vault, pin);
-      } catch {
-        const { lockedOut, remaining } = failPinAttempt(localStorage, targetPk);
+        skArray = await openVault(vaults[targetPk].vault, pin, targetPk);
+      } catch (error) {
+        if (isDeviceKeyError(error)) {
+          failUnlockAttempt(localStorage, targetPk, error);
+          return { success: false, error: deviceKeyFailureMessage(error) };
+        }
+        const { lockedOut, remaining } = failUnlockAttempt(localStorage, targetPk, error);
         if (lockedOut) await deleteLockedOutDatabase(targetPk);
         return { success: false, error: lockedOut ? LOCKED_OUT_MESSAGE : pinFailureMessage(remaining) };
       }
@@ -830,13 +921,23 @@ export function useIdentity() {
       const pk = getPublicKey(sk);
 
       if (pk !== targetPk) throw new Error('Invalid PIN for this account');
-      
+
+      let targetVault = vaults[targetPk].vault;
+      if (!isDeviceVault(targetVault)) {
+        try {
+          targetVault = await lockStoredVault({ pk, vault: targetVault, pin, skArray, activePk: getActivePubkey() });
+        } catch (upgradeErr) {
+          if (isDeviceKeyError(upgradeErr)) return { success: false, error: deviceLockUpgradeMessage(upgradeErr) };
+          throw upgradeErr;
+        }
+      }
+
       setActivePubkey(targetPk);
       resetPinFailures(localStorage, targetPk);
       sessionStorage.setItem('cipher_session_sk', JSON.stringify(Array.from(sk)));
       
       // Update legacy vault too
-      localStorage.setItem('cipher_vault', JSON.stringify(vaults[targetPk].vault));
+      localStorage.setItem('cipher_vault', JSON.stringify(targetVault));
       localStorage.setItem('cipher_handle', vaults[targetPk].handle);
       
       // Reload to reset all state cleanly

@@ -1,3 +1,5 @@
+import { DeviceKeyCancelled, DeviceKeyError, DeviceKeyUnavailable } from './vaultEnvelope.js';
+
 export const PIN_FAILURE_LIMIT = 5;
 // A NEW PIN (create, restore from words, recover on a fresh device) needs 8.
 // An account made before that keeps its shorter PIN: unlocking never checks
@@ -33,6 +35,15 @@ export function isDamagedVault(vault) {
   if (vault.iter !== undefined && !(typeof vault.iter === 'number' && Number.isFinite(vault.iter) && vault.iter >= 1)) return true;
   return false;
 }
+
+// An entry too short to be any account's PIN is not a guess: it is an empty
+// or half-typed field. It is refused before the vault is touched and never
+// counts toward the five-wrong-PINs wipe.
+export function isPlausiblePin(pin) {
+  return typeof pin === 'string' && pin.length >= MIN_EXISTING_PIN_LENGTH;
+}
+
+export const PIN_TOO_SHORT_MESSAGE = `Enter your PIN (${MIN_EXISTING_PIN_LENGTH} digits or more). Nothing was counted.`;
 
 export function pinFailureKey(pubkey) {
   return pubkey ? `cipher_fails_${pubkey}` : 'cipher_fails_legacy';
@@ -76,6 +87,9 @@ export function removeAccountVault(storage, pubkey) {
     storage.removeItem('cipher_handle');
   }
   if (!pubkey || storage.getItem('cipher_active_pubkey') === pubkey) storage.removeItem('cipher_active_pubkey');
+  // The device key's stored record goes with the vault it locked. (Keys held
+  // outside storage are destroyed by the caller: storage cannot reach them.)
+  if (pubkey) storage.removeItem(`cipher_devkey_${pubkey}`);
   resetPinFailures(storage, pubkey);
 }
 
@@ -105,6 +119,7 @@ export function removeAccountKeys(storage, pubkey) {
   const sharedScope = others.some((pk) => pk.slice(0, 8) === prefix);
   const exact = new Set([
     `cipher_passkey_${pubkey}`,
+    `cipher_devkey_${pubkey}`,
     pinFailureKey(pubkey),
     `cipher_my_groups_${pubkey.slice(0, 16)}`,
     `cipher_migrated_v1_${prefix}`,
@@ -132,6 +147,45 @@ export function failPinAttempt(storage, pubkey) {
     removeAccountKeys(storage, pubkey);
   }
   return result;
+}
+
+// The unlock paths call this for every failed open. Only a wrong PIN is a
+// guess and only a guess counts toward the wipe. A cancelled device prompt, a
+// missing device key or an unusable provider is not a PIN guess: it never
+// touches the counter, so the wipe cannot be triggered by closing a dialog or
+// by moving the files, and a real lockout still needs the device in hand.
+export function failUnlockAttempt(storage, pubkey, error) {
+  if (error instanceof DeviceKeyError) {
+    return {
+      counted: false,
+      lockedOut: false,
+      remaining: Math.max(0, PIN_FAILURE_LIMIT - readPinFailures(storage, pubkey)),
+      deviceKey: error.code,
+    };
+  }
+  return { counted: true, ...failPinAttempt(storage, pubkey) };
+}
+
+export function deviceKeyFailureMessage(error) {
+  if (error instanceof DeviceKeyCancelled) {
+    return 'The device prompt was cancelled, so nothing was counted. Try again when you are ready.';
+  }
+  if (error instanceof DeviceKeyUnavailable) {
+    return 'This device cannot lock an account to itself, so it cannot open this one. Restore the account from its 12 words on a device that can.';
+  }
+  return 'This device no longer holds the key to this account. Nothing was counted and nothing was deleted. Restore the account with its 12 words.';
+}
+
+// Shown when the PIN was right but the account could not be locked to this
+// device. Nothing was changed and the person is not let in as they are.
+export function deviceLockUpgradeMessage(error) {
+  if (error instanceof DeviceKeyCancelled) {
+    return 'Your PIN is right, but this account must be locked to this device before it opens. The prompt was cancelled and nothing changed. Enter your PIN again to try once more.';
+  }
+  if (error instanceof DeviceKeyUnavailable) {
+    return 'Your PIN is right, but this device cannot lock an account to itself, and Cipher no longer opens accounts that are not locked. Nothing was deleted. Restore the account from its 12 words on a device that can.';
+  }
+  return 'Your PIN is right, but this account could not be locked to this device. Nothing changed and nothing was deleted. Try again, or restore the account from its 12 words.';
 }
 
 export function pinFailureMessage(remaining) {

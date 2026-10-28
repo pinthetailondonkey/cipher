@@ -75,17 +75,26 @@ export async function runPanicWipe(env = {}) {
   try {
     // Names first: they are read from localStorage, which is cleared next.
     const names = new Set();
+    const accounts = [];
     attemptSync('read account list', () => {
       const owner = env.localStorage?.getItem('cipher_db_owner');
       if (owner) names.add(`${DB_PREFIX}${owner.slice(0, 16)}`);
       const vaults = JSON.parse(env.localStorage?.getItem('cipher_vaults') || '{}');
-      Object.keys(vaults).forEach((pubkey) => names.add(`${DB_PREFIX}${pubkey.slice(0, 16)}`));
+      Object.keys(vaults).forEach((pubkey) => {
+        names.add(`${DB_PREFIX}${pubkey.slice(0, 16)}`);
+        accounts.push(pubkey);
+      });
     });
 
     // Keys and the vault live in storage; erase them before anything that
     // could be slow. Cleared again at the end in case the app wrote meanwhile.
     attemptSync('clear localStorage', () => env.localStorage?.clear());
     attemptSync('clear sessionStorage', () => env.sessionStorage?.clear());
+
+    // The device key of each saved account, from the list read above (the
+    // vaults are already gone from storage, so nothing here can open them).
+    // Keys held outside storage (the OS store, the Keystore) need this call.
+    await attempt('device keys', async () => { if (env.destroyKeys) await env.destroyKeys(accounts); });
 
     // Quiet the app (relays, group sessions, open database). Each is its own
     // step and bounded; none of them gates the deletions below.

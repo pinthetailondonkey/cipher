@@ -1,3 +1,4 @@
+import { isPlausiblePin } from '../../lib/vaultLockout';
 import { useState } from 'react';
 import { Check, KeyRound, Plus, Trash2 } from 'lucide-react';
 import ScreenHeader from '../ui/ScreenHeader';
@@ -62,7 +63,7 @@ export default function AccountSwitcher({ identity, onClose }) {
                   <KeyRound size={16} className="shrink-0 text-ink/40" />
                   <input type="password" inputMode="numeric" autoComplete="current-password" value={pins[account.pubkey] || ''} onChange={(event) => setPins((current) => ({ ...current, [account.pubkey]: event.target.value }))} placeholder="PIN" className="min-w-0 flex-1 bg-transparent py-3 text-[15px] text-ink outline-none placeholder:text-ink/30" />
                 </label>
-                <button type="button" disabled={pending === account.pubkey} onClick={() => handleSwitch(account)} className={`rounded-2xl bg-accent px-4 font-bold text-accentInk active:bg-accent ${pressable}`}>{pending === account.pubkey ? '…' : 'Switch'}</button>
+                <button type="button" disabled={pending === account.pubkey || !isPlausiblePin(pins[account.pubkey] || '')} onClick={() => handleSwitch(account)} className={`rounded-2xl bg-accent px-4 font-bold text-accentInk active:bg-accent ${pressable}`}>{pending === account.pubkey ? '…' : 'Switch'}</button>
                 <button type="button" aria-label="Remove account" onClick={() => handleRemove(account)} className={`flex min-h-11 min-w-11 items-center justify-center rounded-2xl border border-line text-danger active:bg-ink/10 ${pressable}`}>
                   {confirmRemove === account.pubkey ? <span className="text-[12px] font-bold">Sure?</span> : <Trash2 size={16} />}
                 </button>

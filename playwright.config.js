@@ -8,13 +8,20 @@ export default defineConfig({
   workers: process.env.CI ? 1 : undefined,
   reporter: 'html',
   use: {
-    baseURL: 'http://127.0.0.1:8081',
+    baseURL: 'http://localhost:8081',
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
   },
   projects: [
     {
+      // Desktop Chromium with a virtual WebAuthn authenticator (PRF).
+      name: 'chromium',
+      testMatch: /devicePrf\.spec\.js/,
+      use: { viewport: { width: 1000, height: 700 } },
+    },
+    {
       name: 'iphone',
+      testIgnore: /devicePrf\.spec\.js/,
       use: {
         viewport: { width: 390, height: 844 },
         userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15',
@@ -26,7 +33,7 @@ export default defineConfig({
   ],
   webServer: {
     command: 'npm run preview',
-    url: 'http://127.0.0.1:8081',
+    url: 'http://localhost:8081',
     reuseExistingServer: true,
     timeout: 10000,
   },
