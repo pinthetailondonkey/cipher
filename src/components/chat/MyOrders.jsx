@@ -73,7 +73,7 @@ export default function MyOrders({ dms = {}, profiles = {}, onBack, onOpenChat, 
                   <button
                     type="button"
                     onClick={() => { haptic('light'); useChatStore.getState().setVendorStorefrontPubkey(vendorPubkey); }}
-                    className="flex min-h-[36px] w-full items-center gap-1.5 px-4 pb-1 text-[13px] font-semibold text-accentText"
+                    className="flex min-h-[44px] w-full items-center gap-1.5 px-4 pb-1 text-[13px] font-semibold text-accentText"
                   >
                     <Store size={14} /> View menu
                   </button>

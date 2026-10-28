@@ -252,7 +252,7 @@ function ChatRow({
                         >
                           {archived ? 'Unarchive' : 'Archive'}
                         </MenuItem>
-                        {chat.vendor && isDm && (
+                        {isDm && (
                           <MenuItem icon={<Store size={14} className="text-inkMuted" />} onClick={() => { onViewShop(); onMenuClose(); }}>
                             Their menu
                           </MenuItem>

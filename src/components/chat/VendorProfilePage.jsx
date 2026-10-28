@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ArrowLeft, Star } from 'lucide-react';
+import { ArrowLeft, Star, Store } from 'lucide-react';
 import { pressable } from '../ui/Button';
 import Button from '../ui/Button';
 import Textarea from '../ui/Textarea';
@@ -105,6 +105,11 @@ export default function VendorProfilePage({
       </header>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-8">
+        {onBack && (
+          <Button variant="secondary" fullWidth className="mt-3" onClick={onBack} leadingIcon={<Store size={16} />}>
+            View menu
+          </Button>
+        )}
         {summary.count > 0 && (
           <section className="rounded-2xl border border-line bg-panelStrong px-4 py-4">
             <div className="flex items-center gap-3">
