@@ -4,6 +4,7 @@ import { RefreshCw } from "lucide-react";
 import Button from './components/ui/Button';
 import Keypad from './components/ui/Keypad';
 import { MIN_PIN_LENGTH } from './lib/vaultLockout';
+import { hasStoredPasskey } from './lib/passkeyRecord';
 import Create from './components/onboarding/Create';
 import SaveKey from './components/onboarding/SaveKey';
 import VerifyKey from './components/onboarding/VerifyKey';
@@ -116,7 +117,7 @@ export default function LockScreen({ identity }) {
                 maxLength={8}
                 onChange={(next) => { setPin(next); setError(''); }}
                 shake={shake}
-                showBiometric={!!identity?.hasBiometric}
+                showBiometric={hasStoredPasskey(localStorage)}
                 onBiometric={handleBiometricUnlock}
                 biometricDisabled={biometricLoading || loading}
                 disabled={loading}

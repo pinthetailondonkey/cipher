@@ -1,15 +1,31 @@
 import React, { useState } from 'react';
-import { KeyRound, RefreshCw } from 'lucide-react';
+import { Fingerprint, KeyRound, RefreshCw } from 'lucide-react';
 import Button from '../ui/Button';
 import Input from '../ui/Input';
 import { MIN_EXISTING_PIN_LENGTH } from '../../lib/vaultLockout';
+import { hasStoredPasskey } from '../../lib/passkeyRecord';
 
-// Restore — handle + PIN, the by-relay recovery (§10).
+// Restore — handle + PIN, the by-relay recovery (§10). A saved passkey
+// record opens a second door on this device; the 12 words remain the only
+// one that works on a new device.
 export default function Restore({ identity, go }) {
   const [handle, setHandle] = useState('');
   const [pin, setPin] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const canUsePasskey = hasStoredPasskey(localStorage);
+
+  const handleBiometricRecover = async () => {
+    if (loading) return;
+    setLoading(true); setError('');
+    try {
+      const res = await identity.unlockWithBiometric(pin);
+      if (!res.success) setError(res.error || 'Face ID recovery failed. Use your recovery phrase.');
+    } catch (err) {
+      setError(err?.message || 'Face ID recovery failed. Use your recovery phrase.');
+    }
+    setLoading(false);
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -45,6 +61,11 @@ export default function Restore({ identity, go }) {
       </form>
 
       <div className="mt-8 flex flex-col items-center gap-4">
+        {canUsePasskey && (
+          <button type="button" onClick={handleBiometricRecover} disabled={loading} className="flex items-center gap-1 text-sm font-medium text-inkMuted transition-colors hover:text-ink disabled:opacity-50">
+            <Fingerprint size={14} aria-hidden="true" /> Use Face ID / fingerprint
+          </button>
+        )}
         <button type="button" onClick={() => go('restore_mnemonic')} className="flex items-center gap-1 text-sm font-medium text-inkMuted transition-colors hover:text-ink">
           <KeyRound size={14} aria-hidden="true" /> Use Recovery Phrase
         </button>
@@ -52,6 +73,9 @@ export default function Restore({ identity, go }) {
           Create a new account instead
         </button>
       </div>
+      {canUsePasskey && (
+        <p className="mt-4 max-w-[280px] text-center text-xs leading-relaxed text-inkMuted">Face ID opens this account on this device. Your 12 words bring it back on a new one.</p>
+      )}
     </>
   );
 }
