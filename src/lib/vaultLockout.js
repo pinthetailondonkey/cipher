@@ -1,5 +1,13 @@
 export const PIN_FAILURE_LIMIT = 5;
-export const MIN_PIN_LENGTH = 6;
+// A NEW PIN (create, restore from words, recover on a fresh device) needs 8.
+// An account made before that keeps its shorter PIN: unlocking never checks
+// the new minimum, and relay-restore on this device only checks the old floor.
+export const MIN_PIN_LENGTH = 8;
+export const MIN_EXISTING_PIN_LENGTH = 6;
+
+export function isAcceptableNewPin(pin) {
+  return typeof pin === 'string' && pin.length >= MIN_PIN_LENGTH;
+}
 
 export function pinFailureKey(pubkey) {
   return pubkey ? `cipher_fails_${pubkey}` : 'cipher_fails_legacy';

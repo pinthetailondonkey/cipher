@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { LOCKED_OUT_MESSAGE, MIN_PIN_LENGTH, failPinAttempt, pinFailureMessage, removeAccountKeys, resetPinFailures } from './lib/vaultLockout'
+import { LOCKED_OUT_MESSAGE, MIN_PIN_LENGTH, failPinAttempt, isAcceptableNewPin, pinFailureMessage, removeAccountKeys, resetPinFailures } from './lib/vaultLockout'
 import { profileRelays as PROFILE_RELAYS } from './lib/relays'
 
 // Derive 32-byte secret key from BIP39 mnemonic
@@ -310,6 +310,7 @@ export function useIdentity() {
   }, [])
 
   const createVault = async (handle, pin, enableBiometric = false) => {
+    if (!isAcceptableNewPin(pin)) throw new Error(`PIN must be at least ${MIN_PIN_LENGTH} digits`)
     const [{ generateMnemonic }, { wordlist }] = await Promise.all([
       import('@scure/bip39'),
       import('@scure/bip39/wordlists/english.js'),
@@ -495,7 +496,7 @@ export function useIdentity() {
       if (activePk && pubkey !== activePk) throw new Error('The saved passkey belongs to a different account.');
       const vaults = getVaults();
       if (!vaults[pubkey]) {
-        if (newPin.length < MIN_PIN_LENGTH) throw new Error(`Enter a new PIN (at least ${MIN_PIN_LENGTH} digits) to restore this account on this device.`);
+        if (!isAcceptableNewPin(newPin)) throw new Error(`Enter a new PIN (at least ${MIN_PIN_LENGTH} digits) to restore this account on this device.`);
         const vault = await encryptKey(Array.from(secretKey), newPin);
         const legacyHandle = localStorage.getItem('cipher_handle') || 'restored';
         vaults[pubkey] = {
@@ -639,7 +640,7 @@ export function useIdentity() {
         .map((w) => w.replace(/^[^a-z]+|[^a-z]+$/g, ''))
         .filter(Boolean)
         .join(' ')
-      if (!newPin || String(newPin).length < MIN_PIN_LENGTH) throw new Error(`PIN must be at least ${MIN_PIN_LENGTH} digits`)
+      if (!isAcceptableNewPin(newPin)) throw new Error(`PIN must be at least ${MIN_PIN_LENGTH} digits`)
       const [{ validateMnemonic }, { wordlist }] = await Promise.all([
         import('@scure/bip39'),
         import('@scure/bip39/wordlists/english.js'),

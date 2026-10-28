@@ -3,6 +3,8 @@ import test from 'node:test';
 import {
   LOCKED_OUT_MESSAGE,
   MIN_PIN_LENGTH,
+  MIN_EXISTING_PIN_LENGTH,
+  isAcceptableNewPin,
   PIN_FAILURE_LIMIT,
   pinFailureKey,
   pinFailureMessage,
@@ -27,7 +29,6 @@ function memoryStorage(seed = {}) {
 
 test('PIN failure counters are per account and do not share the global key', () => {
   const storage = memoryStorage({ cipher_fails: '4' });
-  assert.equal(MIN_PIN_LENGTH, 6);
   assert.equal(PIN_FAILURE_LIMIT, 5);
   assert.equal(pinFailureKey('pk-a'), 'cipher_fails_pk-a');
   assert.equal(pinFailureKey(''), 'cipher_fails_legacy');
@@ -140,4 +141,18 @@ test('a scoped prefix shared with another saved account is left in place', () =>
   const removed = removeAccountKeys(storage, a);
   assert.deepEqual(removed, [`cipher_passkey_${a}`]);
   assert.equal(storage.getItem('cipher_cccccccc_blocked'), '["kept"]');
+});
+
+test('a new PIN needs 8 digits; an existing account keeps its shorter PIN', () => {
+  assert.equal(MIN_PIN_LENGTH, 8);
+  assert.equal(isAcceptableNewPin('1234567'), false);
+  assert.equal(isAcceptableNewPin('123456'), false);
+  assert.equal(isAcceptableNewPin('12345678'), true);
+  assert.equal(isAcceptableNewPin(''), false);
+  assert.equal(isAcceptableNewPin(undefined), false);
+  assert.equal(isAcceptableNewPin(12345678), false);
+  // Unlocking and relay-restore only check the old floor, so a 6-digit
+  // account made before this change still opens with its 6-digit PIN.
+  assert.equal(MIN_EXISTING_PIN_LENGTH, 6);
+  assert.ok(MIN_EXISTING_PIN_LENGTH < MIN_PIN_LENGTH);
 });
