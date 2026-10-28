@@ -1,7 +1,12 @@
 # Deploying Cipher
 
-The site answers on **https://ciphermessenger.org**. This page is the whole
-procedure, in the order it has to happen, and the reason for each step.
+The site answers on **https://www.ciphermessenger.org**. The bare name
+`https://ciphermessenger.org` answers `308` and forwards to it. That is the
+inverse of the common arrangement, and it is deliberate (founder,
+2026-10-28): `www` is primary, and every other name follows it.
+
+This page is the whole procedure, in the order it has to happen, and the
+reason for each step.
 
 ## What went wrong once, so this page exists
 
@@ -91,13 +96,14 @@ Three files move together, as one change. Any one alone leaves something
 lying:
 
 - `src/lib/egress.js` — the App host row names
-  `https://ciphermessenger.org` and carries `gate: 'founder'`.
+  `https://www.ciphermessenger.org` and carries `gate: 'founder'`.
 - `src/lib/egress.test.js` — the old address comes out of
   `GRANDFATHERED_CLEARNET`. That map freezes an id **and** its address, so
   leaving the entry in makes the next honest change fail the gate.
 - `vercel.json` — both old Vercel names redirect to
-  `https://ciphermessenger.org`. The canonical address carries no rule of
-  its own: a redirect there would loop, and the app is what answers.
+  `https://ciphermessenger.org`, which then forwards to `www`. Neither
+  canonical name carries a rule in this file: the apex redirect belongs to
+  the domain entry in the dashboard, and a rule there would loop.
 
 Since the address is now a clearnet row the founder named, the gate is
 satisfied by `gate: 'founder'` rather than by the grandfather list.
@@ -106,9 +112,11 @@ satisfied by `gate: 'founder'` rather than by the grandfather list.
 
 Vercel → project `cipher` → **Settings → Domains**:
 
-1. Add `ciphermessenger.org`.
-2. Add `www.ciphermessenger.org` and set it to **redirect to**
-   `ciphermessenger.org`.
+1. Add `www.ciphermessenger.org` and make it the primary name.
+2. Add `ciphermessenger.org` and set it to **redirect to**
+   `www.ciphermessenger.org`. Do not flip this the other way for
+   tidiness: the founder ruled `www` primary, and the README, the egress row
+   and the default address of `verify:live` all follow it.
 3. Vercel prints the exact record it wants. Copy that string; do not use a
    remembered IP.
 
@@ -127,10 +135,12 @@ Cloudflare → DNS:
 
 The name alone changes nothing: it resolves to whichever deployment is
 current, and if step 3 has not been deployed, the app-host row still names
-the old host. Deploy `main` once more, then run `npm run verify:live`
-against the canonical address:
+the old host. Deploy `main` once more, then prove it twice: once on the canonical name,
+and once on the bare name, which must print its `308` before the bundle
+matches.
 
 ```
+npm run verify:live
 npm run verify:live -- https://ciphermessenger.org
 ```
 
