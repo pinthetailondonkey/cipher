@@ -139,3 +139,29 @@ test('a reload that throws still resolves, and the wipe reports it', async () =>
   const { failures } = await runPanicWipe(w.env);
   assert.deepEqual(failures, ['reload']);
 });
+
+test('the wipe ends each saved account\'s device key, after the vaults are cleared from storage and even if one key cannot be destroyed', async () => {
+  const data = new Map([
+    ['cipher_vaults', JSON.stringify({ pka: {}, pkb: {} })],
+    ['cipher_devkey_pka', 'r'],
+  ]);
+  const storage = {
+    getItem: (k) => (data.has(k) ? data.get(k) : null),
+    setItem: (k, v) => data.set(k, v),
+    removeItem: (k) => data.delete(k),
+    clear: () => data.clear(),
+  };
+  let seen = null;
+  let storageEmptyWhenCalled = null;
+  const result = await runPanicWipe({
+    localStorage: storage,
+    sessionStorage: storage,
+    destroyKeys: async (pubkeys) => { seen = pubkeys; storageEmptyWhenCalled = data.size === 0; throw new Error('native store slow'); },
+    reload: () => {},
+    log: { error() {}, warn() {} },
+  });
+  assert.deepEqual(seen, ['pka', 'pkb']);
+  assert.equal(storageEmptyWhenCalled, true);
+  assert.deepEqual(result.failures, ['device keys']);
+  assert.equal(data.size, 0);
+});

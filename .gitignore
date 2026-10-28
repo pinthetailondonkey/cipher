@@ -15,3 +15,6 @@ test-results/
 playwright-report/
 .playwright/
 .grok/
+# The desktop's data folder is written beside the app at runtime and holds
+# sealed device keys; it never belongs in a commit.
+desktop/data/
