@@ -257,3 +257,15 @@ The first `npx vercel deploy --prod` read 3.3 GB from disk and had not finished 
 - **No install files.** `/download` was claimed to be a page pointing at them. It is not: `public/` holds icons, `manifest.json` and `sw.js` only, and the catch-all rewrite answers `/download` — and every other path — with the app. The README now says it is not built.
 - **No staging environment.** Every deploy is production. There is nowhere to see a change running before people do.
 - **Deploys are by hand, and nothing stops a merge from landing undeployed.** The Git integration does deploy `main`, but nothing asserts it: the four-day freeze was found by hand, not by a check. `npm run verify:live` closes part of this — it catches a live page that is not this build — but it has to be run.
+
+### The deploy quota stopped the next one (found at `c1ae37e`)
+
+Two commits after the passing deploy — `fc0458e` (the app host row names www) and the docs above — the Git integration did not create a deployment, and a by-hand `npx vercel deploy --prod` was refused:
+
+```
+"message": "Resource is limited - try again in 24 hours (more than 100, code: \"api-deployments-free-per-day\")."
+```
+
+The Hobby plan allows 100 deployments a day, and this repo spends them on previews: every branch push deploys one, and there are more than twenty branch worktrees on this machine. So the live page still serves `index-B_8vez9N.js` (the `6ca5f27` build) while `main` is `c1ae37e` and builds `index-DX5sbwlP.js`. `npm run verify:live` exits 1 and says exactly that, which is the check doing its job.
+
+Nothing is wrong with the site; it is two small commits behind. What needs a decision is the budget: turn off preview deployments for branches that are not `main`, or move the project to a plan whose limit is not 100 a day. Until one of those happens, a merge cannot be followed by a deploy on the same day.
