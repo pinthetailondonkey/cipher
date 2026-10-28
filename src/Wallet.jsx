@@ -481,7 +481,7 @@ export default function Wallet({ identity, onOpenChat, startView = 'main' }) {
         </Card>
 
         <Card label="Trading">
-          <ListRow icon={Package} title="My Orders" subtitle="Purchases and shipping" onClick={() => setView('orders')} />
+          <ListRow icon={Package} title={isVendor ? 'Incoming Orders' : 'My Orders'} subtitle={isVendor ? 'What buyers send you' : 'Purchases and shipping'} onClick={() => setView('orders')} />
           <ListRow icon={Users} title="Message requests" subtitle="People you have not answered" onClick={() => setView('message_requests')} />
           {!isVendor ? (
             <ListRow icon={CreditCard} title="Start selling" subtitle="Take payment directly" onClick={() => { setStatus(''); setView('vendor_setup'); }} />

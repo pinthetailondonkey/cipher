@@ -45,7 +45,7 @@ export default function MyOrders({ dms = null, profiles = null, onBack, onOpenCh
 
   return (
     <div className="h-full overflow-y-auto bg-transparent">
-      <ScreenHeader title="My Orders" onBack={onBack} onMenu={onMenu} />
+      <ScreenHeader title={isVendor ? 'Incoming Orders' : 'My Orders'} onBack={onBack} onMenu={onMenu} />
       {orders.length === 0 ? (
         <div className="px-6 py-16 text-center">
           <Package size={28} className="mx-auto text-inkSubtle" />
