@@ -1,11 +1,13 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
-  JOIN_REQUESTS_EVENT, admitRelayRoster, clearJoinDenial, joinRequestDecision, denyPendingJoin, dropPendingJoin, hasPendingJoin, isJoinDenied,
+  DENIED_PER_GROUP_MAX, JOIN_REQUESTS_EVENT, PENDING_PER_GROUP_MAX, PENDING_TOTAL_MAX, admitRelayRoster, clearJoinDenial, joinRequestDecision, denyPendingJoin, dropPendingJoin, hasPendingJoin, isJoinDenied,
   loadPendingJoins, pendingJoinsFor, queuePendingJoin, subscribeJoinRequests,
   withoutDenied,
 } from './groupJoinQueue.js';
 import { getActivePubkey } from './storage.js';
+import { deniedJoinsFor } from './groupJoinQueue.js';
+const deniedRows = () => deniedJoinsFor(GROUP);
 
 // The queue writes through the scoped storage shim, which reads live
 // localStorage. A fixed store stands in for it, per account.
@@ -193,4 +195,68 @@ test('the 9021 decision keeps its order: self, denied or queued, joins off, then
   assert.equal(decide({ allowsJoins: false, inSnapshot: false }), 'deny');
   assert.equal(decide({ inSnapshot: true }), 'known');
   assert.equal(decide({ inSnapshot: false }), 'queue');
+});
+
+// Audit finding: the pending and deny stores grew without limit, and a full
+// drawer was swallowed silently.
+const pk = (n) => n.toString(16).padStart(64, '0');
+
+test('the pending queue is capped per group and the oldest row goes first', () => {
+  withStorage(() => {
+    for (let n = 1; n <= PENDING_PER_GROUP_MAX + 25; n += 1) {
+      assert.equal(queuePendingJoin(GROUP, { pubkey: pk(n), eventId: `e${n}`, at: n }), true);
+    }
+    const rows = pendingJoinsFor(GROUP);
+    assert.equal(rows.length, PENDING_PER_GROUP_MAX);
+    assert.equal(rows[0].pubkey, pk(26), 'the 25 oldest were dropped');
+    assert.equal(rows.at(-1).pubkey, pk(PENDING_PER_GROUP_MAX + 25), 'the newest request is kept');
+  });
+});
+
+test('the pending queue is capped across groups too', () => {
+  withStorage(() => {
+    const groups = 6;
+    for (let g = 0; g < groups; g += 1) {
+      for (let n = 1; n <= PENDING_PER_GROUP_MAX; n += 1) {
+        queuePendingJoin(`g${g}`, { pubkey: pk(g * 1000 + n), eventId: 'e', at: g * 1000 + n });
+      }
+    }
+    const total = Object.values(loadPendingJoins()).reduce((sum, rows) => sum + rows.length, 0);
+    assert.equal(total, PENDING_TOTAL_MAX);
+    assert.equal(pendingJoinsFor('g0').length, 0, 'the oldest group lost its rows first');
+  });
+});
+
+test('the deny list is capped per group, oldest first, and a fresh deny still lands', () => {
+  withStorage(() => {
+    const now = Date.now;
+    let t = 1_700_000_000_000;
+    Date.now = () => { t += 1000; return t; };
+    try {
+      for (let n = 1; n <= DENIED_PER_GROUP_MAX + 5; n += 1) denyPendingJoin(GROUP, pk(n));
+    } finally { Date.now = now; }
+    assert.equal(Object.keys(deniedRows()).length, DENIED_PER_GROUP_MAX);
+    assert.equal(isJoinDenied(GROUP, pk(1)), false, 'the oldest deny aged out');
+    assert.equal(isJoinDenied(GROUP, pk(DENIED_PER_GROUP_MAX + 5)), true, 'the newest deny is held');
+  });
+});
+
+test('a write the drawer refuses is reported, not swallowed', () => {
+  withStorage(() => {
+    const real = globalThis.localStorage.setItem;
+    globalThis.localStorage.setItem = () => { throw new DOMException('full', 'QuotaExceededError'); };
+    const errors = [];
+    const log = console.error;
+    console.error = (...args) => errors.push(args.join(' '));
+    try {
+      assert.equal(queuePendingJoin(GROUP, { pubkey: PK, eventId: 'q1', at: 1 }), false, 'a request that did not save is not reported as queued');
+      assert.equal(denyPendingJoin(GROUP, OTHER), false);
+    } finally {
+      console.error = log;
+      globalThis.localStorage.setItem = real;
+    }
+    assert.equal(errors.length >= 2, true);
+    assert.match(errors[0], /could not be saved/);
+    assert.deepEqual(pendingJoinsFor(GROUP), [], 'nothing pretends to be stored');
+  });
 });
