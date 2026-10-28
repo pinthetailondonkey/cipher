@@ -107,30 +107,47 @@ export default function IdentityBackup({ identity, onClose }) {
     setBiometricMessage('');
     try {
       const result = await identity.enableBiometric();
-      setBiometricMessage(result.success ? 'A saved passkey is ready for future unlocks.' : (result.error || 'Could not set up this device passkey.'));
+      setBiometricMessage(result.success ? 'A saved passkey opens this account on this device from now on. It does not replace the 12 words.' : (result.error || 'Could not set up this device passkey.'));
     } finally {
       setEnablingBiometric(false);
     }
   };
 
   return (
-    <div className="h-full overflow-y-auto bg-transparent pb-8">
+    <div className="h-full overflow-y-auto overscroll-contain bg-transparent pb-[calc(env(safe-area-inset-bottom,0px)+2rem)]">
       <ScreenHeader title="Backup" onBack={onClose} />
       <div className="space-y-4 p-4">
-        <div className="flex items-start gap-3 rounded-2xl border border-line bg-panel p-4 text-[13px] text-ink/70">
-          <Shield size={24} className="mt-0.5 shrink-0 text-inkSubtle" />
-          Your secret key controls this account. Never share it.
+        {/* Recovery leads. The 12 words are the only backup that brings the
+            account back on a new device; the passkey and the raw key below
+            each open one narrower door, so they sit after it. This screen
+            saves the account — it does not save the chats on this device. */}
+        <div className="rounded-2xl border border-line bg-panel p-4">
+          <div className="flex items-center gap-2">
+            <KeyRound size={18} className="shrink-0 text-accentText" />
+            <p className="text-[15px] font-semibold text-ink">Recovery phrase</p>
+          </div>
+          <p className="mt-1.5 text-[13px] leading-relaxed text-inkMuted">
+            The 12 words you wrote down bring this account back on a new device, with a new PIN you choose there. This is the only backup that works on a new phone.
+          </p>
+          <button type="button" onClick={copyPhrase} disabled={!identity?.sk} className={`mt-3 flex w-full items-center justify-center gap-2 rounded-2xl bg-accent py-3.5 font-bold text-accentInk hover:bg-accent disabled:opacity-40 ${pressable}`}>
+            <Copy size={16} /> {copied === 'phrase' ? 'Copied' : 'Copy 12-word phrase'}
+          </button>
         </div>
+
         <div className="overflow-hidden rounded-2xl border border-line bg-panel">
           {identity?.hasBiometric ? (
-            <p className="flex items-center gap-3 p-4 text-[15px] text-success"><Fingerprint size={24} className="shrink-0" /> Saved passkey is on</p>
+            <p className="flex items-center gap-3 p-4 text-[15px] text-success"><Fingerprint size={24} className="shrink-0" /> A saved passkey opens this account on this device</p>
           ) : (
             <button type="button" onClick={setupBiometric} disabled={!identity?.sk || enablingBiometric} className={`flex w-full items-center gap-3 p-4 text-left text-[15px] font-semibold text-ink disabled:opacity-40 ${pressable}`}>
               <Fingerprint size={24} className="shrink-0 text-inkSubtle" /> {enablingBiometric ? 'Setting up…' : 'Set up a saved passkey'}
             </button>
           )}
+          <p className="border-t border-line px-4 py-3 text-[13px] leading-relaxed text-inkMuted">
+            It asks this device for whichever unlock it uses: a face, a fingerprint, a PIN or a security key. It opens this device only, and it does not replace the 12 words.
+          </p>
           {biometricMessage && <p role="status" className="border-t border-line px-4 py-3 text-[13px] text-inkMuted">{biometricMessage}</p>}
         </div>
+
         <div className="overflow-hidden rounded-2xl border border-line bg-panel">
           <div className="flex items-center gap-3 border-b border-line p-4">
             <KeyRound size={24} className="shrink-0 text-inkSubtle" />
@@ -149,20 +166,25 @@ export default function IdentityBackup({ identity, onClose }) {
             <button type="button" onClick={toggleSecret} className={`text-[13px] font-semibold text-accentText ${pressable}`}>{showSecret ? 'Hide' : 'Show'}</button>
           </div>
         </div>
-        <button type="button" onClick={() => copy('nsec')} disabled={!identity?.sk} className={`flex w-full items-center justify-center gap-2 rounded-2xl bg-accent py-3.5 font-bold text-accentInk hover:bg-accent disabled:opacity-40 ${pressable}`}>
+
+        <button type="button" onClick={() => copy('nsec')} disabled={!identity?.sk} className={`flex w-full items-center justify-center gap-2 rounded-2xl border border-line bg-panel py-3.5 font-bold text-ink disabled:opacity-40 ${pressable}`}>
           <Copy size={16} /> {copied === 'nsec' ? 'Copied' : 'Copy secret key'}
         </button>
-        <button type="button" onClick={copyPhrase} disabled={!identity?.sk} className={`flex w-full items-center justify-center gap-2 rounded-2xl border border-line bg-panel py-3.5 font-bold text-ink disabled:opacity-40 ${pressable}`}>
-          <Copy size={16} /> {copied === 'phrase' ? 'Copied' : 'Copy 12-word phrase'}
-        </button>
-        <label className="flex items-start gap-3 rounded-2xl border border-line bg-panel p-4 text-[13px] text-ink/70">
-          <input type="checkbox" checked={exportReady} onChange={(event) => setExportReady(event.target.checked)} className="mt-0.5 h-5 w-5 accent-accent" />
-          I understand this file contains my secret key and 12-word phrase.
-        </label>
-        <button type="button" onClick={downloadRecoveryFile} disabled={!identity?.sk || exporting || !exportReady} className={`flex w-full items-center justify-center gap-2 rounded-2xl bg-accent py-3.5 font-bold text-accentInk hover:bg-accent disabled:opacity-40 ${pressable}`}>
-          <Download size={16} /> {exporting ? 'Preparing…' : 'Download recovery backup'}
-        </button>
-        <p className="px-1 text-[13px] text-inkMuted">Store it privately. Never upload or share it.</p>
+
+        <div className="rounded-2xl border border-line bg-panel p-4">
+          <div className="flex items-start gap-3 text-[13px] text-ink/70">
+            <Shield size={20} className="mt-0.5 shrink-0 text-inkSubtle" />
+            <p>A file with your secret key and your 12 words. Keep it private and never upload or share it. This backup is your account, not the chats saved on this device.</p>
+          </div>
+          <label className="mt-3 flex items-start gap-3 text-[13px] text-ink/70">
+            <input type="checkbox" checked={exportReady} onChange={(event) => setExportReady(event.target.checked)} className="mt-0.5 h-5 w-5 accent-accent" />
+            I understand this file contains my secret key and 12-word phrase.
+          </label>
+          <button type="button" onClick={downloadRecoveryFile} disabled={!identity?.sk || exporting || !exportReady} className={`mt-3 flex w-full items-center justify-center gap-2 rounded-2xl border border-line bg-panelStrong py-3.5 font-bold text-ink disabled:opacity-40 ${pressable}`}>
+            <Download size={16} /> {exporting ? 'Preparing…' : 'Download recovery backup'}
+          </button>
+        </div>
+
         {copied && copied !== 'npub' && copied !== 'nsec' && copied !== 'phrase' && <p role="status" className="text-[13px] text-accentText">{copied}</p>}
       </div>
     </div>
