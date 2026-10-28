@@ -3,7 +3,7 @@ import { Search, Users, User } from 'lucide-react';
 import ScreenHeader from '../ui/ScreenHeader';
 import Picture from '../ui/Picture';
 import Logo from '../Logo';
-import { noHexName } from '../../lib/npub';
+import { noHexName, pubkeyFromScanned } from '../../lib/npub';
 import { useChatStore } from '../../store/chatStore';
 
 export default function SearchView({ handleSearch, joinGroupById, openChat }) {
@@ -29,7 +29,13 @@ export default function SearchView({ handleSearch, joinGroupById, openChat }) {
               aria-label="Search"
               placeholder="Name or group"
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              onChange={(e) => {
+                setSearchQuery(e.target.value);
+                // A pasted key resolves at once — a full npub or pubkey names
+                // one person, and the row should not wait for Enter. Partial
+                // text decodes to nothing and stays a plain search.
+                if (pubkeyFromScanned(e.target.value)) handleSearch();
+              }}
               onKeyDown={(e) => {
                 if (e.key === 'Enter') handleSearch();
               }}
