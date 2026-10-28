@@ -5,6 +5,21 @@ import { queryWithTimeout, profileRelays, groupOnlyRelays, searchRelays } from '
 import { useChatStore } from '../../store/chatStore';
 import { parseGroupReference, loadGroupProfile } from '../../hooks/useNIP29Group';
 
+// A NIP-50 hit stands for the person a handle names only when that profile's
+// own name or display name is the handle. An approximate hit is somebody
+// else, and is never offered as the person who was asked for.
+export function profileNameMatches(event, handle) {
+  try {
+    const parsed = JSON.parse(event?.content || '{}');
+    const wanted = String(handle || '').toLowerCase();
+    const name = String(parsed.name || '').toLowerCase().replace(/^@/, '');
+    const display = String(parsed.display_name || '').toLowerCase().replace(/^@/, '');
+    return wanted !== '' && (name === wanted || display === wanted);
+  } catch (e) {
+    return false;
+  }
+}
+
 export function usePeopleSearch({ identity }) {
 
   const handleSearch = async () => {
@@ -95,17 +110,9 @@ export function usePeopleSearch({ identity }) {
           { kinds: [0], search: usernameToFind, limit: 20 },
           5000
         );
-        const exact = searchEvents.find((ev) => {
-          try {
-            const parsed = JSON.parse(ev.content);
-            const name = String(parsed.name || '').toLowerCase().replace(/^@/, '');
-            const display = String(parsed.display_name || '').toLowerCase().replace(/^@/, '');
-            return name === usernameToFind || display === usernameToFind;
-          } catch (e) { return false; }
-        });
-        const chosen = exact || searchEvents[0];
-        if (chosen) {
-          await loadExactProfile(pool, chosen.pubkey, '@' + usernameToFind);
+        const exact = searchEvents.find((ev) => profileNameMatches(ev, usernameToFind));
+        if (exact) {
+          await loadExactProfile(pool, exact.pubkey, '@' + usernameToFind);
           return;
         }
       } catch (err) {
