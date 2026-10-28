@@ -148,6 +148,11 @@ test('a new PIN needs 8 digits; an existing account keeps its shorter PIN', () =
   assert.equal(isAcceptableNewPin('1234567'), false);
   assert.equal(isAcceptableNewPin('123456'), false);
   assert.equal(isAcceptableNewPin('12345678'), true);
+  // Exactly eight: a ninth digit is refused at the centre, not just by the
+  // field's maxLength, so every screen agrees on the same rule.
+  assert.equal(isAcceptableNewPin('123456789'), false);
+  assert.equal(isAcceptableNewPin('1234567a'), false);
+  assert.equal(isAcceptableNewPin('1234 5678'), false);
   assert.equal(isAcceptableNewPin(''), false);
   assert.equal(isAcceptableNewPin(undefined), false);
   assert.equal(isAcceptableNewPin(12345678), false);

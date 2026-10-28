@@ -5,8 +5,14 @@ export const PIN_FAILURE_LIMIT = 5;
 export const MIN_PIN_LENGTH = 8;
 export const MIN_EXISTING_PIN_LENGTH = 6;
 
+// Exactly eight digits, nothing else. The screens already cap the field at
+// eight, so the central rule has to agree with them or a paste, a script or a
+// future screen can mint a 9-digit "8-digit" PIN that the next screen refuses.
+// Digits only: the field strips everything else, so a letter can never be a
+// PIN. Unlocking and relay-restore never call this, so a 6-digit account made
+// before the rule keeps opening with its own PIN.
 export function isAcceptableNewPin(pin) {
-  return typeof pin === 'string' && pin.length >= MIN_PIN_LENGTH;
+  return typeof pin === 'string' && /^[0-9]{8}$/.test(pin);
 }
 
 export function pinFailureKey(pubkey) {
