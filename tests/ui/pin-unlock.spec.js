@@ -239,12 +239,20 @@ test.describe('PIN unlock against real vaults', () => {
 });
 
 test.describe('Restore by handle keeps what the entry already held', () => {
-  // FIXME(device lock): with a virtual authenticator the handle restore never
-  // comes back — the second WebAuthn step (the wrap's fresh read-back) is the
-  // suspected point, and it is not reproduced on real hardware either way.
-  // This is why device lock is not the release candidate. Remove .fixme with
-  // the repair and a hardware run.
-  test.fixme('the encrypted 12 words and the entry metadata survive a local restore', async ({ page }) => {
+  // A restore wraps the local vault in a device key, so it asks the platform
+  // authenticator for one exactly as unlock does. Headless Chromium has none,
+  // and the request never answers — the same reason the unlock suite above
+  // installs the virtual authenticator. This is the test's hardware, not a
+  // change to the app: the same enroll, wrap and unwrap code runs.
+  test.beforeEach(async ({ page, context }) => {
+    const cdp = await context.newCDPSession(page);
+    await cdp.send('WebAuthn.enable');
+    await cdp.send('WebAuthn.addVirtualAuthenticator', {
+      options: { protocol: 'ctap2', ctap2Version: 'ctap2_1', transport: 'internal', hasResidentKey: true, hasUserVerification: true, isUserVerified: true, hasPrf: true },
+    });
+  });
+
+  test('the encrypted 12 words and the entry metadata survive a local restore', async ({ page }) => {
     test.setTimeout(120000);
     const mnemonicEnc = { iv: [9, 9, 9], ct: [7, 7, 7] };
     await seedAccount(page, {
