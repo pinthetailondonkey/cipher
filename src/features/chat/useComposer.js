@@ -39,7 +39,7 @@ export function useComposer({ identity, sendDM, sendGroupMessage }) {
     };
   }, []);
 
-  // Returns 'sent', 'securing' or 'failed'. Callers used to fire their own
+  // Returns 'sent', 'queued', 'securing' or 'failed'. Callers used to fire their own
   // "sent" toast the moment this returned, so a send the relays refused
   // reported success one line after reporting the failure. A securing group
   // message is neither: it waits on a key, and the bubble says so.
@@ -145,9 +145,11 @@ export function useComposer({ identity, sendDM, sendGroupMessage }) {
     if (activeGroup) scopedRemove(`draft-group-${activeGroup.id}`);
     if (activeDm) {
       const result = await sendDM(activeDm, msgPayload, tempId, replyId);
-      // A direct message has no key-waiting state: anything but sent is failed.
+      // A direct message has no key-waiting state: a failure is a failure.
+      // Queued is not one: the signed event is in the outbox and the bubble
+      // stays, saying queued until a relay takes it.
       const outcome = sendOutcome(result);
-      if (outcome !== 'sent') {
+      if (outcome === 'failed' || outcome === 'securing') {
         setDms(prev => ({
           ...prev,
           [activeDm]: (prev[activeDm] || []).filter((message) => message.id !== tempId && message.clientId !== tempId),
@@ -160,8 +162,7 @@ export function useComposer({ identity, sendDM, sendGroupMessage }) {
         setToast({ type: 'error', message: 'Failed to send: ' + (result.error || 'unknown') });
         return 'failed';
       } else {
-        const outboxEntry = result.queued ? await db.outbox.get(result.event.id) : null;
-        const deliveryStatus = result.queued && outboxEntry ? 'queued' : 'sent';
+        const deliveryStatus = outcome === 'queued' ? 'queued' : 'sent';
         let confirmedMessage;
         setDms(prev => ({
           ...prev,
@@ -182,7 +183,7 @@ export function useComposer({ identity, sendDM, sendGroupMessage }) {
           timestamp: result.event.created_at,
           deliveryStatus,
         });
-        return 'sent';
+        return outcome;
       }
     }
     return 'failed';
