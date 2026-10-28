@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { ChevronLeft, RefreshCw } from 'lucide-react';
 import Button from '../ui/Button';
 import Input from '../ui/Input';
 import { MIN_PIN_LENGTH } from '../../lib/vaultLockout';
+import { DEVICE_UNAVAILABLE_COPY, deviceLockReady } from '../../lib/deviceProvider';
 
 // RestoreMnemonic — the 12-word recovery (§10).
 export default function RestoreMnemonic({ identity, go }) {
@@ -10,6 +11,14 @@ export default function RestoreMnemonic({ identity, go }) {
   const [pin, setPin] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  // The words are the last thing worth typing on a device that cannot keep
+  // them locked, so the check runs before the field is used, not after.
+  const [deviceReady, setDeviceReady] = useState(true);
+  useEffect(() => {
+    let live = true;
+    deviceLockReady().then((ready) => { if (live) setDeviceReady(ready); }).catch(() => {});
+    return () => { live = false; };
+  }, []);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -41,7 +50,8 @@ export default function RestoreMnemonic({ identity, go }) {
         <textarea placeholder="apple banana cherry ..." value={mnemonic} onChange={(e) => { setMnemonic(e.target.value); setError(''); }} className="w-full resize-none rounded-2xl border border-line bg-panelStrong p-5 text-[15px] text-ink placeholder:text-inkSubtle focus:border-accent focus:outline-none" autoCapitalize="none" autoCorrect="off" spellCheck="false" rows={4} />
         <Input type="password" placeholder={`New PIN (${MIN_PIN_LENGTH}+ digits)`} value={pin} onChange={(e) => { setPin(e.target.value.replace(/\D/g, '').slice(0, 8)); setError(''); }} maxLength={8} />
         {error && <p className="text-center text-sm font-medium text-danger">{error}</p>}
-        <Button type="submit" disabled={loading} className="mt-2 flex w-full items-center justify-center gap-2">
+        {!deviceReady && <p className="text-center text-[13px] leading-relaxed text-inkMuted">{DEVICE_UNAVAILABLE_COPY}</p>}
+        <Button type="submit" disabled={loading || !deviceReady} className="mt-2 flex w-full items-center justify-center gap-2">
           {loading ? <RefreshCw size={20} className="animate-spin" /> : 'Continue'}
         </Button>
       </form>

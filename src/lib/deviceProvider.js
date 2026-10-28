@@ -24,3 +24,17 @@ export async function ensureDeviceProvider() {
   }
   return null;
 }
+
+// One plain sentence for a screen that must say why it cannot go on. The
+// check runs before any recovery words are asked for: a device that cannot
+// hold a key cannot make or take an account, and telling someone after their
+// words are on screen is too late.
+export const DEVICE_UNAVAILABLE_COPY = 'This device cannot lock an account to itself. Cipher accounts are locked to the device they are made on, so a new one cannot be made here. Open Cipher where the device can keep a key, and try again.';
+
+export async function deviceLockReady() {
+  try {
+    return !!(await ensureDeviceProvider());
+  } catch {
+    return false;
+  }
+}

@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { AtSign, Check, RefreshCw } from 'lucide-react';
 import Button from '../ui/Button';
 import Input from '../ui/Input';
 import { MIN_PIN_LENGTH } from '../../lib/vaultLockout';
 import { usernameRelays } from '../../lib/relays';
+import { DEVICE_UNAVAILABLE_COPY, deviceLockReady } from '../../lib/deviceProvider';
 
 // Create — the first-run account mode (§10). The BYPASSED username precheck
 // stays bypassed exactly as it was; the handle is only truly checked when
@@ -14,6 +15,15 @@ export default function Create({ identity, onCreated, go }) {
   const [enableBio, setEnableBio] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  // Asked before anything is typed, and long before any words are shown: a
+  // device that cannot hold a key cannot make an account, and the screen says
+  // so instead of failing at the end.
+  const [deviceReady, setDeviceReady] = useState(true);
+  useEffect(() => {
+    let live = true;
+    deviceLockReady().then((ready) => { if (live) setDeviceReady(ready); }).catch(() => {});
+    return () => { live = false; };
+  }, []);
 
   const checkUsernameAvailable = async (username) => {
     let pool;
@@ -86,7 +96,8 @@ export default function Create({ identity, onCreated, go }) {
           Set up Face ID / fingerprint
         </label>
         {error && <p className="mb-1 mt-1 text-center text-sm font-medium text-danger">{error}</p>}
-        <Button type="submit" disabled={loading} className="mt-2 flex w-full items-center justify-center gap-2">
+        {!deviceReady && <p className="text-center text-[13px] leading-relaxed text-inkMuted">{DEVICE_UNAVAILABLE_COPY}</p>}
+        <Button type="submit" disabled={loading || !deviceReady} className="mt-2 flex w-full items-center justify-center gap-2">
           {loading ? <RefreshCw size={20} className="animate-spin" /> : 'Continue'}
         </Button>
       </form>
