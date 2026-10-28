@@ -37,4 +37,17 @@ function applyWindowPolicy(contents, { uiPort, allowCalls = false }) {
   if (!allowCalls) contents.setWebRTCIPHandlingPolicy('disable_non_proxied_udp');
 }
 
-module.exports = { isUiUrl, applyWindowPolicy };
+// Which browser permissions the window may be granted. Notification only:
+// docs/DESKTOP.md promises native notifications while the app is open, and
+// nothing else (mic, camera, geolocation, midi, usb, ...) is asked for by the
+// shell. 'media' is allowed only under the CIPHER_CALLS=1 development hatch,
+// so private mode still refuses a call before it starts. The old handler also
+// allowed clipboard-sanitized-write; the web app writes the clipboard from a
+// click, which Chromium permits without this grant.
+function permissionAllowed(permission, { allowCalls = false } = {}) {
+  if (permission === 'notifications') return true;
+  if (permission === 'media') return Boolean(allowCalls);
+  return false;
+}
+
+module.exports = { isUiUrl, applyWindowPolicy, permissionAllowed };

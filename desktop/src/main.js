@@ -23,7 +23,7 @@ const {
 } = require('./tor.js');
 const { createUiServer } = require('./uiServer.js');
 const { dataDirBeside, resolveAppRoot, createDataDir } = require('./paths.js');
-const { applyWindowPolicy } = require('./windowPolicy.js');
+const { applyWindowPolicy, permissionAllowed } = require('./windowPolicy.js');
 
 const uiPort = 9151;
 const appRoot = resolveAppRoot(process.execPath, {
@@ -212,10 +212,9 @@ app.whenReady().then(() => {
   app.setPath('userData', dataDir);
 
   const engine = session.defaultSession;
-  engine.setPermissionRequestHandler((_wc, perm, cb) => {
-    if (perm === 'media') return cb(Boolean(devCalls)); // mic/camera: refused in private mode
-    return cb(perm === 'clipboard-sanitized-write');
-  });
+  // Notification only (src/windowPolicy.js); mic/camera stay refused in private mode.
+  engine.setPermissionRequestHandler((_wc, perm, cb) => cb(permissionAllowed(perm, { allowCalls: devCalls })));
+  engine.setPermissionCheckHandler((_wc, perm) => permissionAllowed(perm, { allowCalls: devCalls }));
   engine.setUserAgent(`Cipher/${app.getVersion()}`);
 
   // Every webContents electron ever creates gets the same locks, before it

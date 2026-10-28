@@ -3,7 +3,7 @@ import test from 'node:test';
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
-const { isUiUrl, applyWindowPolicy } = require('../src/windowPolicy.js');
+const { isUiUrl, applyWindowPolicy, permissionAllowed } = require('../src/windowPolicy.js');
 
 function fakeContents() {
   const handlers = {};
@@ -68,4 +68,15 @@ test('WebRTC is locked unless the dev hatch is set', () => {
   const dev = fakeContents();
   applyWindowPolicy(dev, { uiPort: 9151, allowCalls: true });
   assert.equal(dev.policy, null);
+});
+
+test('only the notification permission is granted; media only under the dev hatch', () => {
+  assert.equal(permissionAllowed('notifications'), true);
+  for (const p of [
+    'media', 'geolocation', 'midi', 'midiSysex', 'clipboard-read', 'clipboard-sanitized-write',
+    'openExternal', 'fullscreen', 'pointerLock', 'usb', 'hid', 'serial', 'display-capture',
+    'idle-detection', 'window-management', 'unknown-new-thing', '',
+  ]) assert.equal(permissionAllowed(p), false, p);
+  assert.equal(permissionAllowed('media', { allowCalls: true }), true);
+  assert.equal(permissionAllowed('geolocation', { allowCalls: true }), false);
 });
