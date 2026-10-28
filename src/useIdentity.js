@@ -601,7 +601,17 @@ export function useIdentity() {
 
   const restoreFromMnemonic = async (mnemonicInput, newPin) => {
     try {
-      const normalizedMnemonic = mnemonicInput.trim().toLowerCase().replace(/\s+/g, ' ')
+      // Copy-paste picks up sentence punctuation; a trailing period must not
+      // kill an otherwise correct restore. Words only — case and whitespace
+      // were already handled here.
+      const normalizedMnemonic = mnemonicInput
+        .trim()
+        .toLowerCase()
+        .replace(/\s+/g, ' ')
+        .split(' ')
+        .map((w) => w.replace(/^[^a-z]+|[^a-z]+$/g, ''))
+        .filter(Boolean)
+        .join(' ')
       if (!newPin || String(newPin).length < MIN_PIN_LENGTH) throw new Error(`PIN must be at least ${MIN_PIN_LENGTH} digits`)
       const [{ validateMnemonic }, { wordlist }] = await Promise.all([
         import('@scure/bip39'),
