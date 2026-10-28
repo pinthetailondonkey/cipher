@@ -911,6 +911,13 @@ export function useIdentity() {
     try {
       const vaults = getVaults();
       if (!vaults[targetPk] || isDraftEntry(vaults[targetPk])) throw new Error('Account not found');
+      // Reading the vault is not a PIN attempt, here exactly as at unlock:
+      // a copy no PIN could open answers on its own, none of the five
+      // attempts is spent finding that out, and the account is not deleted.
+      // The 12 words are the way back.
+      if (isDamagedVault(vaults[targetPk].vault)) {
+        return { success: false, error: 'This device holds a damaged copy of the account. Use your 12 words.' };
+      }
 
       let skArray;
       try {
