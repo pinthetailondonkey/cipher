@@ -120,13 +120,16 @@ export default function ChatHeader({ mode }) {
 
   return (
     <div className="sticky top-0 z-fab border-b border-line bg-base pt-[env(safe-area-inset-top)]">
-      <div className="relative flex h-14 items-center px-3">
-        <button onClick={() => setView('list')} className="touch-target -ml-2 flex items-center justify-center text-ink" aria-label="Back">
+      {/* Name and status sit in one bounded column so a long name can only
+          ever shorten itself, never reach across the controls. The avatar on
+          the right repeats the title's door: a tap opens what it names. */}
+      <div className="flex h-14 items-center gap-1 px-1">
+        <button onClick={() => setView('list')} className="touch-target flex shrink-0 items-center justify-center text-ink" aria-label="Back">
           <ChevronLeft size={24} />
         </button>
         <button
           type="button"
-          className="absolute left-1/2 flex min-w-0 -translate-x-1/2 flex-col items-center gap-0.5"
+          className="flex min-w-0 flex-1 flex-col items-start justify-center text-left"
           onClick={() => {
             // The title is the door to what it names: a person's profile, or
             // the group's own information. The long press stays for people
@@ -146,17 +149,39 @@ export default function ChatHeader({ mode }) {
             }
           }}
         >
+          <h2 className="w-full truncate text-[16px] font-semibold leading-tight text-ink">{title}</h2>
+          <span className={`w-full truncate text-[12px] leading-tight ${keyChanged ? 'text-danger' : someoneTyping ? 'text-accentText' : 'text-inkSubtle'}`}>
+            {someoneTyping && !keyChanged ? (
+              <>
+                typing
+                <span className="ml-1 inline-flex gap-0.5 align-middle">
+                  <span className="h-1 w-1 animate-bounce rounded-full bg-accentText [animation-delay:0ms]" />
+                  <span className="h-1 w-1 animate-bounce rounded-full bg-accentText [animation-delay:120ms]" />
+                  <span className="h-1 w-1 animate-bounce rounded-full bg-accentText [animation-delay:240ms]" />
+                </span>
+              </>
+            ) : subtitle}
+          </span>
+        </button>
+        <button
+          type="button"
+          aria-label={mode === 'dm' ? 'Profile' : 'Group information'}
+          onClick={() => {
+            if (mode === 'dm') setProfilePubkey(activeDm);
+            else setShowGroupInfo(true);
+          }}
+          className="touch-target flex shrink-0 items-center justify-center"
+        >
           <Picture
             src={picture}
             alt=""
-            className="h-7 w-7 rounded-full object-cover"
-            fallback={<span className="flex h-7 w-7 items-center justify-center rounded-full bg-panelAlt text-[12px] font-semibold text-accentText">{initial}</span>}
+            className="h-8 w-8 rounded-full object-cover"
+            fallback={<span className="flex h-8 w-8 items-center justify-center rounded-full bg-panelAlt text-[13px] font-semibold text-accentText">{initial}</span>}
           />
-          <h2 className="max-w-[12rem] truncate text-[15px] font-semibold leading-none text-ink">{title}</h2>
         </button>
-        <div className="ml-auto flex items-center">
+        <div className="flex shrink-0 items-center">
           {mode === 'dm' && callsAvailable && (
-            <button type="button" onClick={placeCall} aria-label="Voice call" className="touch-target -mr-1 flex items-center justify-center text-ink/70 hover:text-ink">
+            <button type="button" onClick={placeCall} aria-label="Voice call" className="touch-target flex items-center justify-center text-ink/70 hover:text-ink">
               <Phone size={19} />
             </button>
           )}
@@ -165,24 +190,12 @@ export default function ChatHeader({ mode }) {
             onClick={() => setMenuOpen((open) => !open)}
             aria-label="Chat options"
             aria-expanded={menuOpen}
-            className={`touch-target -mr-2 flex items-center justify-center ${timer && timer !== 'off' ? 'text-accentText' : 'text-ink/70 hover:text-ink'}`}
+            className={`touch-target -mr-1 flex items-center justify-center ${timer && timer !== 'off' ? 'text-accentText' : 'text-ink/70 hover:text-ink'}`}
           >
             <MoreVertical size={20} />
           </button>
         </div>
       </div>
-      <p className={`pointer-events-none absolute bottom-1 left-1/2 -translate-x-1/2 text-[11px] ${keyChanged ? 'text-danger' : someoneTyping ? 'text-accentText' : 'text-inkSubtle'}`}>
-        {someoneTyping && !keyChanged ? (
-          <>
-            typing
-            <span className="ml-1 inline-flex gap-0.5 align-middle">
-              <span className="h-1 w-1 animate-bounce rounded-full bg-accentText [animation-delay:0ms]" />
-              <span className="h-1 w-1 animate-bounce rounded-full bg-accentText [animation-delay:120ms]" />
-              <span className="h-1 w-1 animate-bounce rounded-full bg-accentText [animation-delay:240ms]" />
-            </span>
-          </>
-        ) : subtitle}
-      </p>
       {menuOpen && activeChatId && (
         <div className="absolute right-2 top-full z-fab mt-1 w-56 rounded-2xl border border-line bg-panel p-1">
           <button
