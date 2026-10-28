@@ -63,7 +63,16 @@ export default function SaveKey({ savedMnemonic, biometricNotice, onContinue }) 
               aria-label={revealed.has(i) ? `Word ${i + 1} revealed` : `Reveal word ${i + 1}`}
               className="rounded-xl border border-line bg-panelStrong p-3 text-center font-mono text-[13px] text-ink active:bg-ink/10"
             >
-              {revealed.has(i) ? word : 'tap'}
+              {revealed.has(i) ? (
+                word
+              ) : (
+                // The unrevealed cell shows its POSITION, never a word-shaped
+                // placeholder: twelve identical chips read as "the generator
+                // made the same word twelve times" (the founder's exact read).
+                // A number is an index, can't be mistaken for key material,
+                // and the tap-to-reveal affordance stays in the aria-label.
+                <span className="text-inkMuted">{i + 1}</span>
+              )}
             </button>
           ))}
         </div>
