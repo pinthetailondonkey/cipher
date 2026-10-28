@@ -2,6 +2,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { Lock, Radio, ShieldCheck, Users } from 'lucide-react';
 import Avatar from '../ui/Avatar';
 import Picture from '../ui/Picture';
+import { useModalA11y } from '../ui/modal';
 import { useProfiles } from '../../useProfiles';
 
 // The phone shell's side drawer: profile card up top, then the drawer's own
@@ -9,8 +10,11 @@ import { useProfiles } from '../../useProfiles';
 // moved to the bottom bar (15.1), so they are not repeated here; the drawer
 // is what the bar does not cover. The desktop left rail covers md+; this
 // only ever mounts below md. onNavigate(tab, exploreMode, startView) hands
-// the tap back to AuthenticatedApp, which owns the tab state.
+// the tap back to AuthenticatedApp, which owns the tab state. While it is
+// open the drawer is a dialog: Escape closes it, Tab stays inside it, and
+// the focus goes back to the control that opened it.
 export default function Drawer({ identity, open, onClose, onNavigate }) {
+  const panelRef = useModalA11y(open, onClose);
   const profiles = useProfiles([identity.pk]);
   const myProfile = profiles[identity.pk] || {};
   const defaultName = identity.npub ? identity.npub.slice(0, 10) : 'User';
@@ -34,6 +38,11 @@ export default function Drawer({ identity, open, onClose, onNavigate }) {
             className="absolute inset-0 touch-target bg-scrim/60"
           />
           <motion.aside
+            ref={panelRef}
+            tabIndex={-1}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Menu"
             initial={{ x: '-100%' }}
             animate={{ x: 0 }}
             exit={{ x: '-100%' }}

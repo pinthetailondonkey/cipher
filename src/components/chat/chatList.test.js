@@ -16,6 +16,9 @@ const OUT = path.resolve(ROOT, 'node_modules', '.cipher-chatlist-test');
 const REACT_SHIM = `
 let current = null;
 let pendingEffects = [];
+let cleanups = [];
+
+export function __addCleanup(cleanup) { cleanups.push(cleanup); }
 
 export function __setCurrent(instance) { current = instance; current.cursor = 0; }
 export function __clearCurrent() { current = null; }
@@ -59,9 +62,17 @@ export function useCallback(callback, deps) {
 export function useEffect(effect, deps) {
   const instance = current;
   const index = nextSlot();
-  if (instance.mounted) return undefined;
-  if (!deps || deps.length === 0) pendingEffects.push(effect);
+  const seen = instance.effects || (instance.effects = {});
+  if (index in seen && same(seen[index], deps)) return undefined;
+  seen[index] = deps;
+  pendingEffects.push(effect);
   return undefined;
+}
+
+export function __runCleanups() {
+  const list = cleanups;
+  cleanups = [];
+  for (const cleanup of list) cleanup();
 }
 
 export function useLayoutEffect(effect, deps) { return useEffect(effect, deps); }
@@ -103,6 +114,7 @@ export const jsxDEV = jsx;
 
 const ENTRY = `
 export { default as ChatList } from ${JSON.stringify(path.join(ROOT, 'src/components/chat/ChatList.jsx'))};
+export { default as Drawer } from ${JSON.stringify(path.join(ROOT, 'src/components/chat/Drawer.jsx'))};
 export { useChatStore } from ${JSON.stringify(path.join(ROOT, 'src/store/chatStore.js'))};
 export * as hooks from './react-shim.js';
 `;
@@ -148,6 +160,16 @@ function createTree(component, props) {
   const instances = new Map();
   const hosts = [];
   const rows = [];
+  const opaque = [];
+  const focusables = [];
+  let focusCalls = 0;
+  // What a ref receives in place of a DOM node: the modal hook focuses it,
+  // traps Tab inside it and gives focus back when it closes.
+  const panel = {
+    focus() { focusCalls += 1; },
+    querySelectorAll() { return focusables; },
+    contains(node) { return focusables.includes(node); },
+  };
 
   const walk = (node, at) => {
     if (node === null || node === undefined || typeof node === 'boolean') return;
@@ -167,7 +189,14 @@ function createTree(component, props) {
       walk(ownProps.children, `${at}/${type}`);
       return;
     }
-    if (typeof type !== 'function') return;
+    // motion.* and AnimatePresence are wrappers from outside the shim: their
+    // props are read, their children are rendered, they are never called.
+    if (typeof type !== 'function' || type.name === 'AnimatePresence') {
+      opaque.push({ type, props: ownProps });
+      if (ownProps.ref && typeof ownProps.ref === 'object' && 'current' in ownProps.ref) ownProps.ref.current = panel;
+      walk(ownProps.children, at);
+      return;
+    }
     if (type.name === 'ChatRow') {
       rows.push(ownProps);
       return;
@@ -179,17 +208,21 @@ function createTree(component, props) {
     app.hooks.__clearCurrent();
     walk(output, `${at}/${type.name}`);
     instance.mounted = true;
-    for (const effect of app.hooks.__takeEffects()) effect();
+    for (const effect of app.hooks.__takeEffects()) {
+      const cleanup = effect();
+      if (typeof cleanup === 'function') app.hooks.__addCleanup(cleanup);
+    }
   };
 
   const render = () => {
     hosts.length = 0;
     rows.length = 0;
+    opaque.length = 0;
     walk({ type: component, props }, 'root');
-    return { hosts, rows };
+    return { hosts, rows, opaque };
   };
 
-  return { render };
+  return { render, panel, focusables, panelFocus: () => focusCalls };
 }
 
 const textOf = (node) => {
@@ -271,4 +304,53 @@ test('the in-place filter and the network search are named for what they do', ()
   ({ hosts } = tree.render());
   assert.ok(labelledButton(hosts, 'Find someone'), 'the menu door that searches the network says so');
   assert.equal(labelledButton(hosts, 'New chat'), undefined, 'no door claims a new chat when it opens a search');
+});
+
+test('the phone drawer is a dialog: Escape closes it, Tab stays inside, focus comes back', () => {
+  const listeners = [];
+  const restored = [];
+  globalThis.HTMLElement = class HTMLElement {};
+  const opener = Object.assign(new globalThis.HTMLElement(), { focus() { restored.push('opener'); } });
+  globalThis.window = {
+    setInterval: () => 0,
+    clearInterval: () => {},
+    addEventListener: (type, handler) => listeners.push({ type, handler }),
+    removeEventListener: () => {},
+  };
+  globalThis.document = { activeElement: opener, contains: (node) => node === opener };
+
+  let closed = 0;
+  const identity = { pk: 'a'.repeat(64), npub: 'a'.repeat(64), lockApp: () => {} };
+  const tree = createTree(app.Drawer, {
+    identity,
+    open: true,
+    onClose: () => { closed += 1; },
+    onNavigate: () => {},
+  });
+  const { opaque } = tree.render();
+
+  const panelNode = opaque.find((node) => node.props.role === 'dialog');
+  assert.ok(panelNode, 'the drawer panel is a dialog');
+  assert.equal(panelNode.props['aria-modal'], 'true', 'the rest of the screen is out of reach');
+  assert.equal(panelNode.props.tabIndex, -1, 'the panel can take focus');
+  assert.equal(panelNode.props['aria-label'], 'Menu', 'the dialog has a name');
+  assert.ok(tree.panelFocus() > 0, 'opening the drawer moves focus into it');
+
+  const keydown = listeners.filter((entry) => entry.type === 'keydown').at(-1);
+  assert.ok(keydown, 'the drawer listens for keys while it is open');
+  keydown.handler({ key: 'Escape', stopPropagation() {} });
+  assert.equal(closed, 1, 'Escape closes the drawer');
+
+  let firstFocused = 0;
+  const first = { focus() { firstFocused += 1; } };
+  const last = { focus() {} };
+  tree.focusables.push(first, last);
+  globalThis.document.activeElement = last;
+  let prevented = false;
+  keydown.handler({ key: 'Tab', shiftKey: false, preventDefault() { prevented = true; } });
+  assert.equal(prevented, true, 'Tab at the last control stays in the drawer');
+  assert.equal(firstFocused, 1, 'the wrap lands on the first control');
+
+  app.hooks.__runCleanups();
+  assert.deepEqual(restored, ['opener'], 'closing the drawer gives focus back to the control that opened it');
 });
