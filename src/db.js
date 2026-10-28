@@ -322,6 +322,24 @@ export const saveMessage = async (chatId, msg) => {
   }
 };
 
+// The read marker of a chat, written to the database. It only moves forward:
+// opening a chat and a message arriving into an open chat both call it, and a
+// stale caller must not pull the marker back.
+export const markChatRead = async (chatId, at = Math.floor(Date.now() / 1000)) => {
+  if (!currentOwner() || !chatId) return false;
+  try {
+    await db.transaction('rw', 'chatReads', async () => {
+      const current = await db.chatReads.get(chatId);
+      if ((current?.lastRead || 0) >= at) return;
+      await db.chatReads.put({ chatId, lastRead: at });
+    });
+    return true;
+  } catch (error) {
+    console.error('[db] Could not save the read marker:', error);
+    return false;
+  }
+};
+
 // Settles temporary send rows a closed app left behind (see planTempSweep).
 // Returns the plan that was applied.
 export const sweepTempMessages = async () => {

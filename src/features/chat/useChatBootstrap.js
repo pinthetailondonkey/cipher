@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { unreadCountsFor } from '../../lib/unreadCounts';
 import { db, deletedMessageIds, saveMessage, openDBFor, sweepTempMessages } from '../../db';
 import { getMyGroups } from '../../lib/myGroups';
 import { mergeReactions } from '../../lib/reactions';
@@ -335,13 +336,7 @@ export function useChatBootstrap({
       const reads = await db.chatReads.toArray();
       const readMap = {};
       reads.forEach(r => { readMap[r.chatId] = r.lastRead; });
-      const counts = {};
-      liveDbMsgs.forEach(msg => {
-        if (!msg.isSender) {
-          const lastRead = readMap[msg.chatId] || 0;
-          if (msg.timestamp > lastRead) counts[msg.chatId] = (counts[msg.chatId] || 0) + 1;
-        }
-      });
+      const counts = unreadCountsFor(liveDbMsgs, readMap, deleted);
       setUnreadCounts(counts);
       const finalDms = {};
       const finalGroups = {};

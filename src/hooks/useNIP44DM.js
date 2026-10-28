@@ -1,5 +1,6 @@
 import { useCallback, useEffect } from 'react';
-import { db, openDBFor, saveMessage, markSentMessagesRead } from '../db';
+import { db, openDBFor, saveMessage, markSentMessagesRead, markChatRead } from '../db';
+import { countsAsNewUnread } from '../lib/unreadCounts';
 import { receiptTime } from '../lib/messageMerge';
 import { dmControlAction, dmExpired, installMemberGroupKey } from './useGroupKeyMember';
 import { showNotification } from '../lib/notifications';
@@ -308,11 +309,21 @@ export function useNIP44DM({ identity }) {
                   await db.messages.delete(optimisticMessage.id);
                 }
               }
+              // Read before the save: whether this id is already stored, was
+              // deleted here, and where the chat's read marker stands.
+              const alreadyStored = !isSender && !!(await db.messages.get(event.id));
+              const tombstoned = !isSender && !!(await db.tombstones.get(event.id));
+              const lastRead = isSender ? 0 : ((await db.chatReads.get(counterparty))?.lastRead || 0);
               await saveMessage(counterparty, newMsg);
               if (!isSender) {
                 const state = useChatStore.getState();
-                if (state.activeDm !== counterparty) {
+                const chatOpen = state.activeDm === counterparty;
+                if (countsAsNewUnread({ alreadyStored, tombstoned, isSender, chatOpen, timestamp: event.created_at, lastRead })) {
                   state.setUnreadCounts(prev => ({ ...prev, [counterparty]: (prev[counterparty] || 0) + 1 }));
+                } else if (chatOpen && !tombstoned) {
+                  // Arriving into the chat on screen is reading it: the marker
+                  // moves, or the message counts as unread after a reload.
+                  markChatRead(counterparty, Math.max(Math.floor(Date.now() / 1000), event.created_at));
                 }
               }
               if (!isSender && data.type !== 'typing' && data.type !== 'read' && !shouldSuppress(counterparty)) {

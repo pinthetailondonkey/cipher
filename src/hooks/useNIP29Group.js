@@ -1,6 +1,6 @@
 import { useCallback, useEffect } from 'react';
 import { finalizeEvent, nip19 } from 'nostr-tools';
-import { db, saveMessage } from '../db';
+import { db, saveMessage, markChatRead } from '../db';
 import { showNotification } from '../lib/notifications';
 import { useChatStore } from '../store/chatStore';
 import { getAuthenticatedPool } from '../lib/pool';
@@ -1153,6 +1153,11 @@ export function useNIP29Group({ identity }) {
           return { ...prev, [groupId]: newMsgs };
         }
         saveMessage(groupId, baseMsg);
+        // A message arriving into the group on screen is read: the marker is
+        // written to the database or the message counts as unread after reload.
+        if (event.pubkey !== identity.pk && useChatStore.getState().activeGroup?.id === groupId) {
+          markChatRead(groupId, Math.max(Math.floor(Date.now() / 1000), event.created_at));
+        }
         if (event.pubkey !== identity.pk && !isPending && !shouldSuppressGroup(groupId)) {
           let isReplyToMe = false;
           let isMentioned = false;
