@@ -36,6 +36,9 @@ export function passkeyFailureMessage(result) {
   if (code === 'wrong-account') return PASSKEY_WRONG_ACCOUNT;
   // Our own words, composed by the unlock path with the PIN length in them.
   if (code === 'new-pin' && typeof result.error === 'string' && result.error) return result.error;
+  // A device that could not write the vault is not a passkey that failed:
+  // the commit already says plainly that nothing changed and to try again.
+  if (code === 'save-failed' && typeof result.error === 'string' && result.error) return result.error;
   if (code === 'cancelled') return PASSKEY_CANCELLED;
   if (code === 'unavailable') return PASSKEY_UNAVAILABLE;
   return PASSKEY_FAILED;

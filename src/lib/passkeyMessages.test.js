@@ -46,6 +46,17 @@ test('the library\'s catch-all never reaches the screen', () => {
   assert.notEqual(passkeyFailureMessage({ error: raw }), raw.message);
 });
 
+test('a vault that could not be saved says that, not that the passkey failed', () => {
+  // useIdentity composes this sentence and tags it save-failed when the
+  // one-commit write does not land; the passkey itself was fine.
+  const sentence = 'This device could not save the account. Nothing was changed — try again.';
+  assert.equal(passkeyFailureMessage({ code: 'save-failed', error: sentence }), sentence);
+  assert.notEqual(passkeyFailureMessage({ code: 'save-failed', error: sentence }), PASSKEY_FAILED);
+  // Without our sentence it still falls back to the passkey line, never raw text.
+  assert.equal(passkeyFailureMessage({ code: 'save-failed' }), PASSKEY_FAILED);
+  assert.equal(passkeyFailureMessage({ code: 'save-failed', error: new Error('QuotaExceededError') }), PASSKEY_FAILED);
+});
+
 test('our own new-PIN sentence is passed through by code', () => {
   const sentence = 'Enter a new PIN (exactly 8 digits) to restore this account on this device.';
   assert.equal(passkeyFailureMessage({ code: 'new-pin', error: sentence }), sentence);
