@@ -13,6 +13,7 @@ import {
   failPinAttempt,
   failUnlockAttempt,
   deviceKeyFailureMessage,
+  deviceLockUpgradeMessage,
   removeAccountKeys,
   removeAccountVault,
   resetPinFailures,
@@ -192,4 +193,14 @@ test('a device key failure says what happened in plain words and never mentions 
   for (const error of [new DeviceKeyCancelled(), new DeviceKeyMissing(), new DeviceKeyUnavailable()]) {
     assert.doesNotMatch(deviceKeyFailureMessage(error), /wrong pin/i);
   }
+});
+
+test('an upgrade that could not lock the account says nothing changed and points to the 12 words', () => {
+  for (const error of [new DeviceKeyCancelled(), new DeviceKeyMissing(), new DeviceKeyUnavailable()]) {
+    const message = deviceLockUpgradeMessage(error);
+    assert.match(message, /nothing/i);
+    assert.doesNotMatch(message, /wrong pin/i);
+  }
+  assert.match(deviceLockUpgradeMessage(new DeviceKeyUnavailable()), /12 words/);
+  assert.match(deviceLockUpgradeMessage(new DeviceKeyMissing()), /12 words/);
 });
