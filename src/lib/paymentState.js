@@ -149,10 +149,13 @@ export function nextPaymentState(current, event) {
 // `confirmed: true` on the report is not enough. The count has to clear the threshold.
 
 
+// A coin amount is a decimal string (or a BigInt of whole coins). A JS number
+// is a binary float, so 0.1 + 0.2 and a 17-digit amount are not the figure
+// anyone wrote: a number is never read as a coin amount, even a clean one,
+// and the boundary that receives it must quote it as text first.
 function decimalUnits(value, scale) {
-  const text = typeof value === 'number' && Number.isFinite(value)
-    ? value.toFixed(scale).replace(/0+$/, '').replace(/\.$/, '')
-    : String(value ?? '').trim();
+  if (typeof value !== 'string' && typeof value !== 'bigint') return null;
+  const text = String(value).trim();
   if (!/^\d+(\.\d+)?$/.test(text)) return null;
   const [whole, frac = ''] = text.split('.');
   if (frac.length > scale) return null;
@@ -210,7 +213,16 @@ export function applyWatcherReport({ state, watcherUrl, report, currency, thresh
   if (!report || report.source !== 'watcher' || !report.txid) {
     throw new Error('Only a watcher report can move a payment to seen or confirmed.');
   }
-  if (amount != null && amount !== '') {
+  // A demand that was handed in must be a real, positive amount: null, an
+  // empty string and zero used to skip the check, so a 1-sat report confirmed
+  // an order with no price. Only an argument left out entirely (undefined)
+  // means the caller is walking states without a demand.
+  if (amount !== undefined) {
+    const asset = assetOf(currency);
+    const demanded = asset ? decimalUnits(amount, asset.scale) : null;
+    if (demanded == null || demanded <= 0n) {
+      throw new Error('The order has no amount to check the payment against.');
+    }
     if (report.amount == null || report.amount === '') {
       throw new Error('The watcher did not report an amount.');
     }
@@ -220,7 +232,10 @@ export function applyWatcherReport({ state, watcherUrl, report, currency, thresh
   }
   let current = state;
   if (current === 'address_issued') current = nextPaymentState(current, 'see');
-  const need = threshold == null ? confirmationsRequired(currency) : Number(threshold);
+  // The depth is sanitised by the one rule confirmationsRequired uses: an
+  // integer of at least 1, else the currency's own default. A zero, negative,
+  // fractional or garbled threshold never lowers the bar.
+  const need = confirmationsRequired(currency, { [String(currency || '').toLowerCase()]: threshold });
   const confirmed = Number(report.confirmations) >= need;
   if (confirmed) {
     if (current !== 'seen') throw new Error('A payment has to be seen before it can be confirmed.');

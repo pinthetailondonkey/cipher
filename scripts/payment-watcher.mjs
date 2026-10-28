@@ -165,7 +165,7 @@ async function bitcoinTransfers(address) {
     id: 'cipher',
     method: 'scantxoutset',
     params: ['start', [bitcoinDescriptor(address)]],
-  });
+  }, { exactAmounts: true });
   const rows = rowsFromScan(scan, address);
   const times = await bitcoinBlockTimes(rows.map((row) => row.height));
   for (const row of rows) if (times.has(row.height)) row.timestamp = times.get(row.height);

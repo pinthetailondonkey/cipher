@@ -268,14 +268,14 @@ test('wallet transfers become a watcher report, and a miss stays pending', () =>
   const watcher = fs.readFileSync(new URL('../../scripts/payment-watcher.mjs', import.meta.url), 'utf8');
   assert.match(watcher, /reportFromTransfers\(rows, address, 'xmr'\)/);
   assert.equal(reportFromTransfers([
-    { address: 'bcrt1q', txid: 'small', confirmations: 3, amount: 0.00000001 },
-    { address: 'bcrt1q', txid: 'aaaa', confirmations: 3, amount: 0.02 },
-    { address: 'bcrt1q', txid: 'bbbb', confirmations: 3, amount: 0.02 },
+    { address: 'bcrt1q', txid: 'small', confirmations: 3, amount: '0.00000001' },
+    { address: 'bcrt1q', txid: 'aaaa', confirmations: 3, amount: '0.02' },
+    { address: 'bcrt1q', txid: 'bbbb', confirmations: 3, amount: '0.02' },
   ], 'bcrt1q', 'btc').txid, 'bbbb');
 });
 
 test('a stock-node scan of one address becomes a bitcoin report', () => {
-  const scan = { height: 104, unspents: [{ txid: 'aa', height: 102, amount: 0.01 }] };
+  const scan = { height: 104, unspents: [{ txid: 'aa', height: 102, amount: '0.01' }] };
   assert.deepEqual(reportFromTransfers(rowsFromScan(scan, 'bcrt1q'), 'bcrt1q', 'btc'), {
     source: 'watcher', txid: 'aa', confirmations: 3, confirmed: true, amount: '0.01', outputAmount: '0.01',
   });
@@ -336,7 +336,7 @@ test('an outgoing Monero spend never reads as an incoming payment', () => {
 
 test('a payment split across two outputs is summed, and the receipt keeps the largest', async () => {
   const watcherUrl = 'https://watch.example/payment?token=secret';
-  const oneTx = { height: 110, unspents: [{ txid: 'aa', height: 108, amount: 0.006 }, { txid: 'aa', height: 108, amount: 0.004 }] };
+  const oneTx = { height: 110, unspents: [{ txid: 'aa', height: 108, amount: '0.006' }, { txid: 'aa', height: 108, amount: '0.004' }] };
   const report = reportFromTransfers(rowsFromScan(oneTx, 'bc1q'), 'bc1q', 'btc');
   assert.equal(report.amount, '0.01');
   assert.equal(report.outputAmount, '0.006');
@@ -347,11 +347,13 @@ test('a payment split across two outputs is summed, and the receipt keeps the la
   });
   assert.equal(paid.state, 'confirmed');
   assert.equal(paid.report.outputAmount, '0.006');
-  const twoTx = { height: 110, unspents: [{ txid: 'bb', height: 108, amount: 0.004 }, { txid: 'aa', height: 108, amount: 0.006 }] };
+  const twoTx = { height: 110, unspents: [{ txid: 'bb', height: 108, amount: '0.004' }, { txid: 'aa', height: 108, amount: '0.006' }] };
   const split = reportFromTransfers(rowsFromScan(twoTx, 'bc1q'), 'bc1q', 'btc');
-  assert.equal(split.amount, '0.01');
+  // A receipt names one transaction: the amount is that transaction's own
+  // outputs, never the sum across two transactions.
+  assert.equal(split.amount, '0.006');
   assert.equal(split.txid, 'aa');
-  const shallow = { height: 110, unspents: [{ txid: 'aa', height: 108, amount: 0.006 }, { txid: 'bb', height: 110, amount: 0.004 }] };
+  const shallow = { height: 110, unspents: [{ txid: 'aa', height: 108, amount: '0.006' }, { txid: 'aa', height: 110, amount: '0.004' }] };
   const young = reportFromTransfers(rowsFromScan(shallow, 'bc1q'), 'bc1q', 'btc');
   assert.equal(young.confirmations, 1);
   assert.equal(young.confirmed, false);
@@ -360,7 +362,7 @@ test('a payment split across two outputs is summed, and the receipt keeps the la
 test('a report carries the oldest time of its covering rows, and a scan keeps its height', () => {
   const rows = moneroRows([
     { address: '8sub', txid: 'a', confirmations: 10, amount: 300000000000, timestamp: 2000, type: 'in' },
-    { address: '8sub', txid: 'b', confirmations: 10, amount: 200000000000, timestamp: 1000, type: 'in' },
+    { address: '8sub', txid: 'a', confirmations: 10, amount: 200000000000, timestamp: 1000, type: 'in' },
   ]);
   const report = reportFromTransfers(rows, '8sub', 'xmr');
   assert.equal(report.time, 1000);
@@ -368,11 +370,11 @@ test('a report carries the oldest time of its covering rows, and a scan keeps it
   // One undated part and the report carries no date, so an order with an
   // issuance time refuses to consume the txid.
   const partly = reportFromTransfers([
-    { address: '8sub', txid: 'a', confirmations: 10, amount: 0.3, timestamp: 2000 },
-    { address: '8sub', txid: 'b', confirmations: 10, amount: 0.2 },
+    { address: '8sub', txid: 'a', confirmations: 10, amount: '0.3', timestamp: 2000 },
+    { address: '8sub', txid: 'a', confirmations: 10, amount: '0.2' },
   ], '8sub', 'xmr');
   assert.equal(partly.time, undefined);
-  const scan = rowsFromScan({ height: 104, unspents: [{ txid: 'aa', height: 102, amount: 0.01 }] }, 'bc1q');
+  const scan = rowsFromScan({ height: 104, unspents: [{ txid: 'aa', height: 102, amount: '0.01' }] }, 'bc1q');
   assert.equal(scan[0].height, 102);
 });
 
@@ -506,4 +508,68 @@ test('a transfer time that is not a sane unix second carries no weight', async (
     fetchImpl: ago,
   });
   assert.equal(future.report?.time, undefined);
+});
+
+test('a locked or double-spent Monero row is held out of the count', async () => {
+  const now = 1_800_000_000;
+  const arrived = { txid: 'ok', address: '8sub', amount: 500000000000, type: 'in', height: 1000, confirmations: 10, unlock_time: 0 };
+  const ids = (result) => incomingMoneroTransfers(result, { nowSec: now }).map((row) => row.txid);
+  assert.deepEqual(ids({ in: [arrived] }), ['ok']);
+  // A block-height lock is held until the chain reaches it (tip here is 1009).
+  assert.deepEqual(ids({ in: [{ ...arrived, txid: 'h1', unlock_time: 1010 }] }), []);
+  assert.deepEqual(ids({ in: [{ ...arrived, txid: 'h2', unlock_time: 1009 }] }), ['h2']);
+  // A unix-time lock is held until the clock passes it.
+  assert.deepEqual(ids({ in: [{ ...arrived, txid: 't1', unlock_time: now + 3600 }] }), []);
+  assert.deepEqual(ids({ in: [{ ...arrived, txid: 't2', unlock_time: now - 3600 }] }), ['t2']);
+  // A pool row has no block, so a height lock on it cannot be shown to have passed.
+  assert.deepEqual(ids({ pool: [{ txid: 'p1', address: '8sub', amount: 1, type: 'pool', confirmations: 0, unlock_time: 5 }] }), []);
+  assert.deepEqual(ids({ pool: [{ txid: 'p0', address: '8sub', amount: 1, type: 'pool', confirmations: 0, unlock_time: 0 }] }), ['p0']);
+  // A garbled lock fails closed.
+  assert.deepEqual(ids({ in: [{ ...arrived, txid: 'g', unlock_time: 'soon' }] }), []);
+  // A pool row the wallet saw double-spent never counts.
+  assert.deepEqual(ids({ pool: [{ txid: 'ds', address: '8sub', amount: 1, type: 'pool', double_spend_seen: true }] }), []);
+  // So a locked payment reads as nothing arrived yet, not as a confirmed one.
+  const locked = incomingMoneroTransfers({ in: [{ ...arrived, txid: 'lk', unlock_time: 99999999 }] }, { nowSec: now });
+  assert.deepEqual(reportFromTransfers(locked, '8sub', 'xmr'), { pending: true });
+});
+
+test('a payment split across two transactions does not confirm an order, and a receipt names the transaction that paid', async () => {
+  const watcherUrl = 'https://watch.example/payment?token=secret';
+  const twoTx = { height: 110, unspents: [{ txid: 'aa', height: 108, amount: '0.006' }, { txid: 'bb', height: 108, amount: '0.004' }] };
+  const split = reportFromTransfers(rowsFromScan(twoTx, 'bc1q'), 'bc1q', 'btc');
+  assert.equal(split.txid, 'aa');
+  assert.equal(split.amount, '0.006');
+  const short = await checkPayment({
+    watcherUrl, address: 'bc1q', currency: 'btc', state: 'address_issued', amount: '0.01',
+    fetchImpl: () => watcherAnswer({ address: 'bc1q', currency: 'btc', ...split }),
+  });
+  assert.deepEqual(short, { moved: false, short: true, state: 'address_issued' });
+  // The same split on Monero.
+  const xmr = reportFromTransfers(moneroRows([
+    { address: '8sub', txid: 'x1', confirmations: 10, amount: 300000000000 },
+    { address: '8sub', txid: 'x2', confirmations: 10, amount: 200000000000 },
+  ]), '8sub', 'xmr');
+  assert.equal(xmr.txid, 'x1');
+  assert.equal(xmr.amount, '0.3');
+  // One transaction that covers the order by itself still confirms, with its outputs summed.
+  const whole = { height: 110, unspents: [{ txid: 'cc', height: 108, amount: '0.006' }, { txid: 'cc', height: 108, amount: '0.004' }, { txid: 'dd', height: 108, amount: '0.001' }] };
+  const one = reportFromTransfers(rowsFromScan(whole, 'bc1q'), 'bc1q', 'btc');
+  assert.equal(one.txid, 'cc');
+  assert.equal(one.amount, '0.01');
+  assert.equal(one.outputAmount, '0.006');
+});
+
+test('a bitcoin amount is quoted before parsing, and a float row counts for nothing', () => {
+  const core = '{"result":{"total_amount":0.30000000,"unspents":[{"txid":"aa","height":5,"amount":0.10000001},{"txid":"bb","height":5,"amount":3}]}}';
+  const scan = parseExactAmounts(core).result;
+  assert.deepEqual(scan.unspents.map((row) => row.amount), ['0.10000001', '3']);
+  const rows = rowsFromScan({ height: 6, unspents: scan.unspents }, 'bc1q');
+  assert.deepEqual(rows.map((row) => row.amount), ['0.10000001', '3']);
+  // A number that reaches the row builder is a float, not a coin amount: the
+  // row is kept but carries no amount, so the report is short of any order.
+  const floats = rowsFromScan({ height: 6, unspents: [{ txid: 'aa', height: 5, amount: 0.5 }] }, 'bc1q');
+  assert.equal(floats[0].amount, undefined);
+  assert.equal(reportFromTransfers(floats, 'bc1q', 'btc').amount, undefined);
+  const watcher = fs.readFileSync(new URL('../../scripts/payment-watcher.mjs', import.meta.url), 'utf8');
+  assert.match(watcher, /scantxoutset[\s\S]{0,200}exactAmounts: true/);
 });

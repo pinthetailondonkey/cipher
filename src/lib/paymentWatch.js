@@ -122,10 +122,12 @@ export function atomicToCoins(value, currency) {
   return unitsToCoins(units, currency);
 }
 
-// A piconero amount can pass 2^53, where JSON.parse would round it. Quote
-// every integer amount before parsing so no digit is lost.
+// A piconero amount can pass 2^53, where JSON.parse would round it, and a
+// bitcoin amount parsed as a number is a binary float. Quote every plain
+// number under an "amount" key before parsing so no digit is lost and no
+// amount ever becomes a float.
 export function parseExactAmounts(text) {
-  return JSON.parse(String(text).replace(/("amount"\s*:\s*)(\d+)/g, '$1"$2"'));
+  return JSON.parse(String(text).replace(/("amount"\s*:\s*)(\d+(?:\.\d+)?)(?![\d.eE])/g, '$1"$2"'));
 }
 
 export function moneroRows(rows) {
@@ -144,17 +146,45 @@ export function moneroRows(rows) {
 // send is dropped even if the wallet filed it in the wrong bucket. A
 // direction-blind answer would let the vendor's own outgoing spend satisfy an
 // inbound payment check. (security S3)
-export function incomingMoneroTransfers(result) {
+export function incomingMoneroTransfers(result, { nowSec = Math.floor(Date.now() / 1000) } = {}) {
   const rows = [];
   for (const bucket of [result?.in, result?.pool]) {
     for (const row of (Array.isArray(bucket) ? bucket : [])) {
       if (!row) continue;
       const label = String(row.type ?? row.direction ?? '').toLowerCase();
       if (!(label === '' || label === 'in' || label === 'pool')) continue;
+      if (!moneroRowCountable(row, nowSec)) continue;
       rows.push(row);
     }
   }
   return moneroRows(rows);
+}
+
+// A Monero row can arrive and still not be money in hand. `double_spend_seen`
+// says the wallet saw a conflicting spend of the same inputs, so the row may
+// never mine. `unlock_time` locks the output: below 500,000,000 it is a block
+// height and the output is locked until the chain reaches it; at or above it
+// is a unix time, locked until the clock passes it. Either way the row is held
+// out of the count, so the order reads it as not arrived yet and the next
+// check, once it unlocks, counts it. A mined row's tip is its block height plus
+// its confirmations minus one; a pool row has no block, so a height-style lock
+// on it cannot be shown to have passed and it stays held. A value that is not a
+// plain count of blocks or seconds is held too. Fail closed.
+const UNLOCK_TIME_IS_UNIX = 500000000;
+
+function moneroRowCountable(row, nowSec) {
+  const flag = row.double_spend_seen;
+  if (flag === true || flag === 1 || String(flag ?? '').toLowerCase() === 'true') return false;
+  if (row.unlock_time == null) return true;
+  const text = String(row.unlock_time).trim();
+  if (!/^\d+$/.test(text)) return false;
+  const unlock = Number(text);
+  if (unlock === 0) return true;
+  if (unlock >= UNLOCK_TIME_IS_UNIX) return !(unlock > Number(nowSec));
+  const height = Number(row.height);
+  const confirmations = Number(row.confirmations);
+  if (!Number.isInteger(height) || height < 1 || !Number.isInteger(confirmations) || confirmations < 1) return false;
+  return unlock <= height + confirmations - 1;
 }
 
 export function rowsFromScan(scan, address) {
@@ -173,39 +203,51 @@ export function rowsFromScan(scan, address) {
     });
 }
 
-function largestUnspent(rows, currency) {
-  // A receipt names one transaction, so the report names the largest output.
-  // Two of the same size take the greater txid, which does not change between scans.
-  const units = (row) => coinUnits(row.amount, currency) ?? -1n;
-  return [...rows].sort((a, b) => {
-    const left = units(a);
-    const right = units(b);
-    if (left !== right) return right > left ? 1 : -1;
-    return String(b.txid).localeCompare(String(a.txid));
+// A receipt names one transaction, so a report is built from one transaction
+// only: the outputs of a single txid, summed. Of the transactions that paid
+// the address, the one with the greatest total is named; two of the same total
+// take the greater txid, which does not change between scans. Another
+// transaction to the same address never adds to it, so a payment split across
+// two transactions is short of the order until one of them covers it by itself.
+function chosenTransaction(rows, currency) {
+  const byTx = new Map();
+  for (const row of rows) {
+    const key = String(row.txid);
+    const units = coinUnits(row.amount, currency);
+    const entry = byTx.get(key) || { txid: key, rows: [], total: 0n, counted: 0 };
+    entry.rows.push(row);
+    if (units != null) { entry.total += units; entry.counted += 1; }
+    byTx.set(key, entry);
+  }
+  return [...byTx.values()].sort((a, b) => {
+    if (a.total !== b.total) return b.total > a.total ? 1 : -1;
+    return b.txid.localeCompare(a.txid);
   })[0];
 }
 
 export function reportFromTransfers(transfers, address, currency) {
   const wanted = String(address || '').trim();
   const rows = (Array.isArray(transfers) ? transfers : []).filter((row) => row && (row.address === wanted || row.addr === wanted) && row.txid);
-  const hit = rows.length ? largestUnspent(rows, currency) : null;
-  if (!hit) return { pending: true };
-  // A payment split across outputs covers the order by its sum. It is only as
-  // deep as its shallowest part, so the sum cannot confirm before every part does.
-  const counted = rows.filter((row) => coinUnits(row.amount, currency) != null);
-  const depthOf = counted.length ? counted : [hit];
+  const tx = rows.length ? chosenTransaction(rows, currency) : null;
+  if (!tx) return { pending: true };
+  // Outputs of the one transaction. It is only as deep as its shallowest
+  // output, so the sum cannot confirm before every part does.
+  const counted = tx.rows.filter((row) => coinUnits(row.amount, currency) != null);
+  const depthOf = counted.length ? counted : tx.rows;
   const confirmations = Math.min(...depthOf.map((row) => Number(row.confirmations) || 0));
   const report = {
     source: 'watcher',
-    txid: String(hit.txid),
+    txid: tx.txid,
     confirmations,
     confirmed: confirmations >= confirmationsRequired(currency),
   };
   if (counted.length) {
-    const sum = counted.reduce((total, row) => total + coinUnits(row.amount, currency), 0n);
-    report.amount = unitsToCoins(sum, currency);
-    const largest = coinUnits(hit.amount, currency);
-    if (largest != null) report.outputAmount = unitsToCoins(largest, currency);
+    report.amount = unitsToCoins(tx.total, currency);
+    const largest = counted.reduce((top, row) => {
+      const units = coinUnits(row.amount, currency);
+      return units > top ? units : top;
+    }, 0n);
+    report.outputAmount = unitsToCoins(largest, currency);
   }
   // When the chain dates every part of the transfer, the report carries the
   // oldest date. The order that consumes the txid can then refuse one that

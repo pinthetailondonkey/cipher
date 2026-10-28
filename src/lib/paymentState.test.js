@@ -5,6 +5,7 @@ import {
   acceptanceDemand,
   amountCovers,
   applyWatcherReport,
+  coinUnits,
   confirmationsRequired,
   listedItem,
   nextPaymentState,
@@ -193,4 +194,53 @@ test('confirmation depth is per currency, and a flag alone cannot confirm', () =
     }),
     'confirmed',
   );
+});
+
+const watcherArgs = (extra) => ({
+  state: 'seen',
+  watcherUrl: 'http://watcher.example',
+  currency: 'btc',
+  report: { source: 'watcher', txid: 'ab', confirmations: 3, amount: '0.00000001' },
+  ...extra,
+});
+
+test('a demand with no amount, an empty one or a zero one never confirms', () => {
+  for (const amount of [null, '', '0', '0.0', '0.00000000']) {
+    assert.throws(() => applyWatcherReport(watcherArgs({ amount })), /amount/i, `amount ${JSON.stringify(amount)}`);
+  }
+  assert.equal(applyWatcherReport(watcherArgs({ amount: '0.00000001' })), 'confirmed');
+});
+
+test('a float is not a coin amount: a JS number never reads as one', () => {
+  for (const value of [0.5, 0.1, 1, 0.00000001, 1e-7, NaN, Infinity]) {
+    assert.equal(coinUnits(value, 'btc'), null, String(value));
+    assert.equal(amountCovers(value, '0.00000001', 'btc'), false, `reported ${value}`);
+    assert.equal(amountCovers('1', value, 'btc'), false, `expected ${value}`);
+  }
+  assert.equal(coinUnits('0.5', 'btc'), 50000000n);
+  assert.equal(coinUnits('0.5', 'xmr'), 500000000000n);
+  // 0.1 + 0.2 is not 0.3 as a float; as text there is no such drift.
+  assert.equal(amountCovers('0.3', '0.3', 'btc'), true);
+  assert.throws(
+    () => applyWatcherReport(watcherArgs({ amount: '0.00000001', report: { source: 'watcher', txid: 'ab', confirmations: 3, amount: 0.5 } })),
+    /short of the order/,
+  );
+  assert.throws(() => applyWatcherReport(watcherArgs({ amount: 0.5 })), /amount/i);
+});
+
+test('a threshold that is zero, negative, fractional or garbled never lowers the depth', () => {
+  const shallow = (extra) => watcherArgs({ state: 'address_issued', report: { source: 'watcher', txid: 'ab', confirmations: 1, amount: '1' }, amount: '1', ...extra });
+  for (const threshold of [0, -1, 0.5, 2.5, NaN, 'abc', '', {}, Infinity]) {
+    assert.equal(applyWatcherReport(shallow({ threshold })), 'seen', `threshold ${String(threshold)} on a 1-deep payment`);
+  }
+  // Left out or null means the currency's own depth, and a real override holds.
+  assert.equal(applyWatcherReport(shallow({ threshold: null })), 'seen');
+  assert.equal(applyWatcherReport(shallow({})), 'seen');
+  const deep = (extra) => shallow({ report: { source: 'watcher', txid: 'ab', confirmations: 2, amount: '1' }, ...extra });
+  assert.equal(applyWatcherReport(deep({ threshold: 2 })), 'confirmed');
+  assert.equal(applyWatcherReport(deep({ threshold: '2' })), 'confirmed');
+  assert.equal(applyWatcherReport(deep({ threshold: 5 })), 'seen');
+  // Xmr keeps its own default of ten when the threshold is junk.
+  const xmr = { state: 'address_issued', watcherUrl: 'http://w', currency: 'xmr', amount: '1', threshold: 0, report: { source: 'watcher', txid: 'ab', confirmations: 9, amount: '1' } };
+  assert.equal(applyWatcherReport(xmr), 'seen');
 });
