@@ -3,7 +3,7 @@ import { noHexName, shortNpub } from '../../lib/npub';
 import { getAuthenticatedPool } from '../../lib/pool';
 import { queryWithTimeout, profileRelays, groupOnlyRelays, searchRelays } from '../../lib/relays';
 import { useChatStore } from '../../store/chatStore';
-import { parseGroupReference, loadGroupProfile } from '../../hooks/useNIP29Group';
+import { parseGroupReference, loadGroupProfile, fetchGroupMetadata } from '../../hooks/useNIP29Group';
 
 // A NIP-50 hit stands for the person a handle names only when that profile's
 // own name or display name is the handle. An approximate hit is somebody
@@ -18,6 +18,19 @@ export function profileNameMatches(event, handle) {
   } catch (e) {
     return false;
   }
+}
+
+// An explicit group reference is a signed group address (naddr), and nothing
+// else. A word, a public key or a npub is not a group id — the old length
+// rule turned any 12–20 character word into a group result.
+export function explicitGroupReference(rawQuery) {
+  const raw = String(rawQuery || '').trim();
+  if (!/^naddr1/i.test(raw)) return '';
+  const parsed = parseGroupReference(raw);
+  const id = String(parsed.id || '').trim();
+  // parseGroupReference hands back the raw text when the address will not
+  // decode; that is not an id this search may act on.
+  return !id || id === raw ? '' : id;
 }
 
 export function usePeopleSearch({ identity }) {
@@ -124,15 +137,13 @@ export function usePeopleSearch({ identity }) {
       return;
     }
 
-    if (/^naddr1/i.test(rawQuery)) {
+    const groupReference = explicitGroupReference(rawQuery);
+    if (groupReference) {
       try {
-        const parsed = parseGroupReference(rawQuery);
-        if (parsed.id) {
-          const profile = await loadGroupProfile(identity, parsed.id);
-          state.setSearchResults([{ type: 'group', id: profile.id, name: profile.name, isChannel: false, creator: profile.creator }]);
-          state.setIsSearching(false);
-          return;
-        }
+        const profile = await loadGroupProfile(identity, groupReference);
+        state.setSearchResults([{ type: 'group', id: profile.id, name: profile.name, isChannel: false, creator: profile.creator }]);
+        state.setIsSearching(false);
+        return;
       } catch (error) {
         console.warn('[search] naddr group lookup failed:', error);
       }
@@ -140,23 +151,11 @@ export function usePeopleSearch({ identity }) {
 
     rawQuery = rawQuery.replace(/^@/, '');
     if (/^[0-9a-f]{64,}$/i.test(rawQuery)) rawQuery = rawQuery.slice(0, 64);
-    if (rawQuery.length >= 12 && rawQuery.length <= 20 && /^[a-z0-9_-]+$/i.test(rawQuery) && !rawQuery.includes(' ')) {
-      state.setSearchResults([{ type: 'group', id: rawQuery, name: 'Group ' + rawQuery, isChannel: false, creator: '' }]);
-      state.setIsSearching(false);
-      return;
-    }
 
     const isNpub = rawQuery.startsWith('npub1');
     const isHex = /^[0-9a-f]{64}$/i.test(rawQuery);
-    const isPartialHex = /^[0-9a-f]{10,63}$/i.test(rawQuery);
     const isNip05 = rawQuery.includes('@');
 
-    if (isPartialHex) {
-      state.setSearchResults([{ type: 'group', id: rawQuery, name: 'Group ' + rawQuery, isChannel: false, creator: '' }]);
-      state.setIsSearching(false);
-      return;
-    }
-    
     let pool;
     try {
       const { SimplePool, nip19 } = await import('nostr-tools');
@@ -240,7 +239,9 @@ export function usePeopleSearch({ identity }) {
         } else if (ev.kind === 41) {
           try {
             const d = JSON.parse(ev.content);
-            matchedGroups.push({ type: 'group', id: ev.tags.find(t => t[0] === 'd')?.[1], name: d.name, isChannel: d.isChannel, creator: ev.pubkey });
+            // A channel metadata hit is a claim, not a group: it is offered
+            // only once the group relays hold metadata for that id.
+            matchedGroups.push({ type: 'group', id: ev.tags.find(t => t[0] === 'd')?.[1], name: d.name, isChannel: d.isChannel, creator: ev.pubkey, confirmed: false });
           } catch (e) {}
         } else if (ev.kind === 39000 || ev.kind === 9002) {
           const getTag = (t) => ev.tags.find(x => x[0] === t)?.[1];
@@ -260,7 +261,13 @@ export function usePeopleSearch({ identity }) {
 
       const uniqueUsers = Array.from(new Map(matchedProfiles.map(p => [p.pubkey, p])).values());
       const uniqueGroups = Array.from(new Map(matchedGroups.map(g => [g.id, g])).values());
-      state.setSearchResults([...uniqueUsers.slice(0, 10), ...uniqueGroups.slice(0, 10)]);
+      const confirmedGroups = await Promise.all(uniqueGroups.slice(0, 10).map(async (group) => {
+        if (group.confirmed !== false) return group;
+        const meta = await fetchGroupMetadata(identity, group.id).catch(() => null);
+        if (!meta) return null;
+        return { ...group, name: meta.name || group.name, picture: meta.picture || null, isChannel: false };
+      }));
+      state.setSearchResults([...uniqueUsers.slice(0, 10), ...confirmedGroups.filter(Boolean)]);
     } catch (err) { 
       console.error("Search failed entirely:", err); 
     } finally { 
