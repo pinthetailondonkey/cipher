@@ -12,13 +12,14 @@ npm test           # the unit suite
 npm run test:ui    # builds with the test seam, then the browser suite
 npm run lint       # oxlint
 npm run self-host  # serves the built app on PORT (8080 by default)
+npm run verify:live # builds, then proves the live page is this build
 ```
 
 A fresh checkout sets the commit scanner once: `git config core.hooksPath .githooks`. Commit as the project's noreply identity, never a personal address. No secret, key, token or credential file enters a commit — `.env.local`, `dist/`, `.vercel/` and `android/` stay untracked.
 
 ## Verify a deploy by the page, never a status code
 
-HTTP 200 proves nothing: a redirect, a gate or another project's page all answer 200. A deploy is proven by `<title>Cipher</title>` from `index.html` **and** an asset bundle that matches a build of the checked-out commit. Read the deployed `/assets/index-*.js` name, run `npm run build` on the commit you believe is live, and compare the two names. If they differ, the host is serving something else.
+HTTP 200 proves nothing: a redirect, a gate or another project's page all answer 200. A deploy is proven by `<title>Cipher</title>` from `index.html` **and** an asset bundle that matches a build of the checked-out commit. `npm run verify:live` does it: it builds the tree, reads the `/assets/index-*.js` name that build produced, follows every redirect on the way (printing each status and target), and fails when the page loads a different name. Point it at another host with `npm run verify:live -- https://host`.
 
 What that check last found is in [docs/LAUNCH-LOG.md](docs/LAUNCH-LOG.md).
 
@@ -35,15 +36,16 @@ What that check last found is in [docs/LAUNCH-LOG.md](docs/LAUNCH-LOG.md).
 
 ## Hosts
 
-The site is served from **https://ciphermessenger.org**. The root is the app itself. `/download` is a separate page pointing at the install files. The WebSocket relays are not behind that domain: the group relay stays on `groups.ciphertele.com`, and the rest of the hosts the app contacts are the rows in `src/lib/egress.js`, which is the only list that is authoritative.
+The site answers on **https://www.ciphermessenger.org**. That is the name to publish; everything else forwards to it.
 
-A deploy is proven by the page, never by a status code — see [above](#verify-a-deploy-by-the-page-never-a-status-code). What that check last found on the host that was live before the domain moved (2026-10-28):
+- **https://ciphermessenger.org** answers `308` and sends the request to the `www` name. One hop, no loop.
+- The app's old Vercel name, `https://cipher-beta-eight.vercel.app`, forwards through `vercel.json` to the bare name, which forwards again to `www`. Two hops, and both are asserted by `npm run verify:live`.
+- **`/download` is not built.** There is no page behind it and no file for it: `public/` holds icons, the manifest and the service worker only, and the catch-all rewrite in `vercel.json` answers every path with the app. So `/download` serves the app, and so does any mistyped path.
+- The WebSocket relays are not behind that domain. The group relay stays on `groups.ciphertele.com`, and the rest of the hosts the app contacts are the rows in `src/lib/egress.js`, which is the only list that is authoritative.
 
-- It answers `<title>Cipher</title>`, and it loads `assets/index-Cu7vDotz.js`, last-modified 2026-10-24 19:25 UTC. No build of the current `main` produces that bundle name. The live page is 887 commits behind: everything merged since 2026-10-24 is not on it.
-- It still sends the older page policy (`upgrade-insecure-requests` present, `img-src` without `http://*.onion`, `connect-src` `https:` plus the relay list), so `vercel.json` and the live response disagree until a redeploy.
-- What it does send, matching `vercel.json`: `Strict-Transport-Security` `max-age=63072000; includeSubDomains; preload`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, and the `Permissions-Policy` line.
+One Vercel project, `cipher`, builds this repo. It deploys `main` on push, and deploys are also made by hand — `docs/DEPLOY.md` has the order and the proof.
 
-`vercel.json` in this repo also redirects the older app hosts to one destination. That redirect is the repo's record of where traffic used to be pointed; it does not make any of those hosts the canonical address above. Which of them still answer, and with which build, is not established here. Deploys are made by hand, so nothing in this repo proves what the live host runs — only the title-and-bundle check does.
+The cause of the launch-week scare in one line: a redirect in `vercel.json` sent the project's own production name to a second project built from this same repo that had stopped deploying on 24 October, so the site answered 200 with the right title for four days while serving a build 909 commits behind. That project and one other dead copy were deleted on 2026-10-28.
 
 ## Tor
 
