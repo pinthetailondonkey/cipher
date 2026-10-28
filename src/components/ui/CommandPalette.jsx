@@ -1,14 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Compass, MessageSquare, Search, User, Users } from 'lucide-react';
+import { MessageSquare, Search, Users } from 'lucide-react';
 import { useChatStore } from '../../store/chatStore';
 import { noHexName } from '../../lib/npub';
+import { TABS } from '../../lib/tabs.js';
 import { useModalA11y } from './modal';
 
 // The md+ command palette (master §2): ⌘K jumps to a chat, a group or one
-// of the three shell tabs. Its data sources are the lists the store already
-// holds — DM keys, the groups array, the tab names — nothing new is fetched
-// and nothing new is published. Filter-as-you-type, arrow keys walk, Enter
-// activates, Escape closes.
+// of the shell tabs — the same four, in the same order, that the rail and
+// the phone's bottom bar show, straight from tabs.js. Its data sources are
+// the lists the store already holds — DM keys, the groups array, the tab
+// names — nothing new is fetched and nothing new is published.
+// Filter-as-you-type, arrow keys walk, Enter activates, Escape closes.
 export default function CommandPalette({ open, onClose, onOpenChat, onNavigateTab, activeTab }) {
   const dms = useChatStore((state) => state.dms);
   const groups = useChatStore((state) => state.groups);
@@ -19,11 +21,13 @@ export default function CommandPalette({ open, onClose, onOpenChat, onNavigateTa
   const panelRef = useModalA11y(open, onClose);
 
   const items = useMemo(() => {
-    const screens = [
-      { id: 'tab-chat', label: 'Chats', kind: 'Screen', icon: MessageSquare, run: () => onNavigateTab?.('chat') },
-      { id: 'tab-explore', label: 'Menus', kind: 'Screen', icon: Compass, run: () => onNavigateTab?.('explore') },
-      { id: 'tab-profile', label: 'Profile', kind: 'Screen', icon: User, run: () => onNavigateTab?.('profile') },
-    ];
+    const screens = TABS.map((tab) => ({
+      id: `tab-${tab.id}`,
+      label: tab.label,
+      kind: 'Screen',
+      icon: tab.icon,
+      run: () => onNavigateTab?.(tab.id),
+    }));
     const chats = Object.keys(dms).map((pubkey) => ({
       id: `dm-${pubkey}`,
       label: noHexName(profiles[pubkey], pubkey),

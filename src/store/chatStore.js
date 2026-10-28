@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { scopedGet, scopedSet } from '../lib/storage';
 import { markChatRead } from '../db';
+import { orderState } from '../lib/orderActions';
 
 const safeStorage = {
   getItem(key) {
@@ -83,6 +84,42 @@ export function unreadTotalOf(state) {
   let sum = 0;
   for (const key of Object.keys(counts)) sum += Number(counts[key]) || 0;
   unreadTotalCached = sum;
+  return sum;
+}
+
+// The Orders tab's badge (15.1). Presentation only: it re-reads the same
+// orderState the order cards read, never writes, and counts what waits on
+// THIS side — a buyer counts orders they asked for that are pending,
+// shipped or disputed; a vendor counts only requests still pending (the
+// accept is the act that unblocks them). Passive statuses never count:
+// check_chain and report_issue are nudges, not duties, and counting them
+// would pin the badge red forever. Memoized on the `dms` identity and the
+// vendor flag, exactly like unreadTotalOf above.
+let ordersSource = null;
+let ordersVendor = null;
+let ordersNeedActionCached = 0;
+const ORDER_ROW_TYPES = ['order_request', 'cipher_order'];
+const BUYER_NEEDS_ACTION = new Set(['pending', 'shipped', 'disputed']);
+
+export function ordersNeedActionOf(state) {
+  const dms = state?.dms || EMPTY_COUNTS;
+  const isVendor = state?.isVendor === true;
+  if (dms === ordersSource && isVendor === ordersVendor) return ordersNeedActionCached;
+  ordersSource = dms;
+  ordersVendor = isVendor;
+  let sum = 0;
+  for (const [peerPubkey, messages] of Object.entries(dms)) {
+    if (!Array.isArray(messages)) continue;
+    for (const message of messages) {
+      if (!ORDER_ROW_TYPES.includes(message?.data?.type)) continue;
+      // Buyer rows are the requests this device sent; vendor rows are the
+      // ones it received. isSender is the wire's own direction flag.
+      if (Boolean(message.isSender) === isVendor) continue;
+      const { status } = orderState(messages, message.id, message, null, peerPubkey);
+      if (isVendor ? status === 'pending' : BUYER_NEEDS_ACTION.has(status)) sum += 1;
+    }
+  }
+  ordersNeedActionCached = sum;
   return sum;
 }
 

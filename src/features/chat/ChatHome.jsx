@@ -10,7 +10,7 @@ export default function ChatHome({ identity, openChat, createGroup, fetchChats }
   const setShowCreateGroup = useChatStore((state) => state.setShowCreateGroup);
 
   return (
-    <motion.div initial={{ x: -20, opacity: 0 }} animate={{ x: 0, opacity: 1 }} exit={{ x: -20, opacity: 0 }} transition={{ duration: 0.2 }} className="relative h-full min-h-0 overflow-y-auto bg-transparent pb-4 md:static">
+    <motion.div initial={{ x: -20, opacity: 0 }} animate={{ x: 0, opacity: 1 }} exit={{ x: -20, opacity: 0 }} transition={{ duration: 0.2 }} className="relative h-full min-h-0 overflow-y-auto bg-transparent pb-bar md:static">
       <ChatList onOpenChat={openChat} onRefresh={fetchChats} />
       <CreateGroupModal isOpen={showCreateGroup} onClose={() => setShowCreateGroup(false)} createGroup={createGroup} />
       <FloatingMenu />
