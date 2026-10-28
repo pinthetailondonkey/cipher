@@ -8,7 +8,7 @@ const variants = {
   primary: 'bg-accent hover:bg-accent text-accentInk shadow-lg',
   secondary: 'border border-line bg-panelStrong text-ink hover:bg-ink/5 shadow-lg',
   ghost: 'bg-transparent text-ink hover:bg-ink/5',
-  danger: 'bg-danger text-accentInk hover:bg-danger/90',
+  danger: 'bg-danger text-onDestructive hover:bg-danger/90',
 };
 
 const sizes = {
