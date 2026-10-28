@@ -75,9 +75,9 @@ export default function Create({ identity, onCreated, go }) {
       <form onSubmit={handleSubmit} className="flex w-full flex-col gap-4 rounded-3xl border border-line bg-panel p-6">
         <div className="relative w-full">
           <AtSign size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-inkMuted" aria-hidden="true" />
-          <Input type="text" placeholder="yourhandle" value={handle} onChange={(e) => { setHandle(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, '')); setError(''); }} className="pl-11" />
+          <Input type="text" aria-label="Handle" placeholder="yourhandle" value={handle} onChange={(e) => { setHandle(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, '')); setError(''); }} className="pl-11" />
         </div>
-        <Input type="password" placeholder={`PIN (${MIN_PIN_LENGTH}+ digits)`} value={pin} onChange={(e) => { setPin(e.target.value.replace(/\D/g, '').slice(0, 8)); setError(''); }} maxLength={8} />
+        <Input type="password" aria-label="PIN" placeholder={`PIN (${MIN_PIN_LENGTH}+ digits)`} value={pin} onChange={(e) => { setPin(e.target.value.replace(/\D/g, '').slice(0, 8)); setError(''); }} maxLength={8} />
         <label className="mt-1 flex cursor-pointer items-center justify-center gap-3 text-sm text-inkMuted transition-colors hover:text-ink">
           <span className="relative flex h-5 w-5 items-center justify-center">
             <input type="checkbox" checked={enableBio} onChange={(e) => setEnableBio(e.target.checked)} className="peer h-5 w-5 appearance-none rounded-md border border-ink/20 bg-ink/5 transition-colors checked:border-accent checked:bg-accent" />

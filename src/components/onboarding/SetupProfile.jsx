@@ -74,11 +74,11 @@ export default function SetupProfile({ identity, tempIdentity, initialHandle }) 
           {uploadingAvatar && <div className="absolute inset-0 flex items-center justify-center rounded-full bg-scrim/60"><RefreshCw size={20} className="animate-spin text-ink" aria-hidden="true" /></div>}
         </div>
 
-        <Input type="text" placeholder="Display Name (optional)" value={displayName} onChange={(e) => setDisplayName(e.target.value)} />
+        <Input type="text" aria-label="Display name" placeholder="Display Name (optional)" value={displayName} onChange={(e) => setDisplayName(e.target.value)} />
 
         <div className="relative w-full">
           <AtSign size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-inkMuted" aria-hidden="true" />
-          <Input type="text" placeholder="username" value={username} onChange={(e) => setUsername(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ''))} className="pl-11" />
+          <Input type="text" aria-label="Username" placeholder="username" value={username} onChange={(e) => setUsername(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ''))} className="pl-11" />
         </div>
         {error && <p className="text-center text-sm font-medium text-danger">{error}</p>}
         <Button type="submit" disabled={loading} className="mt-2 flex w-full items-center justify-center gap-2">

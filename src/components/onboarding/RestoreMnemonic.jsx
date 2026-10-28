@@ -38,8 +38,8 @@ export default function RestoreMnemonic({ identity, go }) {
       <p className="mb-8 max-w-[280px] text-center text-[13px] leading-relaxed text-inkMuted">Enter your 12-word phrase and a new PIN ({MIN_PIN_LENGTH}+ digits).</p>
 
       <form onSubmit={handleSubmit} className="flex w-full flex-col gap-4 rounded-3xl border border-line bg-panel p-6">
-        <textarea placeholder="apple banana cherry ..." value={mnemonic} onChange={(e) => { setMnemonic(e.target.value); setError(''); }} className="w-full resize-none rounded-2xl border border-line bg-panelStrong p-5 text-[15px] text-ink placeholder:text-inkSubtle focus:border-accent focus:outline-none" autoCapitalize="none" autoCorrect="off" spellCheck="false" rows={4} />
-        <Input type="password" placeholder={`New PIN (${MIN_PIN_LENGTH}+ digits)`} value={pin} onChange={(e) => { setPin(e.target.value.replace(/\D/g, '').slice(0, 8)); setError(''); }} maxLength={8} />
+        <textarea aria-label="Recovery words" placeholder="apple banana cherry ..." value={mnemonic} onChange={(e) => { setMnemonic(e.target.value); setError(''); }} className="w-full resize-none rounded-2xl border border-line bg-panelStrong p-5 text-[15px] text-ink placeholder:text-inkSubtle focus:border-accent focus:outline-none" autoCapitalize="none" autoCorrect="off" spellCheck="false" rows={4} />
+        <Input type="password" aria-label="New PIN" placeholder={`New PIN (${MIN_PIN_LENGTH}+ digits)`} value={pin} onChange={(e) => { setPin(e.target.value.replace(/\D/g, '').slice(0, 8)); setError(''); }} maxLength={8} />
         {error && <p className="text-center text-sm font-medium text-danger">{error}</p>}
         <Button type="submit" disabled={loading} className="mt-2 flex w-full items-center justify-center gap-2">
           {loading ? <RefreshCw size={20} className="animate-spin" /> : 'Continue'}

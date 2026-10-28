@@ -194,6 +194,7 @@ export default function Menus({ identity, setActiveTab }) {
           <Search size={16} className="text-inkMuted" />
           <input
             type="text"
+            aria-label="Search"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder="Search"

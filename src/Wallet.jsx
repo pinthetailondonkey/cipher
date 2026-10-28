@@ -371,8 +371,8 @@ export default function Wallet({ identity, onOpenChat, startView = 'main' }) {
         <form onSubmit={saveVendorSetup} className="space-y-4 p-4">
           <p className="text-[13px] text-inkMuted">Add at least one address. It stays on this device. Never enter a seed phrase or spending key.</p>
           <div className="overflow-hidden rounded-2xl border border-line bg-panel">
-            <input value={btcAddress} onChange={(event) => setBtcAddress(event.target.value)} autoComplete="off" spellCheck="false" placeholder="Bitcoin address" className="w-full border-b border-line bg-transparent px-4 py-4 text-[15px] text-ink outline-none placeholder:text-inkSubtle" />
-            <input value={xmrAddress} onChange={(event) => setXmrAddress(event.target.value)} autoComplete="off" spellCheck="false" placeholder="Monero address" className="w-full bg-transparent px-4 py-4 text-[15px] text-ink outline-none placeholder:text-inkSubtle" />
+            <input value={btcAddress} onChange={(event) => setBtcAddress(event.target.value)} autoComplete="off" spellCheck="false" aria-label="Bitcoin address" placeholder="Bitcoin address" className="w-full border-b border-line bg-transparent px-4 py-4 text-[15px] text-ink outline-none placeholder:text-inkSubtle" />
+            <input value={xmrAddress} onChange={(event) => setXmrAddress(event.target.value)} autoComplete="off" spellCheck="false" aria-label="Monero address" placeholder="Monero address" className="w-full bg-transparent px-4 py-4 text-[15px] text-ink outline-none placeholder:text-inkSubtle" />
           </div>
           {status && <p role="status" className="text-[13px] text-accentText">{status}</p>}
           <button type="submit" className="w-full rounded-2xl bg-accent py-3.5 font-bold text-accentInk hover:bg-accent">Save and turn on selling</button>
@@ -397,9 +397,9 @@ export default function Wallet({ identity, onOpenChat, startView = 'main' }) {
         <form onSubmit={saveAdvancedSettings} className="space-y-4 p-4">
           <p className="text-[13px] text-inkMuted">A view key and an xpub only let you watch payments. They stay on this device. Never enter a seed or a spend key.</p>
           <div className="overflow-hidden rounded-2xl border border-line bg-panel">
-            <input value={xmrAddress} onChange={(event) => setXmrAddress(event.target.value)} autoComplete="off" spellCheck="false" placeholder="Monero address" className="w-full border-b border-line bg-panelStrong px-4 py-4 text-[15px] text-ink outline-none placeholder:text-inkSubtle" />
-            <input type="password" value={xmrPrivateViewKey} onChange={(event) => setXmrPrivateViewKey(event.target.value)} autoComplete="new-password" spellCheck="false" placeholder="Monero view key" className="w-full border-b border-line bg-panelStrong px-4 py-4 text-[15px] text-ink outline-none placeholder:text-inkSubtle" />
-            <input type="password" value={btcXpub} onChange={(event) => setBtcXpub(event.target.value)} autoComplete="off" spellCheck="false" placeholder="Bitcoin xpub" className="w-full border-b border-line bg-panelStrong px-4 py-4 text-[15px] text-ink outline-none placeholder:text-inkSubtle" />
+            <input value={xmrAddress} onChange={(event) => setXmrAddress(event.target.value)} autoComplete="off" spellCheck="false" aria-label="Monero address" placeholder="Monero address" className="w-full border-b border-line bg-panelStrong px-4 py-4 text-[15px] text-ink outline-none placeholder:text-inkSubtle" />
+            <input type="password" value={xmrPrivateViewKey} onChange={(event) => setXmrPrivateViewKey(event.target.value)} autoComplete="new-password" spellCheck="false" aria-label="Monero view key" placeholder="Monero view key" className="w-full border-b border-line bg-panelStrong px-4 py-4 text-[15px] text-ink outline-none placeholder:text-inkSubtle" />
+            <input type="password" value={btcXpub} onChange={(event) => setBtcXpub(event.target.value)} autoComplete="off" spellCheck="false" aria-label="Bitcoin xpub" placeholder="Bitcoin xpub" className="w-full border-b border-line bg-panelStrong px-4 py-4 text-[15px] text-ink outline-none placeholder:text-inkSubtle" />
             <select value={btcNetwork} onChange={(event) => setBtcNetwork(event.target.value)} className="w-full bg-panelStrong px-4 py-4 text-[15px] text-ink outline-none">
               <option value="bc">Bitcoin mainnet</option>
               <option value="bcrt">Bitcoin regtest</option>
@@ -420,8 +420,8 @@ export default function Wallet({ identity, onOpenChat, startView = 'main' }) {
       <div className="h-full overflow-y-auto bg-transparent pb-8">
         <ScreenHeader title="New listing" onBack={() => setView('main')} />
         <div className="space-y-4 p-4">
-          <input placeholder="Product Title" value={title} onChange={e => setTitle(e.target.value)} className="w-full border border-line bg-panelStrong shadow-lg rounded-2xl p-4 text-sm focus:border-accent outline-none" />
-          <textarea placeholder="Description" value={description} onChange={e => setDescription(e.target.value)} className="w-full border border-line bg-panelStrong shadow-lg rounded-2xl p-4 text-sm focus:border-accent outline-none resize-none h-24" />
+          <input aria-label="Product title" placeholder="Product Title" value={title} onChange={e => setTitle(e.target.value)} className="w-full border border-line bg-panelStrong shadow-lg rounded-2xl p-4 text-sm focus:border-accent outline-none" />
+          <textarea aria-label="Description" placeholder="Description" value={description} onChange={e => setDescription(e.target.value)} className="w-full border border-line bg-panelStrong shadow-lg rounded-2xl p-4 text-sm focus:border-accent outline-none resize-none h-24" />
           
           <div className="flex items-center gap-4 p-4 border border-line bg-panelStrong shadow-lg rounded-2xl">
             <Picture src={image} alt="product" className="w-16 h-16 rounded-xl object-cover" fallback={<div className="flex h-16 w-16 items-center justify-center rounded-xl border border-ink/10 bg-ink/5"><Camera size={24} className="text-ink/20" /></div>} />
@@ -434,7 +434,7 @@ export default function Wallet({ identity, onOpenChat, startView = 'main' }) {
           </div>
 
           <div className="flex gap-3">
-            <input placeholder="Price" type="number" value={price} onChange={e => setPrice(e.target.value)} className="flex-1 border border-line bg-panelStrong shadow-lg rounded-2xl p-4 text-sm focus:border-accent outline-none" />
+            <input aria-label="Price" placeholder="Price" type="number" value={price} onChange={e => setPrice(e.target.value)} className="flex-1 border border-line bg-panelStrong shadow-lg rounded-2xl p-4 text-sm focus:border-accent outline-none" />
             <select value={currency} onChange={e => setCurrency(e.target.value)} className="border border-line bg-panelStrong shadow-lg rounded-2xl px-4 text-sm focus:border-accent outline-none">
               <option value="USD">USD</option><option value="BTC">BTC</option><option value="XMR">XMR</option>
             </select>

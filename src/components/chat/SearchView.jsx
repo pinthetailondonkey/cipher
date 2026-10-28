@@ -26,6 +26,7 @@ export default function SearchView({ handleSearch, joinGroupById, openChat }) {
             <input
               autoFocus
               type="text"
+              aria-label="Search"
               placeholder="Name or group"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
