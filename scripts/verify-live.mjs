@@ -44,14 +44,29 @@ if (!built) {
   process.exit(2);
 }
 
+// Redirects are followed by hand so each hop is printed. A deploy that
+// "passes" because something forwarded the request is only a pass if the
+// forwarding is the one that was expected, so the hops have to be visible.
 let page = '';
 let status = 0;
+let url = `${target}/`;
+const hops = [];
 try {
-  const response = await fetch(`${target}/`, { redirect: 'follow', signal: AbortSignal.timeout(20000) });
-  status = response.status;
-  page = await response.text();
+  for (let hop = 0; hop <= 5; hop += 1) {
+    const response = await fetch(url, { redirect: 'manual', signal: AbortSignal.timeout(20000) });
+    status = response.status;
+    if (status >= 300 && status < 400) {
+      const location = response.headers.get('location') || '';
+      hops.push({ from: url, status, to: location });
+      if (!location) break;
+      url = new URL(location, url).toString();
+      continue;
+    }
+    page = await response.text();
+    break;
+  }
 } catch (error) {
-  console.error(`verify:live — ${target} could not be read: ${error?.cause?.code || error.message}`);
+  console.error(`verify:live — ${url} could not be read: ${error?.cause?.code || error.message}`);
   process.exit(2);
 }
 
@@ -59,6 +74,8 @@ const title = (page.match(/<title>([^<]*)<\/title>/) || [])[1] || '';
 const live = entryName(page);
 
 console.log(`verify:live — ${target}`);
+for (const hop of hops) console.log(`  redirect    ${hop.status} ${hop.from} -> ${hop.to || '(no location)'}`);
+console.log(`  final       ${url}`);
 console.log(`  status      ${status}`);
 console.log(`  title       ${title || '(none)'}`);
 console.log(`  built here  ${built}`);
