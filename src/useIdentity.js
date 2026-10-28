@@ -513,9 +513,31 @@ export function useIdentity() {
     }
     const failureAccount = picked.pk || null
     const activePk = picked.pk || getActivePubkey()
+    // The PIN's own failure is counted here and nowhere else: only a PIN
+    // that failed to decrypt may spend one of the five attempts.
+    let skArray
+    try {
+      skArray = await openVault(picked.vault, pin, picked.pk)
+    } catch (e) {
+      if (isDeviceKeyError(e)) {
+        const left = failUnlockAttempt(localStorage, failureAccount, e)
+        return { success: false, error: deviceKeyFailureMessage(e), remaining: left.remaining, deviceKey: e.code }
+      }
+      let failure = { lockedOut: false, remaining: 0 }
+      try {
+        failure = failUnlockAttempt(localStorage, failureAccount, e)
+      } catch (wipeErr) { console.error('Lockout wipe failed:', wipeErr) }
+      if (failure.lockedOut) {
+        sessionStorage.removeItem('cipher_session_sk')
+        await deleteLockedOutDatabase(failureAccount)
+        window.location.reload()
+      }
+      return { success: false, error: pinFailureMessage(failure.remaining), remaining: failure.remaining }
+    }
+
+    // The vault is open. Nothing below may consume an attempt.
     try {
       const vault = picked.vault
-      const skArray = await openVault(vault, pin, picked.pk)
       const { getPublicKey, nip19 } = await import('nostr-tools')
       const sk = Uint8Array.from(skArray)
       const pk = getPublicKey(sk)
@@ -536,20 +558,11 @@ export function useIdentity() {
       setKeys({ sk, pk, npub: nip19.npubEncode(pk) })
       return { success: true }
     } catch (e) {
-      if (isDeviceKeyError(e)) {
-        const left = failUnlockAttempt(localStorage, failureAccount, e)
-        return { success: false, error: deviceKeyFailureMessage(e), remaining: left.remaining, deviceKey: e.code }
-      }
-      let failure = { lockedOut: false, remaining: 0 }
-      try {
-        failure = failUnlockAttempt(localStorage, failureAccount, e)
-      } catch (wipeErr) { console.error('Lockout wipe failed:', wipeErr) }
-      if (failure.lockedOut) {
-        sessionStorage.removeItem('cipher_session_sk');
-        await deleteLockedOutDatabase(failureAccount);
-        window.location.reload();
-      }
-      return { success: false, error: pinFailureMessage(failure.remaining), remaining: failure.remaining }
+      // The vault opened but the account would not load. Plain words only:
+      // this is our failure, not a sentence for the person locked out.
+      console.error('[identity] Could not load the opened account:', e)
+      return { success: false, error: 'Could not open this account on this device.' }
+    }
     }
   }
 

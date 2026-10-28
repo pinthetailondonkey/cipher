@@ -98,6 +98,48 @@ test.describe('PIN unlock against real vaults', () => {
     expect(await storedFails(page)).toBe('1');
   });
 
+  test('a 9-digit vault, were one to exist, could not be opened: the typeable prefix exhausts the five attempts', async ({ page }) => {
+    test.setTimeout(180000);
+    // No screen ever typed a 9-digit PIN (docs/PIN-LENGTH-EVIDENCE.md), but
+    // the proof runs both ways: if such a vault existed, every PIN this
+    // device can type is wrong, and the fifth press wipes the account. The
+    // 12 words are then the only way back — which is why the cap that keeps
+    // a 9-digit vault unwritable is load-bearing.
+    //
+    // The seed runs ONCE: addInitScript replays on every reload, and this
+    // test ends in the wipe's own reload — a replaying seed would re-create
+    // the vault the app just deleted and the assertion would test the seed,
+    // not the wipe.
+    const vault = await vaultFor('123456789');
+    await page.addInitScript(({ pk, vault }) => {
+      if (localStorage.getItem('cipher_9digit_seeded')) return;
+      localStorage.setItem('cipher_9digit_seeded', '1');
+      localStorage.setItem('cipher_vaults', JSON.stringify({
+        [pk]: { vault, handle: 'alice', displayName: 'Alice', createdAt: 1700000000000, confirmed: true },
+      }));
+      localStorage.setItem('cipher_active_pubkey', pk);
+    }, { pk: PK, vault });
+    await page.goto('/');
+    await expect(page.getByRole('heading', { name: 'Unlock Cipher' })).toBeVisible({ timeout: 15000 });
+    for (let i = 1; i <= 4; i += 1) {
+      await typePin(page, '12345678');
+      await pressUnlock(page);
+      const left = 5 - i;
+      await expect(page.getByRole('alert')).toContainText(
+        left === 1 ? 'Wrong PIN. 1 attempt left.' : `Wrong PIN. ${left} attempts left.`,
+      );
+      await page.reload();
+      await expect(page.getByRole('heading', { name: 'Unlock Cipher' })).toBeVisible({ timeout: 15000 });
+    }
+    // The fifth wrong press wipes the vault and reloads into create.
+    await typePin(page, '12345678');
+    await pressUnlock(page);
+    await expect(page.getByRole('heading', { name: 'Unlock Cipher' })).toBeHidden({ timeout: 20000 });
+    const vaults = await page.evaluate(() => localStorage.getItem('cipher_vaults'));
+    expect(vaults && Object.keys(JSON.parse(vaults)).length).toBe(0);
+    expect(await storedFails(page)).toBeNull();
+  });
+
   test('a wrong PIN against a valid vault spends an attempt, and a reload spends none', async ({ page }) => {
     await seedAccount(page, { vault: await vaultFor('87654321') });
     await typePin(page, '11111111');
