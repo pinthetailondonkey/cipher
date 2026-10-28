@@ -2,6 +2,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { Lock, MessageSquare, Package, Radio, ShieldCheck, Store, Users } from 'lucide-react';
 import Avatar from '../ui/Avatar';
 import Picture from '../ui/Picture';
+import useDialogA11y from '../ui/dialogA11y';
 import { unreadTotalOf, useChatStore } from '../../store/chatStore';
 import { useProfiles } from '../../useProfiles';
 
@@ -10,6 +11,7 @@ import { useProfiles } from '../../useProfiles';
 // only ever mounts below md. onNavigate(tab, exploreMode, startView) hands
 // the tap back to AuthenticatedApp, which owns the tab state.
 export default function Drawer({ identity, open, onClose, onNavigate }) {
+  useDialogA11y(open, onClose);
   const unreadTotal = useChatStore(unreadTotalOf);
   const profiles = useProfiles([identity.pk]);
   const myProfile = profiles[identity.pk] || {};
@@ -37,6 +39,9 @@ export default function Drawer({ identity, open, onClose, onNavigate }) {
             className="absolute inset-0 touch-target bg-scrim/60"
           />
           <motion.aside
+            role="dialog"
+            aria-modal="true"
+            aria-label="Navigation"
             initial={{ x: '-100%' }}
             animate={{ x: 0 }}
             exit={{ x: '-100%' }}
