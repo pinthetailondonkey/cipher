@@ -12,7 +12,7 @@
 //   TAILS=1       use the SYSTEM tor, never spawn one (also detected from /etc/os-release)
 //   CIPHER_CALLS=1 development escape hatch ONLY: allow WebRTC in private mode
 
-const { app, BrowserWindow, dialog, session } = require('electron');
+const { app, BrowserWindow, dialog, ipcMain, safeStorage, session } = require('electron');
 const { spawn } = require('node:child_process');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -23,7 +23,8 @@ const {
 } = require('./tor.js');
 const { createUiServer } = require('./uiServer.js');
 const { dataDirBeside, resolveAppRoot, createDataDir } = require('./paths.js');
-const { applyWindowPolicy, permissionAllowed } = require('./windowPolicy.js');
+const { applyWindowPolicy, permissionAllowed, isUiUrl } = require('./windowPolicy.js');
+const { createDeviceKeyBackend, registerDeviceKeyIpc } = require('./deviceKey.js');
 
 const uiPort = 9151;
 const appRoot = resolveAppRoot(process.execPath, {
@@ -211,6 +212,15 @@ app.whenReady().then(() => {
   // Data beside the app, not in a hidden per-user folder.
   app.setPath('userData', dataDir);
 
+  // The device key lives in the same folder, sealed by the operating system
+  // (src/deviceKey.js). Only the app's own page may ask for it, the same
+  // line windowPolicy draws for everything else.
+  registerDeviceKeyIpc({
+    ipcMain,
+    backend: createDeviceKeyBackend({ safeStorage, fs, dir: dataDir, randomBytes }),
+    isAllowed: (event) => isUiUrl(event.senderFrame ? event.senderFrame.url : '', uiPort),
+  });
+
   const engine = session.defaultSession;
   // Notification only (src/windowPolicy.js); mic/camera stay refused in private mode.
   engine.setPermissionRequestHandler((_wc, perm, cb) => cb(permissionAllowed(perm, { allowCalls: devCalls })));
@@ -244,7 +254,7 @@ app.whenReady().then(() => {
       title: 'Cipher',
       backgroundColor: '#000000',
       autoHideMenuBar: true,
-      webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
+      webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true, preload: path.join(__dirname, 'preload.js') },
     });
     win.removeMenu();
     win.loadURL(`http://127.0.0.1:${uiPort}/`);

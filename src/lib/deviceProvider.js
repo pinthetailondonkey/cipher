@@ -1,12 +1,15 @@
 // Which device key provider this page uses. One answer per environment:
-// the browser's passkey (PRF) today; the operating system store on desktop and
-// the Android Keystore are added where those platforms are built. Where none
-// can hold a key, there is none, and the app does not create or keep accounts.
+// the operating system store on desktop first (the page is served from a
+// loopback address, which WebAuthn cannot use), then the browser's passkey
+// (PRF); the Android Keystore is added where that platform is built. Where
+// none can hold a key, there is none, and the app does not create or keep
+// accounts.
 
 import { getDeviceProvider, setDeviceProvider } from './vaultEnvelope.js';
+import { desktopProvider } from './deviceDesktop.js';
 import { prfProvider } from './devicePrf.js';
 
-const candidates = () => [prfProvider];
+const candidates = () => [desktopProvider, prfProvider];
 
 export async function ensureDeviceProvider() {
   const current = getDeviceProvider();
