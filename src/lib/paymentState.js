@@ -232,7 +232,10 @@ export function applyWatcherReport({ state, watcherUrl, report, currency, thresh
   }
   let current = state;
   if (current === 'address_issued') current = nextPaymentState(current, 'see');
-  const need = threshold == null ? confirmationsRequired(currency) : Number(threshold);
+  // The depth is sanitised by the one rule confirmationsRequired uses: an
+  // integer of at least 1, else the currency's own default. A zero, negative,
+  // fractional or garbled threshold never lowers the bar.
+  const need = confirmationsRequired(currency, { [String(currency || '').toLowerCase()]: threshold });
   const confirmed = Number(report.confirmations) >= need;
   if (confirmed) {
     if (current !== 'seen') throw new Error('A payment has to be seen before it can be confirmed.');
