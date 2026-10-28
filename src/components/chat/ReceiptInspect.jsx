@@ -52,6 +52,9 @@ export default function ReceiptInspect({ receipt, open, onClose }) {
             <p className="mt-2 text-center text-[11px] text-inkSubtle">
               Both signatures checked on this device. Hash {String(receipt.hash || '').slice(0, 12)}…
             </p>
+            <p className="mt-1 px-2 text-center text-[11px] leading-relaxed text-inkSubtle">
+              This is what the two of you signed about one transaction. It does not say the goods arrived.
+            </p>
           </>
         )}
       </div>
