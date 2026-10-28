@@ -7,8 +7,11 @@ outside the tree. Nothing here is pushed, deployed or released.
 
 - Base: `origin/main` = `1b0fb053f5695cc729b390948c7635b320606fa1` (fetched 2026-10-28).
 - Branch: `release/launch-v1`, cut from that SHA.
-- Candidate HEAD: see `git log --oneline origin/main..HEAD`. Five local commits,
-  none pushed, per the founder's release order that overrides "push each commit".
+- Candidate HEAD: `61f35c0dc7731bc45ccd52ecdb519e088fac74cb`. Nine local
+  commits, none pushed, per the founder's release order that overrides "push
+  each commit":
+  `cbc2037` `5b12a30` `4dc0df0` `7042cb5` `298ef9b` `574a299` `54be472`
+  `fb7d6cf` `61f35c0`.
 
 ## Milestone 1 — auth and recovery
 
@@ -17,7 +20,7 @@ outside the tree. Nothing here is pushed, deployed or released.
 | 1 | A local restore rebuilt the account entry and dropped `mnemonicEnc` (the encrypted 12 words) and any device envelope | confirmed, fixed, tested | `4dc0df0` |
 | 2 | New-PIN rule was "eight or more" at the centre while the screens said exactly eight; unlock charged every error to the five-attempt counter | confirmed, fixed, tested | `cbc2037`, `5b12a30` |
 | 3 | The save screen said the words and "your PIN" recover the account; a new device asks for a new PIN | confirmed, fixed | `7042cb5` |
-| 4 | The Face ID door opened on a stored record alone, with no PRF capability check | confirmed, fixed, tested | `298ef9b` |
+| 4 | The Face ID door opened on a stored record alone, with no PRF capability check | confirmed, PARTIALLY fixed: the record-only door is closed, but the check is WebAuthn presence, not an authenticator answer | `298ef9b`, measured `fb7d6cf` |
 | 5 | `feat/device-lock` integration risks | inspected, NOT merged | none |
 
 Finding 1 is the trust-edge class CLAUDE.md names: state that lives only in
@@ -30,12 +33,17 @@ with no wrong PIN typed.
 
 ## Gates at the candidate
 
-Run in the founder's checkout, production build (no test hooks):
+Run in the founder's checkout, production build (no test hooks). Two runs,
+named by the SHA they were made at — the entry name differs because the
+source changed between them:
 
-- `npm run build` — exit 0, entry `dist/assets/index-Drp6qFzv.js`
-- `npm run lint` — exit 0, warnings only
+- at `574a299`: `npm run build` exit 0, entry `dist/assets/index-Drp6qFzv.js`
+- at `61f35c0`: `npm run build` exit 0, entry `dist/assets/index-CNxR3c1G.js`
+- `npm run lint` — exit 0, 88 warnings, 0 errors
 - `npm test` — 434 tests, 434 pass, 0 fail
-- `__cipher` absent from every built asset (test-hook build not used)
+- `__cipher` absent from every built asset at both SHAs (test-hook build not
+  used for either; AUDITOR also measured the seam build separately and then
+  rebuilt production to 0 hits)
 
 ## Milestone 1 close-out — UI-level unlock evidence
 
@@ -81,6 +89,36 @@ Face ID door is offered anyway. The record-only door is closed; the
 no-authenticator door is not. A cancelled or failing authenticator then ends
 in the screen's error line. Not changed here — it is a founder decision, since
 requiring a platform authenticator would hide the door for roaming keys.
+
+## Lane reports (independent, read-only)
+
+- AUDITOR, verdict at `61f35c0` on a clean clone: build 0 (`index-CNxR3c1G.js`),
+  lint 0 errors / 88 warnings, `npm test` 434/434, UI pin-unlock + persistence
+  14/14 on its own port. `__cipher` 0 hits in the production build, 1 file in
+  the seam build, 0 again after rebuilding production. `git ls-remote`: no
+  `release/*` on origin. Packet: `/tmp/audit-cand/REVIEW.md`. It caught three
+  evidence-file errors, all corrected above: the stale gates entry name, "five"
+  where there are nine commits, and row 4 called fixed when it is partial.
+- OPSEC, transport: onion 80 open / 443 dead, clearnet 443 refused / 8080
+  open; preference, overrides and "off" unchanged; no automatic clearnet
+  fallback, no TLS bypass. Socket OPEN is not group messaging — no lane has
+  proven a two-account group exchange on any transport.
+- OPSEC, device-lock: measured on `origin/feat/device-lock` `6356411`, merge
+  base `1f32ba6`. Withdrew an earlier "pre-rewrite history" claim: the branch
+  and all 14 commits are noreply. Separate hazard found while checking it —
+  see below.
+
+### Two branches under one name
+
+`origin/feat/device-lock` (`6356411`) is current history. The LOCAL
+`feat/device-lock` in `/home/aegis/wt-lock` (`262cdd2`) has no merge base with
+this branch and 941 commits outside current history carrying pre-purge
+identities (counts only: 35 personal Gmail, 906 GitHub noreply handles).
+Never push, move, rebase or delete that worktree; any device-lock testing
+works from the origin branch in a fresh worktree. Merging either into the
+release is refused: `merge-tree` exits 1 with conflicts in `package.json`,
+`src/LockScreen.jsx`, `src/lib/vaultLockout.test.js`, `src/useIdentity.js`,
+and the branch has no v3 rollback.
 
 ## Lane ownership (one row per worker; no overlap)
 
