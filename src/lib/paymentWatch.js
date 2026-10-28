@@ -201,39 +201,51 @@ export function rowsFromScan(scan, address) {
     });
 }
 
-function largestUnspent(rows, currency) {
-  // A receipt names one transaction, so the report names the largest output.
-  // Two of the same size take the greater txid, which does not change between scans.
-  const units = (row) => coinUnits(row.amount, currency) ?? -1n;
-  return [...rows].sort((a, b) => {
-    const left = units(a);
-    const right = units(b);
-    if (left !== right) return right > left ? 1 : -1;
-    return String(b.txid).localeCompare(String(a.txid));
+// A receipt names one transaction, so a report is built from one transaction
+// only: the outputs of a single txid, summed. Of the transactions that paid
+// the address, the one with the greatest total is named; two of the same total
+// take the greater txid, which does not change between scans. Another
+// transaction to the same address never adds to it, so a payment split across
+// two transactions is short of the order until one of them covers it by itself.
+function chosenTransaction(rows, currency) {
+  const byTx = new Map();
+  for (const row of rows) {
+    const key = String(row.txid);
+    const units = coinUnits(row.amount, currency);
+    const entry = byTx.get(key) || { txid: key, rows: [], total: 0n, counted: 0 };
+    entry.rows.push(row);
+    if (units != null) { entry.total += units; entry.counted += 1; }
+    byTx.set(key, entry);
+  }
+  return [...byTx.values()].sort((a, b) => {
+    if (a.total !== b.total) return b.total > a.total ? 1 : -1;
+    return b.txid.localeCompare(a.txid);
   })[0];
 }
 
 export function reportFromTransfers(transfers, address, currency) {
   const wanted = String(address || '').trim();
   const rows = (Array.isArray(transfers) ? transfers : []).filter((row) => row && (row.address === wanted || row.addr === wanted) && row.txid);
-  const hit = rows.length ? largestUnspent(rows, currency) : null;
-  if (!hit) return { pending: true };
-  // A payment split across outputs covers the order by its sum. It is only as
-  // deep as its shallowest part, so the sum cannot confirm before every part does.
-  const counted = rows.filter((row) => coinUnits(row.amount, currency) != null);
-  const depthOf = counted.length ? counted : [hit];
+  const tx = rows.length ? chosenTransaction(rows, currency) : null;
+  if (!tx) return { pending: true };
+  // Outputs of the one transaction. It is only as deep as its shallowest
+  // output, so the sum cannot confirm before every part does.
+  const counted = tx.rows.filter((row) => coinUnits(row.amount, currency) != null);
+  const depthOf = counted.length ? counted : tx.rows;
   const confirmations = Math.min(...depthOf.map((row) => Number(row.confirmations) || 0));
   const report = {
     source: 'watcher',
-    txid: String(hit.txid),
+    txid: tx.txid,
     confirmations,
     confirmed: confirmations >= confirmationsRequired(currency),
   };
   if (counted.length) {
-    const sum = counted.reduce((total, row) => total + coinUnits(row.amount, currency), 0n);
-    report.amount = unitsToCoins(sum, currency);
-    const largest = coinUnits(hit.amount, currency);
-    if (largest != null) report.outputAmount = unitsToCoins(largest, currency);
+    report.amount = unitsToCoins(tx.total, currency);
+    const largest = counted.reduce((top, row) => {
+      const units = coinUnits(row.amount, currency);
+      return units > top ? units : top;
+    }, 0n);
+    report.outputAmount = unitsToCoins(largest, currency);
   }
   // When the chain dates every part of the transfer, the report carries the
   // oldest date. The order that consumes the txid can then refuse one that

@@ -349,9 +349,11 @@ test('a payment split across two outputs is summed, and the receipt keeps the la
   assert.equal(paid.report.outputAmount, '0.006');
   const twoTx = { height: 110, unspents: [{ txid: 'bb', height: 108, amount: 0.004 }, { txid: 'aa', height: 108, amount: 0.006 }] };
   const split = reportFromTransfers(rowsFromScan(twoTx, 'bc1q'), 'bc1q', 'btc');
-  assert.equal(split.amount, '0.01');
+  // A receipt names one transaction: the amount is that transaction's own
+  // outputs, never the sum across two transactions.
+  assert.equal(split.amount, '0.006');
   assert.equal(split.txid, 'aa');
-  const shallow = { height: 110, unspents: [{ txid: 'aa', height: 108, amount: 0.006 }, { txid: 'bb', height: 110, amount: 0.004 }] };
+  const shallow = { height: 110, unspents: [{ txid: 'aa', height: 108, amount: 0.006 }, { txid: 'aa', height: 110, amount: 0.004 }] };
   const young = reportFromTransfers(rowsFromScan(shallow, 'bc1q'), 'bc1q', 'btc');
   assert.equal(young.confirmations, 1);
   assert.equal(young.confirmed, false);
@@ -360,7 +362,7 @@ test('a payment split across two outputs is summed, and the receipt keeps the la
 test('a report carries the oldest time of its covering rows, and a scan keeps its height', () => {
   const rows = moneroRows([
     { address: '8sub', txid: 'a', confirmations: 10, amount: 300000000000, timestamp: 2000, type: 'in' },
-    { address: '8sub', txid: 'b', confirmations: 10, amount: 200000000000, timestamp: 1000, type: 'in' },
+    { address: '8sub', txid: 'a', confirmations: 10, amount: 200000000000, timestamp: 1000, type: 'in' },
   ]);
   const report = reportFromTransfers(rows, '8sub', 'xmr');
   assert.equal(report.time, 1000);
@@ -369,7 +371,7 @@ test('a report carries the oldest time of its covering rows, and a scan keeps it
   // issuance time refuses to consume the txid.
   const partly = reportFromTransfers([
     { address: '8sub', txid: 'a', confirmations: 10, amount: 0.3, timestamp: 2000 },
-    { address: '8sub', txid: 'b', confirmations: 10, amount: 0.2 },
+    { address: '8sub', txid: 'a', confirmations: 10, amount: 0.2 },
   ], '8sub', 'xmr');
   assert.equal(partly.time, undefined);
   const scan = rowsFromScan({ height: 104, unspents: [{ txid: 'aa', height: 102, amount: 0.01 }] }, 'bc1q');
@@ -529,4 +531,30 @@ test('a locked or double-spent Monero row is held out of the count', async () =>
   // So a locked payment reads as nothing arrived yet, not as a confirmed one.
   const locked = incomingMoneroTransfers({ in: [{ ...arrived, txid: 'lk', unlock_time: 99999999 }] }, { nowSec: now });
   assert.deepEqual(reportFromTransfers(locked, '8sub', 'xmr'), { pending: true });
+});
+
+test('a payment split across two transactions does not confirm an order, and a receipt names the transaction that paid', async () => {
+  const watcherUrl = 'https://watch.example/payment?token=secret';
+  const twoTx = { height: 110, unspents: [{ txid: 'aa', height: 108, amount: 0.006 }, { txid: 'bb', height: 108, amount: 0.004 }] };
+  const split = reportFromTransfers(rowsFromScan(twoTx, 'bc1q'), 'bc1q', 'btc');
+  assert.equal(split.txid, 'aa');
+  assert.equal(split.amount, '0.006');
+  const short = await checkPayment({
+    watcherUrl, address: 'bc1q', currency: 'btc', state: 'address_issued', amount: '0.01',
+    fetchImpl: () => watcherAnswer({ address: 'bc1q', currency: 'btc', ...split }),
+  });
+  assert.deepEqual(short, { moved: false, short: true, state: 'address_issued' });
+  // The same split on Monero.
+  const xmr = reportFromTransfers(moneroRows([
+    { address: '8sub', txid: 'x1', confirmations: 10, amount: 300000000000 },
+    { address: '8sub', txid: 'x2', confirmations: 10, amount: 200000000000 },
+  ]), '8sub', 'xmr');
+  assert.equal(xmr.txid, 'x1');
+  assert.equal(xmr.amount, '0.3');
+  // One transaction that covers the order by itself still confirms, with its outputs summed.
+  const whole = { height: 110, unspents: [{ txid: 'cc', height: 108, amount: 0.006 }, { txid: 'cc', height: 108, amount: 0.004 }, { txid: 'dd', height: 108, amount: 0.001 }] };
+  const one = reportFromTransfers(rowsFromScan(whole, 'bc1q'), 'bc1q', 'btc');
+  assert.equal(one.txid, 'cc');
+  assert.equal(one.amount, '0.01');
+  assert.equal(one.outputAmount, '0.006');
 });
