@@ -42,6 +42,25 @@ export const EGRESS = [
 // A fresh door is one folder and one rebuild away.
 export const FOUNDER_GROUP_ONION = 'wss://5zxjlolifxz4didbdbnr4bigzcjpeejgpa4nw5ef5f3vvevh4vxmytyd.onion';
 
+// The same shape for the doors still to come: one message relay, one search
+// relay, one media host, one note host. Each ships dark (empty) until the
+// founder names it, so every row keeps its shipped address today. The day a
+// name lands here as a literal — never a chat line, never an env var, which
+// only bought a silent clearnet fallback — it outranks the shipped address
+// for every fresh install, under the same rank order as the group door: a
+// device's own paste wins, then the door, and `off` still drops the host.
+// One door serves every row of its kind: the search pair and the media trio
+// each resolve to the one address when their door is lit.
+export const FOUNDER_ONION_DOORS = {
+  'dm-relay': '',
+  'search-vertex': '',
+  'search-noswhere': '',
+  'blossom-primal': '',
+  'blossom-nostr-build': '',
+  'blossom-band': '',
+  'dead-drop': '',
+};
+
 export const RELAY_SETS = {
   general: ['dm-relay'],
   group: ['group-relay'],
@@ -157,7 +176,9 @@ export function activeUrl(entry, config = readNetworkConfig()) {
   if (entry.id === 'group-relay' && FOUNDER_GROUP_ONION) {
     return override || FOUNDER_GROUP_ONION;
   }
-  return override || String(entry.url || '').trim();
+  // A door still dark ('') keeps the shipped address; a lit one outranks it
+  // under the same rank order as the group door.
+  return override || FOUNDER_ONION_DOORS[entry.id] || String(entry.url || '').trim();
 }
 
 export function listEgress(config = readNetworkConfig()) {

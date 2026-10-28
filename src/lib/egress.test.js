@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
-import { EGRESS, groupRelayHttp, isOnionUrl, listEgress, readNetworkConfig, urlsFor } from './egress.js';
+import { EGRESS, blossomServers, groupRelayHttp, isOnionUrl, listEgress, readNetworkConfig, urlsFor } from './egress.js';
 
 function walk(dir, out = []) {
   for (const name of fs.readdirSync(dir)) {
@@ -79,7 +79,7 @@ test('every outbound host is listed, and nowhere else', () => {
 // clearnet address, and a device's own paste outranks the door. The address
 // is asserted as a literal so a build that loses the door fails here rather
 // than quietly serving groups in the clear.
-import { FOUNDER_GROUP_ONION } from './egress.js';
+import { FOUNDER_GROUP_ONION, FOUNDER_ONION_DOORS } from './egress.js';
 
 const DOOR = 'wss://5zxjlolifxz4didbdbnr4bigzcjpeejgpa4nw5ef5f3vvevh4vxmytyd.onion';
 const onion = (label, scheme = 'wss') => `${scheme}://${label}.onion`;
@@ -116,6 +116,39 @@ test('defaults work with no config, and an onion replaces only that row', () => 
   const kept = listEgress({ overrides: { 'group-relay': pasted }, lists: {} }).find((row) => row.id === 'group-relay');
   assert.equal(kept.transport, 'tor');
   assert.equal(kept.active, pasted);
+});
+
+test('the dark doors ship empty, change nothing today, and a lit door outranks the shipped row', () => {
+  // Dark: every door ships empty, so every row keeps the address the founder
+  // reviewed, and no build contacts a host that is not already on the wall.
+  for (const [id, door] of Object.entries(FOUNDER_ONION_DOORS)) {
+    assert.equal(door, '', `${id} ships dark until the founder names its door`);
+  }
+  assert.deepEqual(urlsFor('general', { overrides: {}, lists: {} }), ['wss://relay.primal.net']);
+  assert.deepEqual(urlsFor('search', { overrides: {}, lists: {} }), ['wss://relay.primal.net', 'wss://relay.vertexlab.io', 'wss://relay.noswhere.com']);
+  assert.deepEqual(blossomServers({ overrides: {}, lists: {} }), ['https://blossom.primal.net', 'https://nostr.build', 'https://blossom.band']);
+  // Lit, by the founder's hand in egress.js: the same rank order as the
+  // group door — the door outranks the shipped address, a device's own
+  // paste outranks the door, and `off` still drops the host entirely. One
+  // door serves every row of its kind, so the search pair resolves to one.
+  const dmDoor = onion('dmdoordmdoordmdoordm');
+  const searchDoor = onion('searchdoorsearchdoor');
+  FOUNDER_ONION_DOORS['dm-relay'] = dmDoor;
+  FOUNDER_ONION_DOORS['search-vertex'] = searchDoor;
+  FOUNDER_ONION_DOORS['search-noswhere'] = searchDoor;
+  try {
+    assert.deepEqual(urlsFor('general', { overrides: {}, lists: {} }), [dmDoor]);
+    assert.deepEqual(urlsFor('search', { overrides: {}, lists: {} }), [dmDoor, searchDoor]);
+    assert.deepEqual(urlsFor('general', { overrides: { 'dm-relay': 'off' }, lists: {} }), []);
+    assert.deepEqual(urlsFor('general', { overrides: { 'dm-relay': 'wss://inbox.example' }, lists: {} }), ['wss://inbox.example']);
+    const row = listEgress({ overrides: {}, lists: {} }).find((r) => r.id === 'dm-relay');
+    assert.equal(row.transport, 'tor');
+    assert.equal(row.active, dmDoor);
+  } finally {
+    FOUNDER_ONION_DOORS['dm-relay'] = '';
+    FOUNDER_ONION_DOORS['search-vertex'] = '';
+    FOUNDER_ONION_DOORS['search-noswhere'] = '';
+  }
 });
 
 test('the network snapshot stays the same object until storage changes', () => {

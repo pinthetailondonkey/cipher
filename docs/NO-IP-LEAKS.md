@@ -51,7 +51,7 @@ Earlier drafts said link previews tell the visited site that you clicked. **They
 - Name lookups: DONE then overridden — refused at first, now loads all by founder ruling (see item 2).
 - Pictures and attachments: DONE then overridden — gated at first, now loads all by founder ruling (see item 3); gate source removed so no dead code remains.
 - VPN tip: the standing recommendation in its place — one plain line each on the download page and in Settings.
-- Onion twins: APPROVED — the founder runs the box (docs/ONION-DOORS.md is the runbook; provider, price, payment, and the onion names stay outside this chat). The clearnet rows keep existing as disclosed until the doors live; the two onion wall rows come when the doors do.
+- Onion twins: APPROVED — the founder runs the box (docs/ONION-DOORS.md is the runbook; provider, price, payment, and the onion names stay outside this chat). The clearnet rows keep existing as disclosed until the doors live. The wall now carries door slots for them, shipped dark on 2026-10-28 (`FOUNDER_ONION_DOORS` in `src/lib/egress.js`): the message relay, the search pair, the media trio and the note host each light the day their name lands there as a literal, pasted by the founder — never a chat line, never an env var.
 - Only item still open: the plain-browser build's default relays over the open internet — it lifts the day onion relays are named (founder gate).
 - Done already: this page, the founder-gate test, the Deal zero-network test, a stale comment in `desktop/src/main.js` that pointed at a lock living elsewhere.
 
