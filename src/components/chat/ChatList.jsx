@@ -43,9 +43,9 @@ import { formatRelativeTime } from './relativeTime';
 // commerce happened (an order crossed it, or the peer sent a product). The
 // store carries no per-peer vendor flag.
 const SEGMENTS = [
-  { key: 'all', label: 'All' },
-  { key: 'menus', label: 'Menus' },
-  { key: 'vendors', label: 'Vendors' },
+  { value: 'all', label: 'All' },
+  { value: 'menus', label: 'Menus' },
+  { value: 'vendors', label: 'Vendors' },
 ];
 
 // Mute durations for the swipe-left and kebab submenu, mapped onto the
