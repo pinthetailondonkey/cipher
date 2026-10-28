@@ -44,7 +44,7 @@ export default function SaveKey({ savedMnemonic, biometricNotice, onContinue }) 
   return (
     <>
       <h1 className="mb-2 text-center text-2xl font-bold tracking-tight text-ink">Save Your Recovery Key</h1>
-      <p className="mb-8 max-w-[280px] text-center text-[13px] leading-relaxed text-inkMuted">Write down these 12 words. You need them and your PIN to recover this account. Five wrong PINs delete the copy stored on this device.</p>
+      <p className="mb-8 max-w-[280px] text-center text-[13px] leading-relaxed text-inkMuted">Write down these 12 words. They bring this account back on a new device, with a new PIN you choose there. Five wrong PINs delete the copy stored on this device.</p>
 
       <form onSubmit={(e) => { e.preventDefault(); handleContinue(); }} className="flex w-full flex-col items-center gap-6 rounded-3xl border border-line bg-panel p-6">
         <ol className="flex w-full flex-col gap-1.5">
