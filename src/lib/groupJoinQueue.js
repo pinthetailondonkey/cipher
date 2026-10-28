@@ -146,3 +146,51 @@ export function withoutDenied(groupId, rows) {
   if (!id || !Array.isArray(rows)) return rows || [];
   return rows.filter((row) => !isJoinDenied(id, memberPubkey(row)));
 }
+
+// Audit finding: a relay-signed 39002 that names someone the owner never
+// approved used to land on the owner's stored roster whole, and the later
+// 9021 from that stranger then read "already a member" and skipped the
+// approval queue — the roster the relay wrote outvoted the owner.
+//
+// On the group owner's device the stored roster is the owner's own ledger
+// (creation, owner adds, kicks), so a relay roster may carry names that
+// ledger already holds and may drop names, but a NEW name is a request, not
+// a member: it is split out here to join the pending queue and does not land
+// on the roster until the owner approves it (addMember). Two cases pass
+// everything through, because there is no ledger to outvote: a device with
+// no stored roster yet (an existing member loading the group on a fresh
+// device takes the relay's roster as its baseline, as any member does), and
+// any device that is not the owner's, which cannot approve anyone and holds
+// the relay's roster as its only evidence of membership.
+export function admitRelayRoster({ previous, incoming, isOwner, selfPk = '' } = {}) {
+  const rows = Array.isArray(incoming) ? incoming : [];
+  if (!isOwner || !Array.isArray(previous)) return { members: rows, unapproved: [] };
+  const held = new Set(previous.map((row) => memberPubkey(row).toLowerCase()));
+  const me = String(selfPk || '').toLowerCase();
+  const members = [];
+  const unapproved = [];
+  for (const row of rows) {
+    const who = memberPubkey(row).toLowerCase();
+    if (!who) continue;
+    if (who === me || held.has(who)) members.push(row);
+    else if (!unapproved.includes(who)) unapproved.push(who);
+  }
+  return { members, unapproved };
+}
+
+// The order the 9021 handler decides in, as one pure function. Presence in
+// the stored roster is the LAST test, never the first: a sender the owner
+// denied or still has pending is not a member whatever a roster says, and
+// only a sender with no standing either way and already on the roster is a
+// known member re-stating a join. Everyone else is a request.
+//   self   - this device's own join echo
+//   ignore - denied, or already waiting in the queue
+//   deny   - joins are off (the Groups setting is Nobody)
+//   known  - a member of record re-stating a join (no queue, no change)
+//   queue  - a request for the owner
+export function joinRequestDecision({ isSelf, denied, pending, allowsJoins, inSnapshot } = {}) {
+  if (isSelf) return 'self';
+  if (denied || pending) return 'ignore';
+  if (!allowsJoins) return 'deny';
+  return inSnapshot ? 'known' : 'queue';
+}

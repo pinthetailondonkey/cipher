@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
-  JOIN_REQUESTS_EVENT, clearJoinDenial, denyPendingJoin, dropPendingJoin, hasPendingJoin, isJoinDenied,
+  JOIN_REQUESTS_EVENT, admitRelayRoster, clearJoinDenial, joinRequestDecision, denyPendingJoin, dropPendingJoin, hasPendingJoin, isJoinDenied,
   loadPendingJoins, pendingJoinsFor, queuePendingJoin, subscribeJoinRequests,
   withoutDenied,
 } from './groupJoinQueue.js';
@@ -138,4 +138,59 @@ test('the owner clears the denial and the sender becomes grantable again (drills
     clearJoinDenial(GROUP, OTHER);
     assert.equal(isJoinDenied(GROUP, OTHER), false);
   });
+});
+
+// Audit finding: a relay 39002 naming a stranger landed on the owner's
+// roster, and the stranger's own 9021 then read "already a member" and never
+// reached the approval queue.
+const OWNER = 'o'.repeat(64);
+const MEMBER = 'c'.repeat(64);
+const STRANGER = 'd'.repeat(64);
+const decide = (over) => joinRequestDecision({ allowsJoins: true, ...over });
+
+test('on the owner device a relay roster naming a stranger queues them instead of admitting them', () => {
+  withStorage(() => {
+    const previous = [{ pubkey: OWNER, role: 'admin' }, { pubkey: MEMBER, role: 'member' }];
+    const incoming = [...previous, { pubkey: STRANGER, role: 'member' }];
+    const { members, unapproved } = admitRelayRoster({ previous, incoming, isOwner: true, selfPk: OWNER });
+    assert.deepEqual(members, previous);
+    assert.deepEqual(unapproved, [STRANGER]);
+    // The unapproved name goes to the queue the owner reads.
+    assert.equal(queuePendingJoin(GROUP, { pubkey: STRANGER, eventId: 'snap1', at: 5 }), true);
+    // The stranger's later 9021 now stops at the queue: it is NOT a known member.
+    const inSnapshot = members.some((row) => row.pubkey === STRANGER);
+    assert.equal(inSnapshot, false);
+    assert.equal(decide({ pending: hasPendingJoin(GROUP, STRANGER), inSnapshot }), 'ignore');
+    // Even a roster that did name them would not approve them over the queue row.
+    assert.equal(decide({ pending: hasPendingJoin(GROUP, STRANGER), inSnapshot: true }), 'ignore');
+    assert.equal(decide({ denied: true, inSnapshot: true }), 'ignore');
+  });
+});
+
+test('owner-approved members, a restored device and non-owner devices are not disturbed', () => {
+  const previous = [{ pubkey: OWNER, role: 'admin' }, { pubkey: MEMBER, role: 'member' }];
+  // The owner approved STRANGER (addMember wrote them to the stored roster): the relay's list passes whole.
+  const approved = [...previous, { pubkey: STRANGER, role: 'member' }];
+  const afterApproval = admitRelayRoster({ previous: approved, incoming: approved, isOwner: true, selfPk: OWNER });
+  assert.deepEqual(afterApproval, { members: approved, unapproved: [] });
+  // The relay may drop a name; that is not an admission.
+  assert.deepEqual(admitRelayRoster({ previous: approved, incoming: previous, isOwner: true, selfPk: OWNER }),
+    { members: previous, unapproved: [] });
+  // A device with no stored roster (fresh device, even the owner's) takes the relay's roster as its baseline.
+  assert.deepEqual(admitRelayRoster({ previous: null, incoming: approved, isOwner: true, selfPk: OWNER }),
+    { members: approved, unapproved: [] });
+  // A member's device cannot approve anyone: the relay roster is its evidence, unchanged.
+  assert.deepEqual(admitRelayRoster({ previous, incoming: approved, isOwner: false, selfPk: MEMBER }),
+    { members: approved, unapproved: [] });
+  // The owner's own row is never a request, even when the stored roster lost it.
+  assert.deepEqual(admitRelayRoster({ previous: [{ pubkey: MEMBER }], incoming: previous, isOwner: true, selfPk: OWNER }).unapproved, []);
+});
+
+test('the 9021 decision keeps its order: self, denied or queued, joins off, then roster presence', () => {
+  assert.equal(decide({ isSelf: true }), 'self');
+  assert.equal(decide({ denied: true }), 'ignore');
+  assert.equal(decide({ pending: true, inSnapshot: true }), 'ignore');
+  assert.equal(decide({ allowsJoins: false, inSnapshot: false }), 'deny');
+  assert.equal(decide({ inSnapshot: true }), 'known');
+  assert.equal(decide({ inSnapshot: false }), 'queue');
 });

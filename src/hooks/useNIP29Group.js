@@ -20,7 +20,7 @@ import { groupSocketUrl } from '../lib/egress';
 import { relaysForPeer } from '../lib/dmRelays';
 import { dropSecuringSend, forgetPendingKeyRequest, queueSecuringSend, rememberPendingKeyRequest, resetKeyRequest, securingSendsFor } from '../lib/crypto/groupKeyRequest';
 import { sortMessages, stampArrival } from '../features/chat/media';
-import { isJoinDenied, denyPendingJoin, dropPendingJoin, clearJoinDenial, loadPendingJoins, queuePendingJoin, withoutDenied } from '../lib/groupJoinQueue.js';
+import { admitRelayRoster, isJoinDenied, joinRequestDecision, denyPendingJoin, dropPendingJoin, clearJoinDenial, loadPendingJoins, queuePendingJoin, withoutDenied } from '../lib/groupJoinQueue.js';
 import { allowsGroupJoins } from '../lib/privacy.js';
 import { groupMetaAnnouncement } from '../lib/groupMetaAnnouncement.js';
 import { clampGroupBody } from '../lib/disappearing';
@@ -896,7 +896,23 @@ export function useNIP29Group({ identity }) {
         }
         // An open-join relay names a denied sender in its snapshot; the local
         // deny outvotes the relay, so their row never lands or grants a key.
-        const members = withoutDenied(groupId, pickMemberSnapshot([event], relayPubkey, groupId) || []);
+        const relayMembers = withoutDenied(groupId, pickMemberSnapshot([event], relayPubkey, groupId) || []);
+        // On the owner's device a name the owner never approved is a join
+        // request, not a member: it goes to the queue and stays off the
+        // stored roster until the owner approves it.
+        const owned = useChatStore.getState().groups.some((g) => g.id === groupId && g.creator === identity.pk);
+        const { members, unapproved } = admitRelayRoster({
+          previous: owned ? await loadMemberSnapshot(groupId) : null,
+          incoming: relayMembers,
+          isOwner: owned,
+          selfPk: identity.pk,
+        });
+        for (const pk of unapproved) {
+          if (!allowsGroupJoins()) { denyPendingJoin(groupId, pk); continue; }
+          if (queuePendingJoin(groupId, { pubkey: pk, eventId: event.id, at: event.created_at })) {
+            appendSystemMessage(groupId, `${shortNpub(pk)} wants to join. Approve it in Join requests.`, event.id);
+          }
+        }
         await rememberMembers(groupId, members);
         if (useChatStore.getState().activeGroup?.id === groupId) setGroupMembers(members);
         return;
@@ -915,33 +931,35 @@ export function useNIP29Group({ identity }) {
       if (event.kind === 9021) {
         const pk = event.pubkey;
         const members = await loadMemberSnapshot(groupId);
-        if (pk === identity.pk) {
-          // Own join echo: the creator's bootstrap join lands on the snapshot
-          // unchanged. A rejoin case is kept here too — an already-member
-          // sender still auto-adds (a no-op on the snapshot row). A pubkey the
-          // owner denied cannot be one's own, so no deny check is needed here.
-        } else if (isJoinDenied(groupId, pk)) {
+        // One pure decision, in a fixed order (joinRequestDecision): a denied
+        // or already-queued sender is stopped BEFORE the roster is looked at,
+        // and presence in the stored roster is not approval — on the owner's
+        // device a name the relay wrote that the owner never approved sits in
+        // the queue (see admitRelayRoster), so it stops at 'ignore' here.
+        const decision = joinRequestDecision({
+          isSelf: pk === identity.pk,
+          denied: isJoinDenied(groupId, pk),
+          pending: Boolean(loadPendingJoins()[groupId]?.some((row) => row.pubkey === pk)),
+          allowsJoins: allowsGroupJoins(),
+          inSnapshot: Array.isArray(members) && members.some((member) => memberKey(member) === pk),
+        });
+        if (decision === 'ignore') {
           // Denied senders stay out even when this device's snapshot has been
-          // widened by a relay: the deny outvotes every replay path below.
-          // (F1 re-attack: these arms must stop here — falling through to the
-          // patch below let a replayed 9021 write a queued or denied sender
-          // straight onto the snapshot, which F1's key gate then trusted.)
+          // widened by a relay, and a relay replay of a queued 9021 must not
+          // re-queue the sender or fall through to the patch below — two
+          // replayed joins were enough to sit on the member snapshot and pass
+          // F1's sender-standing check. (F1 re-attack)
           return;
-        } else if (loadPendingJoins()[groupId]?.some((row) => row.pubkey === pk)) {
-          // Already queued: a relay replay of the same 9021 must not re-queue
-          // the sender, and it must not fall through to the patch below —
-          // two replayed joins were enough to sit on the member snapshot and
-          // pass F1's sender-standing check.
-          return;
-        } else if (!allowsGroupJoins()) {
+        }
+        if (decision === 'deny') {
           // The Groups setting is Nobody: a first join request is refused,
           // and durably so — denyPendingJoin survives the relay's replays the
-          // same way an owner deny does. Already-queued rows above keep
-          // waiting for the owner's own decision. (Joining is a trust edge:
-          // this is where the setting finally has an engine.)
+          // same way an owner deny does. (Joining is a trust edge: this is
+          // where the setting finally has an engine.)
           denyPendingJoin(groupId, pk);
           return;
-        } else if (!(Array.isArray(members) && members.some((member) => memberKey(member) === pk))) {
+        }
+        if (decision === 'queue') {
           // First join request from this sender: it goes to the pending queue
           // for owner approval instead of onto the snapshot. Nothing auto-adds
           // a stranger, so their key request reads a snapshot that does not
@@ -955,6 +973,8 @@ export function useNIP29Group({ identity }) {
           }
           return;
         }
+        // 'self' (the creator's bootstrap join echo) and 'known' (a member of
+        // record re-stating a join) fall through to the no-op patch below.
         await patchMemberSnapshot(groupId, (members) => (members.includes(pk) ? members : [...members, pk]));
         if (useChatStore.getState().activeGroup?.id === groupId) {
           setGroupMembers(prev => {
