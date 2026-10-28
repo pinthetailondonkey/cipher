@@ -210,7 +210,16 @@ export function applyWatcherReport({ state, watcherUrl, report, currency, thresh
   if (!report || report.source !== 'watcher' || !report.txid) {
     throw new Error('Only a watcher report can move a payment to seen or confirmed.');
   }
-  if (amount != null && amount !== '') {
+  // A demand that was handed in must be a real, positive amount: null, an
+  // empty string and zero used to skip the check, so a 1-sat report confirmed
+  // an order with no price. Only an argument left out entirely (undefined)
+  // means the caller is walking states without a demand.
+  if (amount !== undefined) {
+    const asset = assetOf(currency);
+    const demanded = asset ? decimalUnits(amount, asset.scale) : null;
+    if (demanded == null || demanded <= 0n) {
+      throw new Error('The order has no amount to check the payment against.');
+    }
     if (report.amount == null || report.amount === '') {
       throw new Error('The watcher did not report an amount.');
     }

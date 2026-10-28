@@ -194,3 +194,18 @@ test('confirmation depth is per currency, and a flag alone cannot confirm', () =
     'confirmed',
   );
 });
+
+const watcherArgs = (extra) => ({
+  state: 'seen',
+  watcherUrl: 'http://watcher.example',
+  currency: 'btc',
+  report: { source: 'watcher', txid: 'ab', confirmations: 3, amount: '0.00000001' },
+  ...extra,
+});
+
+test('a demand with no amount, an empty one or a zero one never confirms', () => {
+  for (const amount of [null, '', '0', '0.0', '0.00000000']) {
+    assert.throws(() => applyWatcherReport(watcherArgs({ amount })), /amount/i, `amount ${JSON.stringify(amount)}`);
+  }
+  assert.equal(applyWatcherReport(watcherArgs({ amount: '0.00000001' })), 'confirmed');
+});
