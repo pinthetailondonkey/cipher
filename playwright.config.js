@@ -14,7 +14,14 @@ export default defineConfig({
   },
   projects: [
     {
+      // Desktop Chromium with a virtual WebAuthn authenticator (PRF).
+      name: 'chromium',
+      testMatch: /devicePrf\.spec\.js/,
+      use: { viewport: { width: 1000, height: 700 } },
+    },
+    {
       name: 'iphone',
+      testIgnore: /devicePrf\.spec\.js/,
       use: {
         viewport: { width: 390, height: 844 },
         userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15',
