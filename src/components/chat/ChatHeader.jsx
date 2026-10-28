@@ -127,7 +127,13 @@ export default function ChatHeader({ mode }) {
         <button
           type="button"
           className="absolute left-1/2 flex min-w-0 -translate-x-1/2 flex-col items-center gap-0.5"
-          onClick={() => mode === 'dm' && setProfilePubkey(activeDm)}
+          onClick={() => {
+            // The title is the door to what it names: a person's profile, or
+            // the group's own information. The long press stays for people
+            // who reach for it, but an ordinary tap must not do nothing.
+            if (mode === 'dm') setProfilePubkey(activeDm);
+            else setShowGroupInfo(true);
+          }}
           onPointerDown={startGroupInfoHold}
           onPointerUp={cancelHold}
           onPointerLeave={cancelHold}
