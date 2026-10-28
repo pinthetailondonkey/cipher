@@ -52,12 +52,15 @@ export default function MyProfileModal({ identity }) {
   const name = noHexName(profile, identity?.pk);
 
   return (
-    <Sheet open={isOpen} onClose={() => setShowMyProfile(false)} title="My profile">
+    // The card draws its own header: the person's own name. bareHeader keeps
+    // the shared bar from drawing a second one above it, and labelledBy names
+    // the dialog after the heading that is actually on screen.
+    <Sheet open={isOpen} onClose={() => setShowMyProfile(false)} label="My profile" labelledBy="my-profile-name" bareHeader>
       <div className="pb-4">
         <div className="flex items-center gap-4">
           <Avatar src={profile.picture} name={name} size="lg" />
           <div className="min-w-0">
-            <h2 className="truncate text-[22px] font-bold tracking-tight text-ink">{name}</h2>
+            <h2 id="my-profile-name" className="truncate text-[22px] font-bold tracking-tight text-ink">{name}</h2>
             <p className="truncate text-[13px] text-inkMuted">{identity?.pk ? shortNpub(identity.pk) : 'No key loaded'}</p>
           </div>
         </div>
