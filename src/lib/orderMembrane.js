@@ -148,13 +148,14 @@ function decodeOp(payload) {
       // the door (security S7).
       if (typeof payload.expectedRevision !== 'number') return { ok: false, reason: 'malformed' };
       if (payload.currency !== 'btc' && payload.currency !== 'xmr') return { ok: false, reason: 'malformed' };
+      let coinAmount;
       try {
-        acceptAmount(payload.coinAmount, payload.currency);
+        coinAmount = acceptAmount(payload.coinAmount, payload.currency);
       } catch {
         return { ok: false, reason: 'malformed' };
       }
       if (!Number.isFinite(payload.issuedAt) || payload.issuedAt <= 0) return { ok: false, reason: 'malformed' };
-      return { ok: true, op: { type: 'accept_order', expectedRevision: payload.expectedRevision, currency: payload.currency, coinAmount: payload.coinAmount, issuedAt: payload.issuedAt } };
+      return { ok: true, op: { type: 'accept_order', expectedRevision: payload.expectedRevision, currency: payload.currency, coinAmount, issuedAt: payload.issuedAt } };
     }
     case 'decline_order':
     case 'mark_shipped':

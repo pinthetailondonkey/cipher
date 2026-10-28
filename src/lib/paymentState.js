@@ -149,10 +149,13 @@ export function nextPaymentState(current, event) {
 // `confirmed: true` on the report is not enough. The count has to clear the threshold.
 
 
+// A coin amount is a decimal string (or a BigInt of whole coins). A JS number
+// is a binary float, so 0.1 + 0.2 and a 17-digit amount are not the figure
+// anyone wrote: a number is never read as a coin amount, even a clean one,
+// and the boundary that receives it must quote it as text first.
 function decimalUnits(value, scale) {
-  const text = typeof value === 'number' && Number.isFinite(value)
-    ? value.toFixed(scale).replace(/0+$/, '').replace(/\.$/, '')
-    : String(value ?? '').trim();
+  if (typeof value !== 'string' && typeof value !== 'bigint') return null;
+  const text = String(value).trim();
   if (!/^\d+(\.\d+)?$/.test(text)) return null;
   const [whole, frac = ''] = text.split('.');
   if (frac.length > scale) return null;

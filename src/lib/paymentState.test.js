@@ -5,6 +5,7 @@ import {
   acceptanceDemand,
   amountCovers,
   applyWatcherReport,
+  coinUnits,
   confirmationsRequired,
   listedItem,
   nextPaymentState,
@@ -208,4 +209,21 @@ test('a demand with no amount, an empty one or a zero one never confirms', () =>
     assert.throws(() => applyWatcherReport(watcherArgs({ amount })), /amount/i, `amount ${JSON.stringify(amount)}`);
   }
   assert.equal(applyWatcherReport(watcherArgs({ amount: '0.00000001' })), 'confirmed');
+});
+
+test('a float is not a coin amount: a JS number never reads as one', () => {
+  for (const value of [0.5, 0.1, 1, 0.00000001, 1e-7, NaN, Infinity]) {
+    assert.equal(coinUnits(value, 'btc'), null, String(value));
+    assert.equal(amountCovers(value, '0.00000001', 'btc'), false, `reported ${value}`);
+    assert.equal(amountCovers('1', value, 'btc'), false, `expected ${value}`);
+  }
+  assert.equal(coinUnits('0.5', 'btc'), 50000000n);
+  assert.equal(coinUnits('0.5', 'xmr'), 500000000000n);
+  // 0.1 + 0.2 is not 0.3 as a float; as text there is no such drift.
+  assert.equal(amountCovers('0.3', '0.3', 'btc'), true);
+  assert.throws(
+    () => applyWatcherReport(watcherArgs({ amount: '0.00000001', report: { source: 'watcher', txid: 'ab', confirmations: 3, amount: 0.5 } })),
+    /short of the order/,
+  );
+  assert.throws(() => applyWatcherReport(watcherArgs({ amount: 0.5 })), /amount/i);
 });

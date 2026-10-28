@@ -122,10 +122,12 @@ export function atomicToCoins(value, currency) {
   return unitsToCoins(units, currency);
 }
 
-// A piconero amount can pass 2^53, where JSON.parse would round it. Quote
-// every integer amount before parsing so no digit is lost.
+// A piconero amount can pass 2^53, where JSON.parse would round it, and a
+// bitcoin amount parsed as a number is a binary float. Quote every plain
+// number under an "amount" key before parsing so no digit is lost and no
+// amount ever becomes a float.
 export function parseExactAmounts(text) {
-  return JSON.parse(String(text).replace(/("amount"\s*:\s*)(\d+)/g, '$1"$2"'));
+  return JSON.parse(String(text).replace(/("amount"\s*:\s*)(\d+(?:\.\d+)?)(?![\d.eE])/g, '$1"$2"'));
 }
 
 export function moneroRows(rows) {
