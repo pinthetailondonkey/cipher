@@ -1,4 +1,4 @@
-const CACHE_NAME = 'cipher-shell-v1';
+const CACHE_NAME = 'cipher-shell-v2';
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
@@ -24,6 +24,14 @@ self.addEventListener('fetch', (event) => {
   if (request.method !== 'GET' || url.origin !== self.location.origin) return;
 
   if (request.mode === 'navigate') {
+    // Only the app's own address is the app shell. Pages that sit beside it
+    // (/download, /privacy) are their own documents: cached as the shell they
+    // would be what opens offline instead of the messenger, and offline they
+    // simply fail rather than pretend to be the app.
+    if (url.pathname !== '/') {
+      event.respondWith(fetch(request));
+      return;
+    }
     event.respondWith(
       fetch(request)
         .then(async (response) => {
