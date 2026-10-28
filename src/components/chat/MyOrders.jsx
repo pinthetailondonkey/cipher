@@ -65,7 +65,7 @@ export default function MyOrders({ dms = null, profiles = null, onBack, onOpenCh
               role="tab"
               aria-selected={side === view.id}
               onClick={() => { haptic('light'); setSide(view.id); }}
-              className={`min-h-[40px] rounded-lg py-2 text-[13px] font-bold ${side === view.id ? 'bg-accent text-accentInk' : 'text-inkMuted'}`}
+              className={`min-h-[44px] rounded-lg py-2 text-[13px] font-bold ${side === view.id ? 'bg-accent text-accentInk' : 'text-inkMuted'}`}
             >
               {view.label}
             </button>
