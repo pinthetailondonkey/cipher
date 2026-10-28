@@ -131,6 +131,7 @@ export default function GroupView({
   handleImageUpload,
   startRecording,
   stopRecording,
+  cancelRecording,
   fetchGroupMembers,
   fetchPinnedMessage,
   pinMessage,
@@ -403,7 +404,7 @@ export default function GroupView({
         </div>
       )}
       <div className="pb-safe">
-        <MessageInput sendMessage={sendGroupText || sendMessage} handleImageUpload={handleImageUpload} startRecording={startRecording} stopRecording={stopRecording} />
+        <MessageInput sendMessage={sendGroupText || sendMessage} handleImageUpload={handleImageUpload} startRecording={startRecording} stopRecording={stopRecording} cancelRecording={cancelRecording} />
       </div>
       <ForwardPicker open={forwardOpen} onClose={closeForward} onPick={forwardTo} selectedCount={selectedIds.length} />
       </>

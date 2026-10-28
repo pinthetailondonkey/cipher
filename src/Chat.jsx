@@ -94,6 +94,7 @@ export default function Chat({ identity }) {
     handleImageUpload: composer.handleImageUpload,
     startRecording: composer.startRecording,
     stopRecording: composer.stopRecording,
+    cancelRecording: composer.cancelRecording,
   };
 
   const thread = (view === 'dm' && activeDm) ? (

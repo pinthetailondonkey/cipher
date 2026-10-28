@@ -10,7 +10,7 @@ import { useChatStore } from '../../store/chatStore';
 
 const EMPTY_THREAD = [];
 
-export default function DmView({ identity, sendMessage, handleMessageAction, handleImageUpload, startRecording, stopRecording, sendDM }) {
+export default function DmView({ identity, sendMessage, handleMessageAction, handleImageUpload, startRecording, stopRecording, cancelRecording, sendDM }) {
   const activeDm = useChatStore((state) => state.activeDm);
   const thread = useChatStore((state) => state.dms[state.activeDm]);
   // The fallback has to live OUTSIDE the selector: a fresh `[]` handed to
@@ -88,7 +88,7 @@ export default function DmView({ identity, sendMessage, handleMessageAction, han
         </div>
       )}
       <div className="pb-safe">
-        <MessageInput sendMessage={sendMessage} handleImageUpload={handleImageUpload} startRecording={startRecording} stopRecording={stopRecording} onPaymentRequest={requestPayment} />
+        <MessageInput sendMessage={sendMessage} handleImageUpload={handleImageUpload} startRecording={startRecording} stopRecording={stopRecording} cancelRecording={cancelRecording} onPaymentRequest={requestPayment} />
       </div>
       </div>
       <ForwardPicker open={forwardOpen} onClose={closeForward} onPick={forwardTo} selectedCount={selectedIds.length} />

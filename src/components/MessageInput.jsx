@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
-import { Camera, FileText, Image, Mic, Plus, SendHorizontal, Square, Wallet } from 'lucide-react';
+import { Camera, FileText, Image, Mic, Plus, SendHorizontal, Square, Wallet, X } from 'lucide-react';
 import { useChatStore } from '../store/chatStore';
 import Sheet from './ui/Sheet';
 import IconButton from './ui/IconButton';
@@ -23,7 +23,7 @@ function clockLabel(seconds) {
   return `${m}:${String(s).padStart(2, '0')}`;
 }
 
-export default function MessageInput({ sendMessage, handleImageUpload, startRecording, stopRecording, onPaymentRequest }) {
+export default function MessageInput({ sendMessage, handleImageUpload, startRecording, stopRecording, cancelRecording, onPaymentRequest }) {
   const input = useChatStore((state) => state.newMessage);
   const setInput = useChatStore((state) => state.setNewMessage);
   const uploading = useChatStore((state) => state.uploadingImage);
@@ -209,9 +209,17 @@ export default function MessageInput({ sendMessage, handleImageUpload, startReco
         )}
       </div>
       {recording ? (
-        <button type="button" onClick={stopRecording} aria-label="Stop recording" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-danger text-accentInk">
-          <Square size={16} />
-        </button>
+        <>
+          {/* Two doors, both named: throwing a recording away is its own
+              action, not "stop" with a side effect. Cancel releases the
+              microphone and sends nothing. */}
+          <button type="button" onClick={cancelRecording} aria-label="Cancel recording" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-line text-ink">
+            <X size={18} />
+          </button>
+          <button type="button" onClick={stopRecording} aria-label="Stop and send recording" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-danger text-accentInk">
+            <Square size={16} />
+          </button>
+        </>
       ) : (
         <button type="submit" disabled={uploading} aria-label="Send message" className={`flex shrink-0 items-center justify-center rounded-full bg-accent text-accentInk disabled:opacity-40 ${input.trim() ? 'h-10 w-10' : 'h-11 w-11'}`}>
           <SendHorizontal size={20} />

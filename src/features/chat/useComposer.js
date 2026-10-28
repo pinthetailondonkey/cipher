@@ -23,6 +23,9 @@ export function useComposer({ identity, sendDM, sendGroupMessage }) {
   const setIsRecording = useChatStore((s) => s.setIsRecording);
   const mediaRecorderRef = useRef(null);
   const audioChunksRef = useRef([]);
+  // A recording the person threw away must not upload on the way out. The
+  // recorder's own onstop still fires, so it reads this flag and returns.
+  const cancelledRef = useRef(false);
   const chatMountedRef = useRef(false);
 
   useEffect(() => {
@@ -226,9 +229,11 @@ export function useComposer({ identity, sendDM, sendGroupMessage }) {
       }
       const mediaRecorder = new MediaRecorder(stream);
       mediaRecorderRef.current = mediaRecorder;
+      cancelledRef.current = false;
       audioChunksRef.current = [];
       mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) audioChunksRef.current.push(e.data); };
       mediaRecorder.onstop = async () => {
+        if (cancelledRef.current) { cancelledRef.current = false; return; }
         if (!chatMountedRef.current) return;
         const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
         const file = new File([audioBlob], 'voice_note.webm', { type: 'audio/webm' });
@@ -262,5 +267,19 @@ export function useComposer({ identity, sendDM, sendGroupMessage }) {
       setIsRecording(false);
     }
   };
-  return { sendMessage, handleImageUpload, startRecording, stopRecording };
+  // Cancel is not Stop with the send removed: the microphone is released and
+  // the chunks are dropped before the recorder can hand them anywhere.
+  const cancelRecording = () => {
+    const recorder = mediaRecorderRef.current;
+    if (!recorder && !isRecording) return;
+    cancelledRef.current = true;
+    audioChunksRef.current = [];
+    if (recorder) {
+      if (recorder.state !== 'inactive') recorder.stop();
+      recorder.stream.getTracks().forEach((track) => track.stop());
+      mediaRecorderRef.current = null;
+    }
+    setIsRecording(false);
+  };
+  return { sendMessage, handleImageUpload, startRecording, stopRecording, cancelRecording };
 }
