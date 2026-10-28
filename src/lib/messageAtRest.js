@@ -52,6 +52,13 @@ let getSkBytes = () => {
   } catch { return null; }
 };
 
+// The session secret, for other at-rest stores (src/lib/crypto/groupKeyAtRest.js)
+// that derive their own domain-separated key from it. Same provider, so lock,
+// unlock and test overrides reach every store at once.
+export function atRestSecretBytes() {
+  return getSkBytes();
+}
+
 let keyCache = { hex: null, key: null };
 
 function toHex(bytes) {
