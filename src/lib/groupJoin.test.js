@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
-import { duplicateClaimed, heldGroupRow, joinGroup, joinRefusal, mergeGroupProfile, relayCopyOverRow } from './groupJoin.js';
+import { PENDING_JOIN, duplicateClaimed, heldGroupRow, joinGroup, joinRefusal, mergeGroupProfile, relayCopyOverRow } from './groupJoin.js';
 import { getMyGroups } from './myGroups.js';
 
 function memoryStorage() {
@@ -199,6 +199,25 @@ test('a pending join survives a directory rebuild and a history fetch re-saving 
   assert.equal(relayCopyOverRow(local, fromRelay).creator, 'ab'.repeat(32), 'the creator stays the device\'s');
   // A row with no pending state gains none.
   assert.equal(relayCopyOverRow({ id: 'g2' }, { id: 'g2' }).membership, undefined);
+});
+
+// The waiting state, at the screen. A pending row opens the waiting panel and
+// not GroupView — mounting GroupView is what starts the message, roster,
+// reaction and pin reads the relay refuses.
+test('a pending join draws the waiting state, and the waiting state mounts no group read', () => {
+  const read = (path) => fs.readFileSync(new URL(path, import.meta.url), 'utf8');
+  const chat = read('../Chat.jsx');
+  const waiting = read('../components/chat/GroupWaiting.jsx');
+  assert.match(chat, /activeGroup\.membership === 'pending'/, 'Chat.jsx has the branch');
+  assert.match(chat, /<GroupWaiting group=\{activeGroup\}/, 'and draws the waiting panel in it');
+  assert.equal(PENDING_JOIN, "Request sent. Waiting on the owner's approval.", 'the approved sentence, verbatim');
+  assert.match(waiting, /\{PENDING_JOIN\}/, 'and the panel speaks the one sentence, from the one place');
+  assert.doesNotMatch(waiting, /^import .*(useNIP29Group|relayDirectoryRead|GroupView|MessageInput)/m,
+    'the waiting panel imports no group read and no composer');
+  // And the sentence never promises the room.
+  for (const promise of ['Joined group', "You're in", 'You are in']) {
+    assert.equal(waiting.includes(promise), false, `the waiting state must not say ${promise}`);
+  }
 });
 
 // Consumer witness: the proof is row 24's primitive, so this drives it from

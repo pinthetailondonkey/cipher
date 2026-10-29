@@ -202,14 +202,9 @@ export const useChatStore = create((set) => ({
     if (type === 'dm') {
       set({ view: 'dm', activeDm: id, activeGroup: null, typingUsers: {}, groupTypingUsers: {} });
     } else {
-      // A group whose join the relay has not confirmed is not a room yet.
-      // Opening it mounts the message, roster, reaction and pin reads — the
-      // exact reads the relay refuses — so the chat stays shut until a proof
-      // says the account is inside.
-      if (groupObj?.membership === 'pending') {
-        set({ view: 'list', activeGroup: null, activeDm: null });
-        return;
-      }
+      // A group whose join the relay has not confirmed opens as its waiting
+      // state, not as its chat: Chat.jsx draws the waiting panel for a
+      // pending row instead of GroupView, so none of the group reads mount.
       set({ view: 'group', activeGroup: groupObj, activeDm: null, typingUsers: {}, groupTypingUsers: {} });
     }
   },

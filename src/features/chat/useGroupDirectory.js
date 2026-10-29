@@ -41,10 +41,6 @@ export function useGroupDirectory({ identity, createGroupHook, setGroups }) {
     setGroupTypingUsers({});
     if (type === 'dm') {
       setActiveDm(id); setActiveGroup(null); setView('dm');
-    } else if (groupObj?.membership === 'pending') {
-      // Same gate as the store's own openChat: the chat does not mount for a
-      // join the relay has not confirmed.
-      setToast({ type: 'success', message: PENDING_JOIN });
     } else {
       setActiveGroup(groupObj); setActiveDm(null); setView('group');
     }

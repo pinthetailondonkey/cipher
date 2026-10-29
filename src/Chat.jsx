@@ -8,6 +8,7 @@ import SearchView from './components/chat/SearchView';
 import ChatLoading from './features/chat/ChatLoading';
 import ChatHome from './features/chat/ChatHome';
 import ChatOverlays from './features/chat/ChatOverlays';
+import GroupWaiting from './components/chat/GroupWaiting';
 import { useMyGroups, useGroupDirectory } from './features/chat/useGroupDirectory';
 import { useChatBootstrap } from './features/chat/useChatBootstrap';
 import { useCommerce } from './features/chat/useCommerce';
@@ -82,6 +83,7 @@ export default function Chat({ identity }) {
   const view = useChatStore((state) => state.view);
   const activeDm = useChatStore((state) => state.activeDm);
   const activeGroup = useChatStore((state) => state.activeGroup);
+  const setView = useChatStore((state) => state.setView);
 
   if (loading) return <ChatLoading />;
 
@@ -101,6 +103,10 @@ export default function Chat({ identity }) {
     <Suspense fallback={screenFallback}>
       <DmView {...threadProps} />
     </Suspense>
+  ) : (view === 'group' && activeGroup && activeGroup.membership === 'pending') ? (
+    // A join the relay has not confirmed shows the waiting state and mounts
+    // no group read at all: the reads are the thing that would be refused.
+    <GroupWaiting group={activeGroup} onBack={() => setView('list')} />
   ) : (view === 'group' && activeGroup) ? (
     <Suspense fallback={screenFallback}>
       <GroupView
