@@ -237,7 +237,12 @@ export async function openCarrierNote({ fragment, origin = noteOrigin(), fetchIm
   } catch {
     throw new Error('The note host could not be reached. The note was not opened.');
   }
-  if (response.status === 404) throw new Error('This note has already been read.');
+  // A 404 says the host does not have it, and nothing more. It cannot say who
+  // read it: a reader whose own fetch crossed the deadline and burned the note
+  // gets this same answer, and telling them it "has already been read" claims a
+  // read they never had, about a note they will never see. The relay path
+  // already carries the line that is true in every case, so this one uses it.
+  if (response.status === 404) throw new Error('The note is gone or was never here.');
   if (!response.ok) throw new Error('The note host refused the note. It was not opened.');
   const sealed = new Uint8Array(await response.arrayBuffer());
   const aesKey = await subtle().importKey('raw', parts.key, 'AES-GCM', false, ['decrypt']);
