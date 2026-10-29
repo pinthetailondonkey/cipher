@@ -378,7 +378,16 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
           const current = orderState(history, msg.id, msg, identity.pk, msg.pubkey).paymentState;
           paymentState = nextPaymentState(current, 'see');
         } catch (error) {
-          setToast({ type: 'error', message: error.message });
+          // Row 19c-s. This catch reads the order's history and its state,
+          // so its errors are either this device's own (the database would
+          // not read) or a string that names a value off the card — the
+          // order status row an orderState throw interpolates is authored by
+          // whoever sent the card. Neither is a sentence this screen may
+          // print, and `error.message` alone can be undefined and render an
+          // empty toast on the money path. The trigger is the error; the
+          // words are this device's own, and they say what did not happen.
+          console.error('[orders] The payment state could not be read, so nothing was marked seen:', error);
+          setToast({ type: 'error', message: 'The payment was not marked seen. This device could not read the order. Try again; if it keeps failing, reload and try once more.' });
           setSelectedMessage(null);
           return true;
         }

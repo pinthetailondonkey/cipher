@@ -46,3 +46,21 @@ test('row 6b: no bare readPaymentAddresses()[currency] indexing survives in the 
     'row 6b: a bare readPaymentAddresses()[…] index is back in useCommerce.js — the rails are a { btc, xmr } literal and any other key reaches the prototype',
   );
 });
+
+// Row 19c-s. The confirm-payment catch used to hand the error's own message
+// straight to the toast, with no fallback sentence: `message: error.message`
+// can render nothing at all, and the string can name a value the card's
+// sender authored (orderState interpolates the order status). Shape, not
+// behaviour — what a person sees there is the screen's, not this file's.
+test('row 19c-s: the payment-state refusal speaks this device\'s words, never the error\'s', () => {
+  assert.equal(
+    /message: error\.message/.test(SOURCE),
+    false,
+    'row 19c-s: a toast is back to printing the error\'s own message — on the money path that can be empty text, or a string naming a value the card\'s sender authored',
+  );
+  assert.match(
+    SOURCE,
+    /message: 'The payment was not marked seen\. This device could not read the order\. Try again; if it keeps failing, reload and try once more\.'/,
+    'row 19c-s: the payment-state refusal no longer says what did not happen in this device\'s own words',
+  );
+});
