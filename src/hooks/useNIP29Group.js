@@ -14,6 +14,7 @@ import { authorizeGroupControl, authorizeGroupPin, authorizeMemberSnapshot, grou
 import { grantKeyRequest, loadMemberSnapshot, loadMemberSnapshotRecord, memberKey, patchMemberSnapshot, rememberMembers, rotateGroupEpoch } from '../lib/crypto/groupKeyRotation';
 import { generateGroupKey } from '../lib/crypto/groupCipher';
 import { heldGroupRow } from '../lib/groupJoin';
+import { ACCESS_PUBLIC, JOIN_APPROVAL, groupCreateTags } from '../lib/groupCreate';
 import { distributeGroupKey, epochsToBackfill } from '../lib/crypto/groupKeyDistribution';
 import { publishWriteAhead, startOutboxSync } from '../lib/outbox';
 import { groupSocketUrl } from '../lib/egress';
@@ -615,39 +616,46 @@ export function useNIP29Group({ identity }) {
     });
   }, [setGroupMessages]);
 
-  const createGroup = useCallback(async (name, about, isChannel, { listed = true } = {}) => {
+  const createGroup = useCallback(async (name, about, isChannel, { access = ACCESS_PUBLIC, joinPolicy = JOIN_APPROVAL } = {}) => {
     const pool = await getAuthenticatedPool(identity);
     const groupId = (globalThis.crypto?.randomUUID?.() || Date.now().toString()).replace(/-/g, '').slice(0, 16);
 
-    const createEv = finalizeEvent({
-      kind: 9007, created_at: Math.floor(Date.now() / 1000),
-      tags: [['h', groupId], ['name', name], ['about', about || ''], ['open'], ['p', identity.pk, 'admin']],
-      content: ''
-    }, identity.sk);
+    // The tags come from one pure builder so the wire shape is proved in a
+    // test rather than in a screen. An unknown level throws there instead of
+    // quietly creating a group more visible than the person asked for.
+    const tags = groupCreateTags({ name, about, isChannel, access, joinPolicy, groupId, pubkey: identity.pk });
+    const createdAt = Math.floor(Date.now() / 1000);
+
+    const createEv = finalizeEvent({ kind: 9007, created_at: createdAt, tags: tags.create, content: '' }, identity.sk);
 
     const r9007 = await Promise.allSettled(pool.publish(groupRelays, createEv));
     const ok = r9007.some(r => r.status === 'fulfilled');
     if (!ok) throw new Error('No relay accepted 9007');
 
-    // Unlisted spaces omit the [cipher] discovery tag, so the app's search
-    // screen never picks them up; members still reach them by link or QR.
-    const metaTags = [['h', groupId], ['name', name], ['about', about || '']];
-    if (listed) metaTags.push(['cipher', 'true']);
-    if (isChannel) {
-      metaTags.push(['channel', 'true']);
-      metaTags.push(['broadcast', 'true']);
-    }
-
-    const metaEv = finalizeEvent({
-      kind: 9002, created_at: Math.floor(Date.now() / 1000),
-      tags: metaTags,
-      content: ''
-    }, identity.sk);
+    const metaEv = finalizeEvent({ kind: 9002, created_at: createdAt, tags: tags.meta, content: '' }, identity.sk);
     await Promise.allSettled(pool.publish(groupRelays, metaEv));
 
+    // The join policy also goes out on its own 9002, through the update path
+    // that has been seen working. Whether the relay honours the tag set on the
+    // create event above is UNPROVEN, so the end state never depends on it.
+    //
+    // It carries the FULL metadata, not a bare ['join'] tag. A 9002 is a state
+    // event: if this relay replaces the group's metadata with whatever the
+    // newest one says, a bare join event would erase the name, the about and
+    // the discovery tag. Sending the same tags again costs nothing and is safe
+    // whether the relay adds to the state or replaces it.
+    if (joinPolicy === JOIN_APPROVAL) {
+      const policyEv = finalizeEvent({
+        kind: 9002, created_at: createdAt + 1,
+        tags: tags.meta,
+        content: ''
+      }, identity.sk);
+      await Promise.allSettled(pool.publish(groupRelays, policyEv));
+    }
+
     const joinEv = finalizeEvent({
-      kind: 9021, created_at: Math.floor(Date.now() / 1000),
-      tags: [['h', groupId]], content: 'Creator'
+      kind: 9021, created_at: createdAt,
+      tags: tags.join, content: 'Creator'
     }, identity.sk);
     await Promise.allSettled(pool.publish(groupRelays, joinEv));
 
@@ -668,7 +676,7 @@ export function useNIP29Group({ identity }) {
     appendSystemMessage(groupId, 'You created the group');
     // metaAt marks the bootstrap 9002 as the applied metadata: a replayed
     // older or equal metadata event must not announce a fake rename.
-    const newGroup = { id: groupId, name, about: about || '', isChannel, creator: identity.pk, members: [identity.pk], metaAt: metaEv.created_at };
+    const newGroup = { id: groupId, name, about: about || '', isChannel, access, creator: identity.pk, members: [identity.pk], metaAt: metaEv.created_at };
 
     const localGroups = getMyGroups(identity.pk);
     if (!localGroups.find(g => g.id === groupId)) {

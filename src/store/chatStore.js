@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { scopedGet, scopedSet } from '../lib/storage';
 import { markChatRead } from '../db';
 import { orderState } from '../lib/orderActions';
+import { ACCESS_PUBLIC } from '../lib/groupCreate';
 
 const safeStorage = {
   getItem(key) {
@@ -400,11 +401,15 @@ export const useChatStore = create((set) => ({
   newGroupName: '',
   newGroupAbout: '',
   isChannel: false,
+  // Who may read the group being created. The store holds the choice so the
+  // form survives a failed create; it is not persisted, same as the name.
+  groupAccess: ACCESS_PUBLIC,
   replyingTo: null,
   setNewMessage: (v) => set({ newMessage: v }),
   setNewGroupName: (v) => set({ newGroupName: v }),
   setNewGroupAbout: (v) => set({ newGroupAbout: v }),
   setIsChannel: (v) => set({ isChannel: v }),
+  setGroupAccess: (v) => set({ groupAccess: v }),
   setReplyingTo: (v) => set({ replyingTo: v }),
 
   // PROFILE EDITOR

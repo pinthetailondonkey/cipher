@@ -5,6 +5,7 @@ import { groupRelays, queryWithTimeout } from '../../lib/relays';
 import { getAuthenticatedPool } from '../../lib/pool';
 import { useChatStore } from '../../store/chatStore';
 import { PENDING_JOIN, heldGroupRow, joinGroup, joinRefusal } from '../../lib/groupJoin';
+import { ACCESS_PUBLIC } from '../../lib/groupCreate';
 
 export function useMyGroups(pubkey) {
   const setGroupsStore = useChatStore((s) => s.setGroups);
@@ -109,20 +110,24 @@ export function useGroupDirectory({ identity, createGroupHook, setGroups }) {
     }
   };
 
-  const createGroup = async (e, listed = true) => {
+  const createGroup = async (e, access = ACCESS_PUBLIC) => {
     if (e) e.preventDefault();
     const state = useChatStore.getState();
     if (!state.newGroupName.trim()) return;
     const gName = state.newGroupName;
     const gAbout = state.newGroupAbout;
     const gChannel = state.isChannel;
+    // Private is a group choice. A menu stays joinable and listed, so the
+    // level the screen held is ignored on the menu axis rather than trusted.
+    const gAccess = gChannel ? ACCESS_PUBLIC : access;
     state.setShowCreateGroup(false);
     state.setShowMenu(false);
     state.setNewGroupName(""); 
     state.setNewGroupAbout(""); 
     state.setIsChannel(false);
+    state.setGroupAccess(ACCESS_PUBLIC);
     try {
-      const group = await createGroupHook(gName.trim(), gAbout.trim(), gChannel, { listed });
+      const group = await createGroupHook(gName.trim(), gAbout.trim(), gChannel, { access: gAccess });
       if (group) openChat('group', group.id, group);
       setToast({ type: 'success', message: 'Group created!' });
     } catch (err) { 
@@ -131,6 +136,7 @@ export function useGroupDirectory({ identity, createGroupHook, setGroups }) {
       state.setNewGroupName(gName);
       state.setNewGroupAbout(gAbout);
       state.setIsChannel(gChannel);
+      state.setGroupAccess(gAccess);
       setToast({ type: 'error', message: 'Failed to create group' });
     }
   };
