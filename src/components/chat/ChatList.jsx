@@ -447,7 +447,11 @@ export default function ChatList({ onOpenChat, onRefresh }) {
   const previewOf = (chat) => {
     const m = chat.lastMsg;
     if (!m) return null;
-    const text = m.data?.type === 'cipher_order' ? 'Order'
+    // Every kind the thread draws an order card for reads as the same word.
+    // One phrase, not one per kind: the row says a card is an order, and the
+    // card and the Orders tab say what state it is in. Naming the state here
+    // would be a headline this screen does not own, and would be new copy.
+    const text = ['cipher_order', 'order_request', 'order_update'].includes(m.data?.type) ? 'Order'
       : m.data?.type === 'image' ? 'Photo'
       : m.data?.type === 'audio' ? 'Voice note'
       : (m.data?.message || m.rawContent || 'Message');

@@ -326,6 +326,31 @@ test('one header line: the compose button starts a chat, the overflow keeps ever
   assert.equal(hosts.filter((host) => host.props.className && String(host.props.className).includes('inset-0')).length, 0, 'no scrim is left behind');
 });
 
+test('an order card in the list reads as an order, never as the word Message', () => {
+  globalThis.window = globalThis.window || { setInterval: () => 0, clearInterval: () => {} };
+  seedStore();
+  const requestDm = 'a'.repeat(64);
+  const updateDm = 'b'.repeat(64);
+  app.useChatStore.setState({
+    dms: {
+      [requestDm]: [{ pubkey: requestDm, timestamp: 40, isSender: true, data: { type: 'order_request', product: { title: 'Blue Dream' } } }],
+      // An order whose only saved row is an update — the shape the Orders tab
+      // was dropping, and the one the thread still draws a card for.
+      [updateDm]: [{ pubkey: updateDm, timestamp: 50, isSender: false, data: { type: 'order_update', orderId: 'order-1', status: 'paid' } }],
+    },
+    profiles: {
+      ...app.useChatStore.getState().profiles,
+      [requestDm]: { displayName: 'Order Sender', name: 'Order Sender' },
+      [updateDm]: { displayName: 'Order Peer', name: 'Order Peer' },
+    },
+  });
+  const tree = createTree(app.ChatList, { onOpenChat: () => {}, onRefresh: null });
+  const { rows } = tree.render();
+  const preview = (name) => rows.find((row) => row.name === name)?.previewText;
+  assert.equal(preview('Order Sender'), 'Order', 'an order request reads as an order');
+  assert.equal(preview('Order Peer'), 'Order', 'an order known only by its update reads as an order too');
+});
+
 test('the filter field always sits under the title and narrows the list as it is typed', () => {
   globalThis.window = globalThis.window || { setInterval: () => 0, clearInterval: () => {} };
   seedStore();
