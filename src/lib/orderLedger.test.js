@@ -176,6 +176,28 @@ test('an update-only order that carries a verified receipt draws its row AND its
   assert.equal(orderState(thread, row.orderId, row.message, buyer, vendor).status, 'paid');
 });
 
+test('a receipt that names two other keys does not decide which ledger the order is on', () => {
+  const me = 'b'.repeat(64);
+  const strangerBuyer = 'd'.repeat(64);
+  const strangerVendor = 'e'.repeat(64);
+  // A body naming neither side of this device — a receipt filed into this chat
+  // by a third party, or a fixture written by someone else's account. The
+  // message direction says this device SENT it, so the honest reading is a
+  // purchase this device placed; the foreign receipt's buyer field would say
+  // the opposite, and the unguarded rule believes it.
+  const foreign = {
+    orderId: 'order-X', id: 'order-X', buyer: strangerBuyer, vendor: strangerVendor,
+    currency: 'xmr', address: '8secret', amount: '1', txid: 'aa',
+    at: 1_700_000_000, outcome: 'confirmed',
+  };
+  const thread = [update('u1', 'order-X', true, 100, { receipt: { body: foreign } })];
+  const purchases = orderRows({ peer: thread }, { side: 'purchases', ownPubkey: me });
+  const incoming = orderRows({ peer: thread }, { side: 'incoming', ownPubkey: me });
+  assert.equal(purchases.length, 1, 'a receipt naming two other keys must not file this row as an incoming order');
+  assert.equal(purchases[0].isBuyer, true, 'with the foreign receipt set aside, the sent update reads as this device\'s purchase');
+  assert.equal(incoming.length, 0);
+});
+
 test('an acceptance-only order reads as the buyer\'s purchase and the vendor\'s incoming order', () => {
   const buyer = 'b'.repeat(64);
   const vendor = 'c'.repeat(64);

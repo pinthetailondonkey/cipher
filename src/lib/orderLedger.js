@@ -74,7 +74,11 @@ function anchorBeats(candidate, current) {
 // is gone are usually the OTHER party's, so the anchored message's own flag
 // would file a buyer's purchase under "incoming". The direction is read from
 // what the rows themselves prove, in this order:
-//   1. a receipt names both sides — its buyer field decides;
+//   1. a receipt names both sides AND names this device — its buyer field
+//      decides. A receipt naming two other keys speaks for nobody here: it is
+//      somebody else's receipt, or a fixture written from another account, and
+//      a row was being filed on the wrong ledger because that body named a
+//      stranger as the buyer. It is set aside and the rule moves on;
 //   2. the update that issued the payment pair was sent by the vendor, so a
 //      received one is a purchase and a sent one is an incoming order;
 //   3. nothing proves it: fall back to the anchored message's own flag. A row
@@ -87,7 +91,11 @@ function isBuyerOf(anchor, messages, ownPubkey) {
       const body = message?.data?.receipt?.body;
       return Boolean(body && body.buyer && body.vendor);
     });
-    if (receipted) return String(receipted.data.receipt.body.buyer).toLowerCase() === me;
+    if (receipted) {
+      const body = receipted.data.receipt.body;
+      const buyer = String(body.buyer).toLowerCase();
+      if (buyer === me || String(body.vendor).toLowerCase() === me) return buyer === me;
+    }
   }
   const issuer = messages.find((message) => (
     message?.data?.type === 'order_update' && issuedPaymentMethods(message.data)
