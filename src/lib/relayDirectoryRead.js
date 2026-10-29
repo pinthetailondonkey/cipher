@@ -10,6 +10,7 @@
 // proves it did not.
 
 import { groupRelays, groupOnlyRelays } from './relays';
+import { installAutoAuth, reissueAfterAuth } from './pool';
 
 export const READ_OK = 'ok';
 export const READ_UNAVAILABLE = 'unavailable';
@@ -53,9 +54,16 @@ export function isGroupHost(url) {
 // by that version, so it is not used here.
 export async function defaultPool(identity) {
   const { SimplePool } = await import('nostr-tools');
+  const pool = new SimplePool();
   const signer = await signerFor(identity);
-  if (!signer) return new SimplePool();
-  return new SimplePool({ automaticallyAuth: (url) => (isGroupHost(url) ? signer : null) });
+  if (!signer) return pool;
+  // `installAutoAuth` hands `signFor` the relay's host first and its own URL
+  // second. `isGroupHost` takes a URL: given a bare host its internal
+  // hostOf() gets '' and the group relay itself comes back false — a pool that
+  // signs for nobody, with every "nothing leaked to a public relay" test still
+  // green. The URL argument is the one used here for exactly that reason.
+  installAutoAuth(pool, (_host, url) => (isGroupHost(url) ? signer : null));
+  return pool;
 }
 
 async function readOneRelay(pool, url, filter, endsAt, events) {
@@ -96,7 +104,7 @@ async function readOneRelay(pool, url, filter, endsAt, events) {
     // asks and a pool that cannot answer still look the same here. That is the
     // point — the read must stop claiming completion either way, whether the
     // account could prove itself or not.
-    const challengeBefore = relay.challenge || null;
+    let challengeBefore = relay.challenge || null;
     const askedForProofSince = () => !!relay.challenge && relay.challenge !== challengeBefore;
     // End-of-stored-events from a relay that only asked this account to prove
     // itself once the request was already out is not proof the read completed:
@@ -104,39 +112,69 @@ async function readOneRelay(pool, url, filter, endsAt, events) {
     // 2026-10-29, plain build): it answers the unproved request with EOSE
     // first, finishes the AUTH afterwards, and never re-sends the request —
     // so the rows behind the proof never arrive and the screen must not be
-    // told the read completed. Re-issuing the request after the proof belongs
-    // to one shared helper (OPSEC's, abstract-pool.js has the only one today);
-    // until this reader calls it, the honest answer is the refusal sentence.
-    const settleUnproved = () => settle(
-      REFUSED,
-      'auth-required: the relay asked this account to prove itself after the request had gone out',
-    );
-    try {
-      sub = relay.subscribe([filter], {
-        onevent: (event) => {
-          if (settled) return;
-          if (event?.id) {
-            if (seen.has(event.id)) return;
-            seen.add(event.id);
-          }
-          events.push(event);
-        },
-        oneose: () => {
-          if (settled) return;
-          // An answer given to an account that had not been asked to prove
-          // itself is the public half of the read, not the end of it.
-          if (askedForProofSince()) return settleUnproved();
+    // told the read completed. So the request is asked once more, through the
+    // one shared helper in pool.js: it waits for this pool's own signer to
+    // have answered, so the second ask goes out behind the proof, and it
+    // resolves null when no proof came inside what is left of this read's
+    // deadline. Null, or a second answer that is still unproved, is the
+    // refusal sentence — never a hang, and never a loop.
+    const settleUnproved = () => {
+      settle(
+        REFUSED,
+        'auth-required: the relay asked this account to prove itself after the request had gone out',
+      );
+      try { sub?.close('auth-required'); } catch { /* already closed */ }
+    };
+    let askedAgain = false;
+    const handlers = {
+      onevent: (event) => {
+        if (settled) return;
+        if (event?.id) {
+          if (seen.has(event.id)) return;
+          seen.add(event.id);
+        }
+        events.push(event);
+      },
+      oneose: () => {
+        if (settled) return;
+        // An answer given to an account that had not been asked to prove
+        // itself is the public half of the read, not the end of it.
+        if (!askedForProofSince()) {
           // Otherwise this is the whole answer, and there is nothing left to
           // wait for: the deadline already bounds a relay that goes silent,
           // so no second timer is added here.
           return done();
-        },
-        onclose: (reason) => {
-          if (settled) return;
-          const refused = String(reason || 'closed');
-          settle(/auth/i.test(refused) ? REFUSED : 'closed', refused);
-        },
-      });
+        }
+        if (askedAgain) return settleUnproved();
+        askedAgain = true;
+        // The challenge standing now was asked for the first request. The
+        // second ask gets its own baseline, so an answer to it is judged on
+        // whether the relay asked *again* after that one went out.
+        challengeBefore = relay.challenge || null;
+        return reissueAfterAuth(pool, relay, [filter], handlers, Math.max(1, endsAt - Date.now()))
+          .then((second) => {
+            if (settled) {
+              try { second?.close('settled'); } catch { /* already closed */ }
+              return undefined;
+            }
+            if (!second) return settleUnproved();
+            // The first subscription already reached end of stored events, so
+            // it is silent from here; it is left for pool.close() at settle
+            // rather than closed here, because closing it would fire this same
+            // onclose and be read as the read ending for another reason.
+            sub = second;
+            return undefined;
+          })
+          .catch(() => settleUnproved());
+      },
+      onclose: (reason) => {
+        if (settled) return;
+        const refused = String(reason || 'closed');
+        settle(/auth/i.test(refused) ? REFUSED : 'closed', refused);
+      },
+    };
+    try {
+      sub = relay.subscribe([filter], handlers);
     } catch (error) {
       settle('closed', error?.message || 'could not subscribe');
     }

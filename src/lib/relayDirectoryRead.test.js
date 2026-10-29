@@ -1,9 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { defaultPool, readDirectory, whyUnavailable, READ_OK, READ_UNAVAILABLE } from './relayDirectoryRead.js';
+import { installAutoAuth } from './pool.js';
 
 const FILTER = { kinds: [39000, 9002], limit: 50 };
 const URL = 'wss://groups.example.test';
+const GROUP_URL = 'wss://groups.ciphertele.com';
+const STRANGER_URL = 'wss://relay.example';
 
 // The shape a real pool has. `behaviour` says what the relay does.
 function fakePool(behaviour) {
@@ -187,7 +190,133 @@ test('an answer that arrives before the account is proved is not proof the read 
   assert.deepEqual(result.events, [], 'events from an unproved answer are not published');
   assert.equal(result.answers[0].status, 'auth');
   assert.match(whyUnavailable(result.answers), /prove itself/);
-  assert.equal(state.subs, 1, 'the reader does not invent a re-issue of its own');
+  // This pool never installed a signer, so the shared helper finds no host it
+  // could answer for and the second ask cannot go out. That is the refusal,
+  // not a read held open: what arms the re-issue is installAutoAuth.
+  assert.equal(state.subs, 1, 'no installed signer, no second ask');
+});
+
+// A pool built the way defaultPool builds one: the factory installs the
+// signer, so the library calls it in ensureRelay exactly as it does in the
+// app, and answering a challenge is what makes a host eligible to wait on.
+function installedPool(url, signer, relayUrl = url) {
+  const state = { subs: 0, firstClosed: 0, signerCalls: 0 };
+  const relay = { url: relayUrl, challenge: null, onauth: null };
+  const pool = {
+    close() {},
+    destroy() {},
+    async ensureRelay() {
+      const sign = pool.automaticallyAuth?.(url);
+      if (sign) relay.onauth = sign;
+      return relay;
+    },
+  };
+  installAutoAuth(pool, (_host, seen) => (seen === url ? signer : null));
+  return { pool, relay, state };
+}
+
+// The whole defect row 18 was: the relay EOSEs the unproved request, asks for
+// proof afterwards, and never re-sends. Signing alone is not enough, so the
+// reader asks once more behind the proof. The first answer is the public half
+// and its events are not published; the second answer is the read.
+test('a request answered before the proof is asked a second time, and the second answer is the read', async () => {
+  const identity = { pk: 'ab'.repeat(32), sk: new Uint8Array(32).fill(7) };
+  let subscribes = 0;
+  const { pool, relay } = installedPool(GROUP_URL, (authEvent) => {
+    relay.authSigned = { ...authEvent, sig: 'signed' };
+    return relay.authSigned;
+  });
+  relay.subscribe = (_filters, params) => {
+    subscribes += 1;
+    const mine = subscribes;
+    queueMicrotask(() => {
+      if (mine === 1) {
+        // Public half: an answer, then the challenge, and the subscription is
+        // never re-sent by the library.
+        relay.challenge = 'challenge-1';
+        if (relay.onauth) relay.onauth({ kind: 22242, created_at: 0, tags: [], content: '' });
+        params.onevent?.({ id: 'public-only', kind: 39000, tags: [] });
+        params.oneose?.();
+        return;
+      }
+      params.onevent?.({ id: 'private-row', kind: 39000, tags: [] });
+      params.oneose?.();
+    });
+    return { close() { if (mine === 1) relay.firstClosed += 1; } };
+  };
+  const result = await readDirectory([GROUP_URL], FILTER, { identity, createPool: () => pool });
+  assert.equal(subscribes, 2, 'a second REQ went out after the proof, not a hang');
+  assert.equal(relay.authSigned?.kind, 22242, 'the proof was signed by this pool');
+  assert.equal(result.status, READ_OK, 'the second answer is the completed read');
+  // Both halves belong once the read is proved: the public answer was the
+  // same directory served without the proof, and the second answer completes
+  // it. Dedup is by event id, so a row the relay sent twice is published once.
+  assert.deepEqual(result.events.map((event) => event.id).sort(), ['private-row', 'public-only']);
+});
+
+// And when the proof never lands inside the read's own deadline, the answer is
+// the refusal sentence — measured, not inferred from "no second REQ".
+test('a proof that never lands ends in the refusal sentence, quickly', async () => {
+  const identity = { pk: 'ab'.repeat(32), sk: new Uint8Array(32).fill(8) };
+  let subscribes = 0;
+  // A pool that signs for nobody: the host is never eligible, so the helper
+  // settles at once instead of sitting out the deadline.
+  const { pool, relay } = installedPool('wss://elsewhere.test', () => ({ sig: 'never used' }), GROUP_URL);
+  relay.subscribe = (_filters, params) => {
+    subscribes += 1;
+    queueMicrotask(() => {
+      relay.challenge = 'challenge-1';
+      params.oneose?.();
+    });
+    return { close() {} };
+  };
+  const started = Date.now();
+  const result = await readDirectory([GROUP_URL], FILTER, { identity, createPool: () => pool, timeoutMs: 4000 });
+  const took = Date.now() - started;
+  assert.equal(result.status, READ_UNAVAILABLE, 'a fast wrong answer is still wrong');
+  assert.deepEqual(result.events, []);
+  assert.equal(result.answers[0].status, 'auth');
+  assert.match(whyUnavailable(result.answers), /prove itself/);
+  assert.ok(took < 1000, `settled at once, not at the deadline (took ${took} ms)`);
+});
+
+// The one-directional test would miss this: a host passed straight to
+// isGroupHost gives '' inside hostOf and refuses the group relay too, so a
+// pool that signs for nobody would still pass every "nothing leaked" check.
+test('the installed pool can answer the group host and only the group host', async () => {
+  const { getPublicKey } = await import('nostr-tools');
+  const sk = new Uint8Array(32).fill(9);
+  const pool = await defaultPool({ pk: getPublicKey(sk), sk });
+  assert.equal(typeof pool.automaticallyAuth, 'function');
+  const groupSigner = pool.automaticallyAuth(GROUP_URL);
+  assert.equal(typeof groupSigner, 'function', 'the group host IS eligible');
+  const signed = groupSigner({ kind: 22242, created_at: 0, tags: [], content: '' });
+  assert.equal(signed.pubkey, getPublicKey(sk));
+  assert.equal(pool.automaticallyAuth(STRANGER_URL), null, 'a stranger host gets no signer');
+});
+
+// No account, no proof, no wait: the read is one ask and the honest answer.
+test('without an identity the reader never waits for a proof', async () => {
+  const pool = await defaultPool(null);
+  assert.equal(pool.automaticallyAuth, undefined);
+  let subscribes = 0;
+  const relay = {
+    url: GROUP_URL,
+    challenge: null,
+    subscribe(_filters, params) {
+      subscribes += 1;
+      queueMicrotask(() => { relay.challenge = 'challenge-1'; params.oneose?.(); });
+      return { close() {} };
+    },
+  };
+  const started = Date.now();
+  const result = await readDirectory([GROUP_URL], FILTER, {
+    createPool: () => ({ ensureRelay: async () => relay, close() {}, destroy() {} }),
+    timeoutMs: 4000,
+  });
+  assert.equal(subscribes, 1);
+  assert.equal(result.status, READ_UNAVAILABLE);
+  assert.ok(Date.now() - started < 1000, 'no signer, no armed wait');
 });
 
 // And a read that is never challenged is not held open waiting for one.
