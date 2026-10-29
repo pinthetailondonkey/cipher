@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Check, Copy } from 'lucide-react';
 import { useChatStore } from '../../store/chatStore';
-import { createDeadDropNote } from '../../lib/deadDrop';
+import { createNoteLink } from '../../lib/deadDrop';
 import { getAuthenticatedPool } from '../../lib/pool';
 import { generalRelays } from '../../lib/relays';
 import { haptic } from '../../lib/haptics';
@@ -33,7 +33,10 @@ export default function DeadDropModal({ identity }) {
     setBusy(true);
     try {
       const pool = await getAuthenticatedPool(identity);
-      const { url } = await createDeadDropNote({ identity, text, pool, relays: generalRelays });
+      // The host is asked first: when it is the one-read carrier the note
+      // really is gone after the first open. Without it the relay copy is
+      // still made, exactly as before.
+      const { url } = await createNoteLink({ identity, text, pool, relays: generalRelays });
       setLink(url);
       setText('');
     } catch (error) {

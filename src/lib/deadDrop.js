@@ -117,6 +117,113 @@ export function noteUrl(fragment, origin = noteOrigin()) {
   return `${origin}/note#${fragment}`;
 }
 
+// ————— the one-read carrier (S4) —————
+// A carrier note is a second transport for the same idea, and the only one
+// where "burns on read" is true off this device: the ciphertext is posted to
+// the note host and fetched back exactly once, and the server deletes it on
+// that fetch. The server holds no key and is sent no fragment.
+//
+// The fragment is a different shape, told apart by its first byte:
+//   [version 0x02][id 16][key 32][iv 12]  — 61 bytes, base64url
+// The id is 16 random bytes and says nothing about the key. It is bound into
+// the ciphertext as AES-GCM's additional data, so this host cannot swap one
+// note into another note's place under the same link.
+const CARRIER_VERSION = 2;
+const CARRIER_ID_LEN = 16;
+const CARRIER_FRAGMENT_LEN = 1 + CARRIER_ID_LEN + KEY_LEN + IV_LEN;
+
+export function packCarrierFragment(idBytes, keyBytes, ivBytes) {
+  return toB64Url(concatBytes(Uint8Array.from([CARRIER_VERSION]), idBytes, keyBytes, ivBytes));
+}
+
+export function unpackCarrierFragment(fragment) {
+  let raw;
+  try { raw = fromB64Url(fragment); } catch { return null; }
+  if (raw.length !== CARRIER_FRAGMENT_LEN || raw[0] !== CARRIER_VERSION) return null;
+  return {
+    id: raw.slice(1, 1 + CARRIER_ID_LEN),
+    key: raw.slice(1 + CARRIER_ID_LEN, 1 + CARRIER_ID_LEN + KEY_LEN),
+    iv: raw.slice(1 + CARRIER_ID_LEN + KEY_LEN),
+  };
+}
+
+export function isCarrierFragment(fragment) {
+  return unpackCarrierFragment(fragment) !== null;
+}
+
+const carrierBase = (origin) => String(origin || '').replace(/\/+$/, '');
+
+// Seal a note and hand it to the one-read host. The url is the whole secret;
+// it is shown once and never stored. Nothing here signs anything: the carrier
+// has no authors and no accounts, which is what "no app" means.
+export async function createCarrierNote({ text, origin = noteOrigin(), fetchImpl = globalThis.fetch } = {}) {
+  if (typeof text !== 'string' || !text.trim()) throw new Error('The note is empty.');
+  if (text.length > 8000) throw new Error('The note is too long (8000 characters max).');
+  const base = carrierBase(origin);
+  if (!base) throw new Error('The note host is not set, so a note that reads once cannot be made yet.');
+  if (typeof fetchImpl !== 'function') throw new Error('This device cannot reach the note host.');
+
+  const id = crypto.getRandomValues(new Uint8Array(CARRIER_ID_LEN));
+  const keyBytes = crypto.getRandomValues(new Uint8Array(KEY_LEN));
+  const ivBytes = crypto.getRandomValues(new Uint8Array(IV_LEN));
+  const aesKey = await subtle().importKey('raw', keyBytes, 'AES-GCM', false, ['encrypt']);
+  const plaintext = new TextEncoder().encode(JSON.stringify({ t: text }));
+  const ciphertext = new Uint8Array(await subtle().encrypt(
+    { name: 'AES-GCM', iv: ivBytes, additionalData: id },
+    aesKey,
+    plaintext,
+  ));
+
+  let response;
+  try {
+    response = await fetchImpl(`${base}/api/notes/${toB64Url(id)}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/octet-stream' },
+      body: ciphertext,
+      credentials: 'omit',
+    });
+  } catch {
+    throw new Error('The note host could not be reached. The note was not stored.');
+  }
+  if (!response.ok) throw new Error('The note host refused the note. Nothing was stored.');
+  const fragment = packCarrierFragment(id, keyBytes, ivBytes);
+  return { url: `${base}/note#${fragment}`, id: toB64Url(id) };
+}
+
+// Open a carrier note. There is no local hold and no second attempt: the host
+// hands it over once, and this call is that one time.
+export async function openCarrierNote({ fragment, origin = noteOrigin(), fetchImpl = globalThis.fetch } = {}) {
+  const parts = unpackCarrierFragment(fragment);
+  if (!parts) throw new Error('That link is not a valid note link.');
+  const base = carrierBase(origin);
+  if (!base) throw new Error('The note host is not set, so this note cannot be opened here.');
+  if (typeof fetchImpl !== 'function') throw new Error('This device cannot reach the note host.');
+
+  let response;
+  try {
+    response = await fetchImpl(`${base}/api/notes/${toB64Url(parts.id)}`, { cache: 'no-store', credentials: 'omit' });
+  } catch {
+    throw new Error('The note host could not be reached. The note was not opened.');
+  }
+  if (response.status === 404) throw new Error('This note has already been read.');
+  if (!response.ok) throw new Error('The note host refused the note. It was not opened.');
+  const sealed = new Uint8Array(await response.arrayBuffer());
+  const aesKey = await subtle().importKey('raw', parts.key, 'AES-GCM', false, ['decrypt']);
+  let plaintext;
+  try {
+    plaintext = await subtle().decrypt(
+      { name: 'AES-GCM', iv: parts.iv, additionalData: parts.id },
+      aesKey,
+      sealed,
+    );
+  } catch {
+    throw new Error('This note could not be opened — the link was altered.');
+  }
+  let payload;
+  try { payload = JSON.parse(new TextDecoder().decode(plaintext)); } catch { payload = null; }
+  return { text: payload && typeof payload.t === 'string' ? payload.t : '', id: toB64Url(parts.id) };
+}
+
 // ————— create —————
 
 // Seal and publish a dead-drop note. Returns { url, hash } — the url is the
@@ -174,6 +281,21 @@ export async function createDeadDropNote({ identity, text, pool, relays }) {
 // key actually opens wins, so a stranger's newer event on the same d tag, which
 // cannot be opened with a key they do not have, cannot shadow the real note.
 export async function openDeadDropNote({ identity, fragment, pool, relays, isConsumed = null, hold = false, author = null }) {
+  // A carrier link is a different fragment and opens through the host that
+  // deletes it on read. The local ledger still records it, so a second tap
+  // on this device says the honest thing without a round trip.
+  const carried = unpackCarrierFragment(fragment);
+  if (carried) {
+    const idText = toB64Url(carried.id);
+    if (isConsumed ? await isConsumed(idText) : deadDropConsumed(idText)) {
+      throw new Error('This note was already opened on this device.');
+    }
+    const opened = await openCarrierNote({ fragment });
+    const burn = async () => { markDeadDropConsumed(idText); };
+    if (hold) return { text: opened.text, hash: idText, burn };
+    await burn();
+    return { text: opened.text, hash: idText };
+  }
   const parts = unpackFragment(fragment);
   if (!parts) throw new Error('That link is not a valid note link.');
 
@@ -243,7 +365,50 @@ export async function openDeadDropNote({ identity, fragment, pool, relays, isCon
   return { text: typeof payload.t === 'string' ? payload.t : '', hash: hashHex };
 }
 
+
+// ————— which transport —————
+// A note reads once only where the host itself deletes it, so the carrier is
+// used when the note host answers as one, and the relay copy is used when it
+// does not — that is today's behaviour, unchanged, for a host that is not a
+// carrier or is not deployed yet. The probe is one request and is remembered
+// for the life of the page.
+let carrierKnown = null;
+
+export function forgetCarrierProbe() { carrierKnown = null; }
+
+export async function carrierAvailable(origin = noteOrigin(), fetchImpl = globalThis.fetch) {
+  const base = carrierBase(origin);
+  if (!base) return false;
+  if (carrierKnown !== null && carrierKnown.origin === base) return carrierKnown.ok;
+  let ok = false;
+  try {
+    const response = await fetchImpl(`${base}/healthz`, { cache: 'no-store', credentials: 'omit' });
+    if (response.ok) {
+      const body = await response.json().catch(() => null);
+      ok = Boolean(body && body.ok === true);
+    }
+  } catch { ok = false; }
+  carrierKnown = { origin: base, ok };
+  return ok;
+}
+
+// The one call the app makes to share a note. It returns what actually
+// happened, so no screen has to guess: `carrier: true` means the host will
+// hand it over once and delete it; `carrier: false` means the relay copy,
+// whose one-open is this device's own rule.
+export async function createNoteLink({ identity, text, pool, relays, origin = noteOrigin(), fetchImpl = globalThis.fetch } = {}) {
+  if (await carrierAvailable(origin, fetchImpl)) {
+    const made = await createCarrierNote({ text, origin, fetchImpl });
+    return { url: made.url, hash: made.id, relayCount: 0, carrier: true };
+  }
+  const made = await createDeadDropNote({ identity, text, pool, relays });
+  return { ...made, carrier: false };
+}
+
 export const _deadDropInternals = {
   NOTE_KIND, KEY_LEN, IV_LEN, HASH_LEN,
+  CARRIER_VERSION, CARRIER_ID_LEN, CARRIER_FRAGMENT_LEN,
   toB64Url, fromB64Url, packFragment, unpackFragment, deriveNoteHash,
+  packCarrierFragment, unpackCarrierFragment,
+  carrierAvailable, forgetCarrierProbe,
 };

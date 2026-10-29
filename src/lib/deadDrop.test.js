@@ -7,6 +7,12 @@ import {
   createDeadDropNote,
   openDeadDropNote,
   deadDropConsumed,
+  createCarrierNote,
+  openCarrierNote,
+  createNoteLink,
+  carrierAvailable,
+  forgetCarrierProbe,
+  isCarrierFragment,
 } from './deadDrop.js';
 
 const { packFragment, unpackFragment, toB64Url, fromB64Url, deriveNoteHash, NOTE_KIND } = _deadDropInternals;
@@ -363,4 +369,138 @@ test('a generated checkout delivery link opens for the vendor who was sent it', 
   assert.ok(fragment);
   const opened = await openDeadDropNote({ identity: vendor, fragment, pool, relays, author: order.pubkey, hold: true });
   assert.equal(opened.text, '12 Elm St');
+});
+
+
+// ————— the one-read carrier (S4) —————
+// A fake host that behaves like scripts/note-carrier.mjs: it stores what it is
+// posted, hands it over once, and answers the health probe. No network.
+function fakeCarrier({ health = true } = {}) {
+  const notes = new Map();
+  const calls = [];
+  const fetchImpl = async (url, init = {}) => {
+    const u = new URL(url);
+    const method = init.method || 'GET';
+    calls.push({ method, path: u.pathname, body: init.body || null });
+    if (u.pathname === '/healthz') {
+      return new Response(JSON.stringify({ ok: health }), { status: health ? 200 : 404 });
+    }
+    const m = /^\/api\/notes\/([A-Za-z0-9_-]{22})$/.exec(u.pathname);
+    if (!m) return new Response('{"error":"not-found"}', { status: 404 });
+    if (method === 'POST') {
+      if (notes.has(m[1])) return new Response('{"error":"exists"}', { status: 409 });
+      notes.set(m[1], new Uint8Array(init.body));
+      return new Response(JSON.stringify({ id: m[1] }), { status: 201 });
+    }
+    if (!notes.has(m[1])) return new Response('{"error":"gone"}', { status: 404 });
+    const bytes = notes.get(m[1]);
+    notes.delete(m[1]);
+    return new Response(bytes, { status: 200 });
+  };
+  return { fetchImpl, notes, calls };
+}
+
+test('a carrier note reads once and is gone from the host afterwards', async () => {
+  forgetCarrierProbe();
+  const host = fakeCarrier();
+  const origin = 'https://notes.test';
+  const made = await createCarrierNote({ text: 'one read only', origin, fetchImpl: host.fetchImpl });
+  const fragment = made.url.split('#')[1];
+  assert.ok(isCarrierFragment(fragment), 'the link carries a carrier fragment, told apart by its version byte');
+  assert.equal(Buffer.from(fragment.replace(/-/g, '+').replace(/_/g, '/'), 'base64').length, 61);
+  assert.ok(!made.url.split('#')[0].includes('?'));
+
+  const opened = await openCarrierNote({ fragment, origin, fetchImpl: host.fetchImpl });
+  assert.equal(opened.text, 'one read only');
+  // The host holds nothing afterwards, and the second read is refused.
+  assert.equal(host.notes.size, 0);
+  await assert.rejects(
+    () => openCarrierNote({ fragment, origin, fetchImpl: host.fetchImpl }),
+    /already been read/,
+  );
+});
+
+test('the carrier never receives the key: the body is sealed, the path is an id', async () => {
+  forgetCarrierProbe();
+  const host = fakeCarrier();
+  const origin = 'https://notes.test';
+  const made = await createCarrierNote({ text: 'address: 12 Elm St', origin, fetchImpl: host.fetchImpl });
+  const post = host.calls.find((c) => c.method === 'POST');
+  assert.ok(post, 'the note was posted');
+  assert.match(post.path, /^\/api\/notes\/[A-Za-z0-9_-]{22}$/);
+  const body = Buffer.from(post.body).toString('latin1');
+  assert.ok(!body.includes('12 Elm St'), 'the plaintext never reaches the host');
+  const fragment = made.url.split('#')[1];
+  const raw = Buffer.from(fragment.replace(/-/g, '+').replace(/_/g, '/'), 'base64');
+  const key = raw.slice(17, 49);
+  assert.ok(!Buffer.from(post.body).includes(key), 'the key never reaches the host');
+});
+
+test('a sealed note that is altered does not open', async () => {
+  forgetCarrierProbe();
+  const host = fakeCarrier();
+  const origin = 'https://notes.test';
+  const made = await createCarrierNote({ text: 'do not touch', origin, fetchImpl: host.fetchImpl });
+  const fragment = made.url.split('#')[1];
+  const id = Buffer.from(fragment.replace(/-/g, '+').replace(/_/g, '/'), 'base64').slice(1, 17).toString('base64url');
+  const sealed = host.notes.get(id);
+  sealed[0] ^= 0xff;
+  await assert.rejects(
+    () => openCarrierNote({ fragment, origin, fetchImpl: host.fetchImpl }),
+    /link was altered/,
+  );
+});
+
+test('no host means no carrier note, and the reason says so', async () => {
+  forgetCarrierProbe();
+  await assert.rejects(
+    () => createCarrierNote({ text: 'x', origin: '' }),
+    /note host is not set/,
+  );
+  assert.equal(await carrierAvailable('', async () => { throw new Error('no network'); }), false);
+});
+
+test('createNoteLink reports the transport it actually used', async () => {
+  forgetCarrierProbe();
+  const pool = fakePool();
+  const relays = ['wss://relay.test'];
+
+  const carrierHost = fakeCarrier();
+  const viaCarrier = await createNoteLink({
+    identity, text: 'through the host', pool, relays,
+    origin: 'https://notes.test', fetchImpl: carrierHost.fetchImpl,
+  });
+  assert.equal(viaCarrier.carrier, true);
+  assert.ok(isCarrierFragment(viaCarrier.url.split('#')[1]));
+  assert.equal(pool.published.length, 0, 'nothing went to a relay when the host is a carrier');
+
+  forgetCarrierProbe();
+  const plainHost = fakeCarrier({ health: false });
+  const viaRelay = await createNoteLink({
+    identity, text: 'through the relay', pool, relays,
+    origin: 'https://plain.test', fetchImpl: plainHost.fetchImpl,
+  });
+  assert.equal(viaRelay.carrier, false);
+  assert.equal(pool.published.filter((e) => e.kind === NOTE_KIND).length, 1);
+});
+
+test('a carrier link opened in the app goes to the host, not the relay', async () => {
+  forgetCarrierProbe();
+  const host = fakeCarrier();
+  const origin = 'https://notes.test';
+  const made = await createCarrierNote({ text: '12 Elm St', origin, fetchImpl: host.fetchImpl });
+  const fragment = made.url.split('#')[1];
+  const pool = fakePool();
+  // The host answers; the relay fake holds nothing.
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = host.fetchImpl;
+  try {
+    const opened = await openDeadDropNote({
+      identity, fragment, pool, relays: ['wss://relay.test'],
+    });
+    assert.equal(opened.text, '12 Elm St');
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+  assert.equal(pool.published.length, 0, 'no relay event was consulted for a carrier link');
 });
