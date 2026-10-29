@@ -442,7 +442,15 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
         }
         const methods = details?.paymentMethods || vendorPair?.paymentMethods || {};
         const currency = details?.coinCurrency || vendorPair?.coinCurrency || (methods.xmr ? 'xmr' : (methods.btc ? 'btc' : ''));
-        const address = currency ? methods[currency] : '';
+        // The currency is a string a peer typed, and this line used to index
+        // the methods object with it directly: 'constructor' answered with a
+        // function and '__proto__' with an object, both truthy, and neither
+        // is an address. The check then went out to the watcher under that
+        // value and died later on a raw TypeError. Only a coin the pair
+        // itself carries names an address; anything else leaves this empty
+        // and the check refuses below with its own sentence. (security, the
+        // receipt-address class)
+        const address = currency && Object.hasOwn(methods, currency) ? methods[currency] : '';
         const amount = details?.coinAmount ?? vendorPair?.coinAmount;
         if (!amount) {
           setToast({ type: 'info', message: 'This order has no coin amount, so it cannot be checked.' });
