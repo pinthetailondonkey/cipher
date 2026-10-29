@@ -1,16 +1,16 @@
 import { useState } from 'react';
 import { Check, Copy } from 'lucide-react';
 import { useChatStore } from '../../store/chatStore';
-import { createDeadDropNote } from '../../lib/deadDrop';
+import { createNoteLink } from '../../lib/deadDrop';
 import { getAuthenticatedPool } from '../../lib/pool';
 import { generalRelays } from '../../lib/relays';
 import { haptic } from '../../lib/haptics';
 import Sheet from '../ui/Sheet';
 import Button from '../ui/Button';
 
-// Dead-drop note writer: type it, get one link, the note burns after it is
-// opened. The link carries the key in its fragment — anyone who can see the
-// link can read the note, so it is shown once and never stored.
+// Dead-drop note writer: type it, get one link. The link carries the key in
+// its fragment, so anyone who can see the link can open the note; that is why
+// the surface says nothing beyond the label.
 export default function DeadDropModal({ identity }) {
   const show = useChatStore((s) => s.showDeadDrop);
   const setShow = useChatStore((s) => s.setShowDeadDrop);
@@ -33,7 +33,10 @@ export default function DeadDropModal({ identity }) {
     setBusy(true);
     try {
       const pool = await getAuthenticatedPool(identity);
-      const { url } = await createDeadDropNote({ identity, text, pool, relays: generalRelays });
+      // The host is asked first: when it is the one-read carrier, the host
+      // deletes the note on the first fetch. Without it the relay copy is
+      // still made, exactly as before.
+      const { url } = await createNoteLink({ identity, text, pool, relays: generalRelays });
       setLink(url);
       setText('');
     } catch (error) {
@@ -56,17 +59,12 @@ export default function DeadDropModal({ identity }) {
 
   return (
     <Sheet open={show} onClose={close} title="Burn note">
-      <p className="mb-3 text-[13px] leading-relaxed text-inkMuted">
-        Write it, get one link, send it however you want. The note opens once — after that it is gone. Whoever has the link can read it, so send it to the right chat.
-      </p>
-
       {link ? (
         <div className="pb-2">
           <div className="max-h-32 overflow-y-auto break-all rounded-2xl border border-line bg-panelStrong p-3 font-mono text-[12px] text-accentText">{link}</div>
           <Button fullWidth className="mt-3" onClick={copy}>
             {copied ? <><Check size={16} className="mr-1 inline" /> Copied</> : <><Copy size={16} className="mr-1 inline" /> Copy link</>}
           </Button>
-          <p className="mt-2 text-center text-[11px] text-inkSubtle">This link shows once. It is not saved anywhere.</p>
         </div>
       ) : (
         <div className="pb-2">
@@ -75,7 +73,6 @@ export default function DeadDropModal({ identity }) {
             onChange={(e) => setText(e.target.value)}
             maxLength={8000}
             rows={5}
-            placeholder="Say it once."
             className="w-full resize-none rounded-2xl border border-line bg-panelStrong p-3 text-[14px] text-ink placeholder-ink/30 outline-none focus:border-accent"
             autoFocus
           />
