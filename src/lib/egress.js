@@ -56,26 +56,41 @@ export const EGRESS = [
 // the host entirely.
 const DESKTOP_BUILD = typeof __CIPHER_DESKTOP_BUILD__ !== 'undefined' && __CIPHER_DESKTOP_BUILD__ === true;
 
-const buildDoor = String(import.meta?.env?.VITE_GROUP_ONION || '').trim();
+const buildGroupDoor = String(import.meta?.env?.VITE_GROUP_ONION || '').trim();
+const buildMediaDoor = String(import.meta?.env?.VITE_MEDIA_ONION || '').trim();
 
-export const FOUNDER_GROUP_ONION = DESKTOP_BUILD && buildDoor ? buildDoor : '';
+// One door shape for every onion row, the group door's: the build supplies the
+// address from an untracked file, and only a desktop build may carry it. A web
+// bundle holds no onion by construction — the address is not in the repo and
+// not in the page.
+const doorOrEmpty = (value) => (DESKTOP_BUILD && value ? value : '');
 
-// The same shape for the doors still to come: one message relay, one search
-// relay, one media host, one note host. Each ships dark (empty) until the
-// founder names it, so every row keeps its shipped address today. The day a
-// name lands here as a literal — never a chat line, never an env var, which
-// only bought a silent clearnet fallback — it outranks the shipped address
-// for every fresh install, under the same rank order as the group door: a
-// device's own paste wins, then the door, and `off` still drops the host.
-// One door serves every row of its kind: the search pair and the media trio
-// each resolve to the one address when their door is lit.
+export const FOUNDER_GROUP_ONION = doorOrEmpty(buildGroupDoor);
+export const FOUNDER_MEDIA_ONION = doorOrEmpty(buildMediaDoor);
+
+// The doors still to come: one message relay, one search relay, one media
+// host, one note host. Each ships dark ('') until a build carries its
+// address, so every row keeps its shipped address today.
+//
+// An earlier version of this comment said a name must land here as a literal,
+// and never as an env var, because an env var once bought a silent clearnet
+// fallback. The lesson was right and the rule was wrong: what failed was a
+// build that could ship without the address and say nothing. The refusal is
+// what makes the env var safe, so every onion door now reads its address the
+// way the group door does — from the build, behind DESKTOP_BUILD, with the
+// build refusing to run without it.
+//
+// A lit door outranks the shipped address under the same rank order as the
+// group door: a device's own paste wins, then the door, and `off` still drops
+// the host. One door serves every row of its kind: the search pair and the
+// media trio each resolve to the one address when their door is lit.
 export const FOUNDER_ONION_DOORS = {
   'dm-relay': '',
   'search-vertex': '',
   'search-noswhere': '',
-  'blossom-primal': '',
-  'blossom-nostr-build': '',
-  'blossom-band': '',
+  'blossom-primal': FOUNDER_MEDIA_ONION,
+  'blossom-nostr-build': FOUNDER_MEDIA_ONION,
+  'blossom-band': FOUNDER_MEDIA_ONION,
   'dead-drop': '',
 };
 

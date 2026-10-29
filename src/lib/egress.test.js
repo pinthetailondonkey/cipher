@@ -91,7 +91,7 @@ test('every outbound host is listed, and nowhere else', () => {
 // clearnet address, and a device's own paste outranks the door. The address
 // is asserted as a literal so a build that loses the door fails here rather
 // than quietly serving groups in the clear.
-import { FOUNDER_GROUP_ONION, FOUNDER_ONION_DOORS } from './egress.js';
+import { FOUNDER_GROUP_ONION, FOUNDER_MEDIA_ONION, FOUNDER_ONION_DOORS } from './egress.js';
 
 const onion = (label, scheme = 'wss') => `${scheme}://${label}.onion`;
 
@@ -175,6 +175,54 @@ test('the dark doors ship empty, change nothing today, and a lit door outranks t
     FOUNDER_ONION_DOORS['dm-relay'] = '';
     FOUNDER_ONION_DOORS['search-vertex'] = '';
     FOUNDER_ONION_DOORS['search-noswhere'] = '';
+  }
+});
+
+// The media door is the group door's shape: one address from the build, behind
+// DESKTOP_BUILD, serving all three media rows at once. Two halves, because a
+// door proved only in the lit direction says nothing about the shipped build.
+const MEDIA_ROWS = ['blossom-primal', 'blossom-nostr-build', 'blossom-band'];
+
+test('the media door ships dark, so this build resolves the three media rows exactly as before', () => {
+  // This file runs with no build env and no desktop define — the web answer,
+  // and the state every build is in until the founder's media host exists.
+  // The door is empty and the shipped trio stands, unchanged in address,
+  // order and count: the inert half of the proof.
+  assert.equal(FOUNDER_MEDIA_ONION, '');
+  for (const id of MEDIA_ROWS) {
+    assert.equal(FOUNDER_ONION_DOORS[id], '', `${id} ships dark until the build carries a media address`);
+  }
+  assert.deepEqual(blossomServers({ overrides: {}, lists: {} }), [
+    'https://blossom.primal.net',
+    'https://nostr.build',
+    'https://blossom.band',
+  ]);
+});
+
+test('a lit media door serves all three rows from one address, and the rank order holds', () => {
+  // Lit, as a desktop build carrying the address in its untracked env would:
+  // the fixture address stands in, because the real one must never be in this
+  // file. One door serves every row of its kind, so the trio collapses to one.
+  const mediaDoor = onion('mediadoormediadoor', 'http');
+  for (const id of MEDIA_ROWS) FOUNDER_ONION_DOORS[id] = mediaDoor;
+  try {
+    assert.deepEqual(blossomServers({ overrides: {}, lists: {} }), [mediaDoor]);
+    // A device's own paste outranks the door.
+    assert.deepEqual(
+      blossomServers({ overrides: { 'blossom-primal': 'https://media.example' }, lists: {} }),
+      ['https://media.example', mediaDoor],
+    );
+    // `off` still drops the host — every row of the kind, since one door
+    // serves them all and a single row left on would keep the host reachable.
+    assert.deepEqual(blossomServers({
+      overrides: { 'blossom-primal': 'off', 'blossom-nostr-build': 'off', 'blossom-band': 'off' },
+      lists: {},
+    }), []);
+    const row = listEgress({ overrides: {}, lists: {} }).find((r) => r.id === 'blossom-primal');
+    assert.equal(row.transport, 'tor');
+    assert.equal(row.active, mediaDoor);
+  } finally {
+    for (const id of MEDIA_ROWS) FOUNDER_ONION_DOORS[id] = '';
   }
 });
 
