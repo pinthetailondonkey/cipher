@@ -465,7 +465,16 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
           // Bech32 is case-insensitive: the same address can arrive uppercase.
           // An exact compare would let a mixed-case twin of the shared
           // address pass as a fresh per-order one. (security S1)
-          const shared = String(readPaymentAddresses()[currency] || '').trim().toLowerCase();
+          // The rails come back as a literal { btc, xmr }, so indexing it
+          // with the order's own currency reaches the prototype for a name
+          // like 'constructor' or '__proto__' and answers with something that
+          // is not this device's address. A bypass caught by a downstream
+          // refusal is ordering, not a guard: this is a guard, and it is here
+          // because the bypass is reachable by construction, not because
+          // today's ordering happens to stop it. (security, the payment-method
+          // lookup class)
+          const rails = readPaymentAddresses();
+          const shared = Object.hasOwn(rails, currency) ? String(rails[currency] || '').trim().toLowerCase() : '';
           if (shared && String(address || '').trim().toLowerCase() === shared) {
             setToast({ type: 'error', message: 'This order was issued the shared account address, so one transfer could pay many orders. Turn on address derivation in Profile, then accept the order again to give it its own address.' });
             setSelectedMessage(null);
