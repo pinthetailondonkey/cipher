@@ -124,7 +124,11 @@ test('an answer that does not name exactly one transaction moves nothing', async
   // An empty answer is the older "not seen yet" no-op, not a refusal.
   const blank = await checkPayment({ ...base, fetchImpl: () => watcherAnswer({ address: '8abc', currency: 'xmr', txid: '', confirmations: 10 }) });
   assert.equal(blank.moved, false);
-  for (const txid of [['ab', 'cd'], { id: 'ab' }, 'ab,cd', 'ab cd', 'ab\ncd', '   ']) {
+  // A number is the case a JSON answer actually produces when a watcher
+  // formats its transaction as a number instead of a string. It is not a
+  // name this app can sign a receipt from, so it is refused like the rest,
+  // never coerced into "42".
+  for (const txid of [['ab', 'cd'], { id: 'ab' }, 42, 1.5, 0.1 + 0.2, 'ab,cd', 'ab cd', 'ab\ncd', '   ']) {
     await assert.rejects(
       () => checkPayment({ ...base, fetchImpl: () => watcherAnswer({ address: '8abc', currency: 'xmr', txid, confirmations: 10 }) }),
       /did not name a single transaction/,
