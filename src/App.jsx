@@ -52,8 +52,11 @@ function MainApp() {
   // identity gate one tick after the note appeared — the reader unmounted with
   // the note already spent. The route is owned from the first render until the
   // page is left.
-  const [noteFragment] = useState(() => noteFragmentFor(window.location));
-  if (noteFragment) return <BurnNoteReader fragment={noteFragment} />;
+  const [noteRoute] = useState(() => noteFragmentFor(window.location));
+  if (typeof noteRoute === 'string') return <BurnNoteReader fragment={noteRoute} />;
+  // The tab's record after the reader cleared the address: an identifier, no
+  // key. The reader shows the gone state from its own ledger without a request.
+  if (noteRoute) return <BurnNoteReader note={noteRoute} />;
 
   if (identity.loadingSession) {
     return <div className="h-[100dvh] bg-scrim flex items-center justify-center"><div className="w-8 h-8 border-4 border-ink/20 border-t-ink rounded-full animate-spin" /></div>;

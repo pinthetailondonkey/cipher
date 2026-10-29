@@ -37,9 +37,17 @@ export async function openNoteLink({
         timer = setTimeout(() => reject(new Error('The note could not be opened.')), timeoutMs);
       }),
     ]);
-    // The two names below tag which transport carried the note. They are
-    // values the screen compares, never words a person reads. not UI copy
-    return { text: opened.text, burn: opened.burn, transport: carrier ? 'carrier' : 'relay' };
+    // `hash` is the note's identifier, not its key: the relay's `d` hash
+    // (sha256 of the key) or the carrier's id. It is what the tab may keep so a
+    // reload can say the honest gone line without a key and without a request.
+    // `transport` tags which carried it. Both are values the screen compares,
+    // never words a person reads. not UI copy
+    return {
+      text: opened.text,
+      hash: opened.hash,
+      burn: opened.burn,
+      transport: carrier ? 'carrier' : 'relay', // not UI copy
+    };
   } finally {
     if (timer) clearTimeout(timer);
     if (pool) {
