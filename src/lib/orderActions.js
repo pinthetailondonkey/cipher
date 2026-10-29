@@ -107,6 +107,30 @@ function paymentEvidence(messages, orderId, request, ownPubkey, peerPubkey) {
       continue;
     }
     adopt(message.localPatch || null);
+    // The vendor's acceptance is the one announcement of where to pay, and it
+    // rides on the update's own data — the same arm orderPaymentDetails reads
+    // — so a buyer's state and the details their chain check uses can never
+    // come from two different places. On the buyer's side only, and no
+    // further than address_issued: seen and confirmed stay a watcher's word,
+    // and paymentSeenBy is never a peer's. (F-BC1)
+    // The lift names one coin: the coin the update says it issued for. An
+    // update claiming xmr with only a btc pair issued nothing to pay on: the
+    // details reader would take the update's xmr and find no address, so the
+    // card would claim a state its own check can never walk.
+    //
+    // The coin name comes from the sender, so it is looked up only among the
+    // pair's own coins: a name like '__proto__' or 'constructor' resolves on
+    // any object and would pass the check with no address issued at all.
+    // (AUDITOR, executed)
+    const issuedPair = issuedPaymentMethods(message.data);
+    const issuedCoin = String(message.data?.coinCurrency || '').trim().toLowerCase();
+    if (request?.isSender
+      && issuedPair
+      && Object.hasOwn(issuedPair, issuedCoin)
+      && issuedPair[issuedCoin]
+      && rank(message.data?.paymentState) >= rank('address_issued')) {
+      adopt({ paymentState: 'address_issued' });
+    }
     const receipt = message.data.receipt;
     if (receipt && receiptIsOfThisChat(receipt, orderId, request, ownPubkey, peerPubkey, messages) && verifyReceipt(receipt)) {
       // A receipt the device never verified rows no payment. A signed one

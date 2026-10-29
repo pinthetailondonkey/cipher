@@ -234,6 +234,16 @@ const messagesView = (table) => ({
   where: (...args) => queryMessages(table).where(...args),
   put: (row) => writeMessage(table, row),
   add: (row) => writeMessage(table, row),
+  // Change one stored message in place. The row is woken, the named fields
+  // replace their top-level namesakes, and the whole row goes back down the
+  // same seal-on-write door as put. IndexedDB's own update() writes straight
+  // at the sealed bytes, so this view never offers it.
+  update: async (id, changes) => {
+    const row = await queryMessages(table).get(id);
+    if (!row) return 0;
+    await writeMessage(table, { ...row, ...changes });
+    return 1;
+  },
   bulkPut: async (rows, ...rest) => {
     const sealedRows = [];
     for (const row of rows) {
@@ -446,6 +456,10 @@ export async function readStoredRows() {
 if (typeof window !== "undefined" && import.meta.env?.VITE_TEST_HOOKS === '1') {
   window.__cipher = {
     saveMessage, patchMessage, readStoredRows,
+    // Test seam: the one-row change the payment check mark writes through, so
+    // a spec can execute the product's writer instead of writing the field by
+    // hand. Compiled out of the shipped build with the rest of this block.
+    updateMessage: (id, changes) => db.messages.update(id, changes),
     // Test seam: closeDB + openDBFor re-open the account's database. Writes
     // queued while it was closed — the write queue and the at-rest queue —
     // are applied on the open.

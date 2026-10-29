@@ -1,7 +1,7 @@
 import { useRef } from 'react';
 import { useChatStore } from '../../store/chatStore';
 import { db, patchMessage, saveMessage } from '../../db';
-import { scopedGet, scopedSet } from '../../lib/storage';
+import { getActivePubkey, scopedGet, scopedSet } from '../../lib/storage';
 import { addressSpokenFor, getOrderPaymentMethods, markConsumed, readConsumedLedger, readPaymentAddresses, txidSpokenFor } from '../../lib/vendorPayments';
 import { getAuthenticatedPool } from '../../lib/pool';
 import { generalRelays } from '../../lib/relays';
@@ -13,6 +13,67 @@ import { publicReceipt, rememberPublicView, receiptBindsOrder, signPublicView, s
 import { frozenIssuedMethods, issuedPaymentMethods, newestOwnIssuedMethods, orderPaymentDetails, orderRecordForReceipt, orderState, reopenedStatus } from '../../lib/orderActions';
 import { stampArrival } from './media';
 import { createSingleFlight } from '../../lib/singleFlight';
+
+// The device mark for a chain check that could not run. It is a fact about
+// this device, never about the order, so it is written to its own top-level
+// field and not through patchMessage: a local patch is laid over `data` by
+// mergeStoredMessage, and `data` is the shape a send carries. Keeping the
+// mark outside both means no publisher can forward it by construction, not
+// by an audit of every publisher. A history fetch re-saves the relay copy as
+// `{ ...existing, ...incoming }`, so a field the relay copy does not carry
+// survives a reload and a refetch; clearing writes null the same way.
+//
+// It lives at module scope rather than inside the hook because everything it
+// touches is an import — the store and the database — and because the refusal
+// branch behind a signed watcher answer is otherwise unreachable for a control.
+const writeDeviceMark = async (peerPubkey, orderId, mark) => {
+  const applyToStore = (value) => useChatStore.getState().setDms((prev) => {
+    const msgs = prev[peerPubkey] || [];
+    return {
+      ...prev,
+      [peerPubkey]: msgs.map((m) => (m.id === orderId ? { ...m, deviceMark: value } : m)),
+    };
+  });
+  const previous = (useChatStore.getState().dms[peerPubkey] || [])
+    .find((m) => m.id === orderId)?.deviceMark ?? null;
+  applyToStore(mark);
+  try {
+    // The row goes down through the at-rest view, which wakes the opened row
+    // and seals it again; the count says whether there was a row to change.
+    if (await db.messages.update(orderId, { deviceMark: mark })) return true;
+    throw new Error('no stored row for this order');
+  } catch (error) {
+    // A mark that cannot survive a reload is not drawn: the card would
+    // claim a device note the next load does not have.
+    applyToStore(previous);
+    console.error('[orders] Could not save the check mark:', error);
+    return false;
+  }
+};
+
+// The seam the control drives: the product's own writer, behind the same
+// compile-time guard as window.__cipher. A shipped build carries neither.
+if (typeof window !== 'undefined' && import.meta.env?.VITE_TEST_HOOKS === '1') {
+  window.__cipherWriteDeviceMark = writeDeviceMark;
+}
+
+// The one cross-tab critical section in the chain check. Two tabs checking two
+// orders against the same transfer can both read the ledger before either
+// appends, and the second write drops the first order's entry. Web Locks are
+// per origin and shared by every tab of it, so the read, the refusals and the
+// append become one section. The lock is named after the account whose ledger
+// it guards: two accounts on one device keep separate ledgers and never wait
+// on each other. (W2b)
+function withLedgerLock(run) {
+  const scope = getActivePubkey();
+  const name = scope ? `cipher-consumed-ledger:${scope}` : 'cipher-consumed-ledger';
+  const locks = globalThis.navigator?.locks;
+  // Every engine this app ships on has Web Locks. Where it is missing the
+  // block runs exactly as it did before: no queue, no crash, and nothing in
+  // the read or the refusals is skipped.
+  if (!locks || typeof locks.request !== 'function') return run();
+  return locks.request(name, { mode: 'exclusive' }, run);
+}
 
 export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, openChat }) {
   // One order request per press. The Buy button has no disabled state, so a
@@ -463,57 +524,79 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
             // or an address already paid for another order, confirms nothing
             // here. The ledger lives in this account's storage, so it
             // survives a reload and a history fetch. (security S1)
-            const read = readConsumedLedger();
-            if (!read.ok) {
-              throw new Error('The payment ledger on this device could not be read, so this device cannot prove what a transfer paid. Nothing was confirmed. Reinstall or clear this app\'s storage, then check the chain again.');
-            }
-            const ledger = read.ledger;
-            const taken = txidSpokenFor(ledger, { currency, txid: outcome.report.txid, orderId: msg.id })
-              || addressSpokenFor(ledger, { address, orderId: msg.id });
-            if (taken) {
-              throw new Error('That payment already confirmed another order. A transaction pays one order, and its receipt names it. Nothing was confirmed.');
-            }
-            // An order consumes only a transfer the chain dates at or after
-            // its address was issued. An older transfer on the same address
-            // was money that arrived for something else. The date is the one
-            // this device wrote at issuance — the card, then the acceptance
-            // — never a field the buyer could type. (security S1)
-            const issuedAtSec = Number(details?.issuedAt ?? vendorPair?.issuedAt);
-            if (Number.isFinite(issuedAtSec) && issuedAtSec > 0) {
-              const transferTime = Number(outcome.report?.time);
-              if (!Number.isFinite(transferTime) || transferTime < issuedAtSec) {
-                throw new Error('The watcher could not date the transfer, or it was recorded before this order\'s address was issued. Nothing was confirmed. Update your watcher and check again.');
+            // The read, the refusals and the append run as one section: the
+            // watcher's answer and its amount are already in hand above, and
+            // nothing below waits on the network. The read inside is the raw
+            // one — readConsumedLedger reads the stored bytes through
+            // scopedRaw, never the per-tab cached scopedGet, which is stale
+            // in the other tab by definition. (W2b)
+            const signed = await withLedgerLock(async () => {
+              const read = readConsumedLedger();
+              if (!read.ok) {
+                // Marked before the refusal goes out, so the card keeps saying
+                // it once the toast is gone and after a reload. Nothing on the
+                // order moves: this is a note on the device, not a payment state.
+                await writeDeviceMark(msg.pubkey, msg.id, { at: Date.now(), kind: 'unreadable_record' });
+                // The refusal leads with the fact the vendor needs and never
+                // sends anyone to a destructive repair: a wipe takes the
+                // receipts with it, and the phrase brings back the account only.
+                // A read that failed is not a record proved damaged, and no
+                // sentence here promises what a wallet balance will show.
+                throw new Error('Nothing was confirmed. This device could not read its payment record, so it can\'t check whether this transfer already paid another order — don\'t reinstall or clear the app\'s data, which wipes your receipts and order history here, and your 12-word recovery phrase restores the account only.');
               }
-            }
-            // The receipt binds the covering sum the watcher reported — every
-            // output owed to the payee in scope — not merely its largest
-            // output. (security S1)
-            const paid = outcome.report?.amount ?? outcome.report?.outputAmount;
-            if (paid == null || paid === '') throw new Error('The watcher did not report an amount. The receipt was not signed.');
-            const amount = typeof paid === 'number'
-              ? paid.toFixed(12).replace(/0+$/, '').replace(/\.$/, '')
-              : String(paid);
-            const signed = signReceipt(identity.sk, {
-              orderId: msg.id,
-              buyer: msg.pubkey,
-              vendor: identity.pk,
-              currency,
-              address,
-              amount,
-              txid: outcome.report.txid,
-              at: Math.floor(Date.now() / 1000),
-              outcome: RECEIPT_OUTCOME.CONFIRMED,
+              // The record read, so the device's own note is no longer true and
+              // comes off the card. Written the same way it was put on, so the
+              // clear also survives a reload and a refetch.
+              if (msg.deviceMark) await writeDeviceMark(msg.pubkey, msg.id, null);
+              const ledger = read.ledger;
+              const taken = txidSpokenFor(ledger, { currency, txid: outcome.report.txid, orderId: msg.id })
+                || addressSpokenFor(ledger, { address, orderId: msg.id });
+              if (taken) {
+                throw new Error('That payment already counts toward another order, so it can\'t confirm this one. One transfer pays one order, and its receipt names which. Nothing was confirmed.');
+              }
+              // An order consumes only a transfer the chain dates at or after
+              // its address was issued. An older transfer on the same address
+              // was money that arrived for something else. The date is the one
+              // this device wrote at issuance — the card, then the acceptance
+              // — never a field the buyer could type. (security S1)
+              const issuedAtSec = Number(details?.issuedAt ?? vendorPair?.issuedAt);
+              if (Number.isFinite(issuedAtSec) && issuedAtSec > 0) {
+                const transferTime = Number(outcome.report?.time);
+                if (!Number.isFinite(transferTime) || transferTime < issuedAtSec) {
+                  throw new Error('The watcher could not date the transfer, or it was recorded before this order\'s address was issued. Nothing was confirmed. Update your watcher and check again.');
+                }
+              }
+              // The receipt binds the covering sum the watcher reported — every
+              // output owed to the payee in scope — not merely its largest
+              // output. (security S1)
+              const paid = outcome.report?.amount ?? outcome.report?.outputAmount;
+              if (paid == null || paid === '') throw new Error('The watcher did not report an amount. The receipt was not signed.');
+              const amount = typeof paid === 'number'
+                ? paid.toFixed(12).replace(/0+$/, '').replace(/\.$/, '')
+                : String(paid);
+              const receipt = signReceipt(identity.sk, {
+                orderId: msg.id,
+                buyer: msg.pubkey,
+                vendor: identity.pk,
+                currency,
+                address,
+                amount,
+                txid: outcome.report.txid,
+                at: Math.floor(Date.now() / 1000),
+                outcome: RECEIPT_OUTCOME.CONFIRMED,
+              });
+              scopedSet(`receipt_${msg.id}`, receipt);
+              // The envelope { v: 1, entries } lets a future build tell a
+              // corrupt ledger from an empty one. (security S1)
+              scopedSet('consumed_txids', { v: 1, entries: markConsumed(ledger, {
+                currency,
+                txid: outcome.report.txid,
+                orderId: msg.id,
+                address,
+                at: Math.floor(Date.now() / 1000),
+              }) });
+              return receipt;
             });
-            scopedSet(`receipt_${msg.id}`, signed);
-            // The envelope { v: 1, entries } lets a future build tell a
-            // corrupt ledger from an empty one. (security S1)
-            scopedSet('consumed_txids', { v: 1, entries: markConsumed(ledger, {
-              currency,
-              txid: outcome.report.txid,
-              orderId: msg.id,
-              address,
-              at: Math.floor(Date.now() / 1000),
-            }) });
             const payload = {
               type: 'order_update',
               orderId: msg.id,

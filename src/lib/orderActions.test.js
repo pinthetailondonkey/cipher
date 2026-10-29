@@ -508,8 +508,11 @@ test('the payment details either side check come from the order updates (securit
   assert.equal(details.coinCurrency, 'btc');
   assert.equal(details.coinAmount, '0.01');
   // A received "seen" claim is not payment evidence (F7): the details carry
-  // what this device has earned, never what an update asserts.
-  assert.equal(details.paymentState, 'created');
+  // what this device has earned, never what an update asserts. The one thing
+  // a buyer does earn from a received update is the address the vendor issued
+  // — the same update the pair above was just read from (F-BC1) — so the
+  // state stops at address_issued and the peer's watcher word is still nil.
+  assert.equal(details.paymentState, 'address_issued');
   assert.equal(details.paymentSeenBy, '');
   assert.equal(details.status, 'paid');
   // The acceptance carries the issuance date of the order's address, so the
@@ -569,4 +572,119 @@ test('a real countersigned receipt lights the buyer\'s own ledger row', () => {
   const evil = signReceipt(vendorKey, evilBody, signReceipt(vendorKey, evilBody));
   assert.equal(orderHasVerifiedReceipt([mine, receipted('u9', 20, evil)], 'order-1', mine, buyer, vendor), false);
   assert.equal(orderState([mine, receipted('u9', 20, evil)], 'order-1', mine).paymentState, 'created');
+});
+
+// F-BC1: the buyer's chain check could never move. A vendor's acceptance
+// carries paymentState 'address_issued' and the pair on its own data, but the
+// buyer's reader adopted only a localPatch from a received update — a field
+// only the receiver writes — so the buyer sat at 'created' and the walk
+// (created → address_issued → seen → confirmed) had no first step. The one
+// adoption added here takes the vendor's issued address and nothing else.
+test('F-BC1: a buyer adopts the address a vendor issued, and nothing further', () => {
+  const buyer = 'b'.repeat(64);
+  const vendor = 'c'.repeat(64);
+  const ADDR = 'bc1qfb1probe';
+  const NOW = 1_793_000_000;
+  // The buyer's own sent request, as it is stored on the buyer's device.
+  const mine = { id: 'order-1', isSender: true, timestamp: NOW, pubkey: vendor, chatId: vendor,
+    data: { type: 'order_request', status: ORDER_STATUS.PENDING, paymentState: 'created', product: { title: 'Washer', priceUsd: '24.00', currency: 'USD' } } };
+  // Exactly what useCommerce sends as the acceptance: the pair and its state
+  // on the update's own data.
+  const acceptance = (data = {}) => ({ id: 'acc-1', isSender: false, timestamp: NOW + 60, pubkey: vendor, chatId: vendor,
+    data: { type: 'order_update', orderId: 'order-1', status: ORDER_STATUS.ACCEPTED, paymentState: 'address_issued',
+      paymentMethods: { btc: ADDR }, coinAmount: '0.001', coinCurrency: 'btc', issuedAt: NOW + 55, ...data } });
+
+  // (a) the repro: the buyer reaches address_issued, from the same update the
+  // details are read from — the state and the details cannot disagree.
+  const state = orderState([mine, acceptance()], 'order-1', mine, buyer, vendor);
+  assert.equal(state.paymentState, 'address_issued');
+  const details = orderPaymentDetails([mine, acceptance()], 'order-1', buyer, vendor);
+  assert.equal(details.paymentState, 'address_issued');
+  assert.deepEqual(details.paymentMethods, { btc: ADDR });
+  assert.equal(details.coinCurrency, 'btc');
+  assert.equal(details.coinAmount, '0.001');
+  assert.equal(details.issuedAt, NOW + 55);
+
+  // (b) a peer's greedier claim with a valid pair moves nobody further: seen,
+  // confirmed and paymentSeenBy stay this device's own facts.
+  for (const claim of ['seen', 'confirmed']) {
+    const greedy = orderState([mine, acceptance({ paymentState: claim, paymentSeenBy: 'watcher' })], 'order-1', mine, buyer, vendor);
+    assert.equal(greedy.paymentState, 'address_issued', `${claim} does not get adopted`);
+    assert.equal(greedy.paymentSeenBy, '');
+  }
+
+  // (c) a claim with no usable pair is not an issued address at all.
+  for (const methods of [undefined, null, {}, { btc: '' }, { btc: '   ' }, 'bc1qfb1probe']) {
+    const claimed = orderState([mine, acceptance({ paymentMethods: methods })], 'order-1', mine, buyer, vendor);
+    assert.equal(claimed.paymentState, 'created', `no pair (${JSON.stringify(methods)}) issues nothing`);
+  }
+  // A state below address_issued is not an issuance either.
+  assert.equal(orderState([mine, acceptance({ paymentState: 'created' })], 'order-1', mine, buyer, vendor).paymentState, 'created');
+  // And an update with no order data at all changes nothing.
+  assert.equal(orderState([mine, { id: 'u0', isSender: false, timestamp: NOW + 1, data: null }], 'order-1', mine, buyer, vendor).paymentState, 'created');
+
+  // (d) the vendor side is unmoved: a pair a peer typed into an update it sent
+  // is the peer's word, and the vendor never accepted this order.
+  const vendorCard = { ...mine, isSender: false };
+  const buyersUpdate = { ...acceptance(), pubkey: buyer, isSender: false };
+  assert.equal(orderState([vendorCard, buyersUpdate], 'order-1', vendorCard, vendor, buyer).paymentState, 'created');
+
+  // A later vendor update with no pair cannot erase what the acceptance put
+  // there — adoption is the best evidence over every message, not the newest.
+  const later = { id: 'u2', isSender: false, timestamp: NOW + 120, pubkey: vendor,
+    data: { type: 'order_update', orderId: 'order-1', status: ORDER_STATUS.SHIPPED } };
+  assert.equal(orderState([mine, acceptance(), later], 'order-1', mine, buyer, vendor).paymentState, 'address_issued');
+
+  // The buyer's own watcher write still walks the chain from there, and the
+  // acceptance's row itself is the one the details read.
+  const walked = { ...mine, localPatch: { paymentState: 'seen', paymentSeenBy: 'watcher' } };
+  assert.equal(orderState([walked, acceptance()], 'order-1', walked, buyer, vendor).paymentState, 'seen');
+
+  // (f) the pair must pay on the coin the update says it issued for. An
+  // update claiming xmr with only a btc pair issued nothing the check could
+  // pay: the details reader takes the update's xmr and finds no address, so
+  // the card would claim a state its own check can never walk. (AUDITOR)
+  const mismatched = [mine, acceptance({ coinCurrency: 'xmr', paymentMethods: { btc: ADDR } })];
+  assert.equal(orderState(mismatched, 'order-1', mine, buyer, vendor).paymentState, 'created');
+  assert.equal(orderPaymentDetails(mismatched, 'order-1', buyer, vendor).coinCurrency, 'xmr');
+  // The same pair for the coin it names still lifts, whatever its case.
+  assert.equal(orderState([mine, acceptance({ coinCurrency: 'BTC' })], 'order-1', mine, buyer, vendor).paymentState, 'address_issued');
+  const xmrPair = acceptance({ coinCurrency: 'xmr', paymentMethods: { xmr: '4fb1probe' }, coinAmount: '0.5' });
+  assert.equal(orderState([mine, xmrPair], 'order-1', mine, buyer, vendor).paymentState, 'address_issued');
+  assert.equal(orderPaymentDetails([mine, xmrPair], 'order-1', buyer, vendor).paymentMethods.xmr, '4fb1probe');
+  // An update that names no coin issues nothing, even with a pair on it: the
+  // lift names one coin or it names none.
+  assert.equal(orderState([mine, acceptance({ coinCurrency: '' })], 'order-1', mine, buyer, vendor).paymentState, 'created');
+  // The coin name is the sender's. A name that resolves on every object must
+  // not pass for an issued address: only the pair's own coins count. (AUDITOR,
+  // executed: these four lifted 'created' -> 'address_issued' before the guard)
+  for (const hostile of ['constructor', '__proto__', 'hasOwnProperty', 'toString', 'valueOf']) {
+    const claimed = orderState([mine, acceptance({ coinCurrency: hostile })], 'order-1', mine, buyer, vendor);
+    assert.equal(claimed.paymentState, 'created', `coin name ${hostile} issues nothing`);
+  }
+  // A real coin still lifts, and the name is normalised before the lookup:
+  // 'BTC' and ' btc ' are the same coin as 'btc'.
+  assert.equal(orderState([mine, acceptance({ coinCurrency: 'btc ' })], 'order-1', mine, buyer, vendor).paymentState, 'address_issued');
+  // A real coin with no pair for it issues nothing.
+  assert.equal(orderState([mine, acceptance({ coinCurrency: 'xmr' })], 'order-1', mine, buyer, vendor).paymentState, 'created');
+});
+
+// F-BC1 control (e): the verified-receipt arm is untouched by the redesign.
+// It is the terminal artifact both keys signed after a real watcher report,
+// so it still moves the payment, and a receipt that fails verification still
+// moves nothing.
+test('F-BC1: the verified-receipt arm behaves exactly as before', () => {
+  const buyerKey = schnorr.utils.randomSecretKey();
+  const vendorKey = schnorr.utils.randomSecretKey();
+  const buyer = hexOf(schnorr.getPublicKey(buyerKey));
+  const vendor = hexOf(schnorr.getPublicKey(vendorKey));
+  const body = { orderId: 'order-1', buyer, vendor, currency: 'btc', address: 'bc1qfb1probe', amount: '0.001', txid: 'aa', at: 1_700_000_000, outcome: 'confirmed' };
+  const signed = signReceipt(vendorKey, body, signReceipt(buyerKey, body));
+  const mine = { id: 'order-1', isSender: true, timestamp: 10, pubkey: vendor, chatId: vendor,
+    data: { type: 'order_request', status: ORDER_STATUS.PENDING, paymentState: 'created', product: { title: 'Washer' } } };
+  const riding = { id: 'u4', isSender: false, timestamp: 14, pubkey: vendor, chatId: vendor,
+    data: { type: 'order_update', orderId: 'order-1', status: ORDER_STATUS.PAID, receipt: signed } };
+  assert.equal(orderState([mine, riding], 'order-1', mine, buyer, vendor).paymentState, 'confirmed');
+  const tampered = { ...riding, data: { ...riding.data, receipt: { ...signed, body: { ...signed.body, amount: '9' } } } };
+  assert.equal(orderState([mine, tampered], 'order-1', mine, buyer, vendor).paymentState, 'created');
 });

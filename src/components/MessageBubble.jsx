@@ -135,7 +135,7 @@ function nextStepOf(state, isBuyer) {
   return '';
 }
 
-function OrderReceipt({ content, isBuyer = false, disputeReason = '' }) {
+function OrderReceipt({ content, isBuyer = false, disputeReason = '', deviceMark = null }) {
   const product = content.product || {};
   const title = product.title || product.name || content.productName || 'Order';
   const price = orderPriceLabel(content);
@@ -159,6 +159,21 @@ function OrderReceipt({ content, isBuyer = false, disputeReason = '' }) {
         </div>
         {price && <p className="mt-1 text-[15px] font-bold text-accentText">{price}</p>}
         {nextStep && <p className="mt-0.5 text-[12px] leading-snug text-ink/50">{nextStep}</p>}
+        {deviceMark && (
+          // A check that could not run leaves a note on this device and goes no
+          // further: it is written to the local patch only, so it is never sent
+          // and the other side cannot read it. It lives on the card because the
+          // toast that carried the same refusal is one line, four seconds, and
+          // ellipsised on a phone. Nothing here offers a repair, because this
+          // build has none: the record is unreadable and pressing anything on
+          // this screen would fail the same way.
+          <div className="mt-1.5 rounded-lg bg-ink/5 px-2 py-1.5" role="note">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-inkSubtle">The check could not run</p>
+            <p className="mt-0.5 text-[13px] font-semibold leading-snug text-ink">Nothing was confirmed.</p>
+            <p className="mt-0.5 text-[13px] leading-snug text-ink">This device could not read its payment record, so this order cannot be checked. Your order, its receipts and the messages here are still on this device.</p>
+            <p className="mt-1 text-[12px] leading-snug text-inkMuted">Nothing on this screen repairs that record, and clearing or reinstalling the app would take those receipts with it. Your 12-word phrase restores the account only. The check can run again once this device can read the record.</p>
+          </div>
+        )}
         {content.status === 'disputed' && disputeReason && (
           // The disagreement as it was sent: the order it names is the card
           // itself, and the line under it is the resolution that was asked
@@ -527,7 +542,7 @@ export default function MessageBubble({ message, data, onAction, senderName, ide
           // F7: the badge reads derived payment facts, not what the update
           // itself claims — a received "confirmed" with no receipt behind it
           // reads back as its real state.
-          <OrderReceipt content={{ ...content, ...orderState(chatMessages, message?.id, { data: content }, '', activeDm) }} isBuyer={isSender} disputeReason={disputeReason} />
+          <OrderReceipt content={{ ...content, ...orderState(chatMessages, message?.id, { data: content }, '', activeDm) }} isBuyer={isSender} disputeReason={disputeReason} deviceMark={message?.deviceMark || null} />
         )}
         {(content.type === 'cipher_order' || content.type === 'order_update') && (
           <ReceiptDoor message={message} content={content} />

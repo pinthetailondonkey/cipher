@@ -8,7 +8,7 @@ import { readFileSync, mkdirSync, writeFileSync } from 'node:fs';
 // Evidence beats assumption, so the record it writes says which SHA, which
 // build and which port actually answered.
 
-const PORT = 8081;
+const PORT = Number(process.env.AUD_HARNESS_PORT || 8285); // AUDITOR
 
 function git(args) {
   return execFileSync('git', args, { encoding: 'utf8' }).trim();

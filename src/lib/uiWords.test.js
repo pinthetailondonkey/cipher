@@ -151,3 +151,73 @@ test('no hex color literal in JSX — tokens live in index.css', () => {
   }
   assert.deepEqual(hits, []);
 });
+
+// The payment-record refusal. Two laws, because both failed once:
+//   1. It leads with what the vendor needs — "Nothing was confirmed." — so the
+//      first words are the true fact, not the diagnosis.
+//   2. It never sends anyone to a destructive repair. The string it replaced
+//      said "Reinstall or clear this app's storage", which destroys the
+//      receipts the refusal exists to protect. A sentence that BEGINS with
+//      "Reinstall" is the instruction shape; the warning tells people NOT to.
+// The surface that shows this string on a phone currently truncates it to one
+// line; that is a separate item and does not change the words.
+
+// Two other refusals (taken, undated) also end with the same four words, so
+// the selector is the whole opening phrase, not the fragment.
+const UNREADABLE_REFUSAL_LINE = /'Nothing was confirmed\. This device could not read its payment record/;
+
+test('the payment-record refusal leads with the fact and names what a wipe costs', () => {
+  const source = fs.readFileSync(path.join(SRC, 'features/chat/useCommerce.js'), 'utf8');
+  const lines = source.split('\n').filter((line) => UNREADABLE_REFUSAL_LINE.test(line));
+  assert.equal(lines.length, 1, 'exactly one refusal carries this opening');
+  const quoted = lines[0].match(/'((?:[^'\\]|\\.)*)'/);
+  assert.ok(quoted, 'the refusal is a plain string literal');
+  const message = quoted[1].replace(/\\'/g, "'");
+
+  assert.ok(message.startsWith('Nothing was confirmed.'), `the fact opens it: ${message}`);
+  assert.match(message, /could not read its payment record/, 'it says reading failed, not that the record is damaged');
+  assert.match(message, /don't reinstall or clear the app's data/i, 'it names the destructive action and refuses it');
+  assert.match(message, /12-word recovery phrase restores the account only/, 'it says what the phrase does and does not bring back');
+  assert.doesNotMatch(message, /\bbalance\b/i, 'it promises nothing about a wallet balance');
+  assert.doesNotMatch(message, /\b(damaged|corrupt)\b/i, 'a failed read does not prove damage');
+});
+
+// The persistent half. The toast is one line and four seconds, so the refusal
+// also lives on the order card. That block must say the fact, refuse the wipe,
+// name no repair that does not exist, and leave nothing to press. Words only:
+// this law never looks at the block's styling.
+test('the order-card refusal states the dead end and offers no repair', () => {
+  const source = fs.readFileSync(path.join(SRC, 'components/MessageBubble.jsx'), 'utf8');
+  const start = source.indexOf('The check could not run');
+  assert.ok(start !== -1, 'the block is on the card');
+  const block = source.slice(start, start + 1200);
+  assert.match(block, /Nothing was confirmed\./, 'it opens with the true fact');
+  assert.match(block, /could not read its payment record/, 'it says reading failed');
+  assert.match(block, /Nothing on this screen repairs that record/, 'it states the dead end plainly');
+  assert.match(block, /restores the account only/, 'it keeps the phrase limit and does not promise the receipts back');
+  assert.match(block, /clearing or reinstalling the app would take those receipts/, 'it warns about the wipe instead of ordering one');
+  assert.doesNotMatch(block, /<button/i, 'a dead end dressed as a button is not a dead end');
+  assert.doesNotMatch(block, /\bbalance\b/i, 'it promises nothing about a wallet balance');
+  assert.doesNotMatch(block, /\b(damaged|corrupt)\b/i, 'a failed read does not prove damage');
+});
+
+// What this catches, measured rather than assumed: "Reinstall or clear the app
+// to fix it." is caught; "You should reinstall or clear the app to fix it." and
+// "If this persists, reinstall the app." are NOT, because the banned phrase
+// must open a sentence or a quoted string. It is the instruction shape, not
+// the whole class — the name says exactly that much and no more. Widening it
+// is a separate decision, not something a rename should quietly do.
+test('no UI string opens by ordering a person to reinstall or clear the app', () => {
+  const hits = [];
+  for (const file of codeFiles) {
+    const fileRel = rel(file);
+    if (file.endsWith('.test.js') || file.endsWith('.test.jsx')) continue;
+    fs.readFileSync(file, 'utf8').split('\n').forEach((line, i) => {
+      // The instruction shape: a sentence that starts with "Reinstall".
+      if (!/(?:^|[.!?]\s+|['"`]\s*)Reinstall or clear\b/.test(line)) return;
+      if (line.includes(LINE_WAIVER)) return;
+      hits.push(`${fileRel}:${i + 1}: ${line.trim()}`);
+    });
+  }
+  assert.deepEqual(hits, []);
+});
