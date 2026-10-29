@@ -4,11 +4,15 @@ import Button from '../ui/Button';
 import Input from '../ui/Input';
 import { MIN_PIN_LENGTH } from '../../lib/vaultLockout';
 import { usernameRelays } from '../../lib/relays';
+import { querySyncAfterAuth } from '../../lib/pool';
+import { HANDLE_TAKEN, lookupHandleClaim } from '../../lib/handleClaim';
 import { DEVICE_UNAVAILABLE_COPY, deviceLockReady } from '../../lib/deviceProvider';
 
-// Create — the first-run account mode (§10). The BYPASSED username precheck
-// stays bypassed exactly as it was; the handle is only truly checked when
-// the login is finalized.
+// Create — the first-run account mode (§10). The handle is checked against the
+// pubkey it will be published to before anything is made, and that check can
+// return three answers, not two: available, taken, or unknown. Unknown allows
+// the signup on purpose — what it costs and why is written out in
+// lib/handleClaim.js. This screen only decides what to do with each answer.
 export default function Create({ identity, onCreated, go }) {
   const [handle, setHandle] = useState('');
   const [pin, setPin] = useState('');
@@ -25,24 +29,27 @@ export default function Create({ identity, onCreated, go }) {
     return () => { live = false; };
   }, []);
 
-  const checkUsernameAvailable = async (username) => {
-    let pool;
-    const relays = usernameRelays;
+  // The relays are read through the codebase's own AUTH-aware reader rather
+  // than pool.querySync: a relay that challenges AUTH answers the first REQ
+  // with EOSE and then leaves it alone, so a direct query can come back empty
+  // and an empty read is what "available" is made of. At first run there is no
+  // key yet, so no challenge can be answered — that residual is named in
+  // lib/handleClaim.js and in the lane report rather than hidden here.
+  const readClaims = async (filter, timeoutMs) => {
+    const { SimplePool } = await import('nostr-tools');
+    const pool = new SimplePool();
     try {
-      const { SimplePool } = await import('nostr-tools');
-      pool = new SimplePool();
-      const events = await Promise.race([
-        pool.querySync(relays, { kinds: [10003], '#t': ['cipher_username_' + username], limit: 5 }),
-        new Promise(r => setTimeout(() => r([{ id: 'timeout', tags: [] }]), 3000)),
-      ]);
-      return events.length === 0;
-    } catch (e) {
-      console.warn('Precheck failed — failing CLOSED to prevent squatting:', e);
-      return false;
+      // Half the budget for the AUTH re-ask, so the deadline above it is the
+      // one that decides, not this one racing it.
+      return await querySyncAfterAuth(pool, usernameRelays, filter, Math.max(500, Math.floor(timeoutMs / 2)));
     } finally {
-      pool?.close(relays);
+      pool.close(usernameRelays);
     }
   };
+
+  const checkUsernameAvailable = async (username) => (
+    lookupHandleClaim({ read: readClaims, username })
+  );
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -57,10 +64,13 @@ export default function Create({ identity, onCreated, go }) {
     }
 
     try {
-      const available = true; // BYPASSED: Pre-check is buggy
-      if (!available) {
-        setError('@' + cleanHandle + ' is already taken. Try another.');
-        setLoading(false);
+      // taken refuses and says so; available and unknown both go on. Unknown
+      // is not a silent pass by accident — it is the written decision in
+      // lib/handleClaim.js, and the screen cannot tell the person it was not
+      // checked without a second screen nobody asked for.
+      const verdict = await checkUsernameAvailable(cleanHandle);
+      if (verdict === HANDLE_TAKEN) {
+        setError('@' + cleanHandle + ' is taken. Try another.');
         return;
       }
       const res = await identity.createVault(cleanHandle, pin, enableBio);
@@ -73,8 +83,13 @@ export default function Create({ identity, onCreated, go }) {
       onCreated({ res, cleanHandle, indices: _idxs });
     } catch (err) {
       setError(err?.message || 'Something went wrong');
+    } finally {
+      // Every way out of this — a refusal, a throw from the vault, anything —
+      // has to unlock the button. A refusal that leaves the submit dead is the
+      // same defect as a refusal that never comes: the person cannot try
+      // another handle.
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   return (
