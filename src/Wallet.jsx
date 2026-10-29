@@ -31,6 +31,7 @@ import { pushToast } from './components/ui/toast';
 import { productRelays } from './lib/relays';
 import { listingPublishOutcome, readCachedProducts } from './lib/listing';
 import { blossomServers } from './lib/egress';
+import { publishVendorCard } from './lib/vendorCard';
 
 const VendorDashboard = lazy(() => import('./components/chat/VendorDashboard'));
 const ProfileEditor = lazy(() => import('./components/chat/ProfileEditor'));
@@ -311,6 +312,10 @@ export default function Wallet({ identity, onOpenChat, startView = 'main' }) {
     setIsVendor(true);
     setStatus('Vendor mode is active. Payment addresses are saved on this device.');
     setView('main');
+    // Turning on selling is when an account becomes a vendor, so it is also
+    // when the card can go to the group relay. A failure here does not undo
+    // selling: the next profile save says plainly that the card did not go.
+    publishVendorCard({ isVendor: true, identity, profile: myProfile }).catch(() => {});
   }
 
   if (view === 'order_settings') {
@@ -387,6 +392,7 @@ export default function Wallet({ identity, onOpenChat, startView = 'main' }) {
         <ScreenHeader title="Start selling" onBack={() => setView('main')} />
         <form onSubmit={saveVendorSetup} className="space-y-4 p-4">
           <p className="text-[13px] text-inkMuted">Add at least one address. It stays on this device. Never enter a seed phrase or spending key.</p>
+          <p className="text-[13px] text-inkMuted">Selling puts your name and picture on the group relay, where anyone reading your menu can see them. That relay can delete its data at any time, so the card is a sign, not a record.</p>
           <div className="overflow-hidden rounded-2xl border border-line bg-panel">
             <input value={btcAddress} onChange={(event) => setBtcAddress(event.target.value)} autoComplete="off" spellCheck="false" placeholder="Bitcoin address" className="w-full border-b border-line bg-transparent px-4 py-4 text-[15px] text-ink outline-none placeholder:text-inkSubtle" />
             <input value={xmrAddress} onChange={(event) => setXmrAddress(event.target.value)} autoComplete="off" spellCheck="false" placeholder="Monero address" className="w-full bg-transparent px-4 py-4 text-[15px] text-ink outline-none placeholder:text-inkSubtle" />

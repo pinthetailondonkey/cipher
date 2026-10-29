@@ -5,6 +5,7 @@ import { getPrivacy } from '../../lib/privacy';
 import { AtSign, Image, Type, User } from 'lucide-react';
 
 import { profileEditorRelays } from '../../lib/relays';
+import { publishVendorCard, vendorCardContent } from '../../lib/vendorCard';
 
 // The sheet it lives in draws the heading and the dismiss control, so this
 // file is the fields and the publish action, nothing else.
@@ -18,6 +19,7 @@ export default function ProfileEditor({ identity }) {
     about: profile.about || '',
     picture: profile.picture || '',
   };
+  const isVendor = useChatStore((state) => state.isVendor);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
 
@@ -39,12 +41,12 @@ export default function ProfileEditor({ identity }) {
         kind: 0,
         created_at: Math.floor(Date.now() / 1000),
         tags: [],
-        content: JSON.stringify({
+        content: JSON.stringify(vendorCardContent({
           name: values.name.trim(),
           display_name: values.displayName.trim(),
           about: values.about.trim(),
           picture: getPrivacy().profilePhoto === 'nobody' ? '' : values.picture.trim(),
-        }),
+        })),
       }, identity.sk);
       const results = await Promise.allSettled(pool.publish(profileEditorRelays, nostrEvent));
       const published = results.some((result) => result.status === 'fulfilled');
@@ -56,7 +58,13 @@ export default function ProfileEditor({ identity }) {
         picture: values.picture.trim() || null,
       };
       updateProfileCache(identity.pk, updated);
-      setMessage('Profile published.');
+      // A vendor's card also lands on the group relay, because that is the
+      // only relay a stranger opening the menu has. The event just signed is
+      // the one published, so the card is one event on both relays.
+      const card = await publishVendorCard({ isVendor, identity, event: nostrEvent });
+      setMessage(isVendor && !card.published
+        ? 'Profile saved. Your card could not be published to the group relay.'
+        : 'Profile published.');
     } catch (error) {
       console.error('[ProfileEditor] Profile publish failed:', error);
       const text = error?.message || 'Could not save your profile.';
@@ -105,6 +113,12 @@ export default function ProfileEditor({ identity }) {
               </span>
             </label>
           </div>
+          {isVendor && (
+            <p className="text-[13px] text-inkSubtle">
+              Selling puts this card on the group relay, where anyone reading your menu can see it.
+              That relay can delete its data at any time, so the card is a sign, not a record.
+            </p>
+          )}
           {message && <p role="status" className={`text-[13px] ${/could not|unlock|error|no relay/i.test(message) ? 'text-danger' : 'text-accentText'}`}>{message}</p>}
           <button type="submit" disabled={saving} className="w-full rounded-2xl bg-accent py-3.5 font-bold text-accentInk hover:bg-accent active:scale-95 disabled:opacity-50">
             {saving ? 'Publishing…' : 'Publish profile'}
