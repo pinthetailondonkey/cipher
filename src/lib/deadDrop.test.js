@@ -415,9 +415,14 @@ test('a carrier note reads once and is gone from the host afterwards', async () 
   assert.equal(opened.text, 'one read only');
   // The host holds nothing afterwards, and the second read is refused.
   assert.equal(host.notes.size, 0);
+  // The honest line, in the reader's own words: a 404 from the host says only
+  // that the note is not there. It cannot say who read it — the reader whose
+  // own slow fetch burned it gets the same 404 as a stranger tapping twice, and
+  // "already been read" tells the first of them something untrue about a note
+  // they never saw.
   await assert.rejects(
     () => openCarrierNote({ fragment, origin, fetchImpl: host.fetchImpl }),
-    /already been read/,
+    /The note is gone or was never here\./,
   );
 });
 
