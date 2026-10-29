@@ -605,3 +605,37 @@ test('a bitcoin amount is quoted before parsing, and a float row counts for noth
   const watcher = fs.readFileSync(new URL('../../scripts/payment-watcher.mjs', import.meta.url), 'utf8');
   assert.match(watcher, /scantxoutset[\s\S]{0,200}exactAmounts: true/);
 });
+
+// Row 19c-w. A watcher that refuses is answering in its own words: the body
+// was authored on the other side of the trust edge, so those words never
+// reach the screen. The sentence a person sees is ours and says what did not
+// happen; the watcher's prose stays in the log.
+test('a watcher refusal shows our sentence on the screen, and the watcher\'s own words nowhere', async () => {
+  const PROSE = 'insufficient funds for bc1qexampleaddress; watcher build 2.1.4 says retry later';
+  const raw = JSON.stringify({ error: PROSE });
+  const logged = [];
+  const original = console.error;
+  console.error = (...args) => { logged.push(args); };
+  let thrown = null;
+  try {
+    await checkPayment({
+      watcherUrl: 'https://watch.example/payment?token=secret',
+      address: '8abc',
+      currency: 'xmr',
+      state: 'address_issued',
+      fetchImpl: async () => ({ ok: false, status: 503, headers: { get: () => null }, text: async () => raw }),
+    });
+  } catch (error) {
+    thrown = error;
+  } finally {
+    console.error = original;
+  }
+  assert.ok(thrown, 'a refused check resolved instead of throwing');
+  // Positive half: the words the toast prints are ours, word for word.
+  assert.equal(thrown.message, 'The payment watcher refused the check. Nothing was marked on the order.');
+  // Negative half: the watcher's prose appears nowhere a person is shown.
+  assert.equal(thrown.message.includes('insufficient funds'), false);
+  assert.equal(thrown.message.includes('watcher build 2.1.4'), false);
+  // The why is not lost: the body reaches the log, where the operator reads it.
+  assert.equal(logged.some((args) => args.some((arg) => typeof arg === 'string' && arg.includes(PROSE))), true);
+});

@@ -341,7 +341,13 @@ export async function checkPayment({ watcherUrl, address, currency, state, amoun
     } catch {
       errorBody = null;
     }
-    throw new Error(errorBody?.error || `The payment watcher refused the check (${response.status}).`);
+    // Row 19c-w. The refusal's own words were authored by the watcher — a
+    // service this person runs, or a URL they pasted — so they are a
+    // stranger's text and the money path never prints them. The status and
+    // the body still reach the log, where they are the operator's to read;
+    // the sentence the screen shows is ours, and it says what did not happen.
+    console.error('[payments] Watcher refused the check:', response.status, errorBody?.error ?? raw);
+    throw new Error('The payment watcher refused the check. Nothing was marked on the order.');
   }
   // Every answer is signed and freshness-checked before it can speak about the
   // chain. A missing signature or a wrong one fails closed: nothing moves.
