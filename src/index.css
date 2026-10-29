@@ -30,16 +30,16 @@
   --scrim-rgb: 0 0 0;
   --text-muted: #9ca3af;
   --text-subtle: #8b93a0;
-  --accent: #2563eb;
-  --accent-text: #60a5fa;
-  --accent-soft: rgba(37, 99, 235, 0.14);
+  --accent: #005dfd;
+  --accent-text: #3987ff;
+  --accent-soft: rgba(0, 93, 253, 0.14);
   --accent-ink: #ffffff;
   --success: #10b981;
   --success-rgb: 16 185 129;
   --danger: #ef4444;
   --danger-rgb: 239 68 68;
-  --glow-a: rgba(37, 99, 235, 0.13);
-  --glow-b: rgba(37, 99, 235, 0.06);
+  --glow-a: rgba(0, 93, 253, 0.13);
+  --glow-b: rgba(0, 93, 253, 0.06);
   --glass-panel: rgba(28, 28, 30, 0.7);
   --glass-header: rgba(10, 10, 10, 0.75);
   --glass-shadow: rgba(0, 0, 0, 0.37);
@@ -91,7 +91,7 @@ img {
 }
 
 :focus-visible {
-  outline: 2px solid rgba(37, 99, 235, 0.9);
+  outline: 2px solid rgba(0, 93, 253, 0.9);
   outline-offset: 2px;
 }
 
