@@ -10,6 +10,8 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
+import { EGRESS } from '../src/lib/egress.js';
+import { MEDIA_REFUSAL, mediaDoorRefusal } from './build-desktop.mjs';
 
 const script = path.resolve(path.dirname(fileURLToPath(import.meta.url)), 'build-desktop.mjs');
 
@@ -56,6 +58,49 @@ test('a door that is not an onion is refused the same way', () => {
     assert.equal(result.status, 1);
     assert.match(result.stderr, /refuses/);
     assert.equal(manifest(dir), false);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// The media door's refusal, in two directions. A refusal tested only in the
+// direction that can fire today would be half a proof, and today the direction
+// that fires does not exist yet: no media row ships the founder's host, so the
+// check is inert by design. The fixture row below is what stands in for the
+// day that literal lands, and it is exercised here rather than described.
+const FOUNDER_MEDIA_ROWS = [
+  { id: 'blossom-primal', role: 'Media host', url: 'https://media.example', gate: 'founder' },
+  { id: 'blossom-nostr-build', role: 'Media host', url: 'https://media.example', gate: 'founder' },
+  { id: 'blossom-band', role: 'Media host', url: 'https://media.example', gate: 'founder' },
+];
+
+test('a build shipping the founder media host without a media onion is refused', () => {
+  assert.equal(mediaDoorRefusal({ mediaDoor: '', rows: FOUNDER_MEDIA_ROWS }), MEDIA_REFUSAL);
+  assert.equal(mediaDoorRefusal({ mediaDoor: 'https://media.example', rows: FOUNDER_MEDIA_ROWS }), MEDIA_REFUSAL);
+  // The same rows with a real onion are accepted — the refusal is about the
+  // door, not about refusing.
+  assert.equal(mediaDoorRefusal({ mediaDoor: `http://${'b'.repeat(56)}.onion`, rows: FOUNDER_MEDIA_ROWS }), '');
+});
+
+test("today's rows ship no founder media host, so the desktop build is unchanged", () => {
+  // The measured state of the shipped rows, not a claim about them: until the
+  // founder's media host lands, no media row carries the marker, so the
+  // refusal cannot fire and the build takes the path it always took.
+  const mediaRows = EGRESS.filter((row) => row.role === 'Media host');
+  assert.equal(mediaRows.length, 3);
+  assert.equal(mediaRows.every((row) => row.gate !== 'founder'), true,
+    'no media row ships the founder host yet, so the media refusal stays inert');
+  assert.equal(mediaDoorRefusal({ mediaDoor: '', rows: EGRESS }), '');
+
+  // And end to end, on the script itself: with a valid group door and no media
+  // door, the media check says nothing and the build goes on to run (and here
+  // fails only because there is no vite in the fixture folder).
+  const dir = workspace();
+  try {
+    const result = run(dir, { VITE_GROUP_ONION: `wss://${'a'.repeat(56)}.onion` });
+    assert.equal(/VITE_MEDIA_ONION/.test(result.stderr), false,
+      'the media refusal must not fire while no media row ships the founder host');
+    assert.notEqual(result.status, 0);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
