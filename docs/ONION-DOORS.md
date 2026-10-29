@@ -35,9 +35,60 @@ Which box you rent, what it costs, and how you pay for it. None of that belongs 
 
 ## After the doors are up
 
-- The two names go into the app's Connections rows that this lane adds: the wall rows for the burn-note link and for the site mirror start unset, and the addresses belong on-device, pasted by you — never shipped in a chat line, and no build gate needs them until they are onion rows (onion rows carry no gate; the founder gate only exists to protect clearnet).
+- The two names go into the app's Connections rows that this lane adds: the wall rows for the burn-note link and for the site mirror start unset, and the addresses belong on-device, pasted by you — never shipped in a chat line. A paste is the shape that works the same afternoon: a row's own paste outranks everything under it, so an address pasted after the doors come up is in use with no build at all.
+- A door baked into a desktop build is the second shape, and it is deliberately harder — see the next section. (An earlier version of this runbook said onion rows carry no gate. That was wrong, and it is the rule that let a build ship without an address and say nothing.)
 - A note posting the clearnet burn-note link keeps working until you say otherwise; the doors sit beside the clearnet rows. Retiring the clearnet rows is a later, separate decision.
 - If the box ever moves, both blocks move with it; the addresses die with the box, and new ones take their place the same way.
+
+## How a door reaches the app (one mechanism)
+
+Every outbound host is one row in `src/lib/egress.js`, and a row resolves to
+an address by one rank order:
+
+    off  >  the person's own paste  >  the founder's door  >  the shipped default
+
+`off` drops the host entirely. A paste wins over everything below it. The
+founder's door wins over the shipped default, and only exists in a build that
+was given it. Otherwise the row uses the address it ships with.
+
+There are two shapes of door, and which one a row may have is decided by
+whether its address is public or hidden:
+
+- **A public address goes in the repo.** It is the row's shipped default, and
+  the row must carry `gate: 'founder'` or the build fails before it runs. The
+  founder names the host; a build cannot add one, and a row cannot quietly
+  point at a new company.
+- **A hidden address never goes in the repo.** It comes from the untracked
+  build file (`.grok/app-env.json`) and enters the bundle only when the build
+  is the desktop app. A web build therefore cannot carry an onion at all — not
+  because nobody typed one, but because the code will not read one unless the
+  desktop marker is set.
+
+Both shapes are the same law from two sides: a build that would send traffic
+somewhere it should not goes red instead of shipping. The desktop build
+refuses to finish when its door is missing or is not an onion address; the
+same refusal covers the media rows the day they ship the founder's host.
+
+One door serves every row of its kind. The media trio (three rows, three
+outside hosts today) resolves to the one media door when it is lit, and the
+search pair resolves to one search door, so a host is named once and every
+row that uses it moves together.
+
+Doors today:
+
+| Door | Build value | State |
+| --- | --- | --- |
+| Group relay | `VITE_GROUP_ONION` | required — the desktop build will not finish without it |
+| Media (three rows) | `VITE_MEDIA_ONION` | checked, and dark until a media row ships the founder's host |
+| Message relay, search pair, burn note | — | a slot that ships dark; no address yet |
+
+A desktop bundle carries the onion in the clear, because anything that dials
+an onion must. That is the shape already accepted for the group relay.
+
+**Evidence, once an onion rides in a build:** a commit sha alone no longer
+determines a desktop bundle, because the address came from an untracked file.
+A build record must name the sha and the env it was built with, so two
+bundles from one sha can never be confused for each other.
 
 ## Offering the mirror to Tor Browser (Onion-Location)
 
