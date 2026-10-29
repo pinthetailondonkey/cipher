@@ -118,3 +118,27 @@ test('an OPTIONS preflight is answered so the app may post from its own origin',
     assert.match(pre.headers.get('access-control-allow-methods') || '', /POST/);
   } finally { await c.close(); }
 });
+
+// The page's own script ships as text, so a mistake in its escaping is
+// invisible to every request test above — and one was: the id transform wrote
+// `\+` and `\/` inside a template literal, the browser received `/+/g` and
+// `///g`, and refused to parse the whole script. The page could never show a
+// note. This asks the browser's question: does what we serve parse?
+test("the page's own script parses as served, and its id is the app's base64url", async () => {
+  const c = await start();
+  try {
+    const text = await (await fetch(`${c.base}/note`)).text();
+    const script = text.split('<script>')[1].split('</script>')[0];
+    assert.ok(script && script.trim().length > 0, 'the page carries a script');
+    assert.doesNotThrow(() => new Function(script), 'the page script must parse as the browser receives it');
+    // The id the page derives is the same one the app posts: base64url, no
+    // padding. Run the served line itself, so the check cannot drift from it.
+    const line = script.split('\n').find((l) => l.includes('btoa(idBin)'));
+    assert.ok(line, 'the page still derives the id with btoa');
+    const derive = new Function('btoa', 'idBin', `${line.trim()} return id;`);
+    for (const bytes of [[1, 2, 3], [0xfb, 0xef, 0xbe, 0xaa, 0xbb, 0xff, 0xee], Array.from({ length: 16 }, (_, i) => (i * 17) % 256)]) {
+      const bin = Buffer.from(bytes);
+      assert.equal(derive(() => bin.toString('base64'), bin.toString('latin1')), bin.toString('base64url'), `id for ${bytes.length} bytes`);
+    }
+  } finally { await c.close(); }
+});

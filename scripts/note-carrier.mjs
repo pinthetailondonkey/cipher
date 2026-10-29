@@ -85,7 +85,7 @@ const PAGE = `<!doctype html>
   if (raw.length !== 61 || raw[0] !== 2) { fail('This link is not a note link.'); return; }
   var idBin = '';
   for (var j = 1; j < 17; j++) idBin += String.fromCharCode(raw[j]);
-  var id = btoa(idBin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  var id = btoa(idBin).replace(/[+]/g, '-').replace(/[/]/g, '_').replace(/=+$/, '');
   var key = raw.slice(17, 49);
   var iv = raw.slice(49, 61);
   fetch('/api/notes/' + id, { cache: 'no-store', credentials: 'omit' })
