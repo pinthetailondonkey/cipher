@@ -238,10 +238,41 @@ const textOf = (node) => {
 
 const screenText = (hosts) => hosts.map((host) => textOf(host.props.children)).join(' | ');
 
-const setRoute = ({ pathname, hash, replaced = [] }) => {
+// A browser tab, as far as this page can tell: the address bar, and the tab's
+// own short-term memory (sessionStorage) that survives a reload of the same tab.
+// The address is a live value, not a snapshot — history.replaceState really does
+// rewrite window.location, and a harness that only records the call cannot see
+// the defect this file now guards: the reader edits the address it was routed by.
+const newTab = (store = new Map()) => {
+  globalThis.sessionStorage = {
+    getItem: (k) => (store.has(k) ? store.get(k) : null),
+    setItem: (k, v) => store.set(k, String(v)),
+    removeItem: (k) => store.delete(k),
+    clear: () => store.clear(),
+    key: (i) => Array.from(store.keys())[i] ?? null,
+    get length() { return store.size; },
+  };
+  return store;
+};
+
+const setRoute = ({ pathname, hash, replaced = [], keepTab = false, store = null }) => {
+  if (!keepTab) newTab();
+  else if (store) newTab(store);
+  let address = { pathname, hash, search: '' };
   globalThis.window = {
-    location: { pathname, hash, search: '' },
-    history: { replaceState: (_state, _title, url) => { replaced.push(String(url)); } },
+    get location() { return address; },
+    history: {
+      replaceState: (_state, _title, url) => {
+        const next = String(url);
+        replaced.push(next);
+        const cut = next.indexOf('#');
+        address = {
+          pathname: (cut === -1 ? next : next.slice(0, cut)) || '/',
+          hash: cut === -1 ? '' : next.slice(cut),
+          search: '',
+        };
+      },
+    },
     navigator: { clipboard: { writeText: async () => {} } },
     addEventListener() {},
     removeEventListener() {},
@@ -294,6 +325,50 @@ test('a note already opened on this device says so, in the words the reader alre
   assert.match(text, /This note was already opened on this device\./, 'the second open says what happened');
   assert.doesNotMatch(text, /Unlock Cipher/);
   assert.deepEqual(replaced, [], 'a note that never opened leaves the link in the address bar');
+});
+
+// The defect this test exists for: the route was re-read from an address the
+// reader had just edited. Clearing the fragment (which it must do) left the next
+// render with no route, so the identity gate took the screen and unmounted the
+// reader — in the middle of a life, after the burn had already been spent.
+test('the note stays on the screen when the identity settles after the link is cleared', async () => {
+  globalThis.__noteAnswer = { ok: true, text: 'meet at the usual place', transport: 'relay' };
+  const replaced = setRoute({ pathname: '/note', hash: '#DDDD' });
+  const tree = createTree(app.App, {});
+  tree.render();
+  await settle();
+  // The clear lands at the end of a render; the NEXT one is the tick that used
+  // to hand the screen back — loadingSession or the identity settling is enough.
+  tree.render();
+  const text = screenText(tree.render().hosts);
+
+  assert.match(text, /A note that reads once/, 'the reader is still the screen');
+  assert.match(text, /meet at the usual place/, 'the text already shown is still shown');
+  assert.doesNotMatch(text, /Unlock Cipher|Welcome to Cipher/, 'no gate took the screen back');
+  assert.deepEqual(replaced.slice(-1), ['/note'], 'and the fragment is still gone from the address bar');
+});
+
+test('a reload of the same tab lands on the reader, not on the app', async () => {
+  const store = newTab();
+  globalThis.__noteAnswer = { ok: true, text: 'meet at the usual place', transport: 'relay' };
+  setRoute({ pathname: '/note', hash: '#EEEE', keepTab: true, store });
+  const first = createTree(app.App, {});
+  first.render();
+  await settle();
+  first.render();
+
+  // The reload: same tab, same tab memory, and the address bar now holds /note
+  // with no fragment — because the reader cleared it, which is correct.
+  globalThis.__noteAnswer = { ok: false, message: 'This note was already opened on this device.' };
+  setRoute({ pathname: '/note', hash: '', keepTab: true, store });
+  const second = createTree(app.App, {});
+  second.render();
+  await settle();
+  const text = screenText(second.render().hosts);
+
+  assert.match(text, /A note that reads once/, 'the tab is still on the note screen');
+  assert.match(text, /This note was already opened on this device\./, 'and says the honest gone state');
+  assert.doesNotMatch(text, /Unlock Cipher|Welcome to Cipher/, 'a reload never hands the note reader to the app');
 });
 
 test('a plain app launch is untouched: no note route, the lock screen is what a stranger gets', async () => {

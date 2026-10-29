@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { openNoteLink } from './lib/noteReader';
 import { isCarrierFragment } from './lib/deadDrop.js';
+import { rememberNoteRoute } from './lib/noteRoute';
 
 // The page a note link opens on. It is mounted before the app's identity gate
 // and takes nothing from the store: no account, no vault, no chat. The link
@@ -52,6 +53,10 @@ export default function BurnNoteReader({ fragment }) {
   // throw the link away without showing anyone the note.
   useEffect(() => {
     if (state.status !== 'open') return;
+    // The tab keeps the route before the address loses it: this page stays the
+    // page on the next render, and a reload of the same tab lands here on the
+    // gone state rather than on the app's front door.
+    rememberNoteRoute(fragment);
     try { window.history.replaceState(null, '', window.location.pathname); } catch { /* nothing to clean */ }
     // The note is spent only now: the text is in hand and on the screen.
     try { burned.current?.(); } catch { /* the ledger mark is best-effort */ }
