@@ -35,11 +35,18 @@ const HEX64 = /^[0-9a-f]{64}$/;
 
 // The review publisher gate. Deal's kind-10005 publisher — sendReview in
 // useReputation on main (8a36b9a) — has folded under the stack, so the fuse
-// is true: a compose is sign-and-publish, and the local record stays beside
-// the publication so the one-per-receipt door and the offline history keep
-// working. The display side reads the same contract's fetch
+// was true: a compose was sign-and-publish, and the local record stays
+// beside the publication so the one-per-receipt door and the offline
+// history keep working. The display side reads the same contract's fetch
 // (vendorShopReaders.fetchVendorThread) and the same rider ledger.
-export const REVIEW_WIRING_LANDED = true;
+//
+// The fuse is DOWN for launch: the founder ruled reviews absent at launch
+// (2026-10-29). Nothing is deleted — the publisher, the reader, the compose
+// and the rows all stay, and the door comes back by flipping this line.
+// While it is false: no order ever offers a review (so the buy side
+// publishes none), the reader shows no review surface, and the publisher
+// builds nothing. Fees and deals are untouched; they are not reviews.
+export const REVIEW_WIRING_LANDED = false;
 
 // The publisher IS useReputation's sendReview; the stub is gone. sendReview
 // arrives bound to this device's identity (see the compose below, which
@@ -309,6 +316,9 @@ export function reviewEligibility(facts = {}) {
 // THIS order, completed on this device, with the buyer's key on it. Null
 // when any part is missing — the button simply never renders.
 export function reviewOfferForOrder({ messages, order, buyerPubkey, vendorPubkey } = {}) {
+  // The launch gate, read here too: with the fuse down no order offers a
+  // review, so the buy side has nothing to compose and nothing to publish.
+  if (!REVIEW_WIRING_LANDED) return null;
   if (!order?.id || !buyerPubkey || !vendorPubkey) return null;
   const receipt = scopedGet(`receipt_${order.id}`, null);
   const boundHash = scopedGet(`bound_receipt_${order.id}`, '');

@@ -11,7 +11,7 @@ import { shortNpub, noHexName } from '../../lib/npub';
 import { haptic } from '../../lib/haptics';
 import { useReputation } from '../../hooks/useReputation';
 import { useChatStore } from '../../store/chatStore';
-import { riderComposeOf } from '../../lib/vendorReviews';
+import { REVIEW_WIRING_LANDED, riderComposeOf } from '../../lib/vendorReviews';
 import ProvenBanner from './ProvenBanner';
 import ReviewRow from './ReviewRow';
 
@@ -115,7 +115,7 @@ export default function VendorProfilePage({
         >
           View menu
         </Button>
-        {summary.count > 0 && (
+        {REVIEW_WIRING_LANDED && summary.count > 0 && (
           <section className="rounded-2xl border border-line bg-panelStrong px-4 py-4">
             <div className="flex items-center gap-3">
               <p className="text-[26px] font-bold tracking-tight text-ink">{summary.average}</p>
@@ -138,7 +138,7 @@ export default function VendorProfilePage({
           </div>
         </section>
 
-        {reviews.length > 0 && (
+        {REVIEW_WIRING_LANDED && reviews.length > 0 && (
           <section className="mt-4 overflow-hidden rounded-2xl border border-line bg-panelStrong">
             <p className="border-b border-line px-4 py-2.5 text-[13px] text-inkMuted">Reviews</p>
             {reviews.map((review, index) => (
@@ -153,7 +153,7 @@ export default function VendorProfilePage({
             ))}
           </section>
         )}
-        {reviews.length === 0 && (
+        {REVIEW_WIRING_LANDED && reviews.length === 0 && (
           <p className="mt-5 px-1 text-[13px] text-inkSubtle">
             {loading ? 'Reading reviews…' : 'No reviews yet.'}
           </p>

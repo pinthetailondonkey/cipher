@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { schnorr } from '@noble/curves/secp256k1.js';
 import {
@@ -110,19 +111,22 @@ test('eligibility is the bound receipt, the buyer role, and a completed deal', (
   assert.equal(reviewEligibility(null), false);
 });
 
-test('the offer reads the scoped records and the derived order state', () => {
+test('the offer is gated off at launch, so no order door opens and nothing publishes', () => {
   memoryStorage();
   const { buyer, vendor } = boundDeal({ orderId: 'order-2', at: 1_700_000_000 });
   const messages = [
     { id: 'order-2', isSender: true, pubkey: buyer, data: { type: 'cipher_order', status: 'pending' } },
     { id: 'u1', isSender: false, pubkey: vendor, timestamp: 2, data: { type: 'order_update', orderId: 'order-2', status: 'completed' } },
   ];
+  // This is the strongest case there is — a completed, bound, verified deal
+  // with the buyer's key on it — and with the fuse down it still offers
+  // nothing. Review eligibility itself (the receipt, the binding, the
+  // completed state, the buyer's key) stays covered by its own cases above,
+  // so flipping the fuse back on is the only thing between the door and the
+  // record it reads.
   const offer = reviewOfferForOrder({ messages, order: messages[0], buyerPubkey: buyer, vendorPubkey: vendor });
-  assert.ok(offer);
-  assert.equal(offer.orderId, 'order-2');
-  assert.equal(offer.vendorPubkey, vendor);
-  assert.equal(offer.orderMonth, '2023-11');
-  // A deal not yet completed: no offer, no button.
+  assert.equal(offer, null, 'row 22: reviews are absent at launch, so no order offers one');
+  // A deal not yet completed: no offer either.
   const early = reviewOfferForOrder({
     messages: [messages[0]],
     order: messages[0],
@@ -132,6 +136,23 @@ test('the offer reads the scoped records and the derived order state', () => {
   assert.equal(early, null);
   // A viewer who is not the buyer: no offer.
   assert.equal(reviewOfferForOrder({ messages, order: messages[0], buyerPubkey: vendor, vendorPubkey: vendor }), null);
+});
+
+test('row 22: the launch gate is read by every review surface, and the code is kept', () => {
+  // Shape, not behaviour: the fuse is down, and each piece that would
+  // publish or draw a review consults it. The days the door is down, a
+  // surface that stops consulting the flag is the bug this catches.
+  assert.equal(REVIEW_WIRING_LANDED, false);
+  const lib = readFileSync(new URL('./vendorReviews.js', import.meta.url), 'utf8');
+  assert.match(lib, /export const REVIEW_WIRING_LANDED = false;/);
+  assert.match(lib, /if \(!REVIEW_WIRING_LANDED\) return null;\n  if \(!order\?\.id/, 'row 22: the offer reads the launch gate');
+  assert.match(lib, /if \(!REVIEW_WIRING_LANDED\) return null;/, 'row 22: the publisher reads the launch gate');
+  const hook = readFileSync(new URL('../hooks/useVendorReviews.js', import.meta.url), 'utf8');
+  assert.match(hook, /if \(!REVIEW_WIRING_LANDED\) rows = \[\];/, 'row 22: the reader draws no review row while the gate is down');
+  const page = readFileSync(new URL('../components/chat/VendorProfilePage.jsx', import.meta.url), 'utf8');
+  assert.match(page, /\{REVIEW_WIRING_LANDED && summary\.count > 0 && \(/, 'row 22: the summary block reads the launch gate');
+  assert.match(page, /\{REVIEW_WIRING_LANDED && reviews\.length > 0 && \(/, 'row 22: the review list reads the launch gate');
+  assert.match(page, /\{REVIEW_WIRING_LANDED && reviews\.length === 0 && \(/, 'row 22: the empty-reviews line reads the launch gate');
 });
 
 test('a review row normalizes, and display re-derives from the receipt', () => {
@@ -292,9 +313,12 @@ test('the banner words are the contract\'s, one line per rail, never summed', ()
   assert.equal(provenBannerOf(null), '');
 });
 
-test('the fuse is up and the publisher is main\'s sendReview, promising { success, error }', async () => {
-  assert.equal(REVIEW_WIRING_LANDED, true);
-  // No bound sendReview, no publisher — the seam refuses rather than guess.
+test('the fuse is down: no publisher is built, even over a working sendReview', async () => {
+  // Launch state. With the fuse down there is no publisher at all — not a
+  // publisher that refuses late, and not one a caller can talk past. A real
+  // sendReview is offered here precisely to prove the gate does not depend
+  // on one being absent, and that nothing was sent.
+  assert.equal(REVIEW_WIRING_LANDED, false);
   assert.equal(createReviewPublisher({}), null);
   assert.equal(createReviewPublisher(null), null);
   const sent = [];
@@ -302,27 +326,15 @@ test('the fuse is up and the publisher is main\'s sendReview, promising { succes
     sent.push([targetPubkey, rating, text, receiptHash]);
     return { success: true };
   };
-  const publisher = createReviewPublisher({ sendReview });
-  const ok = await publisher({ vendorPubkey: 'v', stars: 4, verdict: 'Fine deal.', receiptHash: 'ee'.repeat(32) });
-  assert.equal(ok.success, true);
-  // Exactly the four published fields go through, in sendReview's own
-  // argument shape — the order month is never submitted.
-  assert.deepEqual(sent, [['v', 4, 'Fine deal.', 'ee'.repeat(32)]]);
-  // A refused publish returns the refusal's own words — never a fake success.
-  const refused = await createReviewPublisher({
-    sendReview: async () => ({ success: false, error: 'A review needs the receipt of a completed trade.' }),
-  })({ stars: 4, verdict: 'Fine deal.', receiptHash: 'ee'.repeat(32) });
-  assert.equal(refused.success, false);
-  assert.equal(refused.error, 'A review needs the receipt of a completed trade.');
-  // A throwing sendReview is an error, shaped as always.
-  const thrown = await createReviewPublisher({
-    sendReview: () => { throw new Error('no identity'); },
-  })({ stars: 4, verdict: 'Fine deal.', receiptHash: 'ee'.repeat(32) });
-  assert.deepEqual(thrown, { success: false, error: 'no identity' });
-  // A wordless refusal still refuses, no invented success.
-  const wordless = await createReviewPublisher({ sendReview: async () => ({ success: false }) })({});
-  assert.equal(wordless.success, false);
-  assert.ok(wordless.error);
+  assert.equal(createReviewPublisher({ sendReview }), null, 'row 22: nothing builds a publisher while reviews are absent');
+  assert.deepEqual(sent, []);
+  // Coverage note, recorded rather than papered over: the publisher body's
+  // own contract — exactly four fields, in sendReview's argument shape, the
+  // order month never submitted, a refusal's own words, a throw shaped as
+  // { success: false, error } — is not exercised while the fuse is down,
+  // because there is no way to build the publisher. Whoever flips the fuse
+  // back up restores the body's cases with it; this test then asserts the
+  // publisher exists and these become the publisher's tests again.
 });
 
 const WIRE_VENDOR = 'b'.repeat(64);

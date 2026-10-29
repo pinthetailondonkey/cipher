@@ -76,6 +76,11 @@ export function useVendorReviews({ vendorPubkey, identity = null, refreshKey = 0
         } else {
           rows = localRows.map((row) => ({ ...row, riders: [] }));
         }
+        // The launch gate: with reviews absent, no review row reaches a
+        // surface and the summary stays empty. The rows on this device are
+        // kept, not read away — proven deals, months and disputes below are
+        // not reviews and ride on unchanged.
+        if (!REVIEW_WIRING_LANDED) rows = [];
         if (!active) return;
         setState({
           proven,
