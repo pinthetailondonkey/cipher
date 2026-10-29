@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
-import { heldGroupRow, joinGroup, mergeGroupProfile } from './groupJoin.js';
+import { duplicateClaimed, heldGroupRow, joinGroup, joinRefusal, mergeGroupProfile } from './groupJoin.js';
 import { getMyGroups } from './myGroups.js';
 
 function memoryStorage() {
@@ -39,6 +39,103 @@ test('a join the relay refuses saves nothing', async () => {
   await assert.rejects(() => joinGroup(identity, 'room2', { nip29 }), /AUTH timed out/);
   assert.deepEqual(getMyGroups(identity.pk), []);
   await assert.rejects(() => joinGroup(identity, '', { nip29: { ...nip29, parseGroupReference: () => ({ id: '' }) } }), /could not be read/);
+});
+
+// AUDITOR, EXECUTED 2/2: a member following the same ?g= link was told
+// "duplicate: User is already a member" in the relay's own words, no row
+// saved, no chat opened. But the relay's claim is not the verdict: the join
+// is opened only when an authenticated read of the group confirms the person
+// can get in, so a relay that lies cannot force a chat open.
+const DUPLICATE = 'duplicate: User is already a member';
+
+function joinThatSays(reason, outcome, calls = []) {
+  return {
+    parseGroupReference: (raw) => ({ id: raw }),
+    loadGroupProfile: async (_identity, id) => ({ id, name: 'AUDL' }),
+    publishGroupJoin: async () => { throw new Error(reason); },
+    fetchGroupMetadataOutcome: async (_identity, id) => { calls.push(id); return outcome; },
+  };
+}
+
+test('a member the relay already counts is walked in on a read that confirms it', async () => {
+  globalThis.localStorage = memoryStorage();
+  const calls = [];
+  const group = await joinGroup(identity, 'room1', {
+    nip29: joinThatSays(DUPLICATE, { status: 'found', metadata: { id: 'room1', name: 'AUDL' } }, calls),
+  });
+  assert.equal(group.id, 'room1');
+  assert.deepEqual(getMyGroups(identity.pk).map((item) => item.id), ['room1'], 'the row is held');
+  assert.deepEqual(calls, ['room1'], 'the claim is checked, not taken');
+});
+
+test('the relay saying "duplicate" is not the verdict: a read that does not confirm leaves them outside', async () => {
+  for (const outcome of [{ status: 'absent' }, { status: 'unavailable', why: 'The relay asked this account to prove itself and the read stopped there.' }]) {
+    globalThis.localStorage = memoryStorage();
+    await assert.rejects(
+      () => joinGroup(identity, 'room9', { nip29: joinThatSays(DUPLICATE, outcome) }),
+      /would not confirm/,
+      `a read that says ${outcome.status} must not open the door`,
+    );
+    assert.deepEqual(getMyGroups(identity.pk), [], 'nothing is held on an unconfirmed claim');
+  }
+  // A read that throws is the same as a read that did not confirm.
+  globalThis.localStorage = memoryStorage();
+  const broken = joinThatSays(DUPLICATE, { status: 'found' });
+  broken.fetchGroupMetadataOutcome = async () => { throw new Error('relay gone'); };
+  await assert.rejects(() => joinGroup(identity, 'room9', { nip29: broken }), /would not confirm/);
+  assert.deepEqual(getMyGroups(identity.pk), []);
+});
+
+test('a real refusal never reaches the membership read, and "not a member" is never a claim', async () => {
+  globalThis.localStorage = memoryStorage();
+  let read = 0;
+  const refusal = (reason) => ({
+    parseGroupReference: (raw) => ({ id: raw }),
+    loadGroupProfile: async (_identity, id) => ({ id, name: 'Room' }),
+    publishGroupJoin: async () => { throw new Error(reason); },
+    fetchGroupMetadataOutcome: async () => { read += 1; return { status: 'found' }; },
+  });
+  await assert.rejects(() => joinGroup(identity, 'room2', { nip29: refusal('restricted: Access denied to private group') }), /restricted/);
+  await assert.rejects(() => joinGroup(identity, 'room2', { nip29: refusal('blocked: user is not a member') }), /blocked/);
+  assert.equal(read, 0, 'a refusal is not worth a membership read');
+  assert.deepEqual(getMyGroups(identity.pk), [], 'nothing is held for a refusal');
+  assert.equal(duplicateClaimed(new Error(DUPLICATE)), true);
+  assert.equal(duplicateClaimed(new Error('blocked: user is not a member')), false, 'a negation is not a claim');
+  assert.equal(duplicateClaimed(new Error('restricted: Access denied to private group')), false);
+  assert.equal(duplicateClaimed(new Error('')), false);
+  assert.equal(duplicateClaimed(null), false);
+});
+
+// The relay's reason is machine text in lower case. It is a log line, not a
+// sentence for the person holding the phone.
+test('no relay reason reaches the screen in the relay\'s own words', () => {
+  const reasons = [
+    DUPLICATE,
+    'restricted: Access denied to private group',
+    'invalid: event could not be verified',
+    'Group relay AUTH timed out',
+    'Group relay OK timed out',
+    'Group relay socket closed',
+    'Group relay requires a signed-in key',
+    '',
+  ];
+  for (const reason of reasons) {
+    const text = joinRefusal(new Error(reason));
+    assert.ok(text.length > 0, 'always says something');
+    assert.match(text, /^[A-Z]/, `a sentence, not a relay string: ${reason}`);
+    assert.match(text, /\.$/, `ends like a sentence: ${reason}`);
+    assert.equal(text.includes('duplicate'), false, `never repeats the relay: ${reason}`);
+    assert.equal(text.includes('restricted'), false, `never repeats the relay: ${reason}`);
+    assert.equal(text.toLowerCase().includes('auth'), false, `no protocol word: ${reason}`);
+  }
+  assert.equal(joinRefusal(new Error('')), 'Could not join that group.');
+  assert.equal(joinRefusal(null), 'Could not join that group.');
+  // A sentence this code wrote is shown as written, not flattened to the fallback.
+  assert.equal(joinRefusal(Object.assign(new Error('That group address could not be read.'), { said: true })), 'That group address could not be read.');
+  // The join path prints this sentence and never the error's own words.
+  const directory = fs.readFileSync(new URL('../features/chat/useGroupDirectory.js', import.meta.url), 'utf8');
+  assert.match(directory, /message: joinRefusal\(err\)/);
+  assert.doesNotMatch(directory, /err(or)?\?\.message \|\| 'Could not join that group\.'/);
 });
 
 test('invite links, search, and Discover all join the same way, and nobody sends a join request', () => {

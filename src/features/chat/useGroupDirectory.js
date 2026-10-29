@@ -4,7 +4,7 @@ import { getMyGroups } from '../../lib/myGroups';
 import { groupRelays, queryWithTimeout } from '../../lib/relays';
 import { getAuthenticatedPool } from '../../lib/pool';
 import { useChatStore } from '../../store/chatStore';
-import { heldGroupRow, joinGroup } from '../../lib/groupJoin';
+import { heldGroupRow, joinGroup, joinRefusal } from '../../lib/groupJoin';
 
 export function useMyGroups(pubkey) {
   const setGroupsStore = useChatStore((s) => s.setGroups);
@@ -61,7 +61,8 @@ export function useGroupDirectory({ identity, createGroupHook, setGroups }) {
       setToast({ type: 'success', message: 'Joined group' });
     } catch (err) {
       console.error('[joinGroupById] error:', err);
-      setToast({ type: 'error', message: err?.message || 'Could not join that group.' });
+      // The relay's own reason is machine text and never reaches the screen.
+      setToast({ type: 'error', message: joinRefusal(err) });
     } finally {
       setLoading(false);
       if (window.location.search.length > 0) window.history.replaceState({}, document.title, window.location.pathname);
