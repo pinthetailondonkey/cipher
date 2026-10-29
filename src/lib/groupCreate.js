@@ -26,6 +26,38 @@ export const PRIVATE_LEVEL_READY = false;
 const ACCESS_LEVELS = new Set([ACCESS_PUBLIC, ACCESS_PRIVATE]);
 const JOIN_POLICIES = new Set([JOIN_APPROVAL, JOIN_OPEN]);
 
+// What a private group's name and description read as on the wire.
+//
+// These are fixed strings, and that is the whole point. Anything derived from
+// the real name — a hash, a truncation, a length — is comparable: a relay that
+// sees two different placeholder values learns that two groups were renamed,
+// and one that sees the same placeholder for two groups it already suspects
+// learns nothing at all. A constant leaks neither the name nor the fact that a
+// rename happened.
+//
+// The real name and description travel inside the sealed per-recipient key
+// envelope instead (groupKeyDistribution). Public groups keep plaintext names:
+// discovery reads them, and that is what a public group is for.
+export const SEALED_LABEL = 'Private group';
+export const SEALED_ABOUT = 'This group is sealed.';
+
+export function relayFacingLabel({ name, about = '', access = ACCESS_PUBLIC }) {
+  if (access !== ACCESS_PRIVATE) return { name, about: about || '' };
+  return { name: SEALED_LABEL, about: SEALED_ABOUT };
+}
+
+// The fields a directory rebuild must take from the device's own record and
+// never from the relay's row: the level the group was created at, and the mark
+// that says its name came from here rather than from a tag. Kept as one
+// function so the rebuild and the tests agree on exactly what survives.
+export function heldSealedFields(local) {
+  if (!local) return {};
+  return {
+    ...(local.access ? { access: local.access } : {}),
+    ...(local.labelSealed ? { labelSealed: true } : {}),
+  };
+}
+
 // An unknown value throws instead of falling back. A create that quietly
 // defaulted would make a group more visible than the person asked for, which
 // is the one failure this screen exists to prevent.
@@ -43,9 +75,14 @@ export function groupCreateTags({
   if (!ACCESS_LEVELS.has(access)) throw new Error(`Unknown access level: ${access}`);
   if (!JOIN_POLICIES.has(joinPolicy)) throw new Error(`Unknown join policy: ${joinPolicy}`);
 
+  // A private group's tags carry the fixed placeholder, never the real words.
+  // The substitution happens here, in the one place that builds relay-facing
+  // tags, so a caller cannot leak a name by passing it through.
+  const relay = relayFacingLabel({ name, about, access });
+
   // `about: ''` rather than a missing tag: the relay and every reader treat
   // the two the same, and the tag list stays a fixed shape.
-  const common = [['h', groupId], ['name', name], ['about', about || '']];
+  const common = [['h', groupId], ['name', relay.name], ['about', relay.about]];
 
   const accessTags = access === ACCESS_PRIVATE
     ? [['private'], ['closed']]
@@ -66,5 +103,10 @@ export function groupCreateTags({
 
   const join = [['h', groupId]];
 
-  return { create, meta, join };
+  // `sealed` is what the caller hands the key-distribution ride: the real name
+  // and description, to be sealed to each member. Null on a public group,
+  // whose name is public by design.
+  const sealed = access === ACCESS_PRIVATE ? { name, about: about || '' } : null;
+
+  return { create, meta, join, sealed };
 }

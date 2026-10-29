@@ -5,7 +5,7 @@ import { groupRelays, queryWithTimeout } from '../../lib/relays';
 import { getAuthenticatedPool } from '../../lib/pool';
 import { useChatStore } from '../../store/chatStore';
 import { PENDING_JOIN, heldGroupRow, joinGroup, joinRefusal } from '../../lib/groupJoin';
-import { ACCESS_PUBLIC } from '../../lib/groupCreate';
+import { ACCESS_PUBLIC, heldSealedFields } from '../../lib/groupCreate';
 
 export function useMyGroups(pubkey) {
   const setGroupsStore = useChatStore((s) => s.setGroups);
@@ -98,7 +98,15 @@ export function useGroupDirectory({ identity, createGroupHook, setGroups }) {
       // A row the device holds is named by the device's records; a
       // directory rebuild restating relay metadata must not rename it.
       const held = new Map(localGroups.map((lg) => [lg.id, lg]));
-      const allGroups = uniqueGroups.map((g) => heldGroupRow(held.get(g.id), g));
+      // A merged row keeps the facts that live only on this device: the level
+      // it was created at, and whether its name came from this record rather
+      // than from the relay. Without the second one a directory resync would
+      // hand back a row whose name looks like the relay's, and every guard
+      // that protects a sealed name reads that marker.
+      const allGroups = uniqueGroups.map((g) => {
+        const local = held.get(g.id);
+        return { ...heldGroupRow(local, g), ...heldSealedFields(local) };
+      });
       localGroups.forEach((lg) => {
         if (!allGroups.find((g) => g.id === lg.id)) allGroups.push(lg);
       });

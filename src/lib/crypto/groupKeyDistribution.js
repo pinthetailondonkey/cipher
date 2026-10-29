@@ -1,7 +1,7 @@
 import { toHex, fromHex } from './groupCipher';
 import { recordGrant, getGrantRecords, getCurrentGroupKey, getAllGroupKeys, putGroupKey } from './groupKeyStore';
 import { isGroupAdmin, trustedGroupCreator } from './groupMembership';
-import { getMyGroups } from '../myGroups';
+import { getMyGroups, setMyGroups } from '../myGroups';
 import { currentOwner } from '../../db';
 import { loadMemberSnapshot } from './groupKeyRotation';
 import { isJoinDenied } from '../groupJoinQueue';
@@ -9,6 +9,83 @@ import { keyRequestRecord } from './groupKeyRequest';
 import { markSafetyChange } from '../safetyNumber.js';
 
 const KEY_HEX = /^[0-9a-f]{64}$/i;
+
+// A private group's real name and description ride the same sealed envelope
+// the group key rides. The envelope is NIP-44 to each recipient already; this
+// adds two strings to the payload inside it and changes nothing about the
+// sealing itself.
+//
+// Lengths are the create screen's own limits. A label longer than the screen
+// could produce is not a name this app wrote, so it is refused rather than
+// truncated into something else.
+export const SEALED_LABEL_MAX = 80;
+export const SEALED_ABOUT_MAX = 500;
+
+// Returns { name, about } or null. Null is the ordinary answer for every
+// public group and for every bundle sent before this existed, so a missing
+// label is never an error.
+export function parseSealedLabel(payload) {
+  if (!payload || (payload.t !== 'gkey' && payload.type !== 'gkey')) return null;
+  if (typeof payload.name !== 'string') return null;
+  const name = payload.name;
+  if (!name || name.length > SEALED_LABEL_MAX) return null;
+  const about = typeof payload.about === 'string' ? payload.about : '';
+  if (about.length > SEALED_ABOUT_MAX) return null;
+  return { name, about };
+}
+
+// The label is a relay-facing fact about the whole group, so the senders are
+// the people who may speak for the whole group: the creator, or an admin in
+// the stored snapshot. A plain member may still install a key bundle — but a
+// member who could rename a group on another member's screen has a phishing
+// surface wearing a name the reader trusts.
+//
+// Resolved against the SNAPSHOT (the relay-signed 39002), never against
+// anything the sender says about themselves.
+export function senderMaySetGroupLabel({ snapshot, sender, creator = '' }) {
+  if (!sender || !Array.isArray(snapshot) || !snapshot.length) return false;
+  const who = String(sender).toLowerCase();
+  const standing = snapshot.map((member) => (typeof member === 'string'
+    ? { pubkey: member.toLowerCase() }
+    : { ...member, pubkey: String(member?.pubkey || '').toLowerCase() }));
+  if (!standing.some((member) => member.pubkey === who)) return false;
+  return isGroupAdmin(standing, who, String(creator || '').toLowerCase());
+}
+
+// Where the sealed label lives, and why here.
+//
+// PLAINTEXT AT REST, ON PURPOSE, AND IT MATCHES WHAT IS ALREADY THERE: the
+// device's own group record (cipher_my_groups_<pk>) holds every group's name
+// and description as plain text today, on this device, for public and private
+// groups alike. Putting the sealed label there adds no exposure that the same
+// string did not already have. It is NOT in the group-keys table: that table
+// exists to hold sealed material, and a plaintext field beside an encrypted
+// key would make its plaintext surface larger, in exactly the place someone
+// audits key hygiene.
+//
+// Sealing group names at rest is a separate piece of work, with its own
+// migration over every stored row. It is not done here.
+//
+// The row is only ever updated for a group this device already holds. A bundle
+// naming a group that is not in the record invents nothing.
+export function applySealedLabel(groupId, label, owner = currentOwner()) {
+  if (!groupId || !label || typeof label.name !== 'string' || !label.name) return false;
+  if (!owner) return false;
+  const groups = getMyGroups(owner);
+  const index = groups.findIndex((group) => group?.id === groupId);
+  if (index === -1) return false;
+  const held = groups[index];
+  if (held.labelSealed && held.name === label.name && (held.about || '') === label.about) return true;
+  groups[index] = { ...held, name: label.name, about: label.about, labelSealed: true };
+  setMyGroups(owner, groups);
+  // The open screen re-reads from the same records the reload does; this is
+  // the signal to do it now rather than at the next refresh. The group id is
+  // the only thing in the event that a console or a crash log could carry.
+  if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
+    window.dispatchEvent(new CustomEvent('cipher:group-label-updated', { detail: { groupId } }));
+  }
+  return true;
+}
 
 export function parseGroupKeyBundle(payload) {
   if (!payload || (payload.t !== 'gkey' && payload.type !== 'gkey')) return [];
@@ -176,6 +253,28 @@ export async function installReceivedGroupKey(payload, sender = null) {
   const keyMaterialMoved = safetyChangeFromInstall({ currentEpoch: current?.epoch, maxEpoch });
   for (const row of rows) await putGroupKey(row.groupId, row.epoch, fromHex(row.hex));
   if (keyMaterialMoved) markSafetyChange(sender);
+  // The sealed label, if this bundle carries one. It is a separate decision
+  // from the key: installing the key is what a member of record may do, but
+  // naming the group is what only its creator or an admin may do. A plain
+  // member's bundle still installs its key and its label is dropped.
+  //
+  // Applied only for the group id this bundle is for (rows[0].groupId, which
+  // every row was checked against above) and only to a row this device
+  // already holds — applySealedLabel invents nothing.
+  const label = parseSealedLabel(payload);
+  if (label) {
+    const owner = currentOwner();
+    const snapshot = await loadMemberSnapshot(groupId);
+    const claimed = (getMyGroups(owner).find((group) => group?.id === groupId) || {}).creator;
+    const creator = trustedGroupCreator({ creator: claimed, identityPk: owner, snapshot });
+    if (senderMaySetGroupLabel({ snapshot, sender, creator })) {
+      applySealedLabel(groupId, label, owner);
+    } else {
+      // The group id only: the label is the thing being kept off the wire and
+      // out of logs.
+      console.warn('[group-key] A sealed group name was not applied: the sender may not set it.', { groupId });
+    }
+  }
   return true;
 }
 
@@ -234,16 +333,27 @@ export function epochsToSend({ records, epoch, extraEpochs = [], explicit = fals
 
 const grantLedger = { getGrantRecords, recordGrant };
 
-export async function distributeGroupKey({ senderPrivkey, senderPubkey, groupId, epoch, keyBytes, recipients, publish, extraEpochs = [], answerRequest = false, ledger = grantLedger }) {
+export async function distributeGroupKey({ senderPrivkey, senderPubkey, groupId, epoch, keyBytes, recipients, publish, extraEpochs = [], answerRequest = false, label = null, ledger = grantLedger }) {
   const { nip44, finalizeEvent } = await import('nostr-tools');
   const now = Math.floor(Date.now() / 1000);
   const results = await Promise.allSettled(recipients.map(async (recipientPubkey) => {
     const records = await ledger.getGrantRecords(groupId, recipientPubkey);
     const needed = epochsToSend({ records, epoch, extraEpochs, explicit: answerRequest, nowSec: now });
-    if (!needed.length) return;
+    // A label is not a key, but it travels in the key's envelope and the
+    // ledger above records keys. Without this a member who already holds the
+    // epoch would be skipped and would never hear a rename — the ledger would
+    // be quietly answering the wrong question. So a label always rides: with
+    // whatever epochs are missing, or, if none are, by restating the current
+    // one (the receiver accepts a restated held epoch with the held bytes and
+    // refuses any other bytes, so the restatement cannot carry a new key).
+    const carrying = label ? (needed.length ? needed : [epoch]) : needed;
+    if (!carrying.length) return;
     const byEpoch = new Map([[epoch, keyBytes], ...extraEpochs.map((item) => [item.epoch, item.bytes])]);
-    const bundles = needed.map((ep) => ({ ep, k: toHex(byEpoch.get(ep)) }));
-    const payload = { v: 1, t: 'gkey', gid: groupId, by: senderPubkey, at: now, keys: bundles };
+    const bundles = carrying.map((ep) => ({ ep, k: toHex(byEpoch.get(ep)) }));
+    const payload = {
+      v: 1, t: 'gkey', gid: groupId, by: senderPubkey, at: now, keys: bundles,
+      ...(label ? { name: label.name, about: label.about || '' } : {}),
+    };
     const shared = nip44.v2.utils.getConversationKey(senderPrivkey, recipientPubkey);
     const wrapped = nip44.v2.encrypt(JSON.stringify(payload), shared);
     const event = finalizeEvent({ kind: 4, created_at: now, tags: [['p', recipientPubkey]], content: wrapped }, senderPrivkey);

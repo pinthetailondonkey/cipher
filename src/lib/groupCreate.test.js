@@ -1,13 +1,18 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
+import { finalizeEvent, generateSecretKey } from 'nostr-tools';
 import {
   ACCESS_PRIVATE,
   ACCESS_PUBLIC,
   JOIN_APPROVAL,
   JOIN_OPEN,
   PRIVATE_LEVEL_READY,
+  SEALED_ABOUT,
+  SEALED_LABEL,
   groupCreateTags,
+  heldSealedFields,
+  relayFacingLabel,
 } from './groupCreate.js';
 
 const base = { name: 'Thursday', about: 'moved', groupId: 'g1', pubkey: 'ab'.repeat(32) };
@@ -88,6 +93,94 @@ test('the second join-policy event carries the full metadata, never a bare join 
   const event = block.slice(0, block.indexOf('};'));
   assert.match(event, /tags: tags\.meta/, 'the whole metadata goes with it');
   assert.doesNotMatch(event, /\['join', JOIN_APPROVAL\]\s*\]/, 'a bare join tag would erase the rest');
+});
+
+// ---- Sealed private-group names -----------------------------------------
+// The gates below are read off the wire: real signed events built from the
+// builder's tags, serialised whole, and searched for the words that must not
+// be in them. A code-walk of the builder would not prove this; the frame does.
+
+const REAL_NAME = 'Thursday night market';
+const REAL_ABOUT = 'back room, ask for the usual';
+
+const framesOf = (tags, secret) => [
+  finalizeEvent({ kind: 9007, created_at: 1793000000, tags: tags.create, content: '' }, secret),
+  finalizeEvent({ kind: 9002, created_at: 1793000000, tags: tags.meta, content: '' }, secret),
+  finalizeEvent({ kind: 9021, created_at: 1793000000, tags: tags.join, content: '' }, secret),
+];
+
+test('gate 2: a private group\'s real name and description are in no relay-facing frame', () => {
+  const secret = generateSecretKey();
+  const tags = groupCreateTags({ ...base, name: REAL_NAME, about: REAL_ABOUT, access: ACCESS_PRIVATE });
+  for (const frame of framesOf(tags, secret)) {
+    const wire = JSON.stringify(frame);
+    assert.equal(wire.includes('Thursday'), false, `kind ${frame.kind} carried the name`);
+    assert.equal(wire.includes('back room'), false, `kind ${frame.kind} carried the description`);
+    // The 9021 join names only the group; the two metadata-carrying events
+    // must say the placeholder and nothing else.
+    if (frame.kind === 9021) continue;
+    assert.deepEqual(tagsOf(frame.tags, 'name'), [['name', SEALED_LABEL]]);
+    assert.deepEqual(tagsOf(frame.tags, 'about'), [['about', SEALED_ABOUT]]);
+  }
+});
+
+// The positive half of gate 2, and the reason this is not a blanket sealing:
+// a public group's name is how the group is found. Sealing it would break
+// discovery, so the placeholder must be a consequence of the level only.
+test('gate 2, control: a public group still says its own name', () => {
+  const secret = generateSecretKey();
+  const tags = groupCreateTags({ ...base, name: REAL_NAME, about: REAL_ABOUT, access: ACCESS_PUBLIC });
+  const wire = JSON.stringify(framesOf(tags, secret));
+  assert.equal(wire.includes(REAL_NAME), true, 'discovery depends on this');
+  assert.deepEqual(tags.sealed, null, 'and there is nothing to seal');
+});
+
+test('gate 3: two differently named private groups are byte-identical on the wire', () => {
+  const alpha = groupCreateTags({ ...base, name: 'Alpha', about: 'one', groupId: 'g1', access: ACCESS_PRIVATE });
+  const beta = groupCreateTags({ ...base, name: 'Beta', about: 'two', groupId: 'g2', access: ACCESS_PRIVATE });
+  const without = (tags, name) => tags.filter((tag) => tag[0] !== name);
+  // The only tags that may differ between two groups are the ones that name
+  // the group itself and its creator.
+  assert.deepEqual(without(alpha.meta, 'h'), without(beta.meta, 'h'));
+  assert.deepEqual(without(alpha.create, 'h').filter((t) => t[0] !== 'p'),
+    without(beta.create, 'h').filter((t) => t[0] !== 'p'));
+  assert.deepEqual(without(alpha.meta, 'h'), without(groupCreateTags({ ...base, name: 'Omega', about: 'three', groupId: 'g3', access: ACCESS_PRIVATE }).meta, 'h'));
+});
+
+test('gate 4, relay side: a rename leaves the tags byte-identical', () => {
+  const before = groupCreateTags({ ...base, name: 'Old name', about: 'old words', groupId: 'g1', access: ACCESS_PRIVATE });
+  const after = groupCreateTags({ ...base, name: 'New name', about: 'new words', groupId: 'g1', access: ACCESS_PRIVATE });
+  assert.equal(JSON.stringify(after.meta), JSON.stringify(before.meta));
+  assert.equal(JSON.stringify(after.create), JSON.stringify(before.create));
+  // The same rule applied to a rename that goes through the update path.
+  assert.deepEqual(
+    relayFacingLabel({ name: 'New name', about: 'new words', access: ACCESS_PRIVATE }),
+    relayFacingLabel({ name: 'Old name', about: 'old words', access: ACCESS_PRIVATE }),
+  );
+});
+
+// The negative control for the whole idea: the sealing must be the level's
+// consequence, not a caller's choice. A private group cannot be made to leak
+// by passing the real words, and a public one cannot be sealed by accident.
+test('gate 3, control: the placeholder does not depend on the name, and cannot be opted out of', () => {
+  const weird = groupCreateTags({ ...base, name: SEALED_LABEL, about: SEALED_ABOUT, groupId: 'g9', access: ACCESS_PRIVATE });
+  assert.deepEqual(tagsOf(weird.meta, 'name'), [['name', SEALED_LABEL]]);
+  assert.equal(JSON.stringify(weird.meta).includes('Thursday'), false);
+});
+
+test('the builder hands the caller the real words to seal, and only on a private group', () => {
+  assert.deepEqual(groupCreateTags({ ...base, access: ACCESS_PRIVATE }).sealed, { name: 'Thursday', about: 'moved' });
+  assert.equal(groupCreateTags({ ...base, access: ACCESS_PUBLIC }).sealed, null);
+});
+
+// A directory rebuild merges the relay's row over the device's. The two facts
+// that live only on this device have to come back, or the next guard reads a
+// row that looks relay-sourced and lets the placeholder through.
+test('a rebuild keeps the level and the sealed mark from the device\'s own record', () => {
+  assert.deepEqual(heldSealedFields({ id: 'g1', name: 'x', access: ACCESS_PRIVATE, labelSealed: true }),
+    { access: ACCESS_PRIVATE, labelSealed: true });
+  assert.deepEqual(heldSealedFields({ id: 'g2', name: 'y' }), {}, 'nothing invented when nothing is held');
+  assert.deepEqual(heldSealedFields(null), {});
 });
 
 // The Private description is a function of the measurement. Until every part of
