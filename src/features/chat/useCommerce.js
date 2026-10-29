@@ -438,7 +438,12 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
           // from a claim a peer wrote into the card.
           chainedState = orderState(history, msg.id, msg, identity.pk, msg.pubkey).paymentState;
         } catch {
-          chainedState = 'address_issued';
+          // A read that failed proves nothing about the chain. The old catch
+          // lifted the card to address_issued, a state no watcher earned, and
+          // the check then ran on it. Nothing was read, so nothing moves.
+          setToast({ type: 'error', message: 'The check could not be done, so nothing changed.' });
+          setSelectedMessage(null);
+          return true;
         }
         const methods = details?.paymentMethods || vendorPair?.paymentMethods || {};
         const currency = details?.coinCurrency || vendorPair?.coinCurrency || (methods.xmr ? 'xmr' : (methods.btc ? 'btc' : ''));
@@ -452,6 +457,16 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
         // receipt-address class)
         const address = currency && Object.hasOwn(methods, currency) ? methods[currency] : '';
         const amount = details?.coinAmount ?? vendorPair?.coinAmount;
+        // No issued pair to check against — no acceptance in this chat, an
+        // order card missing from history, or a pair with no address. There
+        // is nothing here to compare the chain to, and the card's own amount
+        // proves nothing about what was issued. (The `!amount` guard below
+        // keeps its own case: a pair that exists and carries no coin amount.)
+        if (!currency || !address) {
+          setToast({ type: 'error', message: 'This order does not have the payment details needed for a chain check. The chain was not checked.' });
+          setSelectedMessage(null);
+          return true;
+        }
         if (!amount) {
           setToast({ type: 'info', message: 'This order has no coin amount, so it cannot be checked.' });
           setSelectedMessage(null);
