@@ -107,36 +107,6 @@ select:focus-visible {
   overscroll-behavior: contain;
 }
 
-@media (max-width: 640px) {
-  .fixed.inset-0:has(> [role='dialog'][aria-modal='true']) {
-    align-items: flex-end;
-    padding: 0;
-  }
-
-  .fixed.inset-0:has(> [role='dialog'][aria-modal='true']) > [role='dialog'][aria-modal='true'] {
-    width: 100%;
-    max-width: none;
-    max-height: calc(100dvh - var(--sat) - 0.5rem);
-    border-radius: 1.75rem 1.75rem 0 0;
-    padding-bottom: calc(1.5rem + var(--sab));
-  }
-
-  .fixed.inset-0[role='dialog'][aria-modal='true']:not([aria-label='Scan QR code']) {
-    align-items: flex-end;
-    padding: 0;
-  }
-
-  .fixed.inset-0[role='dialog'][aria-modal='true']:not([aria-label='Scan QR code']) > :first-child {
-    width: 100%;
-    max-width: none;
-    max-height: calc(100dvh - var(--sat) - 0.5rem);
-    overflow-y: auto;
-    overscroll-behavior: contain;
-    border-radius: 1.75rem 1.75rem 0 0;
-    padding-bottom: calc(1.5rem + var(--sab));
-  }
-}
-
 input::placeholder,
 textarea::placeholder {
   color: rgba(156, 163, 175, 0.8);
