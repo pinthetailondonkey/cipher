@@ -608,15 +608,23 @@ export function useChatBootstrap({
       // The words the row gets come from the group's own standing records,
       // same as any other join. Groups stay open, so joining still needs
       // no approval — it does need the group to exist.
+      // Three answers, three words. A group the relay proved it does not hold
+      // is not found. A group the relay would not talk about is not the same
+      // claim, and the link still tries the join, so the relay's own answer
+      // is the one that names the outcome.
+      let read = null;
       try {
-        const { fetchGroupMetadata } = await import('../../hooks/useNIP29Group');
-        const evidence = (await fetchGroupMetadata(identity, joinId).catch(() => null));
-        if (!evidence) {
-          useChatStore.getState().setToast({ type: 'error', message: 'No group found at that address.' });
-          return;
-        }
+        const { fetchGroupMetadataOutcome } = await import('../../hooks/useNIP29Group');
+        read = await fetchGroupMetadataOutcome(identity, joinId);
       } catch (error) {
         console.warn('[join] Link did not point at a group:', error);
+      }
+      if (read?.status === 'absent') {
+        useChatStore.getState().setToast({ type: 'error', message: 'No group found at that address.' });
+        return;
+      }
+      if (read?.status === 'unavailable') {
+        useChatStore.getState().setToast({ type: 'info', message: 'The relay would not say whether that group exists. Trying to join anyway.' });
       }
       joinGroupById(joinId);
     })();

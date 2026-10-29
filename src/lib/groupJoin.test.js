@@ -122,3 +122,50 @@ test('GroupView refreshes the open group through the merge, not a spread', () =>
   assert.doesNotMatch(view, /\.\.\.current, \.\.\.profile/);
   assert.doesNotMatch(view, /\.\.\.group, \.\.\.profile/);
 });
+
+// A deep link asks the relay what it holds for the address. A refusal and an
+// empty answer used to arrive as the same `[]`, and the screen named both
+// "No group found at that address." — false for a group the reader could not
+// see. The lookup now says which of the three things happened.
+const fakeReader = ({ metadata, legacy }) => ({
+  READ_OK: 'ok',
+  whyUnavailable: (answers) => `relay said: ${answers.map((a) => a.reason).join(', ')}`,
+  readDirectory: async (_relays, filter) => (filter.kinds[0] === 39000 ? metadata : legacy),
+});
+
+const EMPTY = { status: 'ok', events: [], answers: [] };
+const REFUSED = { status: 'unavailable', events: [], answers: [{ url: 'wss://groups.example.test', status: 'auth', reason: 'auth-required: not admitted' }] };
+
+test('a relay that refused the lookup is not a group that does not exist', async () => {
+  const { fetchGroupMetadataOutcome } = await import('../hooks/useNIP29Group.js');
+  const outcome = await fetchGroupMetadataOutcome(identity, 'g1', { reader: fakeReader({ metadata: REFUSED, legacy: REFUSED }), pool: {} });
+  assert.equal(outcome.status, 'unavailable');
+  assert.equal(outcome.metadata, null);
+  assert.match(outcome.why, /auth-required/);
+});
+
+test('a completed lookup with nothing in it is a group that does not exist', async () => {
+  const { fetchGroupMetadataOutcome } = await import('../hooks/useNIP29Group.js');
+  const outcome = await fetchGroupMetadataOutcome(identity, 'g1', { reader: fakeReader({ metadata: EMPTY, legacy: EMPTY }), pool: {} });
+  assert.equal(outcome.status, 'absent');
+  assert.equal(outcome.metadata, null);
+});
+
+test('an event off a proved read is evidence of the group, even when the other lookup was refused', async () => {
+  const { fetchGroupMetadataOutcome } = await import('../hooks/useNIP29Group.js');
+  const found = { status: 'ok', answers: [], events: [{ id: 'm1', kind: 39000, pubkey: 'ef'.repeat(32), created_at: 5, tags: [['name', 'Room']], content: '' }] };
+  const outcome = await fetchGroupMetadataOutcome(identity, 'g1', { reader: fakeReader({ metadata: found, legacy: REFUSED }), pool: {} });
+  assert.equal(outcome.status, 'found');
+  assert.equal(outcome.metadata.name, 'Room');
+});
+
+test('a deep link names a refusal as a refusal and still tries the join', () => {
+  const read = (path) => fs.readFileSync(new URL(path, import.meta.url), 'utf8');
+  const bootstrap = read('../features/chat/useChatBootstrap.js');
+  assert.match(bootstrap, /fetchGroupMetadataOutcome/);
+  assert.match(bootstrap, /read\?\.status === 'absent'/);
+  assert.match(bootstrap, /read\?\.status === 'unavailable'/);
+  // The join is outside the branch, so a refused lookup still attempts the 9021.
+  const branch = bootstrap.slice(bootstrap.indexOf("read?.status === 'unavailable'"));
+  assert.match(branch, /joinGroupById\(joinId\);/);
+});

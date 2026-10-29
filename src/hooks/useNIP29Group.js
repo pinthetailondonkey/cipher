@@ -136,14 +136,7 @@ export function parseGroupReference(value) {
 // event at all for the address — the difference a deep link has to prove
 // before it organizes a group row (drill residual: a forged address used
 // to silent-join and name itself from the URL with no relay evidence).
-export async function fetchGroupMetadata(identity, groupId) {
-  const pool = await getAuthenticatedPool(identity);
-  const [metadata, legacy] = await Promise.all([
-    queryWithTimeout(pool, groupRelays, { kinds: [39000], '#d': [groupId], limit: 10 }, 4000).catch(() => []),
-    queryWithTimeout(pool, groupRelays, { kinds: [9002], '#h': [groupId], limit: 10 }, 4000).catch(() => []),
-  ]);
-  const latest = [...metadata, ...legacy].sort((a, b) => (b.created_at || 0) - (a.created_at || 0))[0];
-  if (!latest) return null;
+function metadataFromEvent(latest) {
   const tag = (name) => latest.tags?.find((item) => item[0] === name)?.[1] || '';
   let content = {};
   try { content = JSON.parse(latest.content || '{}'); } catch { content = {}; }
@@ -158,6 +151,49 @@ export async function fetchGroupMetadata(identity, groupId) {
     creator: '',
     author: latest.pubkey || '',
   };
+}
+
+// The same lookup, saying which of three things happened. This read has
+// always run on the account's own pool — the refusal was never about a
+// missing identity; it was about the answer going into queryWithTimeout,
+// whose `.catch(() => [])` turns "the relay would not admit this account"
+// into "the relay holds nothing". A deep link named that verdict on screen,
+// so a group its reader could not see was reported as a group that does not
+// exist. The directory reader proves per relay that an answer ended, so it
+// answers here too: 'found', 'absent' (a completed read with nothing in it)
+// or 'unavailable' (the read never completed). The shared session pool is
+// handed over behind a view with no-op close/destroy, so closing this read
+// never takes the account's own connections down.
+export async function fetchGroupMetadataOutcome(identity, groupId, options = {}) {
+  const reader = options.reader || await import('../lib/relayDirectoryRead');
+  const pool = options.pool || await getAuthenticatedPool(identity);
+  const view = {
+    ensureRelay: (url, params) => pool.ensureRelay(url, params),
+    close: () => {},
+    destroy: () => {},
+  };
+  const read = (filter) => reader.readDirectory(groupRelays, filter, { timeoutMs: 4000, identity, createPool: () => view });
+  const [metadata, legacy] = await Promise.all([
+    read({ kinds: [39000], '#d': [groupId], limit: 10 }),
+    read({ kinds: [9002], '#h': [groupId], limit: 10 }),
+  ]);
+  const latest = [...metadata.events, ...legacy.events].sort((a, b) => (b.created_at || 0) - (a.created_at || 0))[0];
+  // One event off a relay that reached end-of-stored-events is evidence the
+  // group exists, even when the other lookup never completed.
+  if (latest) return { status: 'found', metadata: metadataFromEvent(latest), why: '' };
+  if (metadata.status === reader.READ_OK && legacy.status === reader.READ_OK) {
+    return { status: 'absent', metadata: null, why: '' };
+  }
+  return {
+    status: 'unavailable',
+    metadata: null,
+    why: reader.whyUnavailable([...(metadata.answers || []), ...(legacy.answers || [])]),
+  };
+}
+
+export async function fetchGroupMetadata(identity, groupId) {
+  const outcome = await fetchGroupMetadataOutcome(identity, groupId);
+  return outcome.metadata;
 }
 
 function sameOutgoingMessage(message, event, identity, clientId) {

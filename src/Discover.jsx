@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Search, Users, Loader2 } from 'lucide-react';
 import { useChatStore } from './store/chatStore';
 import { joinGroup } from './lib/groupJoin';
@@ -71,6 +71,13 @@ export default function Discover({ identity, onJoined }) {
   };
   const storeGroups = useChatStore((s) => s.groups);
   const groupKey = (storeGroups || []).map((group) => group.id).sort().join('|');
+  // The read needs the whole account, but re-running it on every render would
+  // ask the relay again for nothing: useIdentity builds a fresh object each
+  // time. The ref carries the current account while the effect depends on the
+  // key that really changed, and it is written in its own effect so nothing
+  // reads a ref during render.
+  const identityRef = useRef(identity);
+  useEffect(() => { identityRef.current = identity; }, [identity]);
 
   useEffect(() => {
     // The relay directory is always read, even when this account already
@@ -88,7 +95,10 @@ export default function Discover({ identity, onJoined }) {
         const read = await readDirectory(
           groupOnlyRelays,
           { kinds: [39000, 9002], limit: 50 },
-          { timeoutMs: 4000 }
+          // The account goes with the read: a member-scoped relay answers a
+          // proven account and refuses a bare one, and those are different
+          // answers, not the same empty directory.
+          { timeoutMs: 4000, identity: identityRef.current }
         );
         if (!alive) return;
         if (read.status !== READ_OK) {
@@ -147,7 +157,9 @@ export default function Discover({ identity, onJoined }) {
 
     fetchGroups();
     return () => { alive = false; };
-  }, [groupKey, reloadKey]);
+    // The read now names the account, so the account is a dependency of it:
+    // a switched account must be proved to the relay, not the one before it.
+  }, [groupKey, reloadKey, identity?.pk]);
 
   const joinedIds = new Set((storeGroups || []).map((group) => group.id));
 
