@@ -82,6 +82,11 @@ const PAGE = `<!doctype html>
   }
   var raw;
   try { raw = b64url(location.hash.slice(1)); } catch (e) { fail('This link is not a note link.'); return; }
+  // A relay note is a different fragment shape: key, iv and note hash, 76
+  // bytes, 102 base64url characters. This host holds no such note and never
+  // will — it is not on this server at all — so the person is told where the
+  // link does open instead of being told their link is broken.
+  if (raw.length === 76) { fail('This note opens in the Cipher app, not on this page.'); return; }
   if (raw.length !== 61 || raw[0] !== 2) { fail('This link is not a note link.'); return; }
   var idBin = '';
   for (var j = 1; j < 17; j++) idBin += String.fromCharCode(raw[j]);
