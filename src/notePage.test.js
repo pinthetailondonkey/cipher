@@ -129,11 +129,23 @@ useChatStore.setState = (next) => Object.assign(state, next);
   './hooks/usePanicWipe': `
 export function usePanicWipe() {}
 `,
+  // The network half is stubbed, but the BURN is real: it marks the device
+  // ledger through the product's own function, so the reload test exercises the
+  // ledger the reader actually consults rather than a fixture's copy of it.
   './lib/noteReader': `
+import { markDeadDropConsumed } from ${JSON.stringify(path.join(SRC, 'lib', 'deadDrop.js'))};
 export async function openNoteLink({ fragment }) {
+  globalThis.__noteCalls = (globalThis.__noteCalls || 0) + 1;
   const answer = globalThis.__noteAnswer || { ok: true, text: 'meet at the usual place', transport: 'relay' };
   if (!answer.ok) throw new Error(answer.message);
-  return { text: answer.text, transport: answer.transport, fragment };
+  const hash = answer.hash || 'ab'.repeat(32);
+  return {
+    text: answer.text,
+    transport: answer.transport,
+    hash,
+    fragment,
+    burn: async () => { markDeadDropConsumed(hash); },
+  };
 }
 `,
 };
@@ -255,9 +267,22 @@ const newTab = (store = new Map()) => {
   return store;
 };
 
-const setRoute = ({ pathname, hash, replaced = [], keepTab = false, store = null }) => {
-  if (!keepTab) newTab();
-  else if (store) newTab(store);
+// The device's own storage, which outlives a tab and holds the burn ledger.
+const newDevice = (store = new Map()) => {
+  globalThis.localStorage = {
+    getItem: (k) => (store.has(k) ? store.get(k) : null),
+    setItem: (k, v) => store.set(k, String(v)),
+    removeItem: (k) => store.delete(k),
+    clear: () => store.clear(),
+    key: (i) => Array.from(store.keys())[i] ?? null,
+    get length() { return store.size; },
+  };
+  return store;
+};
+
+const setRoute = ({ pathname, hash, replaced = [], keepTab = false, store = null, device = null }) => {
+  if (!keepTab) { newTab(); newDevice(); }
+  else { if (store) newTab(store); if (device) newDevice(device); }
   let address = { pathname, hash, search: '' };
   globalThis.window = {
     get location() { return address; },
@@ -350,16 +375,25 @@ test('the note stays on the screen when the identity settles after the link is c
 
 test('a reload of the same tab lands on the reader, not on the app', async () => {
   const store = newTab();
-  globalThis.__noteAnswer = { ok: true, text: 'meet at the usual place', transport: 'relay' };
-  setRoute({ pathname: '/note', hash: '#EEEE', keepTab: true, store });
+  const fragment = 'EEEE-secret-key-material-EEEE';
+  globalThis.__noteAnswer = { ok: true, text: 'meet at the usual place', transport: 'relay', hash: 'cc'.repeat(32) };
+  globalThis.__noteCalls = 0;
+  setRoute({ pathname: '/note', hash: `#${fragment}`, keepTab: true, store });
   const first = createTree(app.App, {});
   first.render();
   await settle();
   first.render();
+  first.render();
+  assert.equal(globalThis.__noteCalls, 1, 'the live link is opened exactly once');
+
+  // What the tab kept: the identifier, and nothing that can open the note.
+  const held = Array.from(store.values()).join('\n');
+  assert.match(held, /c{64}/, 'the note id is what the tab remembers');
+  assert.doesNotMatch(held, /EEEE-secret-key-material-EEEE/, 'the fragment — the key — is never written to storage');
 
   // The reload: same tab, same tab memory, and the address bar now holds /note
   // with no fragment — because the reader cleared it, which is correct.
-  globalThis.__noteAnswer = { ok: false, message: 'This note was already opened on this device.' };
+  globalThis.__noteAnswer = { ok: false, message: 'the reader must not be asked again' };
   setRoute({ pathname: '/note', hash: '', keepTab: true, store });
   const second = createTree(app.App, {});
   second.render();
@@ -369,6 +403,24 @@ test('a reload of the same tab lands on the reader, not on the app', async () =>
   assert.match(text, /A note that reads once/, 'the tab is still on the note screen');
   assert.match(text, /This note was already opened on this device\./, 'and says the honest gone state');
   assert.doesNotMatch(text, /Unlock Cipher|Welcome to Cipher/, 'a reload never hands the note reader to the app');
+  assert.equal(globalThis.__noteCalls, 1, 'no key is kept, so the reload makes no request at all');
+});
+
+test('the gone state on a reload comes from the ledger, not from a claim about a read', async () => {
+  const store = newTab();
+  // The tab remembers a note whose ledger mark is absent — a storage write that
+  // failed. The page must not say someone read it.
+  store.set('cipher_note_route_id', JSON.stringify({ id: 'ff'.repeat(32), transport: 'relay' }));
+  globalThis.__noteCalls = 0;
+  setRoute({ pathname: '/note', hash: '', keepTab: true, store, device: new Map() });
+  const tree = createTree(app.App, {});
+  tree.render();
+  await settle();
+  const text = screenText(tree.render().hosts);
+  assert.match(text, /The note is gone or was never here\./, 'the honest line when the ledger has nothing');
+  assert.doesNotMatch(text, /already opened on this device/);
+  assert.doesNotMatch(text, /Unlock Cipher|Welcome to Cipher/);
+  assert.equal(globalThis.__noteCalls, 0, 'still no request: there is no key to try');
 });
 
 test('a plain app launch is untouched: no note route, the lock screen is what a stranger gets', async () => {

@@ -18,8 +18,8 @@ test('only /note with a fragment opens the reader', () => {
 });
 
 // The reader clears the fragment from the address bar by design, so the address
-// alone cannot carry the route past that moment. The tab keeps it — and only
-// the tab, and only on the note path.
+// alone cannot carry the route past that moment. The tab keeps the note's ID —
+// never the key, which is the fragment — and only on the note path.
 test('the tab holds the note route after the fragment leaves the address bar', () => {
   const store = new Map();
   globalThis.sessionStorage = {
@@ -28,18 +28,23 @@ test('the tab holds the note route after the fragment leaves the address bar', (
     removeItem: (k) => store.delete(k),
     clear: () => store.clear(),
   };
+  const id = 'ab'.repeat(32);
   try {
-    rememberNoteRoute('frag');
-    assert.equal(noteFragmentFor({ pathname: '/note', hash: '' }), 'frag',
-      'a reload of the same tab still lands on the reader');
+    rememberNoteRoute({ id, transport: 'relay' });
+    assert.deepEqual(noteFragmentFor({ pathname: '/note', hash: '' }), { id, transport: 'relay' },
+      'a reload of the same tab still lands on the reader, by its identifier');
     assert.equal(noteFragmentFor({ pathname: '/note', hash: '#other' }), 'other',
       'a fresh link wins over what the tab remembers');
     assert.equal(noteFragmentFor({ pathname: '/', hash: '' }), null,
       'the tab memory never captures any other path');
     assert.equal(noteFragmentFor({ pathname: '/notebook', hash: '' }), null,
       'nor a lookalike path');
-    assert.equal(noteFragmentFor({ pathname: '/note' }), 'frag',
+    assert.deepEqual(noteFragmentFor({ pathname: '/note' }), { id, transport: 'relay' },
       'a fragment-less /note in the same tab is still the note screen');
+    // The whole point of keeping the id: the key never reaches storage.
+    const held = Array.from(store.values()).join('\n');
+    assert.doesNotMatch(held, /#/, 'nothing fragment-shaped is stored');
+    assert.ok(!held.includes('iv') && !held.includes('key'), 'no key material, by name or by value');
   } finally {
     delete globalThis.sessionStorage;
   }
