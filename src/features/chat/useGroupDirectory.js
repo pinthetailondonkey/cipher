@@ -4,7 +4,7 @@ import { getMyGroups } from '../../lib/myGroups';
 import { groupRelays, queryWithTimeout } from '../../lib/relays';
 import { getAuthenticatedPool } from '../../lib/pool';
 import { useChatStore } from '../../store/chatStore';
-import { heldGroupRow, joinGroup, joinRefusal } from '../../lib/groupJoin';
+import { PENDING_JOIN, heldGroupRow, joinGroup, joinRefusal } from '../../lib/groupJoin';
 
 export function useMyGroups(pubkey) {
   const setGroupsStore = useChatStore((s) => s.setGroups);
@@ -41,6 +41,10 @@ export function useGroupDirectory({ identity, createGroupHook, setGroups }) {
     setGroupTypingUsers({});
     if (type === 'dm') {
       setActiveDm(id); setActiveGroup(null); setView('dm');
+    } else if (groupObj?.membership === 'pending') {
+      // Same gate as the store's own openChat: the chat does not mount for a
+      // join the relay has not confirmed.
+      setToast({ type: 'success', message: PENDING_JOIN });
     } else {
       setActiveGroup(groupObj); setActiveDm(null); setView('group');
     }
@@ -57,6 +61,13 @@ export function useGroupDirectory({ identity, createGroupHook, setGroups }) {
         heldGroupRow((prev || []).find((g) => g.id === newGroupObj.id), newGroupObj),
         ...((prev || []).filter((g) => g.id !== newGroupObj.id)),
       ]);
+      // A join the relay has not confirmed is a request, not a room. The
+      // chat is not opened, because opening it is what starts the reads the
+      // relay would refuse; the row stays in the list carrying the state.
+      if (newGroupObj.membership === 'pending') {
+        setToast({ type: 'success', message: PENDING_JOIN });
+        return;
+      }
       openChat('group', newGroupObj.id, newGroupObj);
       setToast({ type: 'success', message: 'Joined group' });
     } catch (err) {

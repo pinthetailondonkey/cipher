@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { unreadCountsFor } from '../../lib/unreadCounts';
 import { db, deletedMessageIds, saveMessage, openDBFor, sweepTempMessages } from '../../db';
 import { getMyGroups } from '../../lib/myGroups';
+import { relayCopyOverRow } from '../../lib/groupJoin';
 import { mergeReactions, reactionFiltersFor, reactionFromEvent, withoutDeletedReactions } from '../../lib/reactions';
 import { generalRelays, groupRelays, queryAllPages, queryWithTimeout } from '../../lib/relays';
 import { getAuthenticatedPool } from '../../lib/pool';
@@ -292,7 +293,7 @@ export function useChatBootstrap({
       parsedGroupsNow.forEach(pg => {
         const existing = allGroupsMap.get(pg.id);
         if (existing) {
-          allGroupsMap.set(pg.id, { ...existing, ...pg, creator: existing.creator || pg.creator });
+          allGroupsMap.set(pg.id, relayCopyOverRow(existing, pg));
         } else {
           allGroupsMap.set(pg.id, pg);
         }
@@ -387,7 +388,14 @@ export function useChatBootstrap({
       const since = Math.floor(Date.now() / 1000) - 604800;
       await fetchChats(true);
       cleanupDMs = subscribeToDMs(since);
-      const joinedIds = getMyGroups(identity.pk).map((group) => group.id).filter(Boolean);
+      // A join still waiting on the owner opens no group subscriptions: the
+      // relay refuses them for an account it has not admitted, and a stream
+      // of refusals is not a chat. They start when a proof says the account
+      // is inside.
+      const joinedIds = getMyGroups(identity.pk)
+        .filter((group) => group.membership !== 'pending')
+        .map((group) => group.id)
+        .filter(Boolean);
       const groupIds = resumeKeyRequestIds({
         pubkey: identity.pk,
         joinedIds,

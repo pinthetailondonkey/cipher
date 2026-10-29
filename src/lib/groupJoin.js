@@ -1,5 +1,10 @@
 import { getMyGroups, setMyGroups } from './myGroups';
 
+// Said when a join has gone out and the relay has not put this account in the
+// group yet. One sentence, one place: the two join paths and the waiting
+// screen all speak it, and none of them may promise a room.
+export const PENDING_JOIN = "Request sent. Waiting on the owner's approval.";
+
 // A row this device already holds keeps the words it holds. Every
 // metadata event is signed by one author and the newest one can call the
 // group anything — a refresh through a directory rebuild or a re-join
@@ -14,6 +19,11 @@ export function heldGroupRow(local, incoming) {
     name: local.name || incoming.name,
     about: local.about || incoming.about,
     isChannel: local.isChannel != null ? local.isChannel : incoming.isChannel,
+    // A join that is still waiting on the owner is a fact this device holds.
+    // A directory rebuild re-reads the relay's copy of the row; without this
+    // line that copy would splat the state and the chat would open over the
+    // refusals the waiting state exists to keep out.
+    membership: local.membership || incoming.membership,
   };
 }
 
@@ -42,6 +52,21 @@ export function mergeGroupProfile(current, profile) {
   return { changed, next };
 }
 
+// The chat list's rebuild lays the relay's copy of a row over the device's
+// own copy. The relay's words win there — that is how a group gets its name
+// back after a reinstall — but two things are facts the relay never sent and
+// cannot overwrite: who created the group on this device, and whether this
+// account's join is still waiting. Without the second the pending state lives
+// only until the next history fetch, which is the same as living in memory.
+export function relayCopyOverRow(local, incoming) {
+  return {
+    ...local,
+    ...incoming,
+    creator: local.creator || incoming.creator,
+    membership: local.membership || incoming.membership,
+  };
+}
+
 // A sentence this file wrote. It is safe to show; a relay's reason is not.
 function said(message) {
   return Object.assign(new Error(message), { said: true });
@@ -61,19 +86,33 @@ export function duplicateClaimed(error) {
   return /^duplicate:/i.test(reason) && /\bmember\b/i.test(reason);
 }
 
-// The verdict: can this account read this group's own records over an
-// authenticated connection? Row 18's reader answers found, absent or
-// unavailable, and only "found" is evidence the person is inside — a relay
-// that refuses the read, or never answers, has confirmed nothing and the
-// person stays outside. This proves access to the group's records, not a
-// roster row: the roster read is the one the key-grant path owns, with its
-// relay-signature gate, and it is not duplicated here.
-async function membershipConfirmed(nip29, identity, groupId) {
-  const read = nip29?.fetchGroupMetadataOutcome
-    || (await import('../hooks/useNIP29Group')).fetchGroupMetadataOutcome;
+// The verdict: this account's own pubkey in the group's member roster, as the
+// relay signs it.
+//
+// A successful read is not evidence. Measured on the shipped relay
+// (2026-10-29): a key that exists nowhere reads a `closed` group's messages
+// straight through with no AUTH answered, so "the read worked" is true for
+// everyone and a proof built on it would be green forever. The roster is
+// different in kind: it is a list the relay signs, and the question is
+// whether this pubkey is in it — not whether the relay refused to answer.
+//
+// So: found and mine -> member. Found and not mine -> pending. Not found
+// (refused, timed out, or no relay-signed list) -> pending. Nothing else
+// opens a chat, and `CLOSED auth-required` is only ever the reason it is
+// pending, never a way in.
+async function membershipConfirmed(identity, groupId, nip29, options) {
+  const read = nip29?.fetchMemberRosterOutcome
+    || (await import('../hooks/useNIP29Group')).fetchMemberRosterOutcome;
   if (typeof read !== 'function') return false;
-  const outcome = await read(identity, groupId);
-  return outcome?.status === 'found';
+  let outcome = null;
+  try {
+    outcome = await read(identity, groupId, options);
+  } catch {
+    return false;
+  }
+  if (outcome?.status !== 'found' || !Array.isArray(outcome.members)) return false;
+  const me = String(identity?.pk || '').toLowerCase();
+  return outcome.members.some((member) => String(member?.pubkey || '').toLowerCase() === me);
 }
 
 // A refusal becomes a sentence a person can act on. The relay's own reason
@@ -93,7 +132,7 @@ export function joinRefusal(error) {
 // relay sees the NIP-29 join (kind 9021) before the group is saved here, so
 // nobody is left in a group the relay does not count them in, waiting for a
 // key that will not be granted.
-export async function joinGroup(identity, rawId, { name = null, channel = false, nip29 } = {}) {
+export async function joinGroup(identity, rawId, { name = null, channel = false, nip29, proofOptions } = {}) {
   const { parseGroupReference, loadGroupProfile, publishGroupJoin } = nip29 || await import('../hooks/useNIP29Group');
   const id = parseGroupReference(rawId).id;
   if (!id) throw said('That group address could not be read.');
@@ -103,21 +142,22 @@ export async function joinGroup(identity, rawId, { name = null, channel = false,
     await publishGroupJoin(identity, group.id);
   } catch (error) {
     // The relay claims this account is already in the group. The claim buys
-    // nothing on its own: it is checked against a read the account has to
-    // authenticate for, and only that read opens the door. Every other
-    // answer, and every read that does not say "found", stays a refusal.
+    // nothing on its own: it goes to the same proof every other join goes to,
+    // and only the proof opens the door. Every other answer is a refusal.
     if (!duplicateClaimed(error)) throw error;
-    if (!(await membershipConfirmed(nip29, identity, group.id).catch(() => false))) {
-      throw said('The relay would not confirm that you are in this group. Try again.');
-    }
   }
+  // One proof for both ways in. The request went out; whether this account is
+  // inside is a separate question, and the relay's "OK" does not answer it.
+  const confirmed = await membershipConfirmed(identity, group.id, nip29, proofOptions);
+  const row = confirmed ? group : { ...group, membership: 'pending' };
   const local = getMyGroups(identity.pk);
   const index = local.findIndex((item) => item.id === group.id);
   setMyGroups(identity.pk, index === -1
-    ? [...local, group]
+    ? [...local, row]
     // F3: a re-join must not rewrite the creator with a claim that came off
     // metadata events; the creation record already on this device wins. The
-    // same law for the words (drill residual): a held row keeps its name.
-    : local.map((item, i) => (i === index ? heldGroupRow(item, { ...group, creator: item.creator || group.creator }) : item)));
-  return group;
+    // same law for the words (drill residual): a held row keeps its name —
+    // and for the membership state, the fresh proof decides it.
+    : local.map((item, i) => (i === index ? { ...heldGroupRow(item, row), membership: row.membership } : item)));
+  return row;
 }

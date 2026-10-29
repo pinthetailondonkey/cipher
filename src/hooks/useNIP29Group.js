@@ -194,6 +194,38 @@ export async function fetchGroupMetadata(identity, groupId) {
   return outcome.metadata;
 }
 
+// The member roster, read as evidence rather than as a list to draw.
+//
+// Same reader, same lent pool, same per-relay proof as the metadata read
+// above — a refusal and an empty answer stay distinguishable, which
+// `queryWithTimeout` cannot do (it resolves [] for both and would make any
+// proof built on it green forever). What comes back is the relay-signed
+// snapshot only: `pickMemberSnapshot` drops a roster signed by anyone else,
+// so a stranger cannot put this account in a group by publishing a 39002.
+//
+// Note the difference from `fetchGroupMembers`: that one adds the caller to
+// the list when they are absent, which is right for drawing a member list and
+// fatal as a proof. This one reports what the relay said, and nothing else.
+export async function fetchMemberRosterOutcome(identity, groupId, options = {}) {
+  const reader = options.reader || await import('../lib/relayDirectoryRead');
+  const pool = options.pool || await getAuthenticatedPool(identity);
+  const result = await reader.readDirectory(
+    groupRelays,
+    { kinds: [39002], '#d': [groupId], limit: 50 },
+    { timeoutMs: 4000, identity, createPool: () => pool, closePool: false },
+  );
+  if (result.status !== reader.READ_OK) {
+    return { status: 'unavailable', members: null, why: reader.whyUnavailable(result.answers) };
+  }
+  const relayPubkey = options.relayPubkey || await groupRelayPubkey();
+  const members = pickMemberSnapshot(result.events, relayPubkey, groupId);
+  if (!members) {
+    // The read completed, but nothing in it was a roster this relay signed.
+    return { status: 'unavailable', members: null, why: 'The relay did not send a member list that this account can check.' };
+  }
+  return { status: 'found', members, why: '' };
+}
+
 function sameOutgoingMessage(message, event, identity, clientId) {
   if (!message) return false;
   if (message.id === event.id) return true;

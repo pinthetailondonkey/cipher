@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
-import { duplicateClaimed, heldGroupRow, joinGroup, joinRefusal, mergeGroupProfile } from './groupJoin.js';
+import { duplicateClaimed, heldGroupRow, joinGroup, joinRefusal, mergeGroupProfile, relayCopyOverRow } from './groupJoin.js';
 import { getMyGroups } from './myGroups.js';
 
 function memoryStorage() {
@@ -22,6 +22,7 @@ test('a join publishes kind 9021 before the group is saved on this device', asyn
     parseGroupReference: (raw) => ({ id: String(raw).trim() }),
     loadGroupProfile: async (_identity, id, name) => { steps.push('profile'); return { id, name: name || 'Room', creator: 'cd'.repeat(32) }; },
     publishGroupJoin: async (_identity, id) => { steps.push(`join:${id}`); assert.equal(getMyGroups(identity.pk).length, 0); },
+    fetchMemberRosterOutcome: async () => ({ status: 'found', members: [{ pubkey: identity.pk, role: 'member' }], why: '' }),
   };
   const group = await joinGroup(identity, ' room1 ', { name: 'Room', nip29 });
   assert.deepEqual(steps, ['profile', 'join:room1']);
@@ -48,42 +49,47 @@ test('a join the relay refuses saves nothing', async () => {
 // can get in, so a relay that lies cannot force a chat open.
 const DUPLICATE = 'duplicate: User is already a member';
 
-function joinThatSays(reason, outcome, calls = []) {
+// The proof, as the relay answers it: a relay-signed member roster. `mine`
+// says whether this account is in it.
+const rosterSays = (found, calls = []) => async (_identity, id) => {
+  calls.push(id);
+  if (!found) return { status: 'unavailable', members: null, why: 'auth-required: not admitted' };
+  return { status: 'found', members: found === 'me' ? [{ pubkey: identity.pk, role: 'member' }] : [{ pubkey: 'cd'.repeat(32), role: 'admin' }], why: '' };
+};
+
+function joinThatSays(reason, found, calls = []) {
   return {
     parseGroupReference: (raw) => ({ id: raw }),
     loadGroupProfile: async (_identity, id) => ({ id, name: 'AUDL' }),
     publishGroupJoin: async () => { throw new Error(reason); },
-    fetchGroupMetadataOutcome: async (_identity, id) => { calls.push(id); return outcome; },
+    fetchMemberRosterOutcome: rosterSays(found, calls),
   };
 }
 
 test('a member the relay already counts is walked in on a read that confirms it', async () => {
   globalThis.localStorage = memoryStorage();
   const calls = [];
-  const group = await joinGroup(identity, 'room1', {
-    nip29: joinThatSays(DUPLICATE, { status: 'found', metadata: { id: 'room1', name: 'AUDL' } }, calls),
-  });
+  const group = await joinGroup(identity, 'room1', { nip29: joinThatSays(DUPLICATE, 'me', calls) });
   assert.equal(group.id, 'room1');
+  assert.equal(group.membership, undefined, 'a confirmed member carries no pending mark');
   assert.deepEqual(getMyGroups(identity.pk).map((item) => item.id), ['room1'], 'the row is held');
   assert.deepEqual(calls, ['room1'], 'the claim is checked, not taken');
 });
 
-test('the relay saying "duplicate" is not the verdict: a read that does not confirm leaves them outside', async () => {
-  for (const outcome of [{ status: 'absent' }, { status: 'unavailable', why: 'The relay asked this account to prove itself and the read stopped there.' }]) {
+test('the relay saying "duplicate" is not the verdict: a roster without me is a request, not a room', async () => {
+  for (const found of ['someone-else', null]) {
     globalThis.localStorage = memoryStorage();
-    await assert.rejects(
-      () => joinGroup(identity, 'room9', { nip29: joinThatSays(DUPLICATE, outcome) }),
-      /would not confirm/,
-      `a read that says ${outcome.status} must not open the door`,
-    );
-    assert.deepEqual(getMyGroups(identity.pk), [], 'nothing is held on an unconfirmed claim');
+    const row = await joinGroup(identity, 'room9', { nip29: joinThatSays(DUPLICATE, found) });
+    assert.equal(row.membership, 'pending', `a roster that says ${found} must not open the door`);
+    assert.deepEqual(getMyGroups(identity.pk).map((item) => [item.id, item.membership]), [['room9', 'pending']],
+      'the request is held so a reload does not lose it');
   }
   // A read that throws is the same as a read that did not confirm.
   globalThis.localStorage = memoryStorage();
-  const broken = joinThatSays(DUPLICATE, { status: 'found' });
-  broken.fetchGroupMetadataOutcome = async () => { throw new Error('relay gone'); };
-  await assert.rejects(() => joinGroup(identity, 'room9', { nip29: broken }), /would not confirm/);
-  assert.deepEqual(getMyGroups(identity.pk), []);
+  const broken = joinThatSays(DUPLICATE, 'me');
+  broken.fetchMemberRosterOutcome = async () => { throw new Error('relay gone'); };
+  const row = await joinGroup(identity, 'room9', { nip29: broken });
+  assert.equal(row.membership, 'pending');
 });
 
 test('a real refusal never reaches the membership read, and "not a member" is never a claim', async () => {
@@ -93,7 +99,7 @@ test('a real refusal never reaches the membership read, and "not a member" is ne
     parseGroupReference: (raw) => ({ id: raw }),
     loadGroupProfile: async (_identity, id) => ({ id, name: 'Room' }),
     publishGroupJoin: async () => { throw new Error(reason); },
-    fetchGroupMetadataOutcome: async () => { read += 1; return { status: 'found' }; },
+    fetchMemberRosterOutcome: async () => { read += 1; return { status: 'found', members: [{ pubkey: identity.pk }] }; },
   });
   await assert.rejects(() => joinGroup(identity, 'room2', { nip29: refusal('restricted: Access denied to private group') }), /restricted/);
   await assert.rejects(() => joinGroup(identity, 'room2', { nip29: refusal('blocked: user is not a member') }), /blocked/);
@@ -155,6 +161,77 @@ test('invite links, search, and Discover all join the same way, and nobody sends
     assert.equal(source.includes('join_request'), false);
     assert.equal(source.includes('requestToJoinGroup'), false);
   }
+});
+
+// The join branch, not only the duplicate one. An `OK true` for a 9021 means
+// the relay received a request; it says nothing about whether this account is
+// in the group, and the screen may not promise a room the relay has not
+// confirmed.
+test('a join the relay accepted but has not put this account in is a request, and it is saved', async () => {
+  globalThis.localStorage = memoryStorage();
+  const accepted = {
+    parseGroupReference: (raw) => ({ id: raw }),
+    loadGroupProfile: async (_identity, id) => ({ id, name: 'Closed Room' }),
+    publishGroupJoin: async () => {},
+    fetchMemberRosterOutcome: rosterSays('someone-else'),
+  };
+  const row = await joinGroup(identity, 'closed1', { nip29: accepted });
+  assert.equal(row.membership, 'pending');
+  assert.deepEqual(getMyGroups(identity.pk).map((item) => [item.id, item.membership]), [['closed1', 'pending']],
+    'the state survives a reload because it is saved, not held in memory');
+  // And a later proof that puts this account in the roster clears it: the
+  // same call, the same branch, the state is what the relay now says.
+  const confirmed = await joinGroup(identity, 'closed1', { nip29: { ...accepted, fetchMemberRosterOutcome: rosterSays('me') } });
+  assert.equal(confirmed.membership, undefined);
+  assert.equal(getMyGroups(identity.pk)[0].membership, undefined, 'the pending mark is cleared, not stacked');
+});
+
+// The state has to survive both rebuilds, or it is decoration: the directory
+// rebuild (heldGroupRow) and the chat list's history fetch laying the relay's
+// copy of the row over the device's (relayCopyOverRow).
+test('a pending join survives a directory rebuild and a history fetch re-saving the row', () => {
+  const local = { id: 'g1', name: 'Held', creator: 'ab'.repeat(32), membership: 'pending' };
+  const fromRelay = { id: 'g1', name: 'Relay Copy', about: '', creator: 'aa'.repeat(32), isChannel: false };
+  assert.equal(heldGroupRow(local, fromRelay).membership, 'pending', 'the directory rebuild keeps it');
+  assert.equal(relayCopyOverRow(local, fromRelay).membership, 'pending', 'the history fetch keeps it');
+  // And the relay's words still win there, which is the whole point of that merge.
+  assert.equal(relayCopyOverRow(local, fromRelay).name, 'Relay Copy');
+  assert.equal(relayCopyOverRow(local, fromRelay).creator, 'ab'.repeat(32), 'the creator stays the device\'s');
+  // A row with no pending state gains none.
+  assert.equal(relayCopyOverRow({ id: 'g2' }, { id: 'g2' }).membership, undefined);
+});
+
+// Consumer witness: the proof is row 24's primitive, so this drives it from
+// row 26's own construction — a roster read through the real reader, with a
+// pool that answers the way the relay does — rather than calling the reader
+// in its own test shape and calling that coverage.
+test('the proof is the roster, driven through the real reader: EOSE alone never opens a chat', async () => {
+  const { getPublicKey, generateSecretKey, finalizeEvent } = await import('nostr-tools');
+  const { fetchMemberRosterOutcome } = await import('../hooks/useNIP29Group.js');
+  const sk = generateSecretKey();
+  const me = { sk, pk: getPublicKey(sk) };
+  const relaySk = generateSecretKey();
+  const relayPk = getPublicKey(relaySk);
+  const roster = finalizeEvent({ kind: 39002, created_at: 5, tags: [['d', 'g1'], ['p', me.pk]], content: '' }, relaySk);
+  const strangerRoster = finalizeEvent({ kind: 39002, created_at: 5, tags: [['d', 'g1'], ['p', 'cd'.repeat(32)]], content: '' }, relaySk);
+  const forged = { ...roster, id: 'f'.repeat(64), pubkey: 'ee'.repeat(32), sig: 'ab'.repeat(64) };
+  const answered = (events, status = 'ok') => ({
+    READ_OK: 'ok',
+    READ_UNAVAILABLE: 'unavailable',
+    whyUnavailable: () => 'auth-required: not admitted',
+    readDirectory: async () => ({ status, events, answers: [{ status: 'auth', reason: 'auth-required' }] }),
+  });
+  const outcomeOf = (reader) => fetchMemberRosterOutcome(me, 'g1', { reader, pool: {}, relayPubkey: relayPk });
+
+  assert.equal((await outcomeOf(answered([roster]))).status, 'found', 'a relay-signed roster is a proof');
+  assert.deepEqual((await outcomeOf(answered([roster]))).members.map((m) => m.pubkey), [me.pk]);
+  assert.equal((await outcomeOf(answered([strangerRoster]))).members.some((m) => m.pubkey === me.pk), false,
+    'a roster without me does not put me in it');
+  assert.equal((await outcomeOf(answered([forged]))).status, 'unavailable', 'a roster signed by anyone else is not a proof');
+  // The false green: a completed read that carried events is still not a
+  // member list, and the refusal is named rather than read as "done".
+  assert.equal((await outcomeOf(answered([{ ...roster, kind: 9 }]))).status, 'unavailable');
+  assert.equal((await outcomeOf(answered([], 'unavailable'))).status, 'unavailable', 'CLOSED auth-required is the fallback, not a way in');
 });
 
 // Drill residual: the newest signed metadata event can call a held group

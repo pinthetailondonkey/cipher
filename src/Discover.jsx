@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Search, Users, Loader2 } from 'lucide-react';
 import { useChatStore } from './store/chatStore';
-import { joinGroup } from './lib/groupJoin';
+import { PENDING_JOIN, joinGroup } from './lib/groupJoin';
 import { groupOnlyRelays } from './lib/relays';
 import { readDirectory, whyUnavailable, READ_OK } from './lib/relayDirectoryRead';
 import { haptic } from './lib/haptics';
@@ -183,6 +183,13 @@ export default function Discover({ identity, onJoined }) {
     try {
       const joined = await joinGroup(identity, group.id, { name: group.name, channel: group.isChannel });
       useChatStore.getState().setGroups((groups) => [joined, ...(groups || []).filter((item) => item.id !== joined.id)]);
+      // The relay has not put this account in the group yet: the request went
+      // out and the owner decides. Opening the chat here would mount the
+      // reads the relay refuses and promise a room that is not there.
+      if (joined.membership === 'pending') {
+        useChatStore.getState().setToast({ type: 'success', message: PENDING_JOIN });
+        return;
+      }
       useChatStore.getState().openChat('group', joined.id, joined);
       onJoined?.();
     } catch (joinError) {
