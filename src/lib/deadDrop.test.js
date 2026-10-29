@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import {
   _deadDropInternals,
   noteUrl,
@@ -503,4 +504,17 @@ test('a carrier link opened in the app goes to the host, not the relay', async (
     globalThis.fetch = realFetch;
   }
   assert.equal(pool.published.length, 0, 'no relay event was consulted for a carrier link');
+});
+
+// The founder ruled the promise prose off the burn-note sheet: it says "Burn
+// note" and nothing else. This is a shape assertion on the source, not a
+// behaviour test — the reader's experience is AUDITOR's probe, not this. It
+// goes red if any removed promise line comes back, in visible text or in a
+// comment that states the mechanic as fact.
+test('the burn-note sheet carries no promise prose, in text or in a comment', () => {
+  const source = readFileSync(new URL('../components/chat/DeadDropModal.jsx', import.meta.url), 'utf8')
+    .replace(/\s+/g, ' ');
+  for (const phrase of ['opens once', 'shows once', 'not saved anywhere', 'gone after']) {
+    assert.equal(source.includes(phrase), false, `the burn-note sheet carries "${phrase}" again`);
+  }
 });

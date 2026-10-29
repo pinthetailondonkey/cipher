@@ -8,9 +8,9 @@ import { haptic } from '../../lib/haptics';
 import Sheet from '../ui/Sheet';
 import Button from '../ui/Button';
 
-// Dead-drop note writer: type it, get one link, the note burns after it is
-// opened. The link carries the key in its fragment — anyone who can see the
-// link can read the note, so it is shown once and never stored.
+// Dead-drop note writer: type it, get one link. The link carries the key in
+// its fragment, so anyone who can see the link can open the note; that is why
+// the surface says nothing beyond the label.
 export default function DeadDropModal({ identity }) {
   const show = useChatStore((s) => s.showDeadDrop);
   const setShow = useChatStore((s) => s.setShowDeadDrop);
@@ -33,8 +33,8 @@ export default function DeadDropModal({ identity }) {
     setBusy(true);
     try {
       const pool = await getAuthenticatedPool(identity);
-      // The host is asked first: when it is the one-read carrier the note
-      // really is gone after the first open. Without it the relay copy is
+      // The host is asked first: when it is the one-read carrier, the host
+      // deletes the note on the first fetch. Without it the relay copy is
       // still made, exactly as before.
       const { url } = await createNoteLink({ identity, text, pool, relays: generalRelays });
       setLink(url);
