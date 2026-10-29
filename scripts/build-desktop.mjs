@@ -55,7 +55,14 @@ function walk(dir, base = dir, out = []) {
   return out;
 }
 
-function manifestFor(dir, door) {
+// Every door the build could carry is named here, hashed rather than written
+// out: the record says which door was in the bundle without putting an address
+// in a file that gets copied around. Both doors are recorded because both are
+// build inputs now — one sha and two builds with different media doors are two
+// different bundles, and a record naming only the group door could not tell
+// them apart.
+export function manifestFor(dir, doors = {}) {
+  const sha = (value) => createHash('sha256').update(String(value || '')).digest('hex');
   const files = {};
   for (const rel of walk(dir).sort()) {
     if (rel === 'cipher-desktop-build.json') continue;
@@ -66,7 +73,8 @@ function manifestFor(dir, door) {
     builtAt: new Date().toISOString(),
     sourceSha: git(['rev-parse', 'HEAD']) || 'no-git',
     sourceDirty: git(['status', '--porcelain', '--untracked-files=no']) !== '',
-    doorSha256: createHash('sha256').update(door).digest('hex'),
+    doorSha256: sha(doors.group),
+    mediaDoorSha256: sha(doors.media),
     files,
   };
 }
@@ -120,7 +128,7 @@ function main() {
       console.error(`build:desktop: the build finished but wrote no ${dir}/index.html.`);
       process.exit(1);
     }
-    const manifest = manifestFor(dir, door);
+    const manifest = manifestFor(dir, { group: door, media: mediaDoor });
     writeFileSync(
       path.join(dir, 'cipher-desktop-build.json'),
       `${JSON.stringify(manifest, null, 2)}\n`,

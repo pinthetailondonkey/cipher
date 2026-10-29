@@ -11,7 +11,7 @@ import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { EGRESS } from '../src/lib/egress.js';
-import { MEDIA_REFUSAL, mediaDoorRefusal } from './build-desktop.mjs';
+import { MEDIA_REFUSAL, manifestFor, mediaDoorRefusal } from './build-desktop.mjs';
 
 const script = path.resolve(path.dirname(fileURLToPath(import.meta.url)), 'build-desktop.mjs');
 
@@ -101,6 +101,37 @@ test("today's rows ship no founder media host, so the desktop build is unchanged
     assert.equal(/VITE_MEDIA_ONION/.test(result.stderr), false,
       'the media refusal must not fire while no media row ships the founder host');
     assert.notEqual(result.status, 0);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// Two doors are two build inputs. A record that named only the group door
+// would call a bundle with a media door and one without the same bundle, and
+// neither the address nor a copy of it belongs in a file that gets carried
+// around, so each door is recorded as a hash.
+test('the build record names both doors by hash, and two media doors are two records', () => {
+  const dir = workspace();
+  const group = `wss://${'a'.repeat(56)}.onion`;
+  const media = `http://${'b'.repeat(56)}.onion`;
+  try {
+    const dark = manifestFor(dir, { group, media: '' });
+    const lit = manifestFor(dir, { group, media });
+    // These lines are what hold the record: `doorSha256` must still be the
+    // group door's hash and `mediaDoorSha256` must exist as its own. If the
+    // record ever goes back to covering one door, this test fails.
+    assert.match(dark.doorSha256, /^[0-9a-f]{64}$/);
+    assert.match(dark.mediaDoorSha256, /^[0-9a-f]{64}$/);
+    assert.notEqual(dark.doorSha256, dark.mediaDoorSha256, 'two different doors hash differently');
+    assert.equal(dark.doorSha256, lit.doorSha256, 'the group door did not change');
+    assert.notEqual(dark.mediaDoorSha256, lit.mediaDoorSha256, 'the media door did');
+    assert.equal(dark.mediaDoorSha256, manifestFor(dir, { group, media: '' }).mediaDoorSha256);
+
+    // Neither address, nor any prefix of one, is in the record.
+    const record = JSON.stringify(dark);
+    assert.equal(record.includes('.onion'), false);
+    assert.equal(record.includes('b'.repeat(16)), false);
+    assert.equal(JSON.stringify(lit).includes(media), false);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
