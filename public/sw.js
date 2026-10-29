@@ -1,11 +1,38 @@
-const CACHE_NAME = 'cipher-shell-v2';
+const CACHE_NAME = 'cipher-shell-v3';
+const MANIFEST_URL = '/asset-manifest.json';
+
+// The build writes asset-manifest.json naming every file it put under /assets/.
+// Without it the app could only cache a screen after someone had opened that
+// screen, so a person with no signal could not start the app: the code for the
+// first screen after unlock is a chunk nobody has fetched yet.
+//
+// Every file is fetched on its own line and its own failure. One file that is
+// missing, and a manifest that will not fetch or will not parse, are logged and
+// skipped — none of them stops the app installing. Only same-origin names from
+// the manifest's own list are ever requested.
+async function precacheBuildAssets(cache) {
+  let files = [];
+  try {
+    const response = await fetch(MANIFEST_URL, { cache: 'no-store' });
+    if (response.ok) {
+      const manifest = await response.json();
+      if (Array.isArray(manifest?.files)) files = manifest.files;
+    }
+  } catch (error) {
+    console.error('[offline] Could not read the asset manifest:', error);
+  }
+  await Promise.all(files
+    .filter((file) => typeof file === 'string' && file.startsWith('/assets/'))
+    .map((file) => cache.add(file).catch((error) => console.error('[offline] Could not pre-cache:', file, error))));
+}
 
 self.addEventListener('install', (event) => {
-  event.waitUntil(
-    caches.open(CACHE_NAME)
-      .then((cache) => cache.addAll(['/', '/index.html']))
-      .then(() => self.skipWaiting()),
-  );
+  event.waitUntil((async () => {
+    const cache = await caches.open(CACHE_NAME);
+    await cache.addAll(['/', '/index.html']);
+    await precacheBuildAssets(cache);
+    await self.skipWaiting();
+  })());
 });
 
 self.addEventListener('activate', (event) => {
