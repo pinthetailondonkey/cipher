@@ -3,7 +3,12 @@ import { MotionConfig } from 'framer-motion';
 import { useIdentity } from './useIdentity';
 import { useChatStore } from './store/chatStore';
 import { usePanicWipe } from './hooks/usePanicWipe';
+import { noteFragmentFor } from './lib/noteRoute';
 import LockScreen from './LockScreen';
+// Charged statically, on purpose: the reader is the one screen a person with
+// no account may reach, and a lazy chunk that fails to arrive would hand them
+// the spinner instead of the note.
+import BurnNoteReader from './BurnNoteReader';
 
 const AuthenticatedApp = lazy(() => import('./AuthenticatedApp'));
 
@@ -35,6 +40,14 @@ function MainApp() {
   const identity = useIdentity();
   const panicWipeEnabled = useChatStore((state) => state.panicWipeEnabled);
   usePanicWipe(identity, panicWipeEnabled);
+
+  // A note link is answered from the address alone, ahead of every identity
+  // return below: the holder of the link may have no account, and asking for
+  // one is the defect this page exists to end. Nothing here reads the store,
+  // starts the chat bootstrap, or opens a relay until the reader asks for its
+  // one query.
+  const noteFragment = noteFragmentFor(window.location);
+  if (noteFragment) return <BurnNoteReader fragment={noteFragment} />;
 
   if (identity.loadingSession) {
     return <div className="h-[100dvh] bg-scrim flex items-center justify-center"><div className="w-8 h-8 border-4 border-ink/20 border-t-ink rounded-full animate-spin" /></div>;

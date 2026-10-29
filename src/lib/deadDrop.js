@@ -97,15 +97,47 @@ import { scopedGet, scopedSet } from './storage.js';
 // copy of the promise, and the holder of the URL is the reader either way.
 const CONSUMED_KEY = 'dead_drop_consumed';
 
+// The promise the reader makes is to the DEVICE — "This note opens once on
+// this device" — so the ledger is read and written for the device as well as
+// for the account. Scoped alone it broke in two ways a person would see: a
+// stranger with no account spent a note under the guest scope and the same
+// link opened again as soon as they made an account, and a second account on
+// the same device opened a note the first had already spent. The scoped copy
+// stays written so ledgers from before this change are still read.
+const DEVICE_CONSUMED_KEY = 'cipher_device_dead_drop_consumed';
+
+function deviceLedger() {
+  try {
+    const raw = globalThis.localStorage?.getItem(DEVICE_CONSUMED_KEY);
+    const parsed = raw ? JSON.parse(raw) : null;
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeDeviceLedger(ledger) {
+  try {
+    globalThis.localStorage?.setItem(DEVICE_CONSUMED_KEY, JSON.stringify(ledger));
+  } catch { /* no storage: the scoped copy below still holds it */ }
+}
+
 export function deadDropConsumed(hashHex) {
+  if (deviceLedger()[hashHex]) return true;
   const ledger = scopedGet(CONSUMED_KEY, {});
   return !!(ledger && ledger[hashHex]);
 }
 
 export function markDeadDropConsumed(hashHex) {
+  const when = Math.floor(Date.now() / 1000);
+  const device = deviceLedger();
+  if (!device[hashHex]) {
+    device[hashHex] = when;
+    writeDeviceLedger(device);
+  }
   const ledger = scopedGet(CONSUMED_KEY, {}) || {};
   if (ledger[hashHex]) return;
-  ledger[hashHex] = Math.floor(Date.now() / 1000);
+  ledger[hashHex] = when;
   scopedSet(CONSUMED_KEY, ledger);
 }
 
