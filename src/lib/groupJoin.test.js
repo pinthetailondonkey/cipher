@@ -220,6 +220,20 @@ test('a pending join draws the waiting state, and the waiting state mounts no gr
   }
 });
 
+// The refusal that drops a dead group subscription is decided one place, and
+// the consumer must pass the frame's own reason through it rather than
+// re-matching the words at the call site. A close the app reads as transient
+// keeps the subscription and says nothing to the person.
+test('a refused group subscription is judged by the one predicate, on the frame\'s own reason', () => {
+  const read = (path) => fs.readFileSync(new URL(path, import.meta.url), 'utf8');
+  const hook = read('../hooks/useNIP29Group.js');
+  assert.match(hook, /const reason = String\(msg\[2\] \|\| ''\)/, 'the reason comes off the CLOSED frame');
+  assert.match(hook, /if \(isRestrictedRelayClose\(reason\)\)/, 'and goes through the shared predicate');
+  assert.match(hook, /session\.subs\.delete\(msg\[1\]\)/, 'a refused subscription is dropped, not retried forever');
+  assert.doesNotMatch(hook, /if \(\/restricted\/i\.test\(reason\)\)/,
+    'the call site must not re-match the words itself: two matchers drift');
+});
+
 // Consumer witness: the proof is row 24's primitive, so this drives it from
 // row 26's own construction — a roster read through the real reader, with a
 // pool that answers the way the relay does — rather than calling the reader

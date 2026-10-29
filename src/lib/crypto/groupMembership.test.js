@@ -110,6 +110,16 @@ test('the group socket subscribes per group, so one restricted id cannot close t
   }
   assert.equal(isRestrictedRelayClose('restricted: Access denied to private group'), true);
   assert.equal(isRestrictedRelayClose(''), false);
+  // The relay software's other word for the same refusal. A close the app
+  // reads as transient keeps its dead subscription and says nothing.
+  assert.equal(isRestrictedRelayClose('auth-required: Authentication required to access private groups'), true);
+  assert.equal(isRestrictedRelayClose('auth-required'), true);
+  assert.equal(isRestrictedRelayClose('error: auth-required'), true);
+  // Words that merely contain the letters are not the refusal.
+  assert.equal(isRestrictedRelayClose('auth-requiredx'), false);
+  assert.equal(isRestrictedRelayClose('unauth-required'), false);
+  assert.equal(isRestrictedRelayClose('rate-limited: slow down'), false);
+  assert.equal(isRestrictedRelayClose('error: could not find group'), false);
   const req = groupRelayReq('sub', ['g1'], 100);
   assert.equal(req[0], 'REQ');
   assert.equal(req[1], 'sub');

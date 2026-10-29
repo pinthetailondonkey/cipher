@@ -87,8 +87,21 @@ export function groupTimelinePlans(groupIds, since) {
   }));
 }
 
+// A group subscription the relay refused because this account is not in the
+// group. The relay software words that refusal two ways and this must know
+// both: `restricted:` (the older word) and `auth-required:` (NIP-01's own
+// machine-readable prefix, used for the same decision on a private group).
+// Matching only one of them leaves the other looking like a transient
+// failure, so the dead subscription is kept and the toast never says why.
+//
+// Measured on the shipped relay (2026-10-29, read-only probe): a stranger's
+// roster and timeline asks get an AUTH challenge and then EOSE — no CLOSED at
+// all. So `auth-required` never arrives from that deployment today; it is the
+// fallback shape for a relay that does enforce the refusal, and it is only
+// ever a reason shown to the person, never a way into a group.
 export function isRestrictedRelayClose(reason) {
-  return /restricted/i.test(String(reason || ''));
+  const text = String(reason || '');
+  return /restricted/i.test(text) || /(?:^|\W)auth-required(?:\W|$)/i.test(text);
 }
 
 export function groupRelayReq(subId, groupIds, since) {
