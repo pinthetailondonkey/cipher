@@ -1,4 +1,4 @@
-import React, { lazy, Suspense } from 'react';
+import React, { lazy, Suspense, useState } from 'react';
 import { MotionConfig } from 'framer-motion';
 import { useIdentity } from './useIdentity';
 import { useChatStore } from './store/chatStore';
@@ -46,7 +46,13 @@ function MainApp() {
   // one is the defect this page exists to end. Nothing here reads the store,
   // starts the chat bootstrap, or opens a relay until the reader asks for its
   // one query.
-  const noteFragment = noteFragmentFor(window.location);
+  // Latched once, on mount, and never recomputed. The reader clears the
+  // fragment from the address bar on purpose the moment the text is shown, so
+  // re-reading the address on every render would route a note link to the
+  // identity gate one tick after the note appeared — the reader unmounted with
+  // the note already spent. The route is owned from the first render until the
+  // page is left.
+  const [noteFragment] = useState(() => noteFragmentFor(window.location));
   if (noteFragment) return <BurnNoteReader fragment={noteFragment} />;
 
   if (identity.loadingSession) {
