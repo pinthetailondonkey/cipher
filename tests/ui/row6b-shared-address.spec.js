@@ -24,6 +24,11 @@ const AMOUNT = '0.001';
 const CHECK = 'Check the chain';
 const S1 = 'This order was issued the shared account address';
 const NO_ADDRESS = 'This order has no payment address to check.';
+// Row 14's no-details refusal. It sits ahead of the shared-address gate, so
+// under a hostile coin name it answers first: the order's currency and
+// address fail its own check before the rails are read at all. The sentence
+// moved; the facts the row is about did not, and all of them stay asserted.
+const NO_DETAILS = 'This order does not have the payment details needed for a chain check. The chain was not checked.';
 
 const sign = (token, ts, raw) => createHmac('sha256', token).update(`${ts}:${raw}`).digest('hex');
 
@@ -166,13 +171,20 @@ test.describe('the shared-address refusal reads the device\'s own rails', () => 
     await seedSharedAddress(page, SHARED);
     await page.getByRole('button', { name: CHECK, exact: true }).first().click();
     const { first } = await wordsSaid(page);
-    console.log('[row6b] constructor + shared ->', JSON.stringify(first), '| S1:', first.includes(S1), '| NO_ADDRESS:', first.includes(NO_ADDRESS), '| asks:', asked.length);
+    console.log('[row6b] constructor + shared ->', JSON.stringify(first), '| S1:', first.includes(S1), '| NO_DETAILS:', first.includes(NO_DETAILS), '| NO_ADDRESS:', first.includes(NO_ADDRESS), '| asks:', asked.length);
     // Measured, not assumed: on the base tree this same click said the
     // shared-address sentence, because the methods lookup answered with the
     // Object function and the rails lookup answered with the same function
     // text — two things that are not addresses matched each other. With the
     // lookup guarded there is no address at all, which is the true reason.
-    expect(first, 'a made-up coin name is refused for having no address').toContain(NO_ADDRESS);
+    //
+    // The sentence is row 14's, not row 6b's: the no-details refusal reads
+    // the order's currency and address before the rails are consulted, so a
+    // hostile coin name is refused there first. Pinning the exact sentence
+    // keeps this a fact about what the screen says, not a loosened "some
+    // refusal fired" — the two facts that matter stay asserted under it.
+    expect(first, 'a made-up coin name is refused for having no usable payment details').toContain(NO_DETAILS);
+    expect(first, 'the no-address refusal is not the one that fires here').not.toContain(NO_ADDRESS);
     expect(first, 'and is not accused of being the shared address').not.toContain(S1);
     expect(asked.length, 'no check leaves the device under a made-up currency').toBe(0);
   });
@@ -182,8 +194,9 @@ test.describe('the shared-address refusal reads the device\'s own rails', () => 
     await seedSharedAddress(page, SHARED);
     await page.getByRole('button', { name: CHECK, exact: true }).first().click();
     const { first } = await wordsSaid(page);
-    console.log('[row6b] __proto__ + shared ->', JSON.stringify(first), '| S1:', first.includes(S1), '| NO_ADDRESS:', first.includes(NO_ADDRESS), '| asks:', asked.length);
-    expect(first, 'a made-up coin name is refused for having no address').toContain(NO_ADDRESS);
+    console.log('[row6b] __proto__ + shared ->', JSON.stringify(first), '| S1:', first.includes(S1), '| NO_DETAILS:', first.includes(NO_DETAILS), '| NO_ADDRESS:', first.includes(NO_ADDRESS), '| asks:', asked.length);
+    expect(first, 'a made-up coin name is refused for having no usable payment details').toContain(NO_DETAILS);
+    expect(first, 'the no-address refusal is not the one that fires here').not.toContain(NO_ADDRESS);
     expect(first, 'and is not accused of being the shared address').not.toContain(S1);
     expect(asked.length, 'no check leaves the device under a made-up currency').toBe(0);
   });
