@@ -8,9 +8,10 @@ import { useModalA11y } from './modal';
 let sheetUid = 0;
 const openSheets = [];
 
-// THE bottom sheet. Phones anchor it to the bottom with the drag handle;
-// md+ screens center it as a max-w-md panel. One surface replaces the app's
-// hand-rolled modal shells — DeadDrop, product editor, profile card, onboarding.
+// THE dialog. Centered as a max-w-md panel on every screen — nothing rises
+// from the bottom (founder ruling 2026-10-29: "take out the bottom modals").
+// One surface replaces the app's hand-rolled modal shells — DeadDrop, product
+// editor, profile card, onboarding.
 // `heading` and `ariaLabel` are aliases of `title` and `label`: the earlier
 // converted screens call them by the first pair. A sheet that names only its
 // spoken label still gets the shared heading bar from that label, so no sheet
@@ -96,7 +97,7 @@ export default function Sheet({
           onMouseDown={(event) => {
             if (event.target === event.currentTarget) onClose?.();
           }}
-          className="fixed inset-0 z-sheet flex items-end justify-center bg-scrim/60 md:items-center md:p-6"
+          className="fixed inset-0 z-sheet flex items-center justify-center bg-scrim/60 p-4 sm:p-6"
         >
           <motion.div
             ref={panelRef}
@@ -105,22 +106,14 @@ export default function Sheet({
             aria-modal="true"
             aria-labelledby={labelledBy}
             aria-label={!labelledBy ? (typeof spokenLabel === 'string' ? spokenLabel : undefined) : undefined}
-            drag="y"
-            dragConstraints={{ top: 0, bottom: 0 }}
-            dragElastic={{ top: 0, bottom: 0.6 }}
-            dragMomentum={false}
-            onDragEnd={(_, info) => {
-              if (info.offset.y > 120) onClose?.();
-            }}
-            initial={{ y: '100%' }}
-            animate={{ y: 0 }}
-            exit={{ y: '100%', opacity: 0.9 }}
-            transition={{ type: 'spring', stiffness: 380, damping: 34 }}
-            className={`w-full max-w-md overflow-hidden overscroll-contain rounded-t-[28px] border-b-0 border-x border-t border-line bg-panel pb-sheet shadow-2xl outline-none md:rounded-[28px] md:border-b ${className}`}
+            initial={{ opacity: 0, scale: 0.98 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.98 }}
+            transition={{ duration: 0.16, ease: 'easeOut' }}
+            className={`w-full max-w-md overflow-hidden overscroll-contain rounded-[28px] border border-line bg-panel pb-sheet shadow-2xl outline-none ${className}`}
             onClick={(event) => event.stopPropagation()}
           >
-            <div className="sticky top-0 bg-panel">
-              <div className="mx-auto mt-2 h-1 w-9 shrink-0 rounded-full bg-ink/20" aria-hidden="true" />
+            <div className="sticky top-0 bg-panel pt-2">
               {headingText && (
                 <div className="flex items-center gap-3 px-5 pt-3">
                   <h2 id={labelledBy} className="min-w-0 flex-1 truncate text-[15px] font-bold text-ink">{headingText}</h2>
