@@ -1,4 +1,5 @@
 import { bindRelayRefresh, urlsFor } from './egress';
+import { querySyncAfterAuth } from './pool';
 
 function fill(target, next) {
   target.splice(0, target.length, ...next);
@@ -30,8 +31,12 @@ bindRelayRefresh(refreshRelays);
 refreshRelays();
 
 export const queryWithTimeout = (pool, relays, filter, timeoutMs = 4000) => {
+  // querySyncAfterAuth asks again if the pool answered an AUTH challenge only
+  // after the relay had already answered the first REQ with EOSE and left the
+  // subscription alone. Without that second ask, every read of the group relay
+  // came back empty however correctly it was signed.
   return Promise.race([
-    pool.querySync(relays, filter).catch(() => []),
+    querySyncAfterAuth(pool, relays, filter, timeoutMs).catch(() => []),
     new Promise(resolve => setTimeout(() => resolve([]), timeoutMs))
   ]);
 };
