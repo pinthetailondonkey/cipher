@@ -374,9 +374,19 @@ export async function checkPayment({ watcherUrl, address, currency, state, amoun
     throw new Error('This watcher\'s answer does not name the payment this check asked about. Update your watcher, then check again.');
   }
   if (body.pending || !body.txid) return { moved: false, state };
+  // A report names one transaction, and the receipt is written from it. A
+  // list, an object or a joined string used to be coerced into one text
+  // "aa11,bb22", which then signed a receipt naming two transactions and
+  // slipped past a consumed ledger that keys on the literal string, so the
+  // same transfer could confirm a second order. (C4) A watcher that cannot
+  // name one transaction confirms nothing.
+  const named = typeof body.txid === 'string' ? body.txid.trim() : '';
+  if (!named || /[\s,]/.test(named)) {
+    throw new Error('The watcher did not name a single transaction. Nothing was marked on the order.');
+  }
   const report = {
     source: 'watcher',
-    txid: String(body.txid),
+    txid: named,
     confirmations: Number(body.confirmations) || 0,
   };
   if (body.amount != null) report.amount = body.amount;

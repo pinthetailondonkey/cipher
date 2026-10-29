@@ -114,6 +114,34 @@ test('a watcher you run can mark seen, then confirmed, and silence is not a succ
   );
 });
 
+// A report names ONE transaction, and the receipt is written from the name.
+// A list or a joined string used to be coerced into "aa11,bb22": the receipt
+// was signed naming two transactions, and the consumed ledger, which keys on
+// the literal string, let the same transfer confirm a second order. (C4)
+test('an answer that does not name exactly one transaction moves nothing', async () => {
+  const watcherUrl = 'https://watch.example/payment?token=secret';
+  const base = { watcherUrl, address: '8abc', currency: 'xmr', state: 'address_issued' };
+  // An empty answer is the older "not seen yet" no-op, not a refusal.
+  const blank = await checkPayment({ ...base, fetchImpl: () => watcherAnswer({ address: '8abc', currency: 'xmr', txid: '', confirmations: 10 }) });
+  assert.equal(blank.moved, false);
+  for (const txid of [['ab', 'cd'], { id: 'ab' }, 'ab,cd', 'ab cd', 'ab\ncd', '   ']) {
+    await assert.rejects(
+      () => checkPayment({ ...base, fetchImpl: () => watcherAnswer({ address: '8abc', currency: 'xmr', txid, confirmations: 10 }) }),
+      /did not name a single transaction/,
+      `txid ${JSON.stringify(txid)} confirmed a payment`,
+    );
+  }
+  // One token still moves, and its own padding is trimmed away rather than
+  // refused — an honest watcher that pads is not the failure this guards.
+  const seen = await checkPayment({
+    ...base,
+    fetchImpl: () => watcherAnswer({ address: '8abc', currency: 'xmr', txid: '  ab  ', confirmations: 0 }),
+  });
+  assert.equal(seen.moved, true);
+  assert.equal(seen.state, 'seen');
+  assert.equal(seen.report.txid, 'ab');
+});
+
 test('a forged or unsigned answer moves nothing', async () => {
   const watcherUrl = 'https://watch.example/payment?token=secret';
   // An attacker picked a different key. The answer is well formed and says paid.
