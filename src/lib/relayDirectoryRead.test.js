@@ -295,6 +295,49 @@ test('the installed pool can answer the group host and only the group host', asy
   assert.equal(pool.automaticallyAuth(STRANGER_URL), null, 'a stranger host gets no signer');
 });
 
+// A read that is lent the account's pool must not close it on the way out.
+// Both close paths are guarded, and the positive is asserted too: the pool is
+// still usable after the read, so a later regression that re-introduces the
+// hazard goes red here instead of showing up as a mystery reconnect.
+test('a lent pool is neither closed nor destroyed, and still reads afterwards', async () => {
+  const identity = { pk: 'ab'.repeat(32), sk: new Uint8Array(32).fill(10) };
+  const { pool, relay } = installedPool(GROUP_URL, (authEvent) => ({ ...authEvent, sig: 'signed' }));
+  const closed = [];
+  // A pool that is closed stops serving. That is what "still reads afterwards"
+  // has to catch: an assertion that the fake hands back the same relay either
+  // way would pass with the guard removed.
+  let shut = false;
+  const lent = {
+    close(urls) { shut = true; closed.push(...(urls || [])); },
+    destroy() { shut = true; closed.push('destroy'); },
+    ensureRelay: async (url) => {
+      if (shut) throw new Error('this pool was closed');
+      return pool.ensureRelay(url);
+    },
+    automaticallyAuth: pool.automaticallyAuth,
+  };
+  // Never challenged: the read completes on its single, proved answer, so the
+  // only thing this case measures is what the reader does to the pool on the
+  // way out.
+  relay.challenge = null;
+  relay.subscribe = (_filters, params) => {
+    queueMicrotask(() => { params.onevent?.({ id: 'row', kind: 39000, tags: [] }); params.oneose?.(); });
+    return { close() {} };
+  };
+  const lentRead = () => readDirectory([GROUP_URL], FILTER, {
+    identity, createPool: () => lent, closePool: false,
+  });
+  const result = await lentRead();
+  assert.equal(result.status, READ_OK);
+  assert.deepEqual(closed, [], 'the lent pool was not closed or destroyed');
+  // The account's pool is reused across reads in the app; a second read on the
+  // same pool is what a regression would break, and it is red here rather than
+  // turning into a silent reconnect somewhere else.
+  const second = await lentRead();
+  assert.equal(second.status, READ_OK, 'the same pool served a second read');
+  assert.deepEqual(closed, [], 'still not closed after the second read');
+});
+
 // No account, no proof, no wait: the read is one ask and the honest answer.
 test('without an identity the reader never waits for a proof', async () => {
   const pool = await defaultPool(null);

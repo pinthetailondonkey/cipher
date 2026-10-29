@@ -183,7 +183,17 @@ async function readOneRelay(pool, url, filter, endsAt, events) {
 
 // Resolves in every case, within timeoutMs. Never rejects: an unreadable
 // directory is an answer, not an exception.
-export async function readDirectory(relays, filter, { timeoutMs = 4000, identity = null, createPool = defaultPool } = {}) {
+export async function readDirectory(relays, filter, {
+  timeoutMs = 4000,
+  identity = null,
+  createPool = defaultPool,
+  // A pool this read built is closed at settle. A pool it was lent — the
+  // account's own — must not be: closing that would take the group relay's
+  // connection down for every other reader in the app, and the next read
+  // would simply reconnect and hide it. Both close paths are skipped, not
+  // just the destroy.
+  closePool = true,
+} = {}) {
   const urls = [...new Set((relays || []).filter(Boolean))];
   if (urls.length === 0) return { status: READ_UNAVAILABLE, events: [], answers: [] };
 
@@ -197,8 +207,10 @@ export async function readDirectory(relays, filter, { timeoutMs = 4000, identity
   } catch (error) {
     answers = urls.map((url) => ({ url, status: 'closed', reason: error?.message || 'pool unavailable' }));
   } finally {
-    try { pool?.close(urls); } catch { /* nothing left to close */ }
-    try { pool?.destroy?.(); } catch { /* nothing left to close */ }
+    if (closePool) {
+      try { pool?.close(urls); } catch { /* nothing left to close */ }
+      try { pool?.destroy?.(); } catch { /* nothing left to close */ }
+    }
   }
 
   const proven = answers.some((answer) => answer.status === PROVEN);
