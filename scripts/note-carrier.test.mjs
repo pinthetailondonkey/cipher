@@ -109,6 +109,21 @@ test('the public page says one read and carries no host but its own', async () =
   } finally { await c.close(); }
 });
 
+test('a link this host cannot read says where it opens, not that it is invalid', async () => {
+  const c = await start();
+  try {
+    const page = await (await fetch(`${c.base}/note`)).text();
+    // A relay note is a 76-byte fragment; this host holds no such note and
+    // never will, so the honest thing is to name where it opens. Calling it
+    // "not a note link" told a person their link was broken when it was not.
+    assert.match(page, /raw\.length === 76/, 'the page tells a relay note apart by its own length');
+    assert.match(page, /This note opens in the Cipher app, not on this page\./);
+    const notNote = page.slice(page.indexOf('raw.length === 76'));
+    assert.doesNotMatch(notNote.slice(0, 200), /This link is not a note link\.[^]*?raw\.length === 76/,
+      'the relay case is not answered with the invalid-link line');
+  } finally { await c.close(); }
+});
+
 test('an OPTIONS preflight is answered so the app may post from its own origin', async () => {
   const c = await start();
   try {

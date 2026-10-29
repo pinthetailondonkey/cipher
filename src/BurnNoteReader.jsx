@@ -1,0 +1,115 @@
+import { useEffect, useRef, useState } from 'react';
+import { openNoteLink } from './lib/noteReader';
+import { isCarrierFragment } from './lib/deadDrop.js';
+
+// The page a note link opens on. It is mounted before the app's identity gate
+// and takes nothing from the store: no account, no vault, no chat. The link
+// carries the whole secret in its fragment, so the page needs nothing else.
+//
+// Two transports, two promises, and the words say which one is true here:
+//   carrier — the note host hands it over once and deletes it on that fetch;
+//   relay   — the one-open is this device's own rule and nothing else. The
+//             relay copy is still there for anyone else who holds the link, so
+//             this page says what happens ON THIS DEVICE and never claims the
+//             server deleted anything.
+// One limit of the carrier path, recorded here rather than fixed: the deadline
+// in noteReader.js is a timer, not a cancel. A host slow enough to cross it can
+// still delete the note on the fetch that is already in flight, so the page can
+// say "The note could not be opened." about a note that no longer exists
+// anywhere — the one shape where "gone from the server" is true and nobody
+// received the text.
+//
+// The failure lines are the reader's own, imported by message from deadDrop.js
+// — "This note was already opened on this device.", "The note is gone or was
+// never here.", "This note could not be opened — the link was altered." — so
+// the page and the app's modal say one thing in one vocabulary. This is the
+// only line this file owns, and it is the app's existing fallback.
+const COULD_NOT_OPEN = 'The note could not be opened.';
+
+export default function BurnNoteReader({ fragment }) {
+  const [state, setState] = useState({ status: 'opening' });
+  const burned = useRef(null);
+  const textRef = useRef(null);
+  const carrier = isCarrierFragment(fragment);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const note = await openNoteLink({ fragment });
+        if (cancelled) return;
+        burned.current = note.burn || null;
+        setState({ status: 'open', text: note.text });
+      } catch (error) {
+        if (!cancelled) setState({ status: 'failed', message: error?.message || COULD_NOT_OPEN });
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [fragment]);
+
+  // The address bar keeps the link until the text is actually on the screen.
+  // A failed open put nothing on screen, so clearing the fragment there would
+  // throw the link away without showing anyone the note.
+  useEffect(() => {
+    if (state.status !== 'open') return;
+    try { window.history.replaceState(null, '', window.location.pathname); } catch { /* nothing to clean */ }
+    // The note is spent only now: the text is in hand and on the screen.
+    try { burned.current?.(); } catch { /* the ledger mark is best-effort */ }
+  }, [state.status]);
+
+  const copyText = async () => {
+    const text = state.text || '';
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      // The clipboard can be refused outright. Selecting the text is the
+      // fallback that still lets the reader copy it by hand, and it says
+      // nothing new on the screen.
+      const node = textRef.current;
+      if (node && window.getSelection && document.createRange) {
+        const range = document.createRange();
+        range.selectNodeContents(node);
+        const selection = window.getSelection();
+        selection?.removeAllRanges?.();
+        selection?.addRange?.(range);
+      }
+    }
+  };
+
+  return (
+    <div className="mx-auto flex min-h-[100dvh] w-full max-w-[560px] flex-col justify-center px-6 py-10">
+      <h1 className="text-2xl font-bold tracking-tight text-ink">A note that reads once</h1>
+      <p className="mt-1 text-[15px] text-inkMuted">
+        {carrier
+          ? 'Open it and it is gone from the server. There is no second read, not even for you.'
+          : 'This note opens once on this device. Save the text — it will not open here again.'}
+      </p>
+      {state.status === 'open' && (
+        <>
+          <pre
+            ref={textRef}
+            className="mt-5 whitespace-pre-wrap break-words rounded-xl border border-line bg-panelAlt p-4 text-[15px] text-ink"
+          >
+            {state.text}
+          </pre>
+          <button
+            type="button"
+            onClick={copyText}
+            className="mt-5 min-h-[48px] rounded-xl border border-line bg-panelAlt px-4 py-3 text-[15px] font-semibold text-accentText"
+          >
+            Copy the text
+          </button>
+          {/* No "copied" line: the approved words are the heading, the two
+              ledes, this button and the reader's own failure lines. A quiet
+              confirmation would be new copy the founder has not seen. */}
+        </>
+      )}
+      {state.status === 'opening' && <p className="mt-5 text-[15px] text-inkMuted">Opening…</p>}
+      {state.status === 'failed' && (
+        <p className="mt-5 text-[15px] text-inkMuted" role="status">
+          {state.message}
+        </p>
+      )}
+    </div>
+  );
+}
