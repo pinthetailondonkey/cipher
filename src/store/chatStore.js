@@ -296,8 +296,18 @@ export const useChatStore = create((set) => ({
   // print a count the device has no evidence for. The count must be absent
   // when it is unknown, never zero — zero and unknown are not the same answer.
   groupMembersKnown: {},
-  setGroupMembersKnown: (groupId) => set((s) => (
-    !groupId || s.groupMembersKnown?.[groupId]
+  // Only a NON-EMPTY roster is evidence of a count. An empty admitted roster
+  // is not a measurement of zero members for a group this device is in — it
+  // is a roster that arrived with nothing usable in it (an empty snapshot, or
+  // one this device has denied every row of). Marking that would print
+  // "0 members", which is a wrong number, not an unknown. The list is taken
+  // as an argument so the rule holds at every call site, not just the ones
+  // that remembered it.
+  setGroupMembersKnown: (groupId, members) => set((s) => (
+    !groupId
+    || !Array.isArray(members)
+    || members.length === 0
+    || s.groupMembersKnown?.[groupId]
       ? {}
       : { groupMembersKnown: { ...s.groupMembersKnown, [groupId]: true } }
   )),

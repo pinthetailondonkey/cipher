@@ -1053,8 +1053,11 @@ export function useNIP29Group({ identity }) {
       if (useChatStore.getState().activeGroup?.id === groupId) {
         setGroupMembers(members);
         // The list on screen is now one this device actually read. Until this
-        // marker, the screen shows no count rather than a guess.
-        useChatStore.getState().setGroupMembersKnown(groupId);
+        // marker, the screen shows no count rather than a guess. The list is
+        // handed over so the store can refuse an empty one: zero is a number
+        // the screen may only print when a read measured zero members, and a
+        // group this device is in always has at least this device in it.
+        useChatStore.getState().setGroupMembersKnown(groupId, members);
       }
       return members;
     } catch (err) {
@@ -1130,7 +1133,11 @@ export function useNIP29Group({ identity }) {
         await rememberMembers(groupId, members);
         if (useChatStore.getState().activeGroup?.id === groupId) {
           setGroupMembers(members);
-          useChatStore.getState().setGroupMembersKnown(groupId);
+          // Same rule as the read above, and this is the arm that can hand
+          // over an empty list: withoutDenied strips every row this device
+          // denied, so an all-denied roster arrives here as []. That is not
+          // evidence of zero members, and the store refuses to mark it.
+          useChatStore.getState().setGroupMembersKnown(groupId, members);
         }
         return;
       }

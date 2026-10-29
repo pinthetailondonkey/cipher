@@ -47,7 +47,7 @@ test('a failed read leaves the group unknown, and the count stays absent', () =>
   useChatStore.getState().reload();
   assert.equal(memberCountOf(useChatStore.getState(), 'g1'), null);
   // What a successful read does, and the only thing that changes the answer.
-  useChatStore.getState().setGroupMembersKnown('g1');
+  useChatStore.getState().setGroupMembersKnown('g1', TEN);
   useChatStore.setState({ groupMembers: TEN });
   assert.equal(memberCountOf(useChatStore.getState(), 'g1'), 10);
   // A reload is a fresh app: the roster did not survive it, so neither does
@@ -58,16 +58,47 @@ test('a failed read leaves the group unknown, and the count stays absent', () =>
 
 test('a roster read marks only the group it was read for', () => {
   useChatStore.getState().reload();
-  useChatStore.getState().setGroupMembersKnown('g1');
+  useChatStore.getState().setGroupMembersKnown('g1', TEN);
   assert.equal(useChatStore.getState().groupMembersKnown.g1, true);
   assert.equal(useChatStore.getState().groupMembersKnown.g2, undefined,
     'a second group is still unknown, so it shows no count');
-  useChatStore.getState().setGroupMembersKnown('');
-  useChatStore.getState().setGroupMembersKnown(null);
+  useChatStore.getState().setGroupMembersKnown('', TEN);
+  useChatStore.getState().setGroupMembersKnown(null, TEN);
   assert.deepEqual(useChatStore.getState().groupMembersKnown, { g1: true }, 'an empty id marks nothing');
   const first = useChatStore.getState().groupMembersKnown;
-  useChatStore.getState().setGroupMembersKnown('g1');
+  useChatStore.getState().setGroupMembersKnown('g1', TEN);
   assert.equal(useChatStore.getState().groupMembersKnown, first, 'no new object on a repeat frame');
+});
+
+// ---- The empty roster must never become a zero -------------------------
+// An empty admitted roster is not a measurement of zero members for a group
+// this device is in — it is a roster that arrived with nothing usable in it.
+test('an empty roster is refused as a count, so the screen shows no number', () => {
+  useChatStore.getState().reload();
+  useChatStore.getState().setGroupMembersKnown('g1', []);
+  assert.equal(memberCountOf(useChatStore.getState(), 'g1'), null,
+    'empty is not zero: no chip at all');
+  useChatStore.getState().setGroupMembersKnown('g1');
+  assert.equal(memberCountOf(useChatStore.getState(), 'g1'), null,
+    'marking without a list marks nothing at all');
+  useChatStore.getState().setGroupMembersKnown('g1', null);
+  assert.equal(memberCountOf(useChatStore.getState(), 'g1'), null);
+});
+
+// The live 39002 arm runs the relay's roster through withoutDenied first, so
+// a roster whose every row this device denied arrives at the marker as [].
+// This walks that real path rather than handing the store an empty array.
+test('a roster this device denied every row of is not a count of zero', async () => {
+  const { withoutDenied, denyPendingJoin } = await import('../../lib/groupJoinQueue.js');
+  useChatStore.getState().reload();
+  const groupId = 'g-denied';
+  denyPendingJoin(groupId, 'aa'.repeat(32));
+  const stripped = withoutDenied(groupId, [{ pubkey: 'aa'.repeat(32), role: 'member' }]);
+  assert.deepEqual(stripped, [], 'the deny filter really does empty this roster');
+  useChatStore.setState({ groupMembers: stripped });
+  useChatStore.getState().setGroupMembersKnown(groupId, stripped);
+  assert.equal(memberCountOf(useChatStore.getState(), groupId), null,
+    'an all-denied roster is unknown, not zero');
 });
 
 // The screen, at the shape that carries the rule: the chip is behind the
@@ -79,6 +110,6 @@ test('the header renders no chip for an unread roster', () => {
   assert.doesNotMatch(sidebar, /memberList\.length \|\| 1/, 'the invented "1 member" is gone');
   assert.match(sidebar, /\{memberCount\} \{memberCount === 1 \? 'member' : 'members'\}/,
     'the number shown is the measured one, nothing else');
-  assert.match(sidebar, /\{!rosterKnown && memberList\.length === 0 &&/,
-    'the waiting line is only for the unknown case');
+  assert.match(sidebar, /\{rosterLine && <p/,
+    'the waiting line is the in-flight rule, never an empty list');
 });

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { BadgeCheck, Heart, Link2, LogOut, Package, Pencil, ShieldCheck, ShoppingCart, UserMinus, UserPlus, Users, X } from 'lucide-react';
 import { memberCountOf, useChatStore } from '../../store/chatStore';
+import { createSettleGate, rosterInFlight, rosterNotice } from '../../lib/memberRosterNotice';
 import Avatar from '../ui/Avatar';
 import Badge from '../ui/Badge';
 import Button from '../ui/Button';
@@ -147,6 +148,19 @@ export default function GroupInfoSidebar({
   const [error, setError] = useState('');
   const [copied, setCopied] = useState(false);
   const [pickedMember, setPickedMember] = useState(null);
+  // In flight means "this group's read has not reported yet", derived from the
+  // group id rather than set when the effect starts: switching chats is in
+  // flight again for free, and a read still pending when the group changes
+  // closes its gate first, so it cannot mark the new group as settled. It is
+  // cleared on both settle arms — including a rejection, which is the case
+  // that used to leave "Looking up members…" on screen for as long as the
+  // panel stayed open.
+  const [rosterSettled, setRosterSettled] = useState({ groupId: null, done: false });
+  const rosterLoading = rosterInFlight({
+    settledGroupId: rosterSettled.groupId,
+    openGroupId: group?.id,
+    done: rosterSettled.done,
+  });
   const memberList = Array.isArray(members) ? members : [];
   // Keyed by group: switching chats leaves the previous group's list in the
   // store, so the marker has to be the group's own or the count would be
@@ -154,16 +168,23 @@ export default function GroupInfoSidebar({
   // has been read, and then there is no number at all.
   const memberCount = useChatStore((state) => memberCountOf(state, group?.id));
   const rosterKnown = memberCount !== null;
+  const rosterLine = rosterNotice({ rosterKnown, loading: rosterLoading });
 
   useEffect(() => {
     if (!group?.id) return undefined;
-    let active = true;
+    const gate = createSettleGate();
     Promise.all([fetchGroupMembers?.(group.id), fetchPinnedMessage?.(group.id)])
-      .catch((fetchError) => {
-        console.error('[GroupInfoSidebar] Could not load group details:', fetchError);
-        if (active) setError('Could not refresh group details.');
-      });
-    return () => { active = false; };
+      .then(
+        () => gate.settle(() => setRosterSettled({ groupId: group.id, done: true })),
+        (fetchError) => {
+          console.error('[GroupInfoSidebar] Could not load group details:', fetchError);
+          gate.settle(() => {
+            setRosterSettled({ groupId: group.id, done: true });
+            setError('Could not refresh group details.');
+          });
+        },
+      );
+    return () => gate.close();
   }, [group?.id, fetchGroupMembers, fetchPinnedMessage]);
 
   const canManage = group?.creator === identity?.pk || memberList.some((member) => (
@@ -434,7 +455,10 @@ export default function GroupInfoSidebar({
               );
             })}
           </div>
-          {!rosterKnown && memberList.length === 0 && <p className="px-2 pb-2 text-[13px] text-inkMuted">Looking up members…</p>}
+          {/* The line is a read in flight, not an empty list: a failed read
+              ends in no line and no number, and a roster that landed shows
+              its number with no line over it. */}
+          {rosterLine && <p className="px-2 pb-2 text-[13px] text-inkMuted">{rosterLine}</p>}
         </div>
 
         {/* Shared media strip: photos and album entries that crossed the chat. */}
