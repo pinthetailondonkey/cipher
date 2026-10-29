@@ -175,7 +175,7 @@ function ChatRow({
     </button>
   ) : (
     <button type="button" onClick={onOpen} className="min-w-0 flex-1 truncate text-left text-[14px] text-inkMuted">
-      {previewText || (isDm ? 'Tap to chat' : (chat.group.isChannel ? 'Channel' : 'Public group'))}
+      {previewText || (isDm ? 'Tap to chat' : (chat.group.isChannel ? 'Menu' : 'Public group'))}
     </button>
   );
 

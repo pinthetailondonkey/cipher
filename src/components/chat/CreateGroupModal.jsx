@@ -38,16 +38,16 @@ export default function CreateGroupModal({ isOpen, onClose, createGroup }) {
         <div className="mb-5 flex items-center justify-between">
           <div>
             <h2 id="create-group-title" className="text-2xl font-bold tracking-tight text-ink">Create a space</h2>
-            <p className="mt-1 text-[13px] text-ink/40">Start a group conversation or broadcast channel.</p>
+            <p className="mt-1 text-[13px] text-ink/40">Start a group conversation or share a menu.</p>
           </div>
           <button type="button" onClick={onClose} className={`rounded-full p-2 text-ink/50 hover:bg-ink/10 hover:text-ink ${pressable}`} aria-label="Close"><X size={20} /></button>
         </div>
         <div className="mb-5 grid grid-cols-2 gap-2 rounded-2xl border border-line bg-panelStrong shadow-lg p-1">
           <button type="button" aria-pressed={!isChannel} onClick={() => setIsChannel(false)} className={`flex min-h-11 items-center justify-center gap-2 rounded-xl text-[15px] font-semibold ${pressable} ${!isChannel ? 'bg-accent text-accentInk active:bg-accent' : 'text-ink/50 active:bg-ink/10'}`}><MessageSquare size={16} /> Group</button>
-          <button type="button" aria-pressed={isChannel} onClick={() => setIsChannel(true)} className={`flex min-h-11 items-center justify-center gap-2 rounded-xl text-[15px] font-semibold ${pressable} ${isChannel ? 'bg-accent text-accentInk active:bg-accent' : 'text-ink/50 active:bg-ink/10'}`}><Radio size={16} /> Channel</button>
+          <button type="button" aria-pressed={isChannel} onClick={() => setIsChannel(true)} className={`flex min-h-11 items-center justify-center gap-2 rounded-xl text-[15px] font-semibold ${pressable} ${isChannel ? 'bg-accent text-accentInk active:bg-accent' : 'text-ink/50 active:bg-ink/10'}`}><Radio size={16} /> Menu</button>
         </div>
         <label className="mb-4 block text-[13px] text-ink/40">
-          {isChannel ? 'Channel name' : 'Group name'}
+          {isChannel ? 'Menu name' : 'Group name'}
           <Input autoFocus value={name} onChange={(event) => setName(event.target.value)} maxLength={80} required placeholder={isChannel ? 'e.g. Announcements' : 'e.g. Weekend plans'} className="mt-2" />
         </label>
         <label className="block text-[13px] text-ink/40">
