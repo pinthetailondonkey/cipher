@@ -25,6 +25,14 @@ import { allowsGroupJoins } from '../lib/privacy.js';
 import { groupMetaAnnouncement } from '../lib/groupMetaAnnouncement.js';
 import { clampGroupBody } from '../lib/disappearing';
 
+// How long an authenticated group stream must have held before its close counts
+// as a real drop rather than a refused handshake. A stream that authenticated
+// and died inside this window was never working, so it must keep climbing the
+// reconnect ladder like any other failure; only a stream that held earns the
+// reset back to one second. Without this, a relay that authenticates and drops
+// at once would reset the ladder on every flap — one loop traded for another.
+const GROUP_LADDER_STABLE_MS = 10000;
+
 function currentGroupRelay() {
   return groupSocketUrl() || '';
 }
@@ -217,6 +225,11 @@ function flushGroupSubs(session) {
 
 function markGroupAuthed(session) {
   session.authed = true;
+  // When this stream authenticated. The ladder is reset on the close that ends
+  // a stream which actually held, not here: a relay that authenticates and then
+  // drops at once would otherwise reset the ladder on every flap and we would
+  // have traded one loop for another.
+  session.authedAt = Date.now();
   flushGroupSubs(session);
   const pending = session.authWaiters.splice(0);
   pending.forEach((waiter) => waiter.resolve());
@@ -299,6 +312,7 @@ function handleGroupSocketFrame(session, raw) {
 function connectGroupSocket(session) {
   if (session.closed) return;
   session.authed = false;
+  session.authedAt = null;
   session.authSent = false;
   session.authEventId = null;
   const url = currentGroupRelay();
@@ -312,7 +326,11 @@ function connectGroupSocket(session) {
   session.ws = ws;
 
   ws.onopen = () => {
-    session.attempt = 0;
+    // Opening is not working. A relay that accepts the socket and then refuses
+    // AUTH would otherwise reset the ladder on every attempt, so the backoff
+    // never grew: one connection a second, for as long as the screen was open.
+    // The ladder is reset by a stream that authenticated and then held, which
+    // is the first evidence the connection actually works.
     console.log('✅ Group WS connected');
     window.dispatchEvent(new CustomEvent('cipher:relay-connected', { detail: { url } }));
   };
@@ -323,6 +341,7 @@ function connectGroupSocket(session) {
 
   ws.onclose = (event) => {
     console.log('❌ Group WS closed:', event.reason || event.code);
+    const wasAuthed = session.authed;
     session.authed = false;
     session.authSent = false;
     rejectAuthWaiters(session, new Error('Group relay socket closed'));
@@ -332,6 +351,14 @@ function connectGroupSocket(session) {
       session.okWaiters.delete(eventId);
     }
     if (!session.closed) {
+      // A stream that authenticated and then held earns a fresh ladder, so the
+      // next outage starts from one second rather than from the cap. A stream
+      // that authenticated and dropped straight away does not: the ladder keeps
+      // climbing, exactly as it does for a relay that refuses AUTH.
+      if (wasAuthed && session.authedAt && Date.now() - session.authedAt >= GROUP_LADDER_STABLE_MS) {
+        session.attempt = 0;
+      }
+      session.authedAt = null;
       const attempt = session.attempt || 0;
       session.attempt = attempt + 1;
       const delay = Math.min(30000, 1000 * (2 ** Math.min(attempt, 5)));
@@ -369,6 +396,7 @@ function openGroupRelaySession(identity) {
     identity,
     ws: null,
     authed: false,
+    authedAt: null,
     authSent: false,
     authEventId: null,
     closed: false,
