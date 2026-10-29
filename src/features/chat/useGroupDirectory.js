@@ -5,6 +5,7 @@ import { groupRelays, queryWithTimeout } from '../../lib/relays';
 import { getAuthenticatedPool } from '../../lib/pool';
 import { useChatStore } from '../../store/chatStore';
 import { PENDING_JOIN, heldGroupRow, joinGroup, joinRefusal } from '../../lib/groupJoin';
+import { ACCESS_PUBLIC, heldSealedFields } from '../../lib/groupCreate';
 
 export function useMyGroups(pubkey) {
   const setGroupsStore = useChatStore((s) => s.setGroups);
@@ -97,7 +98,15 @@ export function useGroupDirectory({ identity, createGroupHook, setGroups }) {
       // A row the device holds is named by the device's records; a
       // directory rebuild restating relay metadata must not rename it.
       const held = new Map(localGroups.map((lg) => [lg.id, lg]));
-      const allGroups = uniqueGroups.map((g) => heldGroupRow(held.get(g.id), g));
+      // A merged row keeps the facts that live only on this device: the level
+      // it was created at, and whether its name came from this record rather
+      // than from the relay. Without the second one a directory resync would
+      // hand back a row whose name looks like the relay's, and every guard
+      // that protects a sealed name reads that marker.
+      const allGroups = uniqueGroups.map((g) => {
+        const local = held.get(g.id);
+        return { ...heldGroupRow(local, g), ...heldSealedFields(local) };
+      });
       localGroups.forEach((lg) => {
         if (!allGroups.find((g) => g.id === lg.id)) allGroups.push(lg);
       });
@@ -109,20 +118,24 @@ export function useGroupDirectory({ identity, createGroupHook, setGroups }) {
     }
   };
 
-  const createGroup = async (e, listed = true) => {
+  const createGroup = async (e, access = ACCESS_PUBLIC) => {
     if (e) e.preventDefault();
     const state = useChatStore.getState();
     if (!state.newGroupName.trim()) return;
     const gName = state.newGroupName;
     const gAbout = state.newGroupAbout;
     const gChannel = state.isChannel;
+    // Private is a group choice. A menu stays joinable and listed, so the
+    // level the screen held is ignored on the menu axis rather than trusted.
+    const gAccess = gChannel ? ACCESS_PUBLIC : access;
     state.setShowCreateGroup(false);
     state.setShowMenu(false);
     state.setNewGroupName(""); 
     state.setNewGroupAbout(""); 
     state.setIsChannel(false);
+    state.setGroupAccess(ACCESS_PUBLIC);
     try {
-      const group = await createGroupHook(gName.trim(), gAbout.trim(), gChannel, { listed });
+      const group = await createGroupHook(gName.trim(), gAbout.trim(), gChannel, { access: gAccess });
       if (group) openChat('group', group.id, group);
       setToast({ type: 'success', message: 'Group created!' });
     } catch (err) { 
@@ -131,6 +144,7 @@ export function useGroupDirectory({ identity, createGroupHook, setGroups }) {
       state.setNewGroupName(gName);
       state.setNewGroupAbout(gAbout);
       state.setIsChannel(gChannel);
+      state.setGroupAccess(gAccess);
       setToast({ type: 'error', message: 'Failed to create group' });
     }
   };

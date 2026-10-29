@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { scopedGet, scopedSet } from '../lib/storage';
 import { markChatRead } from '../db';
 import { orderState } from '../lib/orderActions';
+import { ACCESS_PUBLIC } from '../lib/groupCreate';
 
 const safeStorage = {
   getItem(key) {
@@ -169,6 +170,16 @@ export function ordersNeedActionOf(state) {
   return sum;
 }
 
+// What the group header may show as its member count: the measured length of
+// the roster this device read, or null when it has read none for that group.
+// Null renders as nothing and is never coerced to zero — "0 members" when the
+// truth is unknown is a lie, and one this project has shipped before.
+export function memberCountOf(state, groupId) {
+  if (!groupId || state?.groupMembersKnown?.[groupId] !== true) return null;
+  const list = Array.isArray(state?.groupMembers) ? state.groupMembers : [];
+  return list.length;
+}
+
 export function notifTotalOf(state) {
   const counts = state?.unreadCounts || EMPTY_COUNTS;
   const ack = state?.notifAck || EMPTY_COUNTS;
@@ -279,6 +290,27 @@ export const useChatStore = create((set) => ({
   setGroupMessages: (v) => set((s) => keepIfUnchanged(s, 'groupMessages', typeof v === 'function' ? v(s.groupMessages) : v)),
   setProfiles: (v) => set((s) => keepIfUnchanged(s, 'profiles', typeof v === 'function' ? v(s.profiles) : v)),
   setGroupMembers: (v) => set((s) => ({ groupMembers: typeof v === 'function' ? v(Array.isArray(s.groupMembers) ? s.groupMembers : []) : v })),
+  // Which groups this device has actually read a member list for, from the
+  // relay's signed roster. Memory-only, on purpose: after a reload nothing is
+  // known until a roster lands, and a persisted "known" would let the screen
+  // print a count the device has no evidence for. The count must be absent
+  // when it is unknown, never zero — zero and unknown are not the same answer.
+  groupMembersKnown: {},
+  // Only a NON-EMPTY roster is evidence of a count. An empty admitted roster
+  // is not a measurement of zero members for a group this device is in — it
+  // is a roster that arrived with nothing usable in it (an empty snapshot, or
+  // one this device has denied every row of). Marking that would print
+  // "0 members", which is a wrong number, not an unknown. The list is taken
+  // as an argument so the rule holds at every call site, not just the ones
+  // that remembered it.
+  setGroupMembersKnown: (groupId, members) => set((s) => (
+    !groupId
+    || !Array.isArray(members)
+    || members.length === 0
+    || s.groupMembersKnown?.[groupId]
+      ? {}
+      : { groupMembersKnown: { ...s.groupMembersKnown, [groupId]: true } }
+  )),
   setPinnedMessages: (v) => set((s) => ({ pinnedMessages: typeof v === 'function' ? v(s.pinnedMessages) : v })),
   setDisappearingTimer: (chatId, duration) => set((s) => {
     const next = { ...s.disappearingTimers, [chatId]: duration };
@@ -400,11 +432,15 @@ export const useChatStore = create((set) => ({
   newGroupName: '',
   newGroupAbout: '',
   isChannel: false,
+  // Who may read the group being created. The store holds the choice so the
+  // form survives a failed create; it is not persisted, same as the name.
+  groupAccess: ACCESS_PUBLIC,
   replyingTo: null,
   setNewMessage: (v) => set({ newMessage: v }),
   setNewGroupName: (v) => set({ newGroupName: v }),
   setNewGroupAbout: (v) => set({ newGroupAbout: v }),
   setIsChannel: (v) => set({ isChannel: v }),
+  setGroupAccess: (v) => set({ groupAccess: v }),
   setReplyingTo: (v) => set({ replyingTo: v }),
 
   // PROFILE EDITOR
@@ -430,6 +466,7 @@ export const useChatStore = create((set) => ({
   closeDialog: () => set({ dialog: null }),
 
   reload: () => set({
+    groupMembersKnown: {},
     archivedChats: scopedGet('archived', []),
     mutedChats: scopedGet('muted', []),
     mutedUntil: scopedGet('muted_until', {}),

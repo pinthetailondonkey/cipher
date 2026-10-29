@@ -551,7 +551,7 @@ export default function Wallet({ identity, onOpenChat, startView = 'main' }) {
         <Card label="Security & Privacy">
           <ListRow icon={BookOpen} title="How to use" subtitle="A walkthrough of the app" onClick={() => useChatStore.getState().setShowTutorial(true)} />
           <ListRow icon={Shield} title="Privacy" subtitle="Calls, last seen, blocked" onClick={() => setView('privacy')} />
-          <ListRow icon={Globe} title="Connections" subtitle="Tor and proxy" onClick={() => setView('connections')} />
+          <ListRow icon={Globe} title="Connections" subtitle="Watcher and push" onClick={() => setView('connections')} />
         </Card>
 
         <Card label="Danger zone">

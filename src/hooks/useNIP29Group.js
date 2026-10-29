@@ -14,6 +14,7 @@ import { authorizeGroupControl, authorizeGroupPin, authorizeMemberSnapshot, grou
 import { grantKeyRequest, loadMemberSnapshot, loadMemberSnapshotRecord, memberKey, patchMemberSnapshot, rememberMembers, rotateGroupEpoch } from '../lib/crypto/groupKeyRotation';
 import { generateGroupKey } from '../lib/crypto/groupCipher';
 import { heldGroupRow } from '../lib/groupJoin';
+import { ACCESS_PRIVATE, ACCESS_PUBLIC, JOIN_APPROVAL, groupCreateTags, relayFacingLabel } from '../lib/groupCreate';
 import { distributeGroupKey, epochsToBackfill } from '../lib/crypto/groupKeyDistribution';
 import { publishWriteAhead, startOutboxSync } from '../lib/outbox';
 import { groupSocketUrl } from '../lib/egress';
@@ -109,6 +110,35 @@ function rememberAppliedGroupMeta(identityPk, groupId, updates, metaAt) {
   }
   const active = useChatStore.getState().activeGroup;
   if (active?.id === groupId) useChatStore.getState().setActiveGroup({ ...active, ...payload });
+}
+
+// The device's own record for a group whose name it holds sealed, or null.
+// Read from the persisted group list rather than the store row: the store row
+// is rebuilt from the relay directory on every resync and the marker that says
+// "this name did not come from the relay" has to outlive that.
+function sealedGroupRecord(identityPk, groupId) {
+  const local = getMyGroups(identityPk).find((group) => group?.id === groupId);
+  if (!local) return null;
+  return (local.labelSealed || local.access === ACCESS_PRIVATE) ? local : null;
+}
+
+// Who a sealed label may be sent to. The signed roster is the answer, minus
+// anyone this device has denied — a name sent to an ex-member is a leak, not a
+// delivery. A relay read that fails falls back to the roster this device
+// already holds, because the alternative is a rename that reaches nobody.
+async function labelRecipientsFor(identity, groupId) {
+  try {
+    const members = await fetchRelayMemberSnapshot(identity, groupId);
+    const pubkeys = (members || []).map((member) => (typeof member === 'string' ? member : member?.pubkey)).filter(Boolean);
+    if (pubkeys.length) return pubkeys;
+  } catch {
+    // The held roster below is the fallback.
+  }
+  const state = useChatStore.getState();
+  const held = (state.activeGroup?.id === groupId ? state.groupMembers : null)
+    || (state.groups || []).find((group) => group?.id === groupId)?.members
+    || [];
+  return held.map((member) => (typeof member === 'string' ? member : member?.pubkey)).filter(Boolean);
 }
 
 export function parseGroupReference(value) {
@@ -266,11 +296,18 @@ export async function loadGroupProfile(identity, rawId, passedName = null) {
   let meta = {};
   try { meta = (await fetchGroupMetadata(identity, groupId)) || {}; }
   catch (error) { console.warn('[NIP29] Group metadata lookup failed:', error); }
-  const name = meta.name || (passedName && passedName !== 'Unnamed Group' ? passedName : '') || groupId.slice(0, 12);
+  // A sealed group's relay metadata is the fixed placeholder, by design. The
+  // device's own record holds the real words, and this read must not hand the
+  // caller the placeholder to write over them — this is the "history fetch
+  // re-saves the relay copy" path, and it is refused here at its source.
+  const sealed = sealedGroupRecord(identity?.pk, groupId);
+  const name = sealed
+    ? (sealed.name || groupId.slice(0, 12))
+    : (meta.name || (passedName && passedName !== 'Unnamed Group' ? passedName : '') || groupId.slice(0, 12));
   return {
     id: groupId,
     name,
-    about: meta.about || '',
+    about: sealed ? (sealed.about || '') : (meta.about || ''),
     picture: meta.picture || '',
     isChannel: false,
     creator: meta.creator || parsed.author || '',
@@ -597,6 +634,28 @@ export function useNIP29Group({ identity }) {
     return startOutboxSync(identity);
   }, [identity?.pk, identity?.sk]);
 
+  // A sealed label that arrived in a key bundle was written to the device's
+  // own record by the crypto layer, which may not reach the store. This is the
+  // hop that puts it on the open screen now instead of at the next resync.
+  // It re-reads the persisted record, so what the screen shows and what a
+  // reload shows cannot disagree.
+  useEffect(() => {
+    if (typeof window === 'undefined' || !identity?.pk) return undefined;
+    const onLabel = (event) => {
+      const groupId = event?.detail?.groupId;
+      if (!groupId) return;
+      const record = sealedGroupRecord(identity.pk, groupId);
+      if (!record) return;
+      rememberAppliedGroupMeta(identity.pk, groupId, {
+        name: record.name,
+        about: record.about || '',
+        labelSealed: true,
+      }, record.metaAt || 0);
+    };
+    window.addEventListener('cipher:group-label-updated', onLabel);
+    return () => window.removeEventListener('cipher:group-label-updated', onLabel);
+  }, [identity?.pk]);
+
   const appendSystemMessage = useCallback((groupId, text, eventId = null) => {
     const id = eventId ? 'sys-' + eventId : 'sys-' + Date.now() + Math.random().toString(36).substr(2, 9);
     setGroupMessages(prev => {
@@ -615,39 +674,46 @@ export function useNIP29Group({ identity }) {
     });
   }, [setGroupMessages]);
 
-  const createGroup = useCallback(async (name, about, isChannel, { listed = true } = {}) => {
+  const createGroup = useCallback(async (name, about, isChannel, { access = ACCESS_PUBLIC, joinPolicy = JOIN_APPROVAL } = {}) => {
     const pool = await getAuthenticatedPool(identity);
     const groupId = (globalThis.crypto?.randomUUID?.() || Date.now().toString()).replace(/-/g, '').slice(0, 16);
 
-    const createEv = finalizeEvent({
-      kind: 9007, created_at: Math.floor(Date.now() / 1000),
-      tags: [['h', groupId], ['name', name], ['about', about || ''], ['open'], ['p', identity.pk, 'admin']],
-      content: ''
-    }, identity.sk);
+    // The tags come from one pure builder so the wire shape is proved in a
+    // test rather than in a screen. An unknown level throws there instead of
+    // quietly creating a group more visible than the person asked for.
+    const tags = groupCreateTags({ name, about, isChannel, access, joinPolicy, groupId, pubkey: identity.pk });
+    const createdAt = Math.floor(Date.now() / 1000);
+
+    const createEv = finalizeEvent({ kind: 9007, created_at: createdAt, tags: tags.create, content: '' }, identity.sk);
 
     const r9007 = await Promise.allSettled(pool.publish(groupRelays, createEv));
     const ok = r9007.some(r => r.status === 'fulfilled');
     if (!ok) throw new Error('No relay accepted 9007');
 
-    // Unlisted spaces omit the [cipher] discovery tag, so the app's search
-    // screen never picks them up; members still reach them by link or QR.
-    const metaTags = [['h', groupId], ['name', name], ['about', about || '']];
-    if (listed) metaTags.push(['cipher', 'true']);
-    if (isChannel) {
-      metaTags.push(['channel', 'true']);
-      metaTags.push(['broadcast', 'true']);
-    }
-
-    const metaEv = finalizeEvent({
-      kind: 9002, created_at: Math.floor(Date.now() / 1000),
-      tags: metaTags,
-      content: ''
-    }, identity.sk);
+    const metaEv = finalizeEvent({ kind: 9002, created_at: createdAt, tags: tags.meta, content: '' }, identity.sk);
     await Promise.allSettled(pool.publish(groupRelays, metaEv));
 
+    // The join policy also goes out on its own 9002, through the update path
+    // that has been seen working. Whether the relay honours the tag set on the
+    // create event above is UNPROVEN, so the end state never depends on it.
+    //
+    // It carries the FULL metadata, not a bare ['join'] tag. A 9002 is a state
+    // event: if this relay replaces the group's metadata with whatever the
+    // newest one says, a bare join event would erase the name, the about and
+    // the discovery tag. Sending the same tags again costs nothing and is safe
+    // whether the relay adds to the state or replaces it.
+    if (joinPolicy === JOIN_APPROVAL) {
+      const policyEv = finalizeEvent({
+        kind: 9002, created_at: createdAt + 1,
+        tags: tags.meta,
+        content: ''
+      }, identity.sk);
+      await Promise.allSettled(pool.publish(groupRelays, policyEv));
+    }
+
     const joinEv = finalizeEvent({
-      kind: 9021, created_at: Math.floor(Date.now() / 1000),
-      tags: [['h', groupId]], content: 'Creator'
+      kind: 9021, created_at: createdAt,
+      tags: tags.join, content: 'Creator'
     }, identity.sk);
     await Promise.allSettled(pool.publish(groupRelays, joinEv));
 
@@ -659,6 +725,10 @@ export function useNIP29Group({ identity }) {
         await distributeGroupKey({
           senderPrivkey: identity.sk, senderPubkey: identity.pk,
           groupId, epoch: 1, keyBytes: key, recipients: [identity.pk],
+          // The real name and description travel sealed, in the same envelope
+          // as the key. On a public group `sealed` is null and this is the
+          // bundle it has always been.
+          label: tags.sealed,
           publish: (dmEvent) => publishKeyDm(identity, dmEvent),
         });
         await rememberMembers(groupId, [identity.pk]);
@@ -668,7 +738,11 @@ export function useNIP29Group({ identity }) {
     appendSystemMessage(groupId, 'You created the group');
     // metaAt marks the bootstrap 9002 as the applied metadata: a replayed
     // older or equal metadata event must not announce a fake rename.
-    const newGroup = { id: groupId, name, about: about || '', isChannel, creator: identity.pk, members: [identity.pk], metaAt: metaEv.created_at };
+    // labelSealed marks a row whose name came from this device's own record
+    // rather than from the relay's tags. On a private group the tags carry the
+    // fixed placeholder, so every path that could refill the name from the
+    // relay has to know not to.
+    const newGroup = { id: groupId, name, about: about || '', isChannel, access, creator: identity.pk, members: [identity.pk], metaAt: metaEv.created_at, ...(tags.sealed ? { labelSealed: true } : {}) };
 
     const localGroups = getMyGroups(identity.pk);
     if (!localGroups.find(g => g.id === groupId)) {
@@ -884,9 +958,27 @@ export function useNIP29Group({ identity }) {
 
   const updateGroupSettings = useCallback(async (groupId, updates) => {
     const pool = await getAuthenticatedPool(identity);
+    // A sealed group edits its name and description for its members, not for
+    // the relay: the relay is re-sent the same fixed placeholder it already
+    // holds, so a rename is byte-identical relay-side and reveals nothing by
+    // diffing. The real words go to members through the sealed envelope.
+    const sealedRecord = sealedGroupRecord(identity.pk, groupId);
+    let relayUpdates = updates;
+    if (sealedRecord && (updates.name || updates.about !== undefined)) {
+      const relay = relayFacingLabel({
+        name: updates.name || sealedRecord.name || '',
+        about: updates.about !== undefined ? updates.about : (sealedRecord.about || ''),
+        access: ACCESS_PRIVATE,
+      });
+      relayUpdates = {
+        ...updates,
+        ...(updates.name ? { name: relay.name } : {}),
+        ...(updates.about !== undefined ? { about: relay.about } : {}),
+      };
+    }
     const tags = [['h', groupId]];
-    if (updates.name) tags.push(['name', updates.name]);
-    if (updates.about !== undefined) tags.push(['about', updates.about]);
+    if (relayUpdates.name) tags.push(['name', relayUpdates.name]);
+    if (relayUpdates.about !== undefined) tags.push(['about', relayUpdates.about]);
     if (updates.avatar) tags.push(['picture', updates.avatar]);
     if (updates.requireApproval !== undefined) {
       tags.push(['join', updates.requireApproval ? 'approval' : 'open']);
@@ -903,6 +995,31 @@ export function useNIP29Group({ identity }) {
     // name back. (no group AAD touched — announcement dedup only)
     appliedGroupMetaAt.set(groupId, ev.created_at);
     rememberAppliedGroupMeta(identity.pk, groupId, updates, ev.created_at);
+    // A sealed group's rename also goes to its members, sealed, on the same
+    // ride a key rotation uses. The relay-side event above says nothing new;
+    // this is where the new words actually travel.
+    if (sealedRecord && (updates.name || updates.about !== undefined)) {
+      const sealedName = updates.name || sealedRecord.name || '';
+      const sealedAbout = updates.about !== undefined ? updates.about : (sealedRecord.about || '');
+      rememberAppliedGroupMeta(identity.pk, groupId, { name: sealedName, about: sealedAbout, labelSealed: true }, ev.created_at);
+      try {
+        const current = await getCurrentGroupKey(groupId);
+        const recipients = await labelRecipientsFor(identity, groupId);
+        if (current && recipients.length) {
+          await distributeGroupKey({
+            senderPrivkey: identity.sk, senderPubkey: identity.pk,
+            groupId, epoch: current.epoch, keyBytes: current.bytes,
+            recipients,
+            label: { name: sealedName, about: sealedAbout },
+            publish: (dmEvent) => publishKeyDm(identity, dmEvent),
+          });
+        }
+      } catch {
+        // The id only. The name is the thing this fix keeps off the wire and
+        // out of logs, so a failure may not carry it into either.
+        console.warn('[group] A sealed group name could not be sent to every member.', { groupId });
+      }
+    }
     if (updates.name) appendSystemMessage(groupId, `Group name changed to "${updates.name}"`, ev.id);
     else if (updates.avatar) appendSystemMessage(groupId, 'Group photo was updated', ev.id);
     else if (updates.requireApproval !== undefined) appendSystemMessage(groupId, updates.requireApproval ? 'Joining this group now requires admin approval' : 'This group is now open to join', ev.id);
@@ -933,7 +1050,15 @@ export function useNIP29Group({ identity }) {
       if (!members.some((member) => member.pubkey === identity.pk)) {
         members.push({ pubkey: identity.pk, role: activeGroup?.creator === identity.pk ? 'admin' : 'member' });
       }
-      if (useChatStore.getState().activeGroup?.id === groupId) setGroupMembers(members);
+      if (useChatStore.getState().activeGroup?.id === groupId) {
+        setGroupMembers(members);
+        // The list on screen is now one this device actually read. Until this
+        // marker, the screen shows no count rather than a guess. The list is
+        // handed over so the store can refuse an empty one: zero is a number
+        // the screen may only print when a read measured zero members, and a
+        // group this device is in always has at least this device in it.
+        useChatStore.getState().setGroupMembersKnown(groupId, members);
+      }
       return members;
     } catch (err) {
       console.error('[useNIP29Group] fetchGroupMembers failed:', err);
@@ -1006,7 +1131,14 @@ export function useNIP29Group({ identity }) {
           }
         }
         await rememberMembers(groupId, members);
-        if (useChatStore.getState().activeGroup?.id === groupId) setGroupMembers(members);
+        if (useChatStore.getState().activeGroup?.id === groupId) {
+          setGroupMembers(members);
+          // Same rule as the read above, and this is the arm that can hand
+          // over an empty list: withoutDenied strips every row this device
+          // denied, so an all-denied roster arrives here as []. That is not
+          // evidence of zero members, and the store refuses to mark it.
+          useChatStore.getState().setGroupMembersKnown(groupId, members);
+        }
         return;
       }
       if ([9000, 9001, 9002, 9021, 9022].includes(event.kind)) {
@@ -1124,6 +1256,12 @@ export function useNIP29Group({ identity }) {
         return;
       }
       if (event.kind === 9002) {
+        // A sealed group's relay tags carry the fixed placeholder. Applying
+        // them would announce a rename to "Private group" and write that over
+        // the name this device holds, every time the timeline replays its
+        // metadata. The tags say nothing about a sealed group that its own
+        // members do not already know better, so they are ignored outright.
+        if (sealedGroupRecord(identity.pk, groupId)) return;
         // A replayed 9002 is not a rename. The timeline sub re-delivers the
         // group's metadata around every send, and the bootstrap refresh
         // rebuilds groupMessages from the database (system messages are not
