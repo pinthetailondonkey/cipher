@@ -58,8 +58,14 @@ export const CHAIN_WORD = {
 // A currency this device trades, or null. Every "is this a coin" check on
 // every rail reads this one answer, so a new row is live everywhere it
 // should be and nowhere it should not.
+// The currency is a string a peer typed. A direct index answered with the
+// table's prototype for names like 'constructor' or '__proto__' — a function
+// or an object that is not null — and the caller then read `.scale` off it as
+// undefined and threw on BigInt(undefined) halfway down the chain check. Only
+// a rail this table itself carries is an asset.
 export function assetOf(currency) {
-  return ASSETS[String(currency || '').toLowerCase()] || null;
+  const key = String(currency || '').toLowerCase();
+  return Object.hasOwn(ASSETS, key) ? ASSETS[key] : null;
 }
 
 // The rails the stats law can speak for.

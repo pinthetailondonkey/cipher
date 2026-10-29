@@ -5,6 +5,7 @@ import {
   acceptanceDemand,
   amountCovers,
   applyWatcherReport,
+  assetOf,
   coinUnits,
   confirmationsRequired,
   listedItem,
@@ -212,6 +213,24 @@ test('a demand with no amount, an empty one or a zero one never confirms', () =>
     assert.throws(() => applyWatcherReport(watcherArgs({ amount })), /amount/i, `amount ${JSON.stringify(amount)}`);
   }
   assert.equal(applyWatcherReport(watcherArgs({ amount: '0.00000001' })), 'confirmed');
+});
+
+// The currency is a string a peer typed. A name that reaches the asset table's
+// prototype is not an asset: 'constructor' used to answer with a function and
+// '__proto__' with an object, and the chain check then threw a raw TypeError
+// (BigInt(undefined)) halfway through instead of refusing.
+test('a currency that is not a coin is not an asset, however it is spelled', () => {
+  for (const hostile of ['constructor', '__proto__', 'hasOwnProperty', 'toString', 'valueOf']) {
+    assert.equal(assetOf(hostile), null, hostile);
+    assert.equal(coinUnits('1', hostile), null, hostile);
+    assert.equal(coinUnits('1', hostile.toUpperCase()), null, `${hostile} uppercased`);
+  }
+  // The real rails still read, and the watcher door still refuses a demand in
+  // a made-up currency with its own sentence rather than a TypeError.
+  assert.deepEqual(assetOf('BTC'), { scale: 8, depth: 3, chain: 'transparent' });
+  assert.equal(coinUnits('1', 'xmr'), 1000000000000n);
+  assert.throws(() => applyWatcherReport(watcherArgs({ currency: 'constructor', amount: '1' })), /amount/i);
+  assert.throws(() => applyWatcherReport(watcherArgs({ currency: '__proto__', amount: '1' })), /amount/i);
 });
 
 test('a float is not a coin amount: a JS number never reads as one', () => {
