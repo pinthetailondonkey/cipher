@@ -38,12 +38,13 @@ export default function MyOrders({ dms = null, profiles = null, onBack, onOpenCh
   // filed under.
   const [receipt, setReceipt] = useState(null);
   const [side, setSide] = useState(() => defaultLedgerSide(isVendor));
-  const orders = orderRows(rows, { side }).map(({ message, peerPubkey, isBuyer }) => ({
+  const orders = orderRows(rows, { side, ownPubkey }).map(({ message, peerPubkey, isBuyer, orderId }) => ({
     message,
     peerPubkey,
     isBuyer,
-    state: orderState(rows[peerPubkey], message.id, message, ownPubkey, peerPubkey),
-    countersigned: orderHasVerifiedReceipt(rows[peerPubkey], message.id, message, ownPubkey, peerPubkey),
+    orderId,
+    state: orderState(rows[peerPubkey], orderId, message, ownPubkey, peerPubkey),
+    countersigned: orderHasVerifiedReceipt(rows[peerPubkey], orderId, message, ownPubkey, peerPubkey),
   }));
   const incoming = side === 'incoming';
 
@@ -81,10 +82,10 @@ export default function MyOrders({ dms = null, profiles = null, onBack, onOpenCh
       ) : (
         <div className="p-4">
           <div className="overflow-hidden">
-            {orders.map(({ message, peerPubkey, isBuyer, state, countersigned }) => {
+            {orders.map(({ message, peerPubkey, isBuyer, orderId, state, countersigned }) => {
               const product = message.data.product || message.data;
               return (
-                <div key={message.id} className="last:border-b-0 border-b border-line">
+                <div key={orderId} className="last:border-b-0 border-b border-line">
                   {/* One compact row, the same rhythm as a chat row: picture,
                       what was bought, who from, when, and the status it is at. */}
                   <button type="button" onClick={() => onOpenChat?.(peerPubkey)} className="flex min-h-[72px] w-full items-center gap-3 px-4 py-2.5 text-left active:bg-ink/5">
