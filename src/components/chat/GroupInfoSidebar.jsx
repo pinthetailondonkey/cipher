@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { BadgeCheck, Heart, Link2, LogOut, Package, Pencil, ShieldCheck, ShoppingCart, UserMinus, UserPlus, Users, X } from 'lucide-react';
-import { useChatStore } from '../../store/chatStore';
+import { memberCountOf, useChatStore } from '../../store/chatStore';
 import Avatar from '../ui/Avatar';
 import Badge from '../ui/Badge';
 import Button from '../ui/Button';
@@ -148,6 +148,12 @@ export default function GroupInfoSidebar({
   const [copied, setCopied] = useState(false);
   const [pickedMember, setPickedMember] = useState(null);
   const memberList = Array.isArray(members) ? members : [];
+  // Keyed by group: switching chats leaves the previous group's list in the
+  // store, so the marker has to be the group's own or the count would be
+  // another group's number wearing this group's name. Null means no roster
+  // has been read, and then there is no number at all.
+  const memberCount = useChatStore((state) => memberCountOf(state, group?.id));
+  const rosterKnown = memberCount !== null;
 
   useEffect(() => {
     if (!group?.id) return undefined;
@@ -354,10 +360,15 @@ export default function GroupInfoSidebar({
         <Avatar src={group?.picture} name={group?.name || 'Group'} size={44} />
         <div className="min-w-0 flex-1">
           <h2 className="truncate text-[22px] font-bold tracking-tight text-ink">{group?.name || 'Group'}</h2>
-          <Badge tone="outline" className="mt-1">
-            <Users size={11} />
-            {memberList.length || 1} {memberList.length === 1 ? 'member' : 'members'}
-          </Badge>
+          {/* The count is the relay's signed roster or nothing. It used to
+              read "1 member" whenever the list had not loaded — a number the
+              device had no evidence for. Unknown shows no chip at all. */}
+          {memberCount !== null && (
+            <Badge tone="outline" className="mt-1">
+              <Users size={11} />
+              {memberCount} {memberCount === 1 ? 'member' : 'members'}
+            </Badge>
+          )}
         </div>
         <button type="button" onClick={onClose} aria-label="Close group information" className="touch-target flex items-center justify-center text-inkSubtle hover:text-ink">
           <X size={20} />
@@ -423,7 +434,7 @@ export default function GroupInfoSidebar({
               );
             })}
           </div>
-          {memberList.length === 0 && <p className="px-2 pb-2 text-[13px] text-inkMuted">Looking up members…</p>}
+          {!rosterKnown && memberList.length === 0 && <p className="px-2 pb-2 text-[13px] text-inkMuted">Looking up members…</p>}
         </div>
 
         {/* Shared media strip: photos and album entries that crossed the chat. */}

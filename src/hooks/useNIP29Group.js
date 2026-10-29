@@ -1050,7 +1050,12 @@ export function useNIP29Group({ identity }) {
       if (!members.some((member) => member.pubkey === identity.pk)) {
         members.push({ pubkey: identity.pk, role: activeGroup?.creator === identity.pk ? 'admin' : 'member' });
       }
-      if (useChatStore.getState().activeGroup?.id === groupId) setGroupMembers(members);
+      if (useChatStore.getState().activeGroup?.id === groupId) {
+        setGroupMembers(members);
+        // The list on screen is now one this device actually read. Until this
+        // marker, the screen shows no count rather than a guess.
+        useChatStore.getState().setGroupMembersKnown(groupId);
+      }
       return members;
     } catch (err) {
       console.error('[useNIP29Group] fetchGroupMembers failed:', err);
@@ -1123,7 +1128,10 @@ export function useNIP29Group({ identity }) {
           }
         }
         await rememberMembers(groupId, members);
-        if (useChatStore.getState().activeGroup?.id === groupId) setGroupMembers(members);
+        if (useChatStore.getState().activeGroup?.id === groupId) {
+          setGroupMembers(members);
+          useChatStore.getState().setGroupMembersKnown(groupId);
+        }
         return;
       }
       if ([9000, 9001, 9002, 9021, 9022].includes(event.kind)) {

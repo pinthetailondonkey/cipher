@@ -170,6 +170,16 @@ export function ordersNeedActionOf(state) {
   return sum;
 }
 
+// What the group header may show as its member count: the measured length of
+// the roster this device read, or null when it has read none for that group.
+// Null renders as nothing and is never coerced to zero — "0 members" when the
+// truth is unknown is a lie, and one this project has shipped before.
+export function memberCountOf(state, groupId) {
+  if (!groupId || state?.groupMembersKnown?.[groupId] !== true) return null;
+  const list = Array.isArray(state?.groupMembers) ? state.groupMembers : [];
+  return list.length;
+}
+
 export function notifTotalOf(state) {
   const counts = state?.unreadCounts || EMPTY_COUNTS;
   const ack = state?.notifAck || EMPTY_COUNTS;
@@ -280,6 +290,17 @@ export const useChatStore = create((set) => ({
   setGroupMessages: (v) => set((s) => keepIfUnchanged(s, 'groupMessages', typeof v === 'function' ? v(s.groupMessages) : v)),
   setProfiles: (v) => set((s) => keepIfUnchanged(s, 'profiles', typeof v === 'function' ? v(s.profiles) : v)),
   setGroupMembers: (v) => set((s) => ({ groupMembers: typeof v === 'function' ? v(Array.isArray(s.groupMembers) ? s.groupMembers : []) : v })),
+  // Which groups this device has actually read a member list for, from the
+  // relay's signed roster. Memory-only, on purpose: after a reload nothing is
+  // known until a roster lands, and a persisted "known" would let the screen
+  // print a count the device has no evidence for. The count must be absent
+  // when it is unknown, never zero — zero and unknown are not the same answer.
+  groupMembersKnown: {},
+  setGroupMembersKnown: (groupId) => set((s) => (
+    !groupId || s.groupMembersKnown?.[groupId]
+      ? {}
+      : { groupMembersKnown: { ...s.groupMembersKnown, [groupId]: true } }
+  )),
   setPinnedMessages: (v) => set((s) => ({ pinnedMessages: typeof v === 'function' ? v(s.pinnedMessages) : v })),
   setDisappearingTimer: (chatId, duration) => set((s) => {
     const next = { ...s.disappearingTimers, [chatId]: duration };
@@ -435,6 +456,7 @@ export const useChatStore = create((set) => ({
   closeDialog: () => set({ dialog: null }),
 
   reload: () => set({
+    groupMembersKnown: {},
     archivedChats: scopedGet('archived', []),
     mutedChats: scopedGet('muted', []),
     mutedUntil: scopedGet('muted_until', {}),
