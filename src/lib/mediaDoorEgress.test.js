@@ -244,3 +244,47 @@ test('the door is dark in every build that is not the desktop build', async () =
   assert.equal(MEDIA_ROWS.length, 3);
 });
 
+test('door set but not answering: the send fails naming the door, and the shipped hosts are never dialled', async () => {
+  // The refusing rail that exists today. A lit door is the whole server list,
+  // so a door that does not answer means the attachment does not go — it does
+  // not quietly fall back to the three outside hosts.
+  //
+  // The closed port is real: bound, read, released, then dialled. The kernel
+  // refuses the connection, so this is a true connect failure rather than a
+  // stubbed one, and nothing leaves this machine.
+  const probe = createServer(() => {});
+  await new Promise((resolve) => probe.listen(0, '127.0.0.1', resolve));
+  const { port } = probe.address();
+  await new Promise((resolve) => probe.close(resolve));
+  const door = `http://127.0.0.1:${port}`;
+
+  const restore = light(door);
+  const dialed = [];
+  try {
+    const { ciphertext } = await encryptMedia(jpeg());
+    const servers = blossomServers({ overrides: {}, lists: {} });
+    assert.deepEqual(servers, [door], 'a lit door is the whole list: there is nothing left to fall back to');
+    const recordingFetch = (url, options) => {
+      dialed.push(url);
+      return fetch(url, options);
+    };
+    await assert.rejects(
+      () => uploadCiphertext(ciphertext, { servers, fetchImpl: recordingFetch }),
+      (error) => {
+        assert.match(error.message, /No media host took the encrypted file/);
+        assert.ok(
+          error.message.includes(door),
+          `the failure must name the host that did not answer: ${error.message}`,
+        );
+        return true;
+      },
+    );
+    assert.deepEqual(dialed, [`${door}/upload`], 'exactly one dial, at the door');
+    for (const host of CLEARNET) {
+      assert.equal(dialed.some((url) => url.startsWith(host)), false, `${host} must not be dialled when the door is lit`);
+    }
+  } finally {
+    restore();
+  }
+});
+
