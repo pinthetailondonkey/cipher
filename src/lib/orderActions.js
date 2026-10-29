@@ -271,11 +271,19 @@ export function orderRecordForReceipt(messages, orderId, ownPubkey) {
     ?? (productPrice != null && productPrice !== '' ? productPrice
       : peerValue('coinAmount') ?? request.data.coinAmount ?? '');
   const methods = ownValue('paymentMethods') || peerValue('paymentMethods') || request.data.paymentMethods || null;
+  // The coin name is data a peer typed, so it may be any string at all.
+  // Indexing the methods object with it reaches the prototype for names like
+  // 'constructor' or '__proto__': the record then carries a function or an
+  // object where an address belongs, and the receipt path throws on it. Only
+  // a coin the methods object itself carries can name an address. (security,
+  // the same class as the acceptance gate)
   return {
     status,
     coinAmount,
     coinCurrency,
-    issuedAddress: coinCurrency && methods ? String(methods[coinCurrency] || '') : '',
+    issuedAddress: coinCurrency && methods && Object.hasOwn(methods, coinCurrency)
+      ? String(methods[coinCurrency] || '')
+      : '',
     isBuyer: !!request.isSender,
   };
 }

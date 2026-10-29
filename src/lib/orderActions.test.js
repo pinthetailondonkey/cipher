@@ -373,6 +373,36 @@ test('a fake later update cannot shrink the amount or steal the issued address',
   assert.equal(noAddress.issuedAddress, '');
 });
 
+// The currency is a string a peer typed. A record only carries an address for
+// a coin the issued methods themselves carry: a name that reaches the object's
+// prototype would otherwise put a function or an object where an address goes,
+// and the receipt path would throw on it instead of refusing the address.
+test('a coin name that is not a coin names no issued address on a receipt', () => {
+  const paid = (id) => update(id, true, ORDER_STATUS.PAID, 30, {});
+  for (const hostile of ['constructor', '__proto__', 'hasOwnProperty', 'toString', 'valueOf']) {
+    const acceptance = update('u1', true, ORDER_STATUS.ACCEPTED, 20, {
+      coinAmount: '0.01', coinCurrency: hostile, paymentMethods: { btc: 'bc1qorder', xmr: '4xmr' },
+    });
+    const record = orderRecordForReceipt([request(true, {}), acceptance, paid('u2')], 'order-1');
+    assert.equal(record.coinCurrency, hostile);
+    assert.equal(record.issuedAddress, '', `${hostile} names no address`);
+    assert.equal(record.coinAmount, '0.01', `${hostile} still names the amount`);
+  }
+  // The two real coins still name their own address, and a real coin with no
+  // address on the pair still names none.
+  for (const coin of ['btc', 'xmr']) {
+    const acceptance = update('u1', true, ORDER_STATUS.ACCEPTED, 20, {
+      coinAmount: '0.01', coinCurrency: coin, paymentMethods: { btc: 'bc1qorder', xmr: '4xmr' },
+    });
+    const record = orderRecordForReceipt([request(true, {}), acceptance, paid('u2')], 'order-1');
+    assert.equal(record.issuedAddress, coin === 'btc' ? 'bc1qorder' : '4xmr');
+  }
+  const btcOnly = update('u1', true, ORDER_STATUS.ACCEPTED, 20, {
+    coinAmount: '0.01', coinCurrency: 'xmr', paymentMethods: { btc: 'bc1qorder' },
+  });
+  assert.equal(orderRecordForReceipt([request(true, {}), btcOnly, paid('u2')], 'order-1').issuedAddress, '');
+});
+
 // F7: the payment facts on an order are earned on this device, never asserted
 // by the peer.
 test('a peer cannot forge the payment facts an order acts on', () => {
