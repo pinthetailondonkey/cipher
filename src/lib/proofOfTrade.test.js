@@ -84,6 +84,18 @@ test('both parties sign the same bytes, and one bad signature fails', () => {
   // view cannot buy its way onto the board by rounding up.
   assert.deepEqual(rankVolume([{ hash: 'dust', amount: '0.000000001', currency: 'btc', buyer: 'aa', vendor: 'pp' }]), []);
   assert.deepEqual(rankVolume([{ hash: 'up', amount: '1.000000005', currency: 'btc', buyer: 'aa', vendor: 'pp' }]), []);
+  // The currency is a string a published view chose. A name that reaches the
+  // scale table's prototype used to walk past the null guard and throw on
+  // BigInt(scale): 'constructor' is a function and '__proto__' an object, and
+  // one crafted view took the whole board down with a SyntaxError. A name
+  // that is not a coin is not ranked, and the real coins are.
+  for (const hostile of ['constructor', '__proto__', 'hasOwnProperty', 'toString', 'valueOf', 'usd']) {
+    assert.deepEqual(rankVolume([{ hash: 'h', amount: '1', currency: hostile, buyer: 'aa', vendor: 'pp' }]), [], hostile);
+  }
+  for (const coin of ['btc', 'xmr']) {
+    assert.deepEqual(rankVolume([{ hash: 'h', amount: '1', currency: coin, buyer: 'aa', vendor: 'pp' }]),
+      [{ vendor: 'pp', currency: coin, volume: '1' }], coin);
+  }
   assert.deepEqual(ranked, [
     { vendor: 'ff', currency: 'xmr', volume: '5' },
     { vendor: body.vendor, currency: 'xmr', volume: '2' },

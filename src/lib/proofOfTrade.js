@@ -292,8 +292,17 @@ export function verifyVendorView(view) {
 
 const AMOUNT_SCALE = { btc: 8, xmr: 12 };
 
+// The currency is a string a peer typed, so the lookup is the object's own
+// keys and nothing else. Indexing it directly answered with a function for a
+// currency named 'constructor' or an object for '__proto__' — neither is null,
+// so both walked past the guard and threw on BigInt(scale) further down.
+function scaleOf(currency) {
+  const key = String(currency || '').toLowerCase();
+  return Object.hasOwn(AMOUNT_SCALE, key) ? AMOUNT_SCALE[key] : null;
+}
+
 function amountUnits(amount, currency) {
-  const scale = AMOUNT_SCALE[String(currency || '').toLowerCase()];
+  const scale = scaleOf(currency);
   if (scale == null) return null;
   let text;
   try {
@@ -310,7 +319,10 @@ function amountUnits(amount, currency) {
 }
 
 function unitsToAmount(units, currency) {
-  const scale = AMOUNT_SCALE[String(currency || '').toLowerCase()];
+  // The same own-keys lookup. Its one caller passes a currency amountUnits
+  // already accepted, so this cannot be null here; it is written the same way
+  // so the file has one lookup rule rather than one guarded and one not.
+  const scale = scaleOf(currency);
   const factor = 10n ** BigInt(scale);
   const whole = units / factor;
   const frac = (units % factor).toString().padStart(scale, '0').replace(/0+$/, '');
