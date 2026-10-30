@@ -10,6 +10,7 @@ import {
   Bookmark,
   ChevronDown,
   ChevronUp,
+  Eye,
   Flame,
   MessageSquare,
   MoreVertical,
@@ -163,8 +164,9 @@ function ChatRow({
       </span>
     </span>
   ) : blurred ? (
-    /* The reveal explains itself: the words on the line are the control,
-       and the blurred copy stays behind them for context. */
+    /* DESIGN.md: a hidden preview is the blurred line plus one small eye
+       icon, never a labelled reveal pill. The icon is the control; the
+       words are its spoken label, not text on the row. */
     <button
       type="button"
       onClick={onReveal}
@@ -172,7 +174,7 @@ function ChatRow({
       className="flex min-w-0 flex-1 items-center gap-2 text-left"
     >
       <span aria-hidden="true" className="min-w-0 flex-1 truncate text-[14px] text-inkMuted blur-[5px] select-none">{previewText}</span>
-      <span className="shrink-0 text-[12px] font-semibold text-accentText">Tap to show</span>
+      <Eye size={14} aria-hidden="true" className="shrink-0 text-inkMuted" />
     </button>
   ) : (
     <button type="button" onClick={onOpen} className="min-w-0 flex-1 truncate text-left text-[14px] text-inkMuted">

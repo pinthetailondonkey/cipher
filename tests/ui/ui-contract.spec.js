@@ -88,6 +88,14 @@ test.describe('rebuilt components follow the spec (source)', () => {
     });
   }
 
+  test('no banned reveal label survives in a row', () => {
+    // DESIGN.md, Never list: a hidden preview is a blurred line plus one
+    // small eye icon; the labelled reveal pill is banned by name.
+    const src = read('src/components/chat/ChatList.jsx');
+    expect(src).not.toMatch(/Tap to show/);
+    expect(src).toMatch(/<Eye size=\{14\}/);
+  });
+
   test('Avatar: 7 token gradients, charCodeAt(0) % 7', () => {
     const src = read('src/components/ui/Avatar.jsx');
     expect(src.match(/\['var\(--[^']+', 'var\(--[^']+'\]/g)).toHaveLength(7);
