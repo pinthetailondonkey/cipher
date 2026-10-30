@@ -8,6 +8,7 @@ Nostr messenger and direct-deal shop. Vite + React. See AGENTS.md if present.
 - npm run build, npm run lint and npm test must be green before a commit.
 - No new dependencies without a reason.
 - Read docs/VOICE.md before changing user-facing text. Words only, do not restyle.
+- Before any UI change, read DESIGN.md. It is the visual system of record. On conflict, follow DESIGN.md and flag the conflict in your report.
 - Push each commit. Pin every read to the SHA, never to /main.
 - If a push fails twice, push by hand: git push origin <branch>. Do not back off and wait.
 
