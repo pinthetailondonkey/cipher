@@ -1,7 +1,10 @@
 import { useEffect } from 'react';
 import { haptic } from '../../lib/haptics';
 
-// The md+ shell rail: a 72px icon strip pinned to the left edge (master §2).
+// The md+ shell rail: a 72px icon strip that is the flex sibling `main`
+// sits beside (master §2, §3.2). It is in the flow, not fixed, so it holds
+// its own 72px and the panes need no offset for it — the shell's one column
+// is the whole of what they share.
 // Items are real destinations only — the caller passes what exists — and
 // every item answers its position key: 1/2/3 held with the command key
 // jumps to the matching rail item. Labels ride a hover tooltip, not a
@@ -22,7 +25,7 @@ export default function Rail({ label, items, activeId }) {
   }, [items]);
 
   return (
-    <nav aria-label={label} className="fixed bottom-0 left-0 top-0 z-fab hidden w-[72px] flex-col items-center gap-1.5 border-r border-line bg-panelStrong pt-4 md:flex">
+    <nav aria-label={label} className="z-fab hidden w-[72px] shrink-0 flex-col items-center gap-1.5 border-r border-line bg-panelStrong pt-4 md:flex">
       {items.map((item, index) => {
         const Icon = item.icon;
         const active = item.id === activeId;

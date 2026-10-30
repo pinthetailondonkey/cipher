@@ -173,6 +173,11 @@ export default function AuthenticatedApp({ identity }) {
           row three, not an overlay: three rows when the bar holds, two when a
           conversation takes the screen (trap 8). z-fab stays on main, because
           Sheet relies on main being a stacking context (trap 2). */}
+      {/* The rail comes first: it is the flex sibling main is `flex-1`
+          beside, and DOM order has to match what the eye sees — a nav
+          placed after main would read last to a keyboard and paint left. */}
+      <Rail label="Tabs" activeId={activeTab} items={navItems} />
+
       <main className="relative z-fab h-[100dvh] min-h-0 w-full overflow-hidden md:flex-1">
         <div className={`col-w mx-auto grid h-full ${barHidden ? 'grid-rows-[auto_minmax(0,1fr)]' : 'grid-rows-[auto_minmax(0,1fr)_auto]'}`}>
           {/* Row 1 is the shell's own: it renders from a per-tab header config
@@ -232,8 +237,6 @@ export default function AuthenticatedApp({ identity }) {
           {!barHidden && <BottomBar activeId={activeTab} onSelect={setActiveTab} />}
         </div>
       </main>
-
-      <Rail label="Tabs" activeId={activeTab} items={navItems} />
     </div>
   );
 }
