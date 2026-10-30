@@ -235,11 +235,15 @@ test.describe('live: the founder ruling — dialogs sit in the middle', () => {
 });
 
 test.describe('live: the md+ rail holds its own 72px', () => {
-  // No node test can see this. A `fixed` rail takes no space in the flex row,
-  // so the commit that took `md:left-[72px]` off the panes put the column
-  // under the strip while every source read stayed green. The needle is a
-  // wide viewport; the control is a phone, where the rail is not rendered at
-  // all — if the wide assertion could pass with no rail, it measures nothing.
+  // No node test can see where anything lands in the flex row. The panes used
+  // to carry `md:left-[72px]`, compensation for a rail that was `fixed` and so
+  // held none of the row; once those offsets came off, the rail had to be the
+  // flex sibling §3.2 says it is, or `main` starts at x=0 and the strip is
+  // drawn over it. The column itself was never under the strip: `--col` is
+  // 30rem and it centred at x=452 before and x=400 after. The needle is the
+  // wide viewport and the rail's own measured box; the control is a phone,
+  // where the rail is not rendered at all — if the wide assertions could pass
+  // on a tree with no rail, they measure nothing.
   test.beforeEach(async ({ page }) => {
     await page.addInitScript(seedVault);
     await page.goto('/');
@@ -261,9 +265,9 @@ test.describe('live: the md+ rail holds its own 72px', () => {
     expect(Math.round(railBox.x)).toBe(0);
     expect(Math.round(railBox.width)).toBe(72);
 
-    // The column is the shell's own, and main is the flex sibling the rail
-    // leaves behind: main starts where the rail ends, and the column sits
-    // inside main and never under the strip.
+    // main is the flex sibling the rail leaves behind: its left edge is the
+    // rail's right edge. This is the assertion that discriminates — 0 against
+    // 72 while the rail was fixed.
     const mainBox = await page.locator('main').boundingBox();
     expect(Math.round(mainBox.x)).toBe(Math.round(railBox.x + railBox.width));
     const columnBox = await page.locator('main > div.col-w').first().boundingBox();
@@ -284,9 +288,11 @@ test.describe('live: the md+ rail holds its own 72px', () => {
     await page.getByRole('button', { name: 'Burn note', exact: true }).click();
     await expect(page.getByRole('dialog')).toBeVisible({ timeout: 15000 });
 
-    // The rail now renders before main in DOM order and both carry z-fab, so
-    // a tie would paint main over it. This asks the compositor instead of
-    // trusting the rule.
+    // The sheet portals its overlay to document.body with `fixed inset-0
+    // z-sheet`, and z-sheet is 60 against the rail's z-fab 40: a higher layer
+    // in a different stacking context, so where the rail sits in the app's
+    // DOM cannot lift it over the scrim. This asks the compositor rather than
+    // trusting that reasoning, and prints the tag it hit if it ever reds.
     const hit = await page.evaluate((selector) => {
       const rail = document.querySelector(selector);
       const box = rail.getBoundingClientRect();
