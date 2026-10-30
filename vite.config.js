@@ -8,6 +8,20 @@ import react from '@vitejs/plugin-react'
 // clear address, because a browser cannot reach an onion.
 const desktopBuild = process.env.CIPHER_DESKTOP_BUILD === '1'
 
+// The test seam and the test relay wall exist only in a build that never
+// ships, and VITE_TEST_HOOKS alone cannot be trusted to say so: it can arrive
+// from an untracked env file on a box that is building to deploy. A deliberate
+// test build says so twice, and anything else stops here rather than shipping
+// a bundle whose relays point at 127.0.0.1.
+if (process.env.VITE_TEST_HOOKS === '1' && process.env.CIPHER_UI_TEST_BUILD !== '1') {
+  throw new Error(
+    'vite refuses: VITE_TEST_HOOKS is set without CIPHER_UI_TEST_BUILD. '
+    + 'The test seam and the test relay wall belong to a build that never ships. '
+    + 'Run "npm run build:ui-test" for a test build, or set CIPHER_UI_TEST_BUILD=1 '
+    + 'if you are deliberately building one.',
+  )
+}
+
 export default defineConfig({
   plugins: [react()],
   define: {

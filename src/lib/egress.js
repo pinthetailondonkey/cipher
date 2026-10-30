@@ -54,7 +54,17 @@ export const EGRESS = [
 //
 // A device's own paste still outranks the build's door, and `off` still drops
 // the host entirely.
+import { TEST_RELAY_OVERRIDE } from './testRelayOverride.js';
+
 const DESKTOP_BUILD = typeof __CIPHER_DESKTOP_BUILD__ !== 'undefined' && __CIPHER_DESKTOP_BUILD__ === true;
+
+// The UI-test build's relay wall. VITE_TEST_HOOKS is a literal at build time —
+// '1' in the build `npm run build:ui-test` makes, absent from every build that
+// ships — so Rollup drops both this binding and the import above from a
+// production bundle. A node test proves the module is ABSENT there rather than
+// merely unused, and vite.config.js refuses to honour the flag at all unless
+// CIPHER_UI_TEST_BUILD=1 says the build is deliberately a test build.
+const TEST_RELAYS = import.meta.env?.VITE_TEST_HOOKS === '1' ? TEST_RELAY_OVERRIDE : null;
 
 const buildGroupDoor = String(import.meta?.env?.VITE_GROUP_ONION || '').trim();
 const buildMediaDoor = String(import.meta?.env?.VITE_MEDIA_ONION || '').trim();
@@ -204,6 +214,12 @@ export function activeUrl(entry, config = readNetworkConfig()) {
   if (!entry || entry.called === false || entry.dynamic) return '';
   const override = String(config.overrides?.[entry.id] || '').trim();
   if (override === 'off') return '';
+  // A test build reaches this machine and nothing else. Below `off` and below a
+  // device's own paste, so a spec can still paste its own host; above the door
+  // and the shipped default, so nothing else can win. Absent from every build
+  // that ships, by construction.
+  const testRelay = TEST_RELAYS?.[entry.id];
+  if (testRelay) return override || testRelay;
   // The founder's own door outranks the shipped default, and a device's
   // own paste outranks both. `off` was answered above, so it still drops the
   // host even when the build carries the door.
