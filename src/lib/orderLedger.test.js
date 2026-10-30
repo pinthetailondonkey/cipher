@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import { schnorr } from '@noble/curves/secp256k1.js';
 import { defaultLedgerSide, discardRejectedOrder, orderRows, peerRole } from './orderLedger.js';
 import { orderHasVerifiedReceipt, orderState } from './orderActions.js';
-import { signReceipt } from './proofOfTrade.js';
+import { signReceipt, stripArrivingReceiptMark } from './proofOfTrade.js';
 
 const read = (path) => fs.readFileSync(new URL(path, import.meta.url), 'utf8');
 
@@ -494,4 +494,43 @@ test('the known limit, asserted: an old unmarked receipt on a received update dr
     true,
     'and the tick is unaffected, which is what makes this a wrong tab and not a wrong payment',
   );
+});
+
+// The mark is this device's own record that the order-binding gate accepted a
+// receipt for this order. A receipt is peer text, so a peer can write the field
+// too — and a row saved from a refused receipt would then decide a tab the
+// gate never agreed to. The ingest path strips the arriving field, so what the
+// row keeps is the body and nothing more.
+test('a mark the peer wrote no longer files the row as a purchase', () => {
+  const wire = ledgerUpdate('u2', 101, { receipt: { ...decoyReceipt(), bound: true } });
+  assert.deepEqual(ledgerSides([ledgerUpdate('u1', 100), wire]), PLACED, 'control: a peer-written mark moves the row on its own');
+  const stored = { ...wire, data: stripArrivingReceiptMark(wire.data) };
+  // The ledger never drops a row: with nothing proving the direction it falls
+  // back to the anchored message's own flag, which for a received update is the
+  // incoming list. So the fix takes the row off Purchases and leaves it where
+  // a received, unproven order already belongs — it is the claim that moves,
+  // not the row.
+  assert.deepEqual(
+    ledgerSides([ledgerUpdate('u1', 100), stored]),
+    RECEIVED,
+    'stripped at ingest, the same row no longer claims to be a purchase',
+  );
+});
+
+test('the strip leaves the receipt this device is about to accept alone, and the mark it writes still decides', () => {
+  const arriving = { ...genuineReceipt() };
+  delete arriving.bound;
+  const stripped = stripArrivingReceiptMark({ type: 'order_update', orderId: 'order-1', receipt: arriving });
+  assert.equal(stripped.receipt, arriving, 'an unmarked receipt is handed back as it came');
+  const stored = ledgerUpdate('u2', 101, { receipt: { ...stripped.receipt, bound: true } });
+  assert.deepEqual(ledgerSides([ledgerUpdate('u1', 100), stored]), PLACED, 'the mark this device wrote still moves the row');
+});
+
+test('both ingest paths strip an arriving mark before the gate is asked', () => {
+  const hook = read('../hooks/useNIP44DM.js');
+  const order = [...hook.matchAll(/stripArrivingReceiptMark\(|receiptMayBind\(data/g)].map((match) => match[0]);
+  assert.deepEqual(order, [
+    'stripArrivingReceiptMark(', 'receiptMayBind(data',
+    'stripArrivingReceiptMark(', 'receiptMayBind(data',
+  ], 'one strip per ingest path, each before the gate that may write the mark');
 });

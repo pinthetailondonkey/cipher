@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { schnorr } from '@noble/curves/secp256k1.js';
-import { acceptPayment, canonicalReceipt, coSignPayment, countersignToSend, normalizeAmount, publicReceipt, rankVolume, rankVolumeByStanding, receiptBindsOrder, sendCountersignOnce, signPublicView, signReceipt, verifyPublicView, verifyReceipt, verifyVendorView } from './proofOfTrade.js';
+import { acceptPayment, canonicalReceipt, coSignPayment, countersignToSend, normalizeAmount, publicReceipt, rankVolume, rankVolumeByStanding, receiptBindsOrder, sendCountersignOnce, signPublicView, signReceipt, stripArrivingReceiptMark, verifyPublicView, verifyReceipt, verifyVendorView } from './proofOfTrade.js';
 
 function hex(bytes) {
   return [...bytes].map((byte) => byte.toString(16).padStart(2, '0')).join('');
@@ -351,4 +351,32 @@ test('the view the countersign blesses comes from the signed body, never the env
     published: { ...publicReceipt(real), vendor: accomplice.vendor },
   }, buyerKey);
   assert.equal(named.published, null);
+});
+
+// A receipt that arrives over the wire is peer text. The field that says this
+// device accepted it is this device's own record, so whatever the peer wrote
+// there is removed before anything reads it.
+test('a mark the peer wrote is gone before the gate is asked, and the receipt beside it is untouched', () => {
+  const receipt = { v: 1, hash: 'h1', body: { orderId: 'order-1' }, sigs: { buyer: 'aa' }, bound: true };
+  const data = { type: 'order_update', orderId: 'order-1', receipt };
+  const stripped = stripArrivingReceiptMark(data);
+  assert.equal('bound' in stripped.receipt, false, 'the peer cannot write the field that says this device accepted it');
+  assert.equal(stripped.receipt.hash, 'h1');
+  assert.deepEqual(stripped.receipt.body, { orderId: 'order-1' });
+  assert.deepEqual(stripped.receipt.sigs, { buyer: 'aa' }, 'the receipt itself rides unchanged');
+  assert.equal(data.receipt.bound, true, 'the caller\'s copy is not edited in place');
+});
+
+test('a receipt that arrived without a mark is handed back, not rebuilt', () => {
+  const receipt = { v: 1, hash: 'h1', body: { orderId: 'order-1' }, sigs: {} };
+  const data = { type: 'order_update', orderId: 'order-1', receipt };
+  assert.equal(stripArrivingReceiptMark(data), data, 'nothing to strip, nothing copied');
+  const noReceipt = { type: 'order_update', orderId: 'order-1' };
+  assert.equal(stripArrivingReceiptMark(noReceipt), noReceipt);
+  assert.equal(stripArrivingReceiptMark(null), null);
+});
+
+test('a mark that says false came off the wire too, so it goes with the rest', () => {
+  const data = { type: 'order_update', orderId: 'order-1', receipt: { hash: 'h1', body: {}, sigs: {}, bound: false } };
+  assert.equal('bound' in stripArrivingReceiptMark(data).receipt, false, 'the wire carries no mark, in either direction');
 });

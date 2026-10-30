@@ -15,7 +15,7 @@ import { withBuzzTag } from '../lib/pushGateway';
 import { conversationKey } from '../lib/dmKeys';
 import { noteFirstSeen } from '../lib/safetyNumber';
 import { clampedExpiresAt } from '../lib/disappearing';
-import { acceptPayment, rememberPublicView, receiptBindsOrder, sendCountersignOnce } from '../lib/proofOfTrade';
+import { acceptPayment, rememberPublicView, receiptBindsOrder, sendCountersignOnce, stripArrivingReceiptMark } from '../lib/proofOfTrade';
 import { deviceWatchedOrderOf, orderRecordForReceipt } from '../lib/orderActions';
 import { scopedSet } from '../lib/storage';
 
@@ -281,6 +281,10 @@ export function useNIP44DM({ identity }) {
               }
               if (data.type === 'pin') return;
               if (data.type === 'order_update' && data.receipt && !isSender) {
+                // The mark says this device accepted this receipt, so the wire
+                // may not carry it in. Stripped before the gate is asked, and
+                // written back only if the gate says yes.
+                data = stripArrivingReceiptMark(data);
                 if (await receiptMayBind(data, counterparty)) {
                   const accepted = acceptPayment(data, identity.sk);
                   if (accepted) {
@@ -413,6 +417,9 @@ export function useNIP44DM({ identity }) {
           continue;
         }
         if (!isSender && data.type === 'order_update' && data.receipt) {
+          // Same strip as the live path, for the same reason: the copy that
+          // comes back through history is the peer's text too.
+          data = stripArrivingReceiptMark(data);
           if (await receiptMayBind(data, counterparty)) {
             const accepted = acceptPayment(data, identity.sk);
             if (accepted) {

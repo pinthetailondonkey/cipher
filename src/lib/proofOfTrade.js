@@ -70,6 +70,22 @@ export function coSignPayment(receipt, secretKey) {
   return signReceipt(secretKey, receipt?.body, receipt);
 }
 
+// A receipt that arrives over the wire is the peer's own text, and the field
+// that says "this device accepted it" cannot come from there: the ingest path
+// writes that mark, and only where the order-binding gate said yes. A peer can
+// put `bound: true` in its receipt like any other key, so every arriving
+// update is stripped of the mark before the gate is asked. The row a refused
+// receipt leaves behind then carries the body and no mark, which is what the
+// ledger is willing to read. The mark this device writes is added after this,
+// at the acceptance point, and never goes back out on the wire.
+export function stripArrivingReceiptMark(data) {
+  const receipt = data?.receipt;
+  if (!receipt || typeof receipt !== 'object' || !('bound' in receipt)) return data;
+  const rest = { ...receipt };
+  delete rest.bound;
+  return { ...data, receipt: rest };
+}
+
 export function acceptPayment(payload, secretKey) {
   if (!payload || payload.type !== 'order_update' || !payload.receipt?.body) return null;
   if (payload.status !== 'paid' && payload.status !== 'disputed') return null;
