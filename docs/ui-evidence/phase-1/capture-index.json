@@ -1,0 +1,173 @@
+{
+  "sha": "9f9644abb9c519ac710e21e104c4c2f3fd24b567",
+  "tree": "38cd58e74f0099ff234cca88428c16f599707013",
+  "base": "http://127.0.0.1:8123",
+  "entryProof": {
+    "viteConfigSha256": "d5f7541315418c03f409195bf399225dc22459b219dfcda0831795690ee176b1",
+    "entryLines": [],
+    "indexHtmlMentionsScratch": [],
+    "verdict": "single-entry index.html; scratch page not in any build entry"
+  },
+  "shots": [
+    {
+      "file": "gallery-00-390x844.png",
+      "surface": "gallery",
+      "viewport": "390x844",
+      "scrollY": 0,
+      "url": "http://127.0.0.1:8123/preview.html",
+      "supplied": {
+        "components": [
+          "ScreenHeader",
+          "Avatar",
+          "ListRow",
+          "Badge",
+          "Button",
+          "Bubble",
+          "SystemCard",
+          "Composer"
+        ],
+        "source": "src/components/ui/*",
+        "props": "static; Avatar name, ListRow title/subtitle/meta, Button variant/disabled, Bubble mine/last/time/ticks, SystemCard title/subtitle/done/active",
+        "appState": "none — every component rendered stateless, no store needed"
+      }
+    },
+    {
+      "file": "gallery-01-390x844.png",
+      "surface": "gallery",
+      "viewport": "390x844",
+      "scrollY": 844,
+      "url": "http://127.0.0.1:8123/preview.html",
+      "supplied": {
+        "components": [
+          "ScreenHeader",
+          "Avatar",
+          "ListRow",
+          "Badge",
+          "Button",
+          "Bubble",
+          "SystemCard",
+          "Composer"
+        ],
+        "source": "src/components/ui/*",
+        "props": "static; Avatar name, ListRow title/subtitle/meta, Button variant/disabled, Bubble mine/last/time/ticks, SystemCard title/subtitle/done/active",
+        "appState": "none — every component rendered stateless, no store needed"
+      }
+    },
+    {
+      "file": "gallery-02-390x844.png",
+      "surface": "gallery",
+      "viewport": "390x844",
+      "scrollY": 1098,
+      "url": "http://127.0.0.1:8123/preview.html",
+      "supplied": {
+        "components": [
+          "ScreenHeader",
+          "Avatar",
+          "ListRow",
+          "Badge",
+          "Button",
+          "Bubble",
+          "SystemCard",
+          "Composer"
+        ],
+        "source": "src/components/ui/*",
+        "props": "static; Avatar name, ListRow title/subtitle/meta, Button variant/disabled, Bubble mine/last/time/ticks, SystemCard title/subtitle/done/active",
+        "appState": "none — every component rendered stateless, no store needed"
+      }
+    },
+    {
+      "file": "chats-390x844.png",
+      "surface": "live",
+      "viewport": "390x844",
+      "scrollY": 0,
+      "url": "http://127.0.0.1:8123/"
+    },
+    {
+      "file": "dialog-390x844.png",
+      "surface": "live",
+      "viewport": "390x844",
+      "scrollY": 0,
+      "url": "http://127.0.0.1:8123/"
+    },
+    {
+      "file": "gallery-00-1280x800.png",
+      "surface": "gallery",
+      "viewport": "1280x800",
+      "scrollY": 0,
+      "url": "http://127.0.0.1:8123/preview.html",
+      "supplied": {
+        "components": [
+          "ScreenHeader",
+          "Avatar",
+          "ListRow",
+          "Badge",
+          "Button",
+          "Bubble",
+          "SystemCard",
+          "Composer"
+        ],
+        "source": "src/components/ui/*",
+        "props": "static; Avatar name, ListRow title/subtitle/meta, Button variant/disabled, Bubble mine/last/time/ticks, SystemCard title/subtitle/done/active",
+        "appState": "none — every component rendered stateless, no store needed"
+      }
+    },
+    {
+      "file": "gallery-01-1280x800.png",
+      "surface": "gallery",
+      "viewport": "1280x800",
+      "scrollY": 800,
+      "url": "http://127.0.0.1:8123/preview.html",
+      "supplied": {
+        "components": [
+          "ScreenHeader",
+          "Avatar",
+          "ListRow",
+          "Badge",
+          "Button",
+          "Bubble",
+          "SystemCard",
+          "Composer"
+        ],
+        "source": "src/components/ui/*",
+        "props": "static; Avatar name, ListRow title/subtitle/meta, Button variant/disabled, Bubble mine/last/time/ticks, SystemCard title/subtitle/done/active",
+        "appState": "none — every component rendered stateless, no store needed"
+      }
+    },
+    {
+      "file": "gallery-02-1280x800.png",
+      "surface": "gallery",
+      "viewport": "1280x800",
+      "scrollY": 885,
+      "url": "http://127.0.0.1:8123/preview.html",
+      "supplied": {
+        "components": [
+          "ScreenHeader",
+          "Avatar",
+          "ListRow",
+          "Badge",
+          "Button",
+          "Bubble",
+          "SystemCard",
+          "Composer"
+        ],
+        "source": "src/components/ui/*",
+        "props": "static; Avatar name, ListRow title/subtitle/meta, Button variant/disabled, Bubble mine/last/time/ticks, SystemCard title/subtitle/done/active",
+        "appState": "none — every component rendered stateless, no store needed"
+      }
+    },
+    {
+      "file": "chats-1280x800.png",
+      "surface": "live",
+      "viewport": "1280x800",
+      "scrollY": 0,
+      "url": "http://127.0.0.1:8123/"
+    },
+    {
+      "file": "dialog-1280x800.png",
+      "surface": "live",
+      "viewport": "1280x800",
+      "scrollY": 0,
+      "url": "http://127.0.0.1:8123/"
+    }
+  ]
+}
