@@ -22,3 +22,6 @@ kill9-out/
 # sealed device keys; it never belongs in a commit.
 desktop/data/
 dist-desktop/
+# Gate logs are run output, not source. A run killed mid-flight must not be
+# able to leave one staged.
+*.log
