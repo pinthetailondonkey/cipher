@@ -233,3 +233,66 @@ test.describe('live: the founder ruling — dialogs sit in the middle', () => {
     });
   }
 });
+
+test.describe('live: the md+ rail holds its own 72px', () => {
+  // No node test can see this. A `fixed` rail takes no space in the flex row,
+  // so the commit that took `md:left-[72px]` off the panes put the column
+  // under the strip while every source read stayed green. The needle is a
+  // wide viewport; the control is a phone, where the rail is not rendered at
+  // all — if the wide assertion could pass with no rail, it measures nothing.
+  test.beforeEach(async ({ page }) => {
+    await page.addInitScript(seedVault);
+    await page.goto('/');
+  });
+
+  // Both navs answer to "Tabs"; only the rail carries the 72px width, and
+  // only one of the two is in the tree at a given width.
+  const RAIL = 'nav[aria-label="Tabs"][class*="w-[72px]"]';
+
+  test('at 1280x800 the rail is in the flow and the column starts beside it', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    const rail = page.locator(RAIL);
+    await expect(rail).toBeVisible({ timeout: 30000 });
+
+    const position = await rail.evaluate((el) => getComputedStyle(el).position);
+    expect(['fixed', 'absolute'], 'the rail is out of the flex flow').not.toContain(position);
+
+    const railBox = await rail.boundingBox();
+    expect(Math.round(railBox.x)).toBe(0);
+    expect(Math.round(railBox.width)).toBe(72);
+
+    // The column is the shell's own, and main is the flex sibling the rail
+    // leaves behind: main starts where the rail ends, and the column sits
+    // inside main and never under the strip.
+    const mainBox = await page.locator('main').boundingBox();
+    expect(Math.round(mainBox.x)).toBe(Math.round(railBox.x + railBox.width));
+    const columnBox = await page.locator('main > div.col-w').first().boundingBox();
+    expect(columnBox.x).toBeGreaterThanOrEqual(railBox.x + railBox.width);
+  });
+
+  test('at 390x844 the control: no rail, and the column starts at 0', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await expect(page.locator(RAIL)).toBeHidden();
+    await expect(page.getByRole('navigation', { name: 'Tabs' })).toBeVisible({ timeout: 30000 });
+    const columnBox = await page.locator('main > div.col-w').first().boundingBox();
+    expect(Math.round(columnBox.x)).toBe(0);
+  });
+
+  test('a sheet scrim paints over the rail, not under it', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.getByRole('button', { name: 'Chat list menu' }).click();
+    await page.getByRole('button', { name: 'Burn note', exact: true }).click();
+    await expect(page.getByRole('dialog')).toBeVisible({ timeout: 15000 });
+
+    // The rail now renders before main in DOM order and both carry z-fab, so
+    // a tie would paint main over it. This asks the compositor instead of
+    // trusting the rule.
+    const hit = await page.evaluate((selector) => {
+      const rail = document.querySelector(selector);
+      const box = rail.getBoundingClientRect();
+      const at = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
+      return { onRail: Boolean(at) && (at === rail || rail.contains(at)), tag: at ? at.tagName : null };
+    }, RAIL);
+    expect(hit.onRail, `the rail is the topmost element at its centre (${hit.tag})`).toBe(false);
+  });
+});
