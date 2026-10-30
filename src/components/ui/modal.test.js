@@ -99,6 +99,14 @@ function mountHook() {
   const input = Object.assign(new FakeHTMLElement(), { focus: () => focusLog.push('input') });
   const opener = Object.assign(new FakeHTMLElement(), { focus: () => focusLog.push('opener') });
   const focusLog = [];
+  // A focus target or a panel for the Tab-trap witness: panels answer
+  // querySelectorAll/contains the way the hook asks.
+  const mkTarget = (name) => Object.assign(new FakeHTMLElement(), { focus: () => focusLog.push(name) });
+  const mkPanel = (name, focusables) => Object.assign(new FakeHTMLElement(), {
+    focus: () => focusLog.push(name),
+    querySelectorAll: () => focusables,
+    contains: (node) => focusables.includes(node),
+  });
   let activeElement = opener;
   const windowListeners = {};
   const savedWindow = globalThis.window;
@@ -117,14 +125,19 @@ function mountHook() {
   };
 
   const press = (key) => {
-    for (const listener of [...(windowListeners.keydown || [])]) listener({ key, stopPropagation() {} });
+    for (const listener of [...(windowListeners.keydown || [])]) {
+      listener({ key, stopPropagation() {}, preventDefault() {} });
+    }
   };
 
   return {
     render,
     press,
     focusLog,
+    mkTarget,
+    mkPanel,
     focusInput() { activeElement = input; },
+    setActive(el) { activeElement = el; },
     get activeElement() { return activeElement; },
     install() {
       globalThis.HTMLElement = FakeHTMLElement;
@@ -190,6 +203,44 @@ test('Escape reaches the latest onClose, not the one at open time', () => {
     m.render(true, () => closes.push(1)); // the callback moved through the ref
     m.press('Escape');
     assert.equal(closes.length, 1, 'Escape closed through the freshest callback');
+  } finally {
+    m.restore();
+  }
+});
+
+// A surface may re-bind its panel node while open (VendorMenuHome binds one
+// ref to two sections and swaps them on its `page` state). The Tab trap must
+// consult the panel that is live AT THE KEYPRESS, not the node the focus
+// effect happened to capture at open — a stale capture sent focus to a node
+// that was no longer in the document and Tab died inside the vendor profile.
+// This harness proves the handler reads the current panel; it cannot prove
+// effect cleanup ordering (real React removes the prior listener on a deps
+// change — measured separately by AUDITOR).
+test('Tab traps the panel that is live now, not the one captured at open', () => {
+  const m = mountHook();
+  m.install();
+  try {
+    const aFirst = m.mkTarget('aFirst');
+    const aLast = m.mkTarget('aLast');
+    const bFirst = m.mkTarget('bFirst');
+    const bLast = m.mkTarget('bLast');
+    const panelA = m.mkPanel('panelA', [aFirst, aLast]);
+    const panelB = m.mkPanel('panelB', [bFirst, bLast]);
+
+    const ref = m.render(true, () => {});
+    // The effect ran against the harness's default panel at open. Now the
+    // surface re-binds while open — first to A, then to B — and focus sits
+    // on B's last focusable when Tab is pressed.
+    ref.current = panelA;
+    ref.current = panelB;
+    m.setActive(bLast);
+    m.press('Tab');
+
+    assert.deepEqual(
+      m.focusLog,
+      ['panel', 'bFirst'],
+      'open focused the opening panel once; Tab from B\'s last must land on B\'s first, never on a detached earlier node'
+    );
   } finally {
     m.restore();
   }
