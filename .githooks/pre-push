@@ -1,0 +1,69 @@
+#!/bin/sh
+# pre-push identity guard — founder order 2026-10-30
+# refuses to push any commit whose author or committer is not Cipher
+# <noreply@ciphermessenger.org>. Zero dependencies.
+#
+# Why this exists: the machine-wide git identity was a personal GitHub account,
+# so any fresh clone without a local override created commits under a real
+# name. Two commits nearly left that way in one session. The pre-commit hook
+# scans for secrets but cannot see identity, and history is covered by the law,
+# not only the tip. This hook is the gate that stops it leaving.
+#
+# It only fires where core.hooksPath points at .githooks, which the project
+# rules already require in every fresh checkout. A clone that never sets the
+# path is not protected by this hook — that is why the machine-wide identity
+# was also changed, so a bare clone cannot create the bad commit in the first
+# place.
+
+WANT_NAME='Cipher'
+WANT_EMAIL='noreply@ciphermessenger.org'
+
+# Refs being pushed arrive as: <local ref> <local sha> <remote ref> <remote sha>
+# Read them all, then check every commit reachable from each local sha that is
+# not already on the remote side.
+fail=0
+while read -r local_ref local_sha remote_ref remote_sha; do
+  # A delete (all-zero local sha) carries no commits.
+  case "$local_sha" in 0000000000000000000000000000000000000000) continue;; esac
+
+  # Range to inspect: everything new to the remote. When the remote side is a
+  # real sha, exclude what it already has; otherwise the whole history.
+  case "$remote_sha" in
+    ''|0000000000000000000000000000000000000000) range="$local_sha";;
+    *) range="$remote_sha..$local_sha";;
+  esac
+
+  # Capture the log and its status separately. A `git log` that cannot resolve
+  # the range exits non-zero and writes nothing; reading that as "no bad
+  # commits" is exactly the absent-reads-as-zero bug class — a failed
+  # measurement reporting as a clean one, on the gate that guards the history
+  # law. So a non-zero exit is a refusal, not an all-clear.
+  out=$(git log --format='%H%x09%an%x09%ae%x09%cn%x09%ce' "$range" 2>/dev/null)
+  rc=$?
+  if [ "$rc" -ne 0 ]; then
+    echo "pre-push: refusing — cannot inspect $range (git log exit $rc)" >&2
+    fail=1
+    continue
+  fi
+  # An empty log for a range that resolved is not a pass either: a ref that
+  # points at nothing is not a history the law covers, so refuse rather than
+  # push a measurement that has no commits to inspect.
+  if [ -z "$out" ]; then
+    echo "pre-push: refusing — $range resolved to no commits to inspect" >&2
+    fail=1
+    continue
+  fi
+  bad=$(printf '%s\n' "$out" \
+    | awk -F'\t' -v n="$WANT_NAME" -v e="$WANT_EMAIL" '
+        ($2 != n || $3 != e || $4 != n || $5 != e) { print $1 "\t" $2 " <" $3 ">\t" $4 " <" $5 ">" }
+      ')
+  if [ -n "$bad" ]; then
+    echo "pre-push: refusing — $local_ref carries commits not authored and committed as $WANT_NAME <$WANT_EMAIL>:" >&2
+    echo "$bad" | head -5 | while IFS='	' read -r sha a c; do
+      echo "  $sha  author=$a  committer=$c" >&2
+    done
+    fail=1
+  fi
+done
+[ "$fail" = 1 ] && exit 1
+exit 0
