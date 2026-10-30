@@ -15,12 +15,12 @@ const SK_A = Array.from({ length: 32 }, (_, i) => (i * 5 + 1) & 0xff);
 const PK_A = getPublicKey(Uint8Array.from(SK_A));
 const PIN_A = '87654321';
 const NEW_PIN = '24681357';
-// The passkey door's own words for a failure it cannot name. The storage
-// refusal travels with code 'save-failed', which the message map does not
-// know (passkeyMessages.js is outside this lane), so the door shows its
-// generic sentence — reported as a copy gap, asserted here so the gap is
-// visible if it moves.
-const PASSKEY_GENERIC = 'That passkey could not be used. Enter your PIN, or use your recovery phrase.';
+// The door's words for this refusal are the commit's own sentence: useIdentity
+// tags the failure 'save-failed' and passkeyMessages.js returns that message
+// instead of its generic one. The sentence lives in src/lib/vaultCommit.js:17;
+// it is kept here as a literal, not imported, so this assertion can go red if
+// the app's copy moves.
+const PASSKEY_SAVE_FAILED = 'This device could not save the account. Nothing was changed — try again.';
 
 // A real vault the app can open: A's key under A's PIN.
 async function pinVault(sk, pin) {
@@ -127,7 +127,7 @@ test('a refused recovery keeps the record, the pointers and the account recovera
   await expect(page.getByRole('heading', { name: 'Unlock Cipher' })).toBeVisible({ timeout: 20000 });
   await typePinOnPad(page, NEW_PIN);
   await page.getByRole('button', { name: 'Unlock with a saved passkey' }).click();
-  await expect(page.getByRole('alert')).toContainText(PASSKEY_GENERIC, { timeout: 90000 });
+  await expect(page.getByRole('alert')).toContainText(PASSKEY_SAVE_FAILED, { timeout: 90000 });
 
   // The record is byte for byte the one the app made (the key is kept — and
   // it is the only way back into this account on this device).
