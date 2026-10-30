@@ -23,6 +23,18 @@ export function mergeStoredMessage(existing, incoming, chatId, { tombstoned = fa
     // The bubble reads the top-level flag, so an edit patch carries it up.
     if (patch.edited) merged.edited = true;
   }
+  // The receipt's direction mark is this device's own decision about ONE
+  // receipt, written where the order-binding gate accepted it (useNIP44DM).
+  // The relay copy never carries it, and `data` is replaced above, so without
+  // this the mark would survive only when the gate happens to say yes again on
+  // the same history pass — a reload could change an order's tab. Carry it
+  // forward for the SAME receipt, by hash: the mark names one receipt, never a
+  // slot, and a row that never had one never gains one here.
+  const held = existing?.data?.receipt;
+  const arriving = incoming?.data?.receipt;
+  if (held?.bound === true && arriving?.hash && arriving.hash === held.hash) {
+    merged.data = { ...merged.data, receipt: { ...arriving, bound: true } };
+  }
   return merged;
 }
 
