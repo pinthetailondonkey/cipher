@@ -1,10 +1,9 @@
 import { useEffect } from 'react';
 import { Bell, Users } from 'lucide-react';
-import ScreenHeader from '../ui/ScreenHeader';
+import Sheet from '../ui/Sheet';
 import ListRow from '../ui/ListRow';
 import Badge from '../ui/Badge';
 import EmptyState from '../ui/EmptyState';
-import useDialogA11y from '../ui/dialogA11y';
 import { useChatStore } from '../../store/chatStore';
 import { db } from '../../db';
 
@@ -27,7 +26,6 @@ function previewText(message) {
 
 export default function NotificationCenter({ onClose, onJump }) {
   const unreadCounts = useChatStore((state) => state.unreadCounts);
-  useDialogA11y(true, () => onClose?.());
   const dms = useChatStore((state) => state.dms);
   const groupMessages = useChatStore((state) => state.groupMessages);
   const groups = useChatStore((state) => state.groups);
@@ -65,37 +63,25 @@ export default function NotificationCenter({ onClose, onJump }) {
   };
 
   return (
-    <div className="fixed inset-0 z-sheet flex flex-col bg-scrim md:right-auto md:left-[72px] md:top-0 md:bottom-0 md:w-[340px] md:bg-base md:border-r md:border-line md:shadow-2xl" role="dialog" aria-modal="true" aria-label="Notifications">
-      <div className="pointer-events-none absolute inset-0" style={{
-        background: 'radial-gradient(ellipse 55% 38% at 12% 0%, var(--glow-a), transparent 65%), radial-gradient(ellipse 50% 30% at 92% 100%, var(--glow-b), transparent 70%)',
-      }} />
-      <div className="relative mx-auto flex min-h-0 w-full max-w-md flex-1 flex-col">
-      <ScreenHeader title="Notifications" onBack={onClose} />
+    <Sheet open onClose={onClose} title="Notifications" bodyClassName="max-h-[68vh] overflow-y-auto pb-4">
       {notifications.length === 0 ? (
-        <div className="m-4">
-          <EmptyState icon={<Bell size={22} className="text-accentText" />} title="You're caught up" line="New messages show up here." />
-        </div>
+        <EmptyState icon={<Bell size={22} className="text-accentText" />} title="You're caught up" line="New messages show up here." />
       ) : (
-        <div className="min-h-0 flex-1 overflow-y-auto p-4">
-          <div className="overflow-hidden rounded-2xl border border-line bg-panel">
-          {notifications.map((item) => (
-            <ListRow
-              key={item.id}
-              onClick={() => openNotification(item)}
-              leading={(
-                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-line bg-ink/5 text-accentText">
-                  {item.type === 'group' ? <Users size={18} /> : <Bell size={18} />}
-                </span>
-              )}
-              title={item.title}
-              subtitle={item.preview}
-              trailing={<Badge tone="accent">{item.count}</Badge>}
-            />
-          ))}
-          </div>
-        </div>
+        notifications.map((item) => (
+          <ListRow
+            key={item.id}
+            onClick={() => openNotification(item)}
+            leading={(
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-line bg-ink/5 text-accentText">
+                {item.type === 'group' ? <Users size={18} /> : <Bell size={18} />}
+              </span>
+            )}
+            title={item.title}
+            subtitle={item.preview}
+            trailing={<Badge tone="accent">{item.count}</Badge>}
+          />
+        ))
       )}
-      </div>
-    </div>
+    </Sheet>
   );
 }
