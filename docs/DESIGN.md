@@ -95,4 +95,6 @@ Every phase must satisfy both, or it FAILS closed:
 
 ## Mockup reference
 
-`docs/mockup/approved.png` — the approved render to compare against.
+`docs/mockup/anchor.png` — the anchor render this palette is sampled from.
+`docs/mockup/anchor-list.png` — the founder's list-screen layout drop.
+`docs/mockup/README.md` — the palette block in full and what each image governs.
