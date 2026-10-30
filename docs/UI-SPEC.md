@@ -1,5 +1,11 @@
 # Cipher UI redesign spec (founder-authored; UI parts only, 2026-10-28)
 
+> **Superseded 2026-10-30.** The founder ruled that the most recent document
+> governs, and `docs/DESIGN.md` (2026-10-30) is newer than this one
+> (2026-10-28). Where the two differ — palette, type, geometry — DESIGN.md
+> stands. This spec is kept for its reasoning and its wording rules; it is not
+> the current visual system of record.
+
 Cipher = private, group-based commerce + messaging. NOT a public marketplace, exchange, trading terminal, portfolio tracker, social network, shopping cart app, or generic messenger. Four primary destinations, exact order: Chats | Menus | Orders | Profile. Preserve their purpose and navigation behaviour. Eight reference screens: Chats list; individual vendor conversation; long-press message menu; group conversation; Menus (followed vendors + discover); individual vendor menu; Orders overview; Profile/settings. Reference pictures: /home/aegis/aegis-backups/ui-mockups-2026-10-28/ (layout only; where they differ from this spec, THIS SPEC WINS).
 
 ## Rules of truth
