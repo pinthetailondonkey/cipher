@@ -74,22 +74,39 @@ function anchorBeats(candidate, current) {
 // is gone are usually the OTHER party's, so the anchored message's own flag
 // would file a buyer's purchase under "incoming". The direction is read from
 // what the rows themselves prove, in this order:
-//   1. a receipt names both sides AND names this device — its buyer field
-//      decides. A receipt naming two other keys speaks for nobody here: it is
-//      somebody else's receipt, or a fixture written from another account, and
-//      a row was being filed on the wrong ledger because that body named a
-//      stranger as the buyer. It is set aside and the rule moves on;
+//   1. a receipt that THIS DEVICE ACCEPTED names both sides AND names this
+//      device — its buyer field decides. "Accepted" is not a guess: the
+//      receipt carries the mark the ingest path writes when the order-binding
+//      gate said yes, and only that path writes it — and it must name THIS
+//      order, the same sentence the ✓ check opens with, so a receipt and the
+//      tick it draws never disagree. A body is the sender's own text, so a body
+//      without the mark proves nothing here — not a body naming two other keys
+//      (somebody else's receipt, or a fixture written from another account),
+//      and not a body naming this device as the buyer of a sale it is making.
+//      Both are set aside and the rule moves on. Old rows saved before the mark
+//      existed land here too, and fall through to what this device knows;
 //   2. the update that issued the payment pair was sent by the vendor, so a
 //      received one is a purchase and a sent one is an incoming order;
 //   3. nothing proves it: fall back to the anchored message's own flag. A row
 //      slightly unsure is better than a row dropped.
-function isBuyerOf(anchor, messages, ownPubkey) {
+function isBuyerOf(anchor, messages, ownPubkey, orderId) {
   if (ORDER_KINDS.includes(anchor.message?.data?.type)) return Boolean(anchor.message.isSender);
   const me = String(ownPubkey || '').toLowerCase();
   if (me) {
     const receipted = messages.find((message) => {
-      const body = message?.data?.receipt?.body;
-      return Boolean(body && body.buyer && body.vendor);
+      const receipt = message?.data?.receipt;
+      const body = receipt?.body;
+      // The mark the ingest path writes after the gate said yes. Without it the
+      // body is only what the sender typed, so it is not evidence of anything.
+      // The order sentence is the same one the ✓ check opens with
+      // (receiptIsOfThisChat): a receipt speaks for the order it names, and for
+      // no other row in this chat. Direction and the ✓ then answer the same
+      // question from the same receipt.
+      return Boolean(
+        receipt?.bound === true
+        && body && body.buyer && body.vendor
+        && String(body.orderId) === String(orderId),
+      );
     });
     if (receipted) {
       const body = receipted.data.receipt.body;
@@ -135,7 +152,7 @@ export function orderRows(rows, { side, ownPubkey } = {}) {
       message: group.anchor.message,
       peerPubkey: group.peerPubkey,
       orderId: group.orderId,
-      isBuyer: isBuyerOf(group.anchor, group.messages, ownPubkey),
+      isBuyer: isBuyerOf(group.anchor, group.messages, ownPubkey, group.orderId),
     }))
     .filter((row) => row.isBuyer === !incoming)
     .sort((a, b) => (b.message.timestamp || 0) - (a.message.timestamp || 0));

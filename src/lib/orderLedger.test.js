@@ -156,9 +156,14 @@ test('an update-only order that carries a verified receipt draws its row AND its
     amount: '1', txid: 'aa', at: 1_700_000_000, outcome: 'confirmed',
   };
   const signed = signReceipt(vendorKey, body, signReceipt(buyerKey, body));
+  // Marked the way the ingest path stores it: this device accepted the receipt,
+  // so the mark the gate writes rides on the row. That is the shape the ledger
+  // reads direction from — an unmarked body proves nothing (see the shapes at
+  // the end of this file).
+  const stored = { ...signed, bound: true };
   const thread = [
     { id: 'u1', isSender: false, pubkey: vendor, timestamp: 11, data: { type: 'order_update', orderId: 'order-R', status: 'paid' } },
-    { id: 'u2', isSender: false, pubkey: vendor, timestamp: 12, data: { type: 'order_update', orderId: 'order-R', status: 'paid', receipt: signed } },
+    { id: 'u2', isSender: false, pubkey: vendor, timestamp: 12, data: { type: 'order_update', orderId: 'order-R', status: 'paid', receipt: stored } },
   ];
   // The buyer's own device: these updates came FROM the vendor, so the
   // anchored message's isSender is false — and the row still belongs to the
@@ -174,6 +179,15 @@ test('an update-only order that carries a verified receipt draws its row AND its
   assert.equal(row.message.id, 'u1', 'and the message it anchors on is still the earliest update');
   assert.equal(orderHasVerifiedReceipt(thread, row.message.id, row.message, buyer, vendor), false, 'proof the id rule is load-bearing: the message id finds no receipt');
   assert.equal(orderState(thread, row.orderId, row.message, buyer, vendor).status, 'paid');
+  // The row's side and its tick answer to the same receipt. Strip the mark the
+  // gate wrote and the row no longer reads as a purchase — the old version of
+  // this test took the receipt's presence on a later update as enough, which
+  // pinned whichever receipt ARRIVED FIRST and called it direction.
+  const unmarked = thread.map((message) => (
+    message.id === 'u2' ? { ...message, data: { ...message.data, receipt: signed } } : message
+  ));
+  assert.equal(orderRows({ [vendor]: unmarked }, { side: 'purchases', ownPubkey: buyer }).length, 0, 'an unaccepted receipt decides nothing');
+  assert.equal(orderRows({ [vendor]: unmarked }, { side: 'incoming', ownPubkey: buyer }).length, 1);
 });
 
 test('a receipt that names two other keys does not decide which ledger the order is on', () => {
@@ -288,4 +302,161 @@ test('the checkout failure branch cleans up, and a queued order never takes that
   assert.equal(/discardRejectedOrder/.test(after), false);
   assert.equal(/db\.messages\.delete/.test(after), false);
   assert.match(menus, /deliveryStatus: result\.queued \? 'queued' : 'sent'/);
+});
+
+// ————— which ledger an order sits on: only a receipt that PASSED the gate —————
+// A receipt body is authored by whoever sent the message: it is plaintext
+// inside their DM, not something this device signed. isBuyerOf used to read
+// `data.receipt.body` from ANY row, so any peer could name this device as the
+// buyer of an order it is selling and the row moved to the other ledger — over
+// the top of evidence this device produced itself. These shapes are the probe
+// that found it, kept as the guard.
+
+const LEDGER_ME_SK = '11'.repeat(32);
+// The device's own key, so the genuine-receipt control can really sign as buyer.
+const LEDGER_ME = Buffer.from(schnorr.getPublicKey(new Uint8Array(32).fill(0x11))).toString('hex');
+const LEDGER_PEER = 'b'.repeat(64);
+const LEDGER_STRANGER_1 = 'c'.repeat(64);
+const LEDGER_STRANGER_2 = 'd'.repeat(64);
+
+const ledgerUpdate = (id, timestamp, extra = {}) => ({
+  id, timestamp, isSender: false,
+  data: { type: 'order_update', orderId: 'order-1', ...extra },
+});
+
+// Where a row sits for this device: the two ledgers the tab draws.
+const ledgerSides = (messages) => {
+  const rows = { [LEDGER_PEER]: messages };
+  return {
+    incoming: orderRows(rows, { side: 'incoming', ownPubkey: LEDGER_ME }).length,
+    purchases: orderRows(rows, { side: 'purchases', ownPubkey: LEDGER_ME }).length,
+  };
+};
+
+const RECEIVED = { incoming: 1, purchases: 0 }; // I am the vendor of this order
+const PLACED = { incoming: 0, purchases: 1 };   // I am the buyer of it
+
+test('a body naming this device as both buyer and vendor does not move the row', () => {
+  const moved = ledgerSides([
+    ledgerUpdate('u1', 100),
+    ledgerUpdate('u2', 101, { receipt: { body: { buyer: LEDGER_ME, vendor: LEDGER_ME } } }),
+  ]);
+  assert.deepEqual(moved, RECEIVED, 'a sender-authored self-reference decides nothing');
+});
+
+test('a plainly shaped body naming this device as buyer does not move the row either', () => {
+  // The self-reference is not the defect: {buyer: me, vendor: peer} names the
+  // two parties of this chat in exactly the roles they hold, and it is still
+  // the peer's words about a sale they are not selling.
+  const moved = ledgerSides([
+    ledgerUpdate('u1', 100),
+    ledgerUpdate('u2', 101, { receipt: { body: { buyer: LEDGER_ME, vendor: LEDGER_PEER } } }),
+  ]);
+  assert.deepEqual(moved, RECEIVED, 'an unbound body never outranks what this device knows');
+});
+
+test('an unbound body does not overrule a payment pair this device issued', () => {
+  // The update below issued the pair, so the issuer rule says "incoming". The
+  // crafted body used to flip it anyway — evidence this device produced,
+  // overruled by a stranger's text.
+  const issued = { ...ledgerUpdate('u1', 100, { paymentMethods: { btc: 'bc1qexample' } }), isSender: true };
+  assert.deepEqual(ledgerSides([issued]), RECEIVED, 'control: the issued pair decides');
+  const moved = ledgerSides([
+    issued,
+    ledgerUpdate('u2', 101, { receipt: { body: { buyer: LEDGER_ME, vendor: LEDGER_ME } } }),
+  ]);
+  assert.deepEqual(moved, RECEIVED, 'an unbound body cannot move a row the device itself placed');
+});
+
+test('a body naming two other keys decides nothing (the guard that already held)', () => {
+  const sides = ledgerSides([
+    ledgerUpdate('u1', 100),
+    ledgerUpdate('u2', 101, { receipt: { body: { buyer: LEDGER_STRANGER_1, vendor: LEDGER_STRANGER_2 } } }),
+  ]);
+  assert.deepEqual(sides, RECEIVED);
+});
+
+test('the sender naming themselves on both sides decides nothing (held)', () => {
+  const sides = ledgerSides([
+    ledgerUpdate('u1', 100),
+    ledgerUpdate('u2', 101, { receipt: { body: { buyer: LEDGER_PEER, vendor: LEDGER_PEER } } }),
+  ]);
+  assert.deepEqual(sides, RECEIVED);
+});
+
+// A receipt this device really signed as the buyer, in the shape the writer
+// stores it: marked, because the order-binding gate accepted it for that order.
+const genuineReceipt = (orderId = 'order-1') => ({
+  ...signReceipt(LEDGER_ME_SK, {
+    orderId, buyer: LEDGER_ME, vendor: LEDGER_PEER,
+    currency: 'btc', address: 'bc1qexample', amount: '1000', txid: 'ab'.repeat(32),
+    at: 100, outcome: 'confirmed',
+  }),
+  bound: true,
+});
+
+// What a peer writes when it wants this row to move: the same two keys in the
+// same roles, unsigned, unmarked. The gate refuses it, so the writer keeps it
+// on the row without the mark.
+const decoyReceipt = (orderId = 'order-1') => ({
+  body: { orderId, buyer: LEDGER_ME, vendor: LEDGER_PEER },
+});
+
+test('a receipt that passed the gate still moves the row — the feature is not deleted', () => {
+  const sides = ledgerSides([
+    ledgerUpdate('u1', 100),
+    ledgerUpdate('u2', 101, { receipt: genuineReceipt() }),
+  ]);
+  assert.deepEqual(sides, PLACED, 'a genuine receipted order still reads as a purchase');
+});
+
+test('a decoy arriving first does not leave a verified purchase on the incoming ledger', () => {
+  // The store sorts by when a message ARRIVED, so `find` used to take whichever
+  // receipt came first — the peer chooses that by send order. The decoy is the
+  // one that fails the gate; the genuine one is the one that produced the ✓.
+  const sides = ledgerSides([
+    ledgerUpdate('u1', 100, { receipt: decoyReceipt() }),
+    ledgerUpdate('u2', 101, { receipt: genuineReceipt() }),
+  ]);
+  assert.deepEqual(sides, PLACED, 'the row follows the receipt that verified, not the one that arrived first');
+});
+
+test('the same two receipts read the same way when they arrive in the other order', () => {
+  const decoyFirst = ledgerSides([
+    ledgerUpdate('u1', 100, { receipt: decoyReceipt() }),
+    ledgerUpdate('u2', 101, { receipt: genuineReceipt() }),
+  ]);
+  const genuineFirst = ledgerSides([
+    ledgerUpdate('u1', 100, { receipt: genuineReceipt() }),
+    ledgerUpdate('u2', 101, { receipt: decoyReceipt() }),
+  ]);
+  assert.deepEqual(decoyFirst, genuineFirst, 'the tab is a fact about the order, not about delivery order');
+  assert.deepEqual(decoyFirst, PLACED);
+});
+
+test('a marked receipt that names a DIFFERENT order does not decide this row', () => {
+  // Same chat, same two keys, but the receipt belongs to another order. It is
+  // evidence for that order and for nothing here.
+  const sides = ledgerSides([
+    ledgerUpdate('u1', 100),
+    ledgerUpdate('u2', 101, { receipt: genuineReceipt('order-other') }),
+  ]);
+  assert.deepEqual(sides, RECEIVED, 'a receipt is evidence only for the order it names');
+});
+
+test('an unmarked old receipt falls back to the anchor, and here that lands on the same side', () => {
+  // Old rows carry no marker, so they fall through to the issuer rule and the
+  // anchor: what this device knows on its own. When the anchored update is one
+  // this device SENT, the fallback lands on the same side it always read.
+  //
+  // The other direction is NOT covered by this test and does not land the same
+  // way: an old row whose only evidence was an unmarked receipt on a RECEIVED
+  // update now reads from that update and sits on the other ledger until the
+  // history pass re-accepts it and writes the mark. Measured, reported, and
+  // left for a ruling rather than papered over here.
+  const sides = ledgerSides([
+    { ...ledgerUpdate('u1', 100), isSender: true },
+    ledgerUpdate('u2', 101, { receipt: { body: { buyer: LEDGER_ME, vendor: LEDGER_PEER } } }),
+  ]);
+  assert.deepEqual(sides, PLACED, 'an unmarked old receipt falls back, it does not break');
 });
