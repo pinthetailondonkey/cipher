@@ -22,7 +22,12 @@ import { TEST_RELAY_OVERRIDE, TEST_RELAY_OVERRIDE_MARK } from './testRelayOverri
 // module's own rows rather than against a list written here.
 
 const TREE = new URL('../..', import.meta.url).pathname;
-const WALL = '127.0.0.1:9';
+// The whole address, scheme included, as two needles rather than one. A bare
+// `127.0.0.1:9` is a PREFIX of `127.0.0.1:9050`, the wallet's Tor proxy
+// default, which lives in a lazily-imported chunk today and would be a false
+// hit the day that chunk joins this graph — or worse, a false pass.
+const WALL_WS = 'ws://127.0.0.1:9';
+const WALL_HTTP = 'http://127.0.0.1:9';
 
 const PROBE = `
 import { EGRESS, activeUrl } from ${JSON.stringify(join(TREE, 'src/lib/egress.js'))};
@@ -73,7 +78,8 @@ test('a build that ships resolves every row to its own address, and carries no w
   // Absent, not merely unused: the address the wall dials is a literal no
   // shipping bundle can carry, and neither is the mark that names the module.
   // Asserted before the rows so a leak is reported as a leak.
-  assert.equal(text.includes(WALL), false, 'the shipping bundle carries the wall addresses');
+  assert.equal(text.includes(WALL_WS), false, 'the shipping bundle carries the wall relay address');
+  assert.equal(text.includes(WALL_HTTP), false, 'the shipping bundle carries the wall host address');
   assert.equal(text.includes(TEST_RELAY_OVERRIDE_MARK), false, 'the shipping bundle carries the wall module');
   assert.ok(rows.length >= 13, `expected the called rows, measured ${rows.length}`);
   for (const row of rows) {
@@ -87,8 +93,9 @@ test('a UI-test build resolves every covered row to this machine and nothing els
   assert.deepEqual(rows.map((row) => row.id).sort(), covered, 'the rows the wall covers are exactly the called rows');
   for (const row of rows) {
     assert.equal(new URL(row.active).hostname, '127.0.0.1', `${row.id} must resolve to this machine`);
-    assert.equal(row.active.includes(WALL), true, `${row.id} must resolve to the wall's own port`);
+    assert.ok([WALL_WS, WALL_HTTP].includes(row.active), `${row.id} must resolve to one of the wall's own addresses`);
     assert.notEqual(row.active, row.shipped, `${row.id} must not keep its shipped address in a test build`);
   }
-  assert.equal(text.includes(WALL), true, 'the UI-test bundle does not carry the wall addresses');
+  assert.equal(text.includes(WALL_WS), true, 'the UI-test bundle does not carry the wall relay address');
+  assert.equal(text.includes(WALL_HTTP), true, 'the UI-test bundle does not carry the wall host address');
 });
