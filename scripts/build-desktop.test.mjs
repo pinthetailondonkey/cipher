@@ -63,33 +63,48 @@ test('a door that is not an onion is refused the same way', () => {
   }
 });
 
-// The media door's refusal, in two directions. A refusal tested only in the
-// direction that can fire today would be half a proof, and today the direction
-// that fires does not exist yet: no media row ships the founder's host, so the
-// check is inert by design. The fixture row below is what stands in for the
-// day that literal lands, and it is exercised here rather than described.
+// The media door's refusal, run against the rows that actually ship.
+//
+// This test used to build its own three-row fixture carrying `gate: 'founder'`,
+// which is a shape no shipped row has: the predicate looked for that field, the
+// real rows never carry it, and the fixture proved only that the predicate
+// agreed with itself. A predicate and its data can disagree indefinitely while
+// the test supplies the data. So the cases below import the real EGRESS, and
+// the fixture shape is kept only as the third case, where it must behave the
+// same as the real rows do.
 const FOUNDER_MEDIA_ROWS = [
   { id: 'blossom-primal', role: 'Media host', url: 'https://media.example', gate: 'founder' },
   { id: 'blossom-nostr-build', role: 'Media host', url: 'https://media.example', gate: 'founder' },
   { id: 'blossom-band', role: 'Media host', url: 'https://media.example', gate: 'founder' },
 ];
 
-test('a build shipping the founder media host without a media onion is refused', () => {
-  assert.equal(mediaDoorRefusal({ mediaDoor: '', rows: FOUNDER_MEDIA_ROWS }), MEDIA_REFUSAL);
+test('a cleartext media door is refused against the rows that ship', () => {
+  const mediaRows = EGRESS.filter((row) => row.role === 'Media host');
+  assert.equal(mediaRows.length, 3, `expected the media rows, measured ${mediaRows.length}`);
+  // The live case: the rows are real, the door is a clear host, and the refusal
+  // fires because the predicate reads the rows rather than a marker on them.
+  assert.equal(mediaDoorRefusal({ mediaDoor: 'https://media.example', rows: EGRESS }), MEDIA_REFUSAL);
+  // A loopback near-miss is not an onion either — the check is the shape, not
+  // the word "example".
+  assert.equal(mediaDoorRefusal({ mediaDoor: 'https://127.0.0.1:9050', rows: EGRESS }), MEDIA_REFUSAL);
+  // Two directions: a well-formed media door is accepted against the same real
+  // rows, so the refusal is about the door and not about refusing.
+  assert.equal(mediaDoorRefusal({ mediaDoor: `http://${'b'.repeat(56)}.onion`, rows: EGRESS }), '');
+  assert.equal(mediaDoorRefusal({ mediaDoor: `https://${'b'.repeat(16)}.onion`, rows: EGRESS }), '');
+  // And the fixture shape production never produces behaves the same, so the
+  // old case is not silently inverted by the predicate change.
   assert.equal(mediaDoorRefusal({ mediaDoor: 'https://media.example', rows: FOUNDER_MEDIA_ROWS }), MEDIA_REFUSAL);
-  // The same rows with a real onion are accepted — the refusal is about the
-  // door, not about refusing.
   assert.equal(mediaDoorRefusal({ mediaDoor: `http://${'b'.repeat(56)}.onion`, rows: FOUNDER_MEDIA_ROWS }), '');
 });
 
-test("today's rows ship no founder media host, so the desktop build is unchanged", () => {
-  // The measured state of the shipped rows, not a claim about them: until the
-  // founder's media host lands, no media row carries the marker, so the
-  // refusal cannot fire and the build takes the path it always took.
+test('an unset media door is not refused, and the desktop build takes its usual path', () => {
+  // Unset is the shipped state: the media host does not exist yet. The door is
+  // optional here, so an unset one builds — and the clear fallback is named out
+  // loud by vite.config.js rather than left silent. Requiring it would make
+  // every desktop build impossible today, which is a product call and is on
+  // the founder's card.
   const mediaRows = EGRESS.filter((row) => row.role === 'Media host');
   assert.equal(mediaRows.length, 3);
-  assert.equal(mediaRows.every((row) => row.gate !== 'founder'), true,
-    'no media row ships the founder host yet, so the media refusal stays inert');
   assert.equal(mediaDoorRefusal({ mediaDoor: '', rows: EGRESS }), '');
 
   // And end to end, on the script itself: with a valid group door and no media

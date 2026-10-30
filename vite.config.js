@@ -15,6 +15,11 @@ const desktopBuild = process.env.CIPHER_DESKTOP_BUILD === '1'
 // build may.
 const ONION_DOOR = /^wss:\/\/[a-z2-7]{16,56}\.onion$/
 
+// The media door's shape, which is not the group door's: media is fetched over
+// http(s), so a wss pattern would refuse every good media door. One regex for
+// both keys is how a check looks present while it can never pass.
+const MEDIA_DOOR = /^https?:\/\/[a-z2-7]{16,56}\.onion$/
+
 // Every file Vite reads into import.meta.env for a production build. A build
 // that ships must be the build the repo describes, and a file that is not in
 // the repo can change what ships without appearing in any diff.
@@ -90,6 +95,36 @@ export default defineConfig(({ command, mode }) => {
         + 'The desktop groups would leave Tor and go to the clear address. '
         + 'Set it in .grok/app-env.json (untracked) or in the environment for this build.',
       )
+    }
+
+    // The media door has its own shape. Media is fetched over http(s), so the
+    // group pattern — wss — would refuse every well-formed media door and
+    // accept none, which is the same as having no check at all. Two patterns,
+    // one per key, because one regex for both is how a check looks present
+    // while it is inert.
+    //
+    // Optional, deliberately, and this is the judgement call in the commit:
+    // a desktop build requires the GROUP door because groups are unreachable
+    // without it, but the media host does not exist yet, so requiring the
+    // media door would make every desktop build impossible today. So an unset
+    // media door builds — and says so, on the build's own output, because a
+    // silent clearnet fallback is the failure this file exists to stop.
+    if (desktopBuild) {
+      const mediaDoor = String(env.VITE_MEDIA_ONION || '').trim()
+      if (mediaDoor && !MEDIA_DOOR.test(mediaDoor)) {
+        throw new Error(
+          `vite refuses: VITE_MEDIA_ONION is set to "${mediaDoor}", which is not an onion address. `
+          + 'The media rows would resolve to it and leave Tor for whatever host that names. '
+          + 'A desktop door is https://<onion> with no port and no path: '
+          + 'set it in .grok/app-env.json (untracked) or in the environment for this build.',
+        )
+      }
+      if (!mediaDoor) {
+        process.stderr.write(
+          'vite warns: this desktop build carries no VITE_MEDIA_ONION, so pictures and '
+          + 'attachments fall back to the shipped clearnet media hosts and leave Tor.\n',
+        )
+      }
     }
 
     // The test seam and the test relay wall exist only in a build that never

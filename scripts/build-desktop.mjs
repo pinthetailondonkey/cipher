@@ -12,25 +12,35 @@ import { pathToFileURL } from 'node:url';
 import { readAppEnv } from './with-app-env.mjs';
 import { EGRESS } from '../src/lib/egress.js';
 
-// The media rows can ship the founder's own host. The day they do, a desktop
-// bundle without a media onion would take pictures off Tor and onto the clear
-// address without a word — the same failure the group door already refuses, so
-// the same refusal covers media.
+// The media door's shape, refused here for the same reason the group door is:
+// a set-but-cleartext media door points the desktop build's pictures at a
+// clear host, so the media leaves Tor while every row still renders.
 //
-// Stated plainly, because a check that cannot fire yet must not read as a
-// guard that is working: until the founder's media host lands as a literal in
-// the rows (with gate: 'founder'), no row carries that marker, this check
-// returns nothing, and today's desktop build is untouched. What this commit
-// proves is the mechanism, exercised against a fixture row; the refusal
-// becomes live the moment the literal lands, with no further change here.
-export const MEDIA_REFUSAL = "build:desktop refuses: the media rows ship the founder's host but VITE_MEDIA_ONION is missing or is not an onion address. The desktop media would leave Tor. Set it in .grok/app-env.json (untracked).";
+// The predicate reads the rows that actually ship. An earlier version required
+// `gate: 'founder'` on a media row before it would look at the door at all, and
+// no shipped row carries that field — so the check was inert against the real
+// EGRESS, and the test that appeared to cover it built its own three-row
+// fixture carrying a shape production never produces. A predicate and its data
+// can disagree for as long as the test invents its own data; that term is gone.
+//
+// The door stays optional here, deliberately. The media host does not exist
+// yet, and a required door would make every desktop build impossible today
+// while the rows' fallback is a clear host either way. What is refused is a
+// door that is present and wrong. Whether a desktop build should be allowed
+// without one at all is a product decision, not this script's: it is named on
+// the founder's card rather than decided in a comment.
+export const MEDIA_REFUSAL = 'build:desktop refuses: VITE_MEDIA_ONION is set but is not an onion address. The desktop media would leave Tor for whatever host that names. Set it in .grok/app-env.json (untracked).';
 
 const MEDIA_ONION = /^https?:\/\/[a-z2-7]{16,56}\.onion$/;
 
 export function mediaDoorRefusal({ mediaDoor, rows }) {
-  const shipsFounderMedia = (rows || []).some((row) => row.role === 'Media host' && row.gate === 'founder');
-  if (!shipsFounderMedia) return '';
-  return MEDIA_ONION.test(String(mediaDoor || '').trim()) ? '' : MEDIA_REFUSAL;
+  const mediaRows = (rows || []).some((row) => row.role === 'Media host');
+  if (!mediaRows) return '';
+  const door = String(mediaDoor || '').trim();
+  // Unset is the shipped state and is not refused; Vite warns on it, once,
+  // where the build actually runs.
+  if (!door) return '';
+  return MEDIA_ONION.test(door) ? '' : MEDIA_REFUSAL;
 }
 
 // What this build was made from. A marker alone says "a desktop build once

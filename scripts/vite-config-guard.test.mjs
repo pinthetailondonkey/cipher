@@ -159,3 +159,39 @@ test('the workspace build-flag carrier is refused in a build that is not desktop
     rmSync(grok, { recursive: true, force: true });
   }
 });
+
+// The media door is the group door's sibling and not its twin: media is
+// fetched over http(s), so the group's wss pattern would refuse every good
+// media door. Both directions are exercised against the same fixture, because
+// a check that only refuses is indistinguishable from one that refuses
+// everything.
+const FIXTURE_MEDIA_DOOR = 'https://fixturemediafixturemedia.onion';
+const FIXTURE_GROUP_DOOR = 'wss://fixturedoorfixturedoor.onion';
+
+test('a desktop media door is checked for shape, and the good shape still builds', () => {
+  const desktop = { ...cleanEnv(), CIPHER_DESKTOP_BUILD: '1', VITE_GROUP_ONION: FIXTURE_GROUP_DOOR };
+
+  // The positive control: a well-formed media door builds and its literal is
+  // in the produced bytes.
+  const good = build({ env: { ...desktop, VITE_MEDIA_ONION: FIXTURE_MEDIA_DOOR } });
+  assert.equal(good.status, 0, `a desktop build with a good media door failed:\n${good.stderr.slice(-2000)}`);
+  assert.equal(good.text.includes('fixturemediafixturemedia.onion'), true,
+    'the media door did not reach the bytes, so this control proves nothing');
+
+  // A clear host is refused, before Vite runs, and no bundle is written.
+  const clear = build({ env: { ...desktop, VITE_MEDIA_ONION: 'https://media.example.com' } });
+  assert.notEqual(clear.status, 0, 'a desktop build accepted a cleartext media door');
+  assert.match(clear.stderr, /vite refuses: VITE_MEDIA_ONION is set to/);
+  assert.equal(ONION_LITERAL.test(clear.text), false, 'a refused build still wrote an onion to disk');
+
+  // A loopback near-miss is not an onion either.
+  const loopback = build({ env: { ...desktop, VITE_MEDIA_ONION: 'https://127.0.0.1:9050' } });
+  assert.notEqual(loopback.status, 0, 'a desktop build accepted a loopback media door');
+  assert.match(loopback.stderr, /vite refuses: VITE_MEDIA_ONION is set to/);
+
+  // Unset is the shipped state: it builds, and the clear fallback is named on
+  // the build's own output rather than left silent.
+  const unset = build({ env: desktop });
+  assert.equal(unset.status, 0, `a desktop build without a media door failed:\n${unset.stderr.slice(-2000)}`);
+  assert.match(unset.stderr, /vite warns: this desktop build carries no VITE_MEDIA_ONION/);
+});
