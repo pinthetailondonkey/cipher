@@ -319,15 +319,72 @@ export default function GroupView({
     .map((message) => ({ message, product: readPayload(message) }))
     .filter(({ product }) => product?.type === 'product' && !product.soldOut);
   const canList = isVendor || activeGroup?.creator === identity?.pk;
+  // A menu item rides the same send contract the composer has held since
+  // cca2d53. This used to call the hook with no client id: on NO_KEY nothing
+  // was queued (queueSecuringSend arms only through the client id) while the
+  // toast promised the item would send when the key arrived, there was no
+  // optimistic row, and a relay refusal answered { success: true, queued:
+  // true, relayCount: 0 }, which the only check read as silence — a toast or
+  // silence, never an item.
   const postListing = async (product) => {
-    if (!activeGroup?.id) return;
-    try {
-      const result = await sendGroupMessage(activeGroup.id, { type: 'product', ...product });
-      if (result?.error === 'NO_KEY') setToast({ type: 'success', message: 'Securing… the listing will send when the group key arrives.' });
-      else if (result?.success === false) setToast({ type: 'error', message: 'Could not post that listing.' });
-    } catch (error) {
-      console.error('[shop] listing failed:', error);
-      setToast({ type: 'error', message: 'Could not post that listing.' });
+    const groupId = activeGroup?.id;
+    if (!groupId) return;
+    const payload = { type: 'product', ...product };
+    const tempId = `temp-${Date.now()}`;
+    const optimistic = stampArrival({
+      id: tempId,
+      clientId: tempId,
+      isSender: true,
+      pubkey: identity?.pk,
+      timestamp: Math.floor(Date.now() / 1000),
+      local_timestamp: Date.now(),
+      replyTo: null,
+      deliveryStatus: 'sending',
+      rawContent: JSON.stringify(payload),
+      isGroup: true,
+    });
+    useChatStore.getState().setGroupMessages((prev) => ({
+      ...prev,
+      [groupId]: [...(prev[groupId] || []), optimistic],
+    }));
+    await saveMessage(groupId, optimistic);
+    const result = await sendGroupMessage(groupId, payload, tempId, null);
+    if (!result?.success) {
+      if (result?.error === 'NO_KEY') {
+        const securing = { ...optimistic, deliveryStatus: 'securing', securingSince: Date.now(), pending: false };
+        useChatStore.getState().setGroupMessages((prev) => ({
+          ...prev,
+          [groupId]: (prev[groupId] || []).map((message) => (
+            message.id === tempId || message.clientId === tempId ? securing : message
+          )),
+        }));
+        await saveMessage(groupId, securing);
+        return;
+      }
+      useChatStore.getState().setGroupMessages((prev) => ({
+        ...prev,
+        [groupId]: (prev[groupId] || []).filter((message) => message.id !== tempId && message.clientId !== tempId),
+      }));
+      try { await db.messages.delete(tempId); } catch (error) { console.error('[GroupView] Failed to remove unsent message:', error); }
+      setToast({ type: 'error', message: 'Failed to send to group' });
+      return;
+    }
+    if (result.event?.id) {
+      let confirmed = null;
+      useChatStore.getState().setGroupMessages((prev) => ({
+        ...prev,
+        [groupId]: (prev[groupId] || []).map((message) => {
+          if (message.clientId !== tempId) return message;
+          confirmed = {
+            ...message,
+            id: result.event.id,
+            timestamp: result.event.created_at,
+            deliveryStatus: result.queued ? 'queued' : 'sent',
+          };
+          return confirmed;
+        }),
+      }));
+      if (confirmed) await saveMessage(groupId, confirmed);
     }
   };
 
