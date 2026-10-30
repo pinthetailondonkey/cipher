@@ -6,17 +6,6 @@ import { useEffect, useRef } from 'react';
 export function useModalA11y(open, onClose) {
   const panelRef = useRef(null);
 
-  // The close callback reaches the listener through a ref so the focus
-  // effect runs for the life of the surface, not once per caller render.
-  // With onClose in that effect's deps, every keystroke in a modal's input
-  // re-ran the effect, and its panel.focus() pulled focus off the input —
-  // one character, then the mobile keyboard was gone (live 2026-10-30).
-  // Same pattern as dialogA11y.js: refs only move in effects, never render.
-  const closeRef = useRef(onClose);
-  useEffect(() => {
-    closeRef.current = onClose;
-  });
-
   useEffect(() => {
     if (!open || typeof document === 'undefined') return undefined;
     const previouslyFocused = document.activeElement;
@@ -26,7 +15,7 @@ export function useModalA11y(open, onClose) {
     const onKeyDown = (event) => {
       if (event.key === 'Escape') {
         event.stopPropagation();
-        closeRef.current?.();
+        onClose?.();
         return;
       }
       if (event.key !== 'Tab' || !panel) return;
@@ -57,7 +46,7 @@ export function useModalA11y(open, onClose) {
       window.removeEventListener('keydown', onKeyDown);
       if (previouslyFocused instanceof HTMLElement) previouslyFocused.focus();
     };
-  }, [open]);
+  }, [open, onClose]);
 
   return panelRef;
 }
