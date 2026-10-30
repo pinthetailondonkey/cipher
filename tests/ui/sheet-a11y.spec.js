@@ -31,7 +31,10 @@ test.describe('Sheet-class a11y on the boot flow', () => {
         await page.getByRole('button', { name: 'Saved messages' }).click();
       },
       dialogLabel: 'Saved',
-      closeFallback: async (page) => page.getByRole('button', { name: 'Back' }).click(),
+      // The saved list is a centred Sheet now, so its close control is the
+      // Sheet's own (src/components/ui/Sheet.jsx:39 closeLabel defaults to
+      // 'Close'); the ScreenHeader that said 'Back' is gone from this surface.
+      closeFallback: async (page) => page.getByRole('button', { name: 'Close' }).click(),
     },
     {
       name: 'Notifications center',
@@ -40,7 +43,9 @@ test.describe('Sheet-class a11y on the boot flow', () => {
         await page.getByRole('button', { name: 'Notifications' }).click();
       },
       dialogLabel: 'Notifications',
-      closeFallback: async (page) => page.getByRole('button', { name: 'Back' }).click(),
+      // The active notices are a centred Sheet now too, so its close control
+      // is the Sheet's own 'Close'; the 'Back' header this surface had is gone.
+      closeFallback: async (page) => page.getByRole('button', { name: 'Close' }).click(),
     },
     {
       name: 'QR scanner',

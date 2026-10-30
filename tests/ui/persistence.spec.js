@@ -181,9 +181,9 @@ test.describe('Persistence', () => {
     // Reload page and wait for the app shell, then require the rows both in
     // IndexedDB and in the app's read path.
     await page.reload();
-    // The rail rides md+ now; the shell's own menu button is the phone
-    // landmark the reload reached past the lock.
-    await page.getByRole('button', { name: 'Open menu' }).waitFor();
+    // The rail rides md+ now; at phone width the chat list's kebab is the
+    // mounted landmark the reload reached past the lock.
+    await page.getByRole('button', { name: 'Chat list menu' }).waitFor();
 
     const reloaded = await readStoredMessage(page, { dbName, msgId: testMessage.id });
     expect(reloaded.msg, 'row survived the reload in IndexedDB').toBeDefined();
