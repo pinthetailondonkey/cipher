@@ -63,6 +63,24 @@ function makeDB(name) {
     tombstones: 'id, chatId',
     vendorReviews: '&receiptHash, vendorPubkey, createdAt',
   });
+  // v12 adds orderJournal: the order membrane's admitted lines, one row per
+  // line, keyed by order and sequence. It is its own table on purpose — a
+  // history fetch re-saves `messages` and can never rewrite a release the
+  // membrane already admitted (src/lib/orderJournal.js). Every v11 store is
+  // unchanged.
+  d.version(12).stores({
+    messages: 'id, chatId, pubkey, timestamp, clientId, type',
+    profiles: 'pubkey, name, displayName',
+    groups: 'id, name',
+    chatReads: 'chatId',
+    groupKeys: '++id, &[groupId+epoch], groupId, epoch, isCurrent, obtainedAt',
+    groupKeyGrants: '++id, &[groupId+pubkey+epoch], groupId, pubkey, epoch, sentAt',
+    groupMemberSigs: '&groupId, members, updatedAt',
+    outbox: '&id, kind, created_at, queuedAt',
+    tombstones: 'id, chatId',
+    vendorReviews: '&receiptHash, vendorPubkey, createdAt',
+    orderJournal: '&[orderId+seq], orderId',
+  });
   return d;
 }
 
@@ -299,7 +317,7 @@ export const db = new Proxy({}, {
         _warnedOnce = true;
         console.warn('[db] accessed before openDBFor — returning empty stubs');
       }
-      if (['messages', 'chatReads', 'profiles', 'groups', 'groupKeys', 'groupKeyGrants', 'groupMemberSigs', 'outbox', 'tombstones', 'vendorReviews'].includes(prop)) {
+      if (['messages', 'chatReads', 'profiles', 'groups', 'groupKeys', 'groupKeyGrants', 'groupMemberSigs', 'outbox', 'tombstones', 'vendorReviews', 'orderJournal'].includes(prop)) {
         return stubTable(prop);
       }
       return () => Promise.resolve();
