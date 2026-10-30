@@ -35,7 +35,10 @@ test.describe('Sheet-class a11y on the boot flow', () => {
     },
     {
       name: 'Notifications center',
-      open: async (page) => page.getByRole('button', { name: 'Notifications' }).click(),
+      open: async (page) => {
+        await page.getByRole('button', { name: 'Chat list menu' }).click();
+        await page.getByRole('button', { name: 'Notifications' }).click();
+      },
       dialogLabel: 'Notifications',
       closeFallback: async (page) => page.getByRole('button', { name: 'Back' }).click(),
     },
@@ -51,9 +54,9 @@ test.describe('Sheet-class a11y on the boot flow', () => {
     {
       name: 'How to use (tutorial)',
       open: async (page) => {
-        await page.getByRole('button', { name: 'Open menu' }).first().click();
-        // The drawer's profile card up top opens the Profile tab.
-        await page.getByRole('complementary').or(page.locator('aside')).first().getByRole('button').first().click();
+        // The guide's door is the Profile tab's own list, not the drawer.
+        await page.getByRole('navigation', { name: 'Tabs' }).filter({ visible: true })
+          .getByRole('button', { name: 'Profile' }).click();
         await page.getByRole('button', { name: /How to use/ }).click();
       },
       dialogLabel: 'How to use',
