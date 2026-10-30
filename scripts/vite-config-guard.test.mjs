@@ -112,6 +112,33 @@ test('the deliberate test build still builds, and its bytes carry the wall and n
   assert.equal(ONION_LITERAL.test(run.text), false, 'a build that ships carried an onion address');
 });
 
+test('a door in a non-desktop build is refused, because the address would be written into the bytes', () => {
+  // Measured before this refusal: VITE_GROUP_ONION in the environment produced
+  // exit 0 and the literal in dist/assets while activeUrl resolved clearnet.
+  const run = build({ env: { ...cleanEnv(), VITE_GROUP_ONION: FIXTURE_DOOR } });
+  assert.notEqual(run.status, 0, 'a non-desktop build accepted a door');
+  assert.match(run.stderr, /vite refuses: VITE_GROUP_ONION is set and this is not a desktop build/);
+  assert.equal(ONION_LITERAL.test(run.text), false, 'a refused build still wrote a door to disk');
+});
+
+test('a desktop build without a door is refused here, not only in build:desktop', () => {
+  // The refusal used to live only in build-desktop.mjs, so every other desktop
+  // build — CIPHER_DESKTOP_BUILD=1 npm run build — shipped a clear address
+  // behind a desktop shell and exited 0.
+  const run = build({ env: { ...cleanEnv(), CIPHER_DESKTOP_BUILD: '1' } });
+  assert.notEqual(run.status, 0, 'a desktop build without a door built a bundle');
+  assert.match(run.stderr, /vite refuses: CIPHER_DESKTOP_BUILD=1 without a VITE_GROUP_ONION/);
+});
+
+test('a desktop build with a door carries it, so the refusal is a rule and not a wall', () => {
+  // The positive half. If this failed, every refusal above would still pass
+  // while the desktop build — the one build that is SUPPOSED to carry a door —
+  // had been broken by the guard.
+  const run = build({ env: { ...cleanEnv(), CIPHER_DESKTOP_BUILD: '1', VITE_GROUP_ONION: FIXTURE_DOOR } });
+  assert.equal(run.status, 0, `the desktop build failed:\n${run.stderr.slice(-2000)}`);
+  assert.equal(ONION_LITERAL.test(run.text), true, 'the desktop bundle does not carry its door');
+});
+
 test('the workspace build-flag carrier is refused in a build that is not desktop', () => {
   // .grok/app-env.json is merged into the environment by
   // scripts/with-app-env.mjs, so a value in it reaches any build run from this

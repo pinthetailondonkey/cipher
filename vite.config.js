@@ -10,6 +10,11 @@ import { join } from 'node:path'
 // clear address, because a browser cannot reach an onion.
 const desktopBuild = process.env.CIPHER_DESKTOP_BUILD === '1'
 
+// What an onion door looks like when it is well formed. The address itself is
+// deliberately nowhere in this repo; a build supplies it, and only a desktop
+// build may.
+const ONION_DOOR = /^wss:\/\/[a-z2-7]{16,56}\.onion$/
+
 // Every file Vite reads into import.meta.env for a production build. A build
 // that ships must be the build the repo describes, and a file that is not in
 // the repo can change what ships without appearing in any diff.
@@ -50,6 +55,40 @@ export default defineConfig(({ command, mode }) => {
         `vite refuses: ${APP_ENV_FILE} is present and this is not a desktop build. That file is `
         + "merged into every build's environment by scripts/with-app-env.mjs, so it can put a "
         + 'value into a bundle that ships. A desktop build is the one build allowed to carry it.',
+      )
+    }
+
+    // A door in the environment is not enough to be safe: import.meta.env is
+    // replaced as text, so a VITE_GROUP_ONION in a build that is not the
+    // desktop one lands in the bundle VERBATIM while activeUrl resolves the
+    // row to the clear address — every behaviour check says "clearnet" and the
+    // founder's onion is sitting in a public file. Refusing the input closes
+    // that; the test asserts on the produced bytes as well, because a rule in
+    // a build and a rule in a test are two things that can each be edited.
+    if (!desktopBuild) {
+      for (const key of ['VITE_GROUP_ONION', 'VITE_MEDIA_ONION']) {
+        if (String(env[key] || '').trim()) {
+          throw new Error(
+            `vite refuses: ${key} is set and this is not a desktop build. A door belongs to the `
+            + 'desktop build; in any other build its address is written into a bundle that ships, '
+            + 'even though the app resolves the row to the clear address.',
+          )
+        }
+      }
+    }
+
+    // The refusal that used to live only in build:desktop. It was in the wrong
+    // place: it fired for the one script that already assumes it needs a door,
+    // and every other desktop build — "CIPHER_DESKTOP_BUILD=1 npm run build" —
+    // passed and shipped a clear address behind a desktop shell. It lives here
+    // now, where every desktop build has to pass it. build-desktop.mjs keeps
+    // its own check; that one is the message its own tests read, and two
+    // refusals for one rule is the cheap direction to be wrong in.
+    if (desktopBuild && !ONION_DOOR.test(String(env.VITE_GROUP_ONION || '').trim())) {
+      throw new Error(
+        'vite refuses: CIPHER_DESKTOP_BUILD=1 without a VITE_GROUP_ONION that is an onion address. '
+        + 'The desktop groups would leave Tor and go to the clear address. '
+        + 'Set it in .grok/app-env.json (untracked) or in the environment for this build.',
       )
     }
 
