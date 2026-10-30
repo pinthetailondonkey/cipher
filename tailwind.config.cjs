@@ -20,6 +20,10 @@ module.exports = {
         header: 'var(--header)',
         bubbleIn: 'var(--bubble-in)',
         bubbleOut: 'var(--bubble-out)',
+        // The two ends of the outgoing bubble gradient (brief §4). bubbleOut
+        // stays defined: other lanes still reference it.
+        bubbleOutA: 'var(--bubble-out-a)',
+        bubbleOutB: 'var(--bubble-out-b)',
         line: 'var(--border)',
         lineStrong: 'var(--border-strong)',
         ink: 'rgb(var(--text-rgb) / <alpha-value>)',

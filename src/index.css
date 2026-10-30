@@ -18,27 +18,37 @@
      padding utility collapses to breathing room there. */
   --bar-h: 3.5rem;
   --app-edge: max(1.25rem, calc(50% - 14rem + 1.25rem));
+  /* The one column (brief §3.1): 30rem = 480px, so a 420px dialog plus two
+     gutters still fits inside the column with slack. Panes do not set their
+     own max-width; they inherit this one. */
+  --col: 30rem;
+  --gutter: 1rem;
   --bg: #000000;
-  --bg-soft: #0b0b0c;
-  --panel: #141416;
-  --panel-strong: #1c1c1f;
-  --panel-alt: #26262a;
-  --header: #121214;
+  --bg-soft: #05070a;
+  --panel: #0d1116;
+  --panel-strong: #12161d;
+  --panel-alt: #1b2028;
+  --header: #000000;
   --bubble-in: #1f1f23;
   --bubble-out: #005dfd;
+  /* Outgoing bubbles are the one place a gradient is allowed (brief §4). */
+  --bubble-out-a: #1358e8;
+  --bubble-out-b: #003a9e;
   --border: rgba(255, 255, 255, 0.08);
   --border-strong: rgba(255, 255, 255, 0.14);
-  --text: #f5f5f5;
-  --text-rgb: 245 245 245;
+  --text: #f2f4f7;
+  --text-rgb: 242 244 247;
   --scrim-rgb: 0 0 0;
-  --text-muted: #9a9aa3;
-  --text-subtle: #8b8b94;
+  --text-muted: #98a1ac;
+  --text-subtle: #767f8c;
   --accent: #005dfd;
-  --accent-text: #3987ff;
+  --accent-text: #7fb0ff;
   --accent-soft: rgba(0, 93, 253, 0.16);
   --accent-ink: #ffffff;
   --success: #10b981;
   --success-rgb: 16 185 129;
+  /* Presence dot. Same green as success, named for the thing it marks. */
+  --online: #10b981;
   --danger: #ef4444;
   --danger-rgb: 239 68 68;
   /* Neutralised, not deleted: seven screens outside this phase's lock draw
@@ -47,6 +57,8 @@
   --glow-a: transparent;
   --glow-b: transparent;
   --hover-wash: rgba(255, 255, 255, 0.06);
+  /* The active list row: a wash plus the 2px accent bar (brief §5 Layout). */
+  --row-active: rgba(0, 93, 253, 0.14);
   /* Layer tokens: the only z values any component may use. fab floats over
      content, sheet overlays content and chrome, call takes the phone,
      toast answers to no one. */
@@ -152,6 +164,12 @@ textarea::placeholder {
     .pb-bar { padding-bottom: calc(var(--sab) + 1rem); }
   }
   .pb-sheet { padding-bottom: calc(1.5rem + var(--sab)); }
+  /* The column (brief §3.2) and the dialog panel (brief §3.6). Real utilities
+     instead of arbitrary Tailwind with a nested calc(), which the traps warn
+     about: `max-w-[min(420px,calc(var(--col)-2*var(--gutter)))]` breaks on a
+     comma and cannot be read at a call site. */
+  .col-w { width: 100%; max-width: var(--col); }
+  .panel-w { max-width: min(420px, calc(var(--col) - 2 * var(--gutter))); }
   .top-safe { top: calc(var(--sat) + 1rem); }
   .fab-pos { bottom: calc(var(--nav-h) + var(--sab) + 1.25rem); right: var(--app-edge); }
   .fab-menu-pos { bottom: calc(var(--nav-h) + var(--sab) + 6rem); right: var(--app-edge); }
