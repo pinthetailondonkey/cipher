@@ -4,7 +4,7 @@ import { db, deletedMessageIds, saveMessage, openDBFor, sweepTempMessages } from
 import { getMyGroups } from '../../lib/myGroups';
 import { relayCopyOverRow } from '../../lib/groupJoin';
 import { mergeReactions, reactionFiltersFor, reactionFromEvent, withoutDeletedReactions } from '../../lib/reactions';
-import { generalRelays, groupRelays, queryAllPages, queryWithTimeout } from '../../lib/relays';
+import { generalRelays, groupRelays, queryAllPages, queryFirstAnswer, queryWithTimeout } from '../../lib/relays';
 import { getAuthenticatedPool } from '../../lib/pool';
 import { useChatStore } from '../../store/chatStore';
 import { scopedGet, scopedSet } from '../../lib/storage';
@@ -262,14 +262,88 @@ export function useChatBootstrap({
     } catch (err) { console.error('[profiles] fetch failed:', err); }
   };
 
+  // One grouping for both draws — the rows this device holds at the start of
+  // a login and the rows it holds after the relays answered — so the early
+  // draw can never grow a different shape from the late one.
+  const splitRows = async (rows) => {
+    const finalDms = {};
+    const finalGroups = {};
+    let n = 0;
+    for (const msg of rows) {
+      if (++n % 50 === 0) await new Promise((r) => setTimeout(r, 0)); // yield to UI
+      if (msg.isGroup === true) {
+        if (!finalGroups[msg.chatId]) finalGroups[msg.chatId] = [];
+        finalGroups[msg.chatId].push(msg);
+      } else {
+        if (!finalDms[msg.chatId]) finalDms[msg.chatId] = [];
+        finalDms[msg.chatId].push(msg);
+      }
+    }
+    Object.keys(finalDms).forEach(k => finalDms[k].sort(sortMessages));
+    Object.keys(finalGroups).forEach(k => finalGroups[k].sort(sortMessages));
+    return { finalDms, finalGroups };
+  };
+
+  // The last known good state of this account, on this device, with no relay
+  // asked: the chats, the rows and the unread counts from the previous
+  // session. It is not a copy — it is the account's own database, named by
+  // pubkey (db.js openDBFor), so it cannot serve one handle's chats to
+  // another account. The relays replace it as soon as they answer.
+  const drawHeldChats = async () => {
+    try {
+      const rows = (await db.messages.toArray()).filter((msg) => !rowExpired(msg));
+      if (rows.length === 0) return false;
+      const { finalDms, finalGroups } = await splitRows(rows);
+      const reads = await db.chatReads.toArray();
+      const readMap = {};
+      reads.forEach(r => { readMap[r.chatId] = r.lastRead; });
+      const localDeleted = new Set(await deletedMessageIds());
+      setUnreadCounts(unreadCountsFor(rows, readMap, localDeleted));
+      setDms(finalDms);
+      setGroupMessages(finalGroups);
+      return true;
+    } catch (error) {
+      console.warn('[chat] Could not draw the chats this device holds:', error);
+      return false;
+    }
+  };
+
   const fetchChats = async (showLoader = false) => {
     if (showLoader) setLoading(true);
     try {
+      // What this device already holds, drawn before any relay is asked. The
+      // account's own database is the only cache that cannot mix accounts up:
+      // openDBFor(pubkey) names it, and every row in it was written by this
+      // account on this device. A login with every relay silent still opens
+      // the chats it opened last time.
+      // A device that holds chats opens on them. The loader is the only thing
+      // between a person and their list, so it goes as soon as there is a list
+      // to show; the relays refresh it underneath and the fresh rows replace
+      // these when they arrive.
+      //
+      // LIMITS, named here rather than only in the commit:
+      // - A deletion made on another device shows for a moment, between this
+      //   draw and the kind-5 list landing. Bounded by the deletion query's
+      //   cap, and the rows go as soon as it answers.
+      // - A cold device, or a fresh restore, holds nothing to draw. It gets
+      //   the loader exactly as before; this costs it nothing and gains it
+      //   nothing.
+      // - An offline cold unlock is not this branch's problem (fix/offline-warm).
+      if (await drawHeldChats()) setLoading(false);
       const pool = await getAuthenticatedPool(identity);
-      const [groupMetaEvents, delEvents] = await Promise.all([
-        queryWithTimeout(pool, groupRelays, { kinds: [39000, 9002], limit: 100 }),
-        queryWithTimeout(pool, generalRelays, { kinds: [5], authors: [identity.pk], limit: 500 }),
+      // Stage 1 and stage 2 are independent — fetchDMs() takes no arguments
+      // and reads nothing stage 1 produces (useNIP44DM.js:362) — so the DM
+      // history starts now instead of after the group read gives up. The one
+      // real dependency is later: the reactions query needs this stage's
+      // deletion list, and it still waits for it.
+      const stageOne = Promise.all([
+        queryFirstAnswer(pool, groupRelays, { kinds: [39000, 9002], limit: 100 }),
+        queryFirstAnswer(pool, generalRelays, { kinds: [5], authors: [identity.pk], limit: 500 }),
       ]);
+      const stageTwo = Promise.resolve()
+        .then(() => fetchDMs())
+        .catch((error) => { console.error('[chat] DM history fetch failed:', error); return []; });
+      const [groupMetaEvents, delEvents] = await stageOne;
       const localGroupsNow = getMyGroups(identity.pk);
       const uniqueGroupsNow = Array.from(new Map(groupMetaEvents.map(ev => {
         const hTag = ev.tags.find(t => t[0] === 'h')?.[1] || ev.tags.find(t => t[0] === 'd')?.[1];
@@ -299,7 +373,7 @@ export function useChatBootstrap({
         }
       });
       setGroups(Array.from(allGroupsMap.values()));
-      const dmPubkeys = await fetchDMs();
+      const dmPubkeys = await stageTwo;
       const deleted = new Set();
       delEvents.forEach(ev => {
         if (ev.pubkey === identity.pk) {
@@ -355,21 +429,7 @@ export function useChatBootstrap({
       reads.forEach(r => { readMap[r.chatId] = r.lastRead; });
       const counts = unreadCountsFor(liveDbMsgs, readMap, deleted);
       setUnreadCounts(counts);
-      const finalDms = {};
-      const finalGroups = {};
-      let _j = 0;
-      for (const msg of liveDbMsgs) {
-        if (++_j % 50 === 0) await new Promise(r => setTimeout(r, 0)); // Yield to UI
-        if (msg.isGroup === true) {
-          if (!finalGroups[msg.chatId]) finalGroups[msg.chatId] = [];
-          finalGroups[msg.chatId].push(msg);
-        } else {
-          if (!finalDms[msg.chatId]) finalDms[msg.chatId] = [];
-          finalDms[msg.chatId].push(msg);
-        }
-      }
-      Object.keys(finalDms).forEach(k => finalDms[k].sort(sortMessages));
-      Object.keys(finalGroups).forEach(k => finalGroups[k].sort(sortMessages));
+      const { finalDms, finalGroups } = await splitRows(liveDbMsgs);
       setDms(finalDms);
       setGroupMessages(finalGroups);
       if (dmPubkeys.length > 0) fetchProfilesForPubkeys(dmPubkeys);
