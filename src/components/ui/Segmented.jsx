@@ -14,7 +14,7 @@ export default function Segmented({
     <div
       role="group"
       aria-label={ariaLabel}
-      className={`flex rounded-2xl border border-line bg-panelStrong p-1 shadow-lg ${className}`}
+      className={`flex rounded-2xl border border-line bg-panelStrong p-1 ${className}`}
     >
       {options.map((option) => {
         const active = option.value === value;
@@ -28,7 +28,7 @@ export default function Segmented({
               onChange?.(option.value);
             }}
             className={`min-h-[44px] flex-1 rounded-xl px-3 py-2 text-[13px] font-bold transition-colors ${
-              active ? 'bg-accent text-accentInk shadow-lg' : 'text-inkMuted hover:text-ink'
+              active ? 'bg-accent text-accentInk' : 'text-inkMuted hover:text-ink'
             }`}
           >
             {option.label}
