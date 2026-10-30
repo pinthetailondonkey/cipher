@@ -17,6 +17,9 @@ says where the rest of the truth is, so an agent does not have to guess.
    open, and what is waiting on a decision.
 6. [docs/UI-SPEC.md](docs/UI-SPEC.md) — the shell the screens are being built
    toward.
+7. [docs/DESIGN.md](docs/DESIGN.md) — the visual system of record. Before any
+   UI change, read DESIGN.md. On conflict, follow DESIGN.md and flag the
+   conflict in your report.
 
 ## Hard lines
 
