@@ -66,7 +66,7 @@ export default function Dialog({
         onMouseDown={(event) => {
           if (event.target === event.currentTarget) onClose?.();
         }}
-        className="fixed inset-0 z-sheet flex items-center justify-center bg-scrim/60 p-4"
+        className="fixed inset-0 z-sheet flex items-center justify-center bg-scrim/60 px-[var(--gutter)]"
       >
         <motion.form
           ref={panelRef}
@@ -83,7 +83,7 @@ export default function Dialog({
             event.preventDefault();
             confirm();
           }}
-          className="w-full max-w-sm rounded-3xl border border-line bg-panel p-6 shadow-2xl outline-none"
+          className="w-full panel-w rounded-[20px] border border-line bg-panel p-[var(--gutter)] shadow-2xl outline-none"
         >
           <div className="flex items-start gap-3">
             {danger && <AlertTriangle size={21} className="mt-1 shrink-0 text-danger" />}
