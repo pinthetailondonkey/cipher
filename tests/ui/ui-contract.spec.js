@@ -21,6 +21,7 @@ const REBUILT = [
   'src/components/ui/Composer.jsx',
   'src/components/ui/Bubble.jsx',
   'src/components/ui/SystemCard.jsx',
+  'src/components/ui/Rail.jsx',
 ];
 
 // DESIGN.md's type scale. 10 is not on it; 11 is the floor.

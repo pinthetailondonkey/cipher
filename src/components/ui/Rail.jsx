@@ -39,7 +39,7 @@ export default function Rail({ label, items, activeId }) {
             <span className={`relative flex h-9 w-9 items-center justify-center rounded-full ${active ? 'bg-accentSoft' : 'group-hover/btn:bg-ink/10'}`}>
               <Icon size={22} strokeWidth={active ? 2.5 : 2} />
               {item.badge > 0 && (
-                <span className="absolute -right-1 -top-1 flex h-[16px] min-w-[16px] items-center justify-center rounded-full bg-accent px-1.5 text-[10px] font-bold text-accentInk">
+                <span className="absolute -right-1 -top-1 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-accent px-1.5 text-[12px] font-bold leading-none text-accentInk">
                   {item.badge > 99 ? '99+' : item.badge}
                 </span>
               )}
@@ -49,7 +49,7 @@ export default function Rail({ label, items, activeId }) {
               className="pointer-events-none absolute left-[calc(100%+10px)] top-1/2 z-fab -translate-y-1/2 whitespace-nowrap rounded-lg border border-line bg-panelStrong px-2.5 py-1.5 text-[12px] font-medium text-ink opacity-0 shadow-xl transition-opacity duration-150 group-hover/btn:opacity-100 group-focus-visible/btn:opacity-100"
             >
               {item.label}
-              <span className="ml-1.5 text-[10px] text-inkSubtle">{eventKey(index + 1)}</span>
+              <span className="ml-1.5 text-[12px] text-inkSubtle">{eventKey(index + 1)}</span>
             </span>
           </button>
         );
