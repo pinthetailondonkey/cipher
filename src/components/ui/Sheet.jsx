@@ -97,7 +97,7 @@ export default function Sheet({
           onMouseDown={(event) => {
             if (event.target === event.currentTarget) onClose?.();
           }}
-          className="fixed inset-0 z-sheet flex items-center justify-center bg-scrim/60 p-4 sm:p-6"
+          className="fixed inset-0 z-sheet flex items-center justify-center bg-scrim/60 px-[var(--gutter)]"
         >
           <motion.div
             ref={panelRef}
@@ -111,12 +111,12 @@ export default function Sheet({
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.98 }}
             transition={{ duration: 0.16, ease: 'easeOut' }}
-            className={`w-full max-w-[420px] overflow-hidden overscroll-contain rounded-[20px] border border-line bg-panel pb-sheet shadow-2xl outline-none ${className}`}
+            className={`w-full panel-w overflow-hidden overscroll-contain rounded-[20px] border border-line bg-panel pb-sheet shadow-2xl outline-none ${className}`}
             onClick={(event) => event.stopPropagation()}
           >
             <div className="sticky top-0 bg-panel pt-2">
               {headingText && (
-                <div className="flex items-center gap-3 px-5 pt-3">
+                <div className="flex items-center gap-3 px-[var(--gutter)] pt-3">
                   <h2 id={labelledBy} className="min-w-0 flex-1 truncate text-[15px] font-bold text-ink">{headingText}</h2>
                   <button
                     type="button"
@@ -131,7 +131,7 @@ export default function Sheet({
                 </div>
               )}
             </div>
-            <div className={`px-5 pt-3 ${bodyClassName}`}>{children}</div>
+            <div className={`px-[var(--gutter)] pt-3 ${bodyClassName}`}>{children}</div>
           </motion.div>
         </motion.div>
       )}
