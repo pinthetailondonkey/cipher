@@ -460,3 +460,38 @@ test('an unmarked old receipt falls back to the anchor, and here that lands on t
   ]);
   assert.deepEqual(sides, PLACED, 'an unmarked old receipt falls back, it does not break');
 });
+
+test('the known limit, asserted: an old unmarked receipt on a received update draws its tick under Incoming', () => {
+  // Accepted residual, ruled by BOSS: rows saved before the mark carry a
+  // receipt this device really did accept, but nothing on the row says so, and
+  // the ledger will not rebuild the mark from local state — that would turn a
+  // stored hash into a second way to mint one, which is the shape this change
+  // removes. So the row falls to its anchor, and a received anchor puts it
+  // under Incoming even though the purchase was this device's.
+  //
+  // It is a wrong TAB, not a wrong payment: the tick still draws, because the
+  // tick path never consulted the mark. It heals on the next history pass that
+  // re-accepts the receipt and writes the mark.
+  const vendorKey = schnorr.utils.randomSecretKey();
+  const vendor = hexOf2(schnorr.getPublicKey(vendorKey));
+  const body = {
+    orderId: 'order-1', buyer: LEDGER_ME, vendor,
+    currency: 'btc', address: 'bc1qexample', amount: '1000', txid: 'ab'.repeat(32),
+    at: 100, outcome: 'confirmed',
+  };
+  // Countersigned the way a real one is: both parties signed it. It passed the
+  // gate when it arrived; only the mark is missing, because the row predates it.
+  const signed = signReceipt(vendorKey, body, signReceipt(LEDGER_ME_SK, body));
+  const thread = [
+    ledgerUpdate('u1', 100),
+    ledgerUpdate('u2', 101, { receipt: signed }),
+  ];
+  const rows = orderRows({ [vendor]: thread }, { side: 'incoming', ownPubkey: LEDGER_ME });
+  assert.equal(rows.length, 1, 'the tab follows the anchor until a mark lands');
+  assert.equal(orderRows({ [vendor]: thread }, { side: 'purchases', ownPubkey: LEDGER_ME }).length, 0);
+  assert.equal(
+    orderHasVerifiedReceipt(thread, rows[0].orderId, rows[0].message, LEDGER_ME, vendor),
+    true,
+    'and the tick is unaffected, which is what makes this a wrong tab and not a wrong payment',
+  );
+});
