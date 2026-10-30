@@ -41,6 +41,43 @@ test('a message this device never changed is stored exactly as before', () => {
   assert.equal(patchStoredMessage(undefined, { status: 'accepted' }), null);
 });
 
+// The direction mark on a receipt is this device's own decision about ONE
+// receipt: the ingest path writes it where the order-binding gate said yes, and
+// the ledger reads a tab from nothing else. A history pass brings the peer's
+// unmarked copy back, and the merge replaces `data` wholesale — so without a
+// rule here the mark would be lost on the first reload and the row would change
+// tabs by itself.
+const receiptedRow = (hash) => ({
+  id: 'u2', isSender: false, pubkey: 'vendor', timestamp: 101,
+  data: {
+    type: 'order_update', orderId: 'order-1', status: 'paid',
+    receipt: { v: 1, hash, body: { orderId: 'order-1' }, sigs: {} },
+  },
+});
+
+const markIt = (row) => ({
+  ...row,
+  data: { ...row.data, receipt: { ...row.data.receipt, bound: true } },
+});
+
+test('a receipt this device accepted keeps its mark when history saves the peer\'s copy again', () => {
+  const marked = markIt(mergeStoredMessage(undefined, receiptedRow('h1'), 'vendor'));
+  const reloaded = mergeStoredMessage(marked, receiptedRow('h1'), 'vendor');
+  assert.equal(reloaded.data.receipt.bound, true, 'the same receipt is still the one this device accepted');
+});
+
+test('a different receipt on the same row does not inherit the mark', () => {
+  const marked = markIt(mergeStoredMessage(undefined, receiptedRow('h1'), 'vendor'));
+  const reloaded = mergeStoredMessage(marked, receiptedRow('h2'), 'vendor');
+  assert.equal(reloaded.data.receipt.bound, undefined, 'the mark names one receipt, never a slot');
+});
+
+test('the merge never invents the mark for a row that never had one', () => {
+  const plain = mergeStoredMessage(undefined, receiptedRow('h1'), 'vendor');
+  const reloaded = mergeStoredMessage(plain, receiptedRow('h1'), 'vendor');
+  assert.equal(reloaded.data.receipt.bound, undefined);
+});
+
 test('signing in never clears the message table: each account has its own database', async () => {
   const fs = await import('node:fs');
   const bootstrap = fs.readFileSync(new URL('../features/chat/useChatBootstrap.js', import.meta.url), 'utf8');
