@@ -119,6 +119,12 @@ export default function AuthenticatedApp({ identity }) {
   // ride the items' positions in the Rail. Badge keys resolve to counts
   // here once; both navs render them.
   const badgeCounts = { unread: unreadTotal, needsAction };
+  // Row 1 of the shell (§3.4). Null today, and deliberately not a duplicate:
+  // each tab's own bar is still rendered by its screen, and rendering a second
+  // one here would put two 56px bars on the same screen. Chat's is blocked on
+  // `fetchChats` (Chat.jsx, another lane's file) and the rest belong to their
+  // own gates; this seam is where they land, one screen at a time.
+  const tabHeader = null;
   const navItems = TABS.map((tab) => ({
     ...tab,
     badge: tab.badge ? badgeCounts[tab.badge] : undefined,
@@ -161,55 +167,73 @@ export default function AuthenticatedApp({ identity }) {
         activeTab={activeTab}
       />
 
-      <main className="relative z-fab h-[100dvh] w-full max-w-md overflow-hidden md:w-auto md:max-w-none md:flex-1">
-        <div className={`absolute inset-0 md:left-[72px] ${activeTab === 'chat' ? '' : 'invisible pointer-events-none'}`}>
-          <Suspense fallback={tabFallback}>
-            <Chat identity={identity} />
-          </Suspense>
-        </div>
-        {activeTab !== 'chat' && (
-          <div className="absolute inset-0 md:left-[72px]">
-            <Suspense fallback={tabFallback}>
-              {activeTab === 'explore' && (
-                <div className="relative mx-auto flex h-full w-full max-w-md flex-col pb-bar md:border-x md:border-line">
-                  <div className="relative z-fab flex items-center px-4 pb-1 pt-3">
-                    <button type="button" onClick={() => useChatStore.getState().setShowDrawer(true)} aria-label="Open menu" className="-ml-1 touch-target p-2 text-ink/50 hover:text-ink md:hidden"><Menu size={20} /></button>
-                    <Segmented
-                      ariaLabel="Discover sections"
-                      className="flex-1"
-                      value={exploreMode}
-                      onChange={setExploreMode}
-                      options={[{ value: 'shop', label: 'Menus' }, { value: 'groups', label: 'Groups' }]}
-                    />
-                  </div>
-                  <div className="relative z-fab min-h-0 flex-1">
-                    {exploreMode === 'shop'
-                      ? <Menus identity={identity} setActiveTab={setActiveTab} />
-                      : <Discover identity={identity} onJoined={() => setActiveTab('chat')} />}
-                  </div>
-                </div>
-              )}
-              {activeTab === 'orders' && (
-                <div className="mx-auto h-full w-full max-w-md pb-bar md:border-x md:border-line">
-                  {/* The Orders tab is MyOrders directly, no drawer detour and
-                      no back arrow: role-aware inside (buyer rows are the
-                      requests this device sent, vendor rows the ones it
-                      received), and the kebab opens the drawer for the rest. */}
-                  <MyOrders identity={identity} onOpenChat={openChatFromProfile} onMenu={() => useChatStore.getState().setShowDrawer(true)} />
-                </div>
-              )}
-              {activeTab === 'profile' && (
-                <div className="mx-auto h-full w-full max-w-md pb-bar md:border-x md:border-line">
-                  <Wallet key={profileNavNonce} identity={identity} onOpenChat={openChatFromProfile} startView={profileStartView} />
-                </div>
-              )}
-            </Suspense>
+      {/* The column and the rows (brief §3.2, §3.3). main is the flex sibling
+          the Rail leaves behind, and the column inside it is the one width
+          every pane shares — no pane sets a max-width of its own. The bar is
+          row three, not an overlay: three rows when the bar holds, two when a
+          conversation takes the screen (trap 8). z-fab stays on main, because
+          Sheet relies on main being a stacking context (trap 2). */}
+      <main className="relative z-fab h-[100dvh] min-h-0 w-full overflow-hidden md:flex-1">
+        <div className={`col-w mx-auto grid h-full ${barHidden ? 'grid-rows-[auto_minmax(0,1fr)]' : 'grid-rows-[auto_minmax(0,1fr)_auto]'}`}>
+          {/* Row 1 is the shell's own: it renders from a per-tab header config
+              (§3.4). The seam is here and empty until each screen hands its
+              bar over — the chat bar still needs `fetchChats`, which Chat.jsx
+              owns, so ChatList keeps that one. An empty row 1 collapses to
+              nothing; the content sits in row 2 by name and the bar lands in
+              row 3, so the two-row template drops the bar without moving
+              anything else (trap 8). */}
+          <div className="row-start-1">{tabHeader}</div>
+          <div className="relative row-start-2 min-h-0 overflow-hidden">
+            <div className={`absolute inset-0 ${activeTab === 'chat' ? '' : 'invisible pointer-events-none'}`}>
+              <Suspense fallback={tabFallback}>
+                <Chat identity={identity} />
+              </Suspense>
+            </div>
+            {activeTab !== 'chat' && (
+              <div className="absolute inset-0">
+                <Suspense fallback={tabFallback}>
+                  {activeTab === 'explore' && (
+                    <div className="relative flex h-full w-full flex-col md:border-x md:border-line">
+                      <div className="relative z-fab flex items-center px-4 pb-1 pt-3">
+                        <button type="button" onClick={() => useChatStore.getState().setShowDrawer(true)} aria-label="Open menu" className="-ml-1 touch-target p-2 text-ink/50 hover:text-ink md:hidden"><Menu size={20} /></button>
+                        <Segmented
+                          ariaLabel="Discover sections"
+                          className="flex-1"
+                          value={exploreMode}
+                          onChange={setExploreMode}
+                          options={[{ value: 'shop', label: 'Menus' }, { value: 'groups', label: 'Groups' }]}
+                        />
+                      </div>
+                      <div className="relative z-fab min-h-0 flex-1">
+                        {exploreMode === 'shop'
+                          ? <Menus identity={identity} setActiveTab={setActiveTab} />
+                          : <Discover identity={identity} onJoined={() => setActiveTab('chat')} />}
+                      </div>
+                    </div>
+                  )}
+                  {activeTab === 'orders' && (
+                    <div className="h-full w-full md:border-x md:border-line">
+                      {/* The Orders tab is MyOrders directly, no drawer detour and
+                          no back arrow: role-aware inside (buyer rows are the
+                          requests this device sent, vendor rows the ones it
+                          received), and the kebab opens the drawer for the rest. */}
+                      <MyOrders identity={identity} onOpenChat={openChatFromProfile} onMenu={() => useChatStore.getState().setShowDrawer(true)} />
+                    </div>
+                  )}
+                  {activeTab === 'profile' && (
+                    <div className="h-full w-full md:border-x md:border-line">
+                      <Wallet key={profileNavNonce} identity={identity} onOpenChat={openChatFromProfile} startView={profileStartView} />
+                    </div>
+                  )}
+                </Suspense>
+              </div>
+            )}
           </div>
-        )}
+          {!barHidden && <BottomBar activeId={activeTab} onSelect={setActiveTab} />}
+        </div>
       </main>
 
       <Rail label="Tabs" activeId={activeTab} items={navItems} />
-      {!barHidden && <BottomBar activeId={activeTab} onSelect={setActiveTab} />}
     </div>
   );
 }
