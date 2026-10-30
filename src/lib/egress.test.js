@@ -73,11 +73,20 @@ test('every outbound host is listed, and nowhere else', () => {
   assert.ok(hosts.has('api.microlink.io'));
   assert.ok(!hosts.has('stun.l.google.com'), 'call routing is off — no stun row may return');
   const re = /(?:(?:wss?|https?):\/\/|stuns?:)[a-z0-9.-]+/gi;
+  // The test relay wall names this machine, and this machine is not an
+  // outbound host — but a loopback address is still a URL, so it is named in
+  // exactly one file rather than exempted by pattern. The same loopback
+  // address in any other file is still a finding, and a real host here is
+  // still a finding, because only a loopback literal is forgiven and only in
+  // that file.
+  const WALL_FILE = `${path.sep}testRelayOverride.js`;
+  const loopbackOnly = (hit) => /^(?:wss?|https?):\/\/(?:127\.0\.0\.1|localhost|\[::1\])$/i.test(hit);
   const leaked = [];
   for (const file of walk(path.resolve('src'))) {
     if (file.endsWith(`${path.sep}egress.js`) || file.endsWith('.test.js')) continue;
-    const hits = fs.readFileSync(file, 'utf8').match(re);
-    if (hits) leaked.push(`${path.relative(path.resolve('src'), file)}: ${[...new Set(hits)].join(', ')}`);
+    const hits = [...new Set(fs.readFileSync(file, 'utf8').match(re) || [])]
+      .filter((hit) => !(file.endsWith(WALL_FILE) && loopbackOnly(hit)));
+    if (hits.length) leaked.push(`${path.relative(path.resolve('src'), file)}: ${hits.join(', ')}`);
   }
   assert.deepEqual(leaked, []);
   const rows = listEgress({ overrides: {} });
