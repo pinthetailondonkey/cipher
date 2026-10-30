@@ -92,9 +92,18 @@ test.describe('rebuilt components follow the spec (source)', () => {
   test('no banned reveal label survives in a row', () => {
     // DESIGN.md, Never list: a hidden preview is a blurred line plus one
     // small eye icon; the labelled reveal pill is banned by name.
-    const src = read('src/components/chat/ChatList.jsx');
-    expect(src).not.toMatch(/Tap to show/);
-    expect(src).toMatch(/<Eye size=\{14\}/);
+    // The row moved to ChatRow.jsx (a73f56d) and this pin went stale with
+    // it: the eye moved, so the assertion kept reading a file that no longer
+    // renders a row. The ban follows the row, and the screen that renders it
+    // is held to it as well so neither file can carry the pill back.
+    // The population is those two files and nothing else — a third row
+    // renderer would sit outside the ban until someone adds it here, which is
+    // the shape of an allow-list that only widens by hand.
+    const row = read('src/components/chat/ChatRow.jsx');
+    const screen = read('src/components/chat/ChatList.jsx');
+    expect(row).not.toMatch(/Tap to show/);
+    expect(screen).not.toMatch(/Tap to show/);
+    expect(row).toMatch(/<Eye size=\{14\}/);
   });
 
   test('Avatar: 7 token gradients, charCodeAt(0) % 7', () => {
