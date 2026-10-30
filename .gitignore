@@ -14,6 +14,9 @@ android/
 test-results/
 playwright-report/
 .playwright/
+# A kill -9 durability drill writes its database here. It holds crawled pages
+# and a search index built at run time, and it is output, not source.
+kill9-out/
 .grok/
 # The desktop's data folder is written beside the app at runtime and holds
 # sealed device keys; it never belongs in a commit.
