@@ -6,8 +6,10 @@
 //
 // CIPHER_UI_TEST_BUILD is what tells vite.config.js this flag is deliberate.
 // Without it the flag is refused outright, so a stray VITE_TEST_HOOKS in an
-// untracked env file cannot put either the seam or the wall into a build that
-// ships.
+// untracked env file — .env.local included, which Vite inlines and never puts
+// in process.env — cannot put either the seam or the wall into a build that
+// ships. The guard reads the merged env for exactly that reason, and
+// scripts/vite-config-guard.test.mjs builds through this config to prove it.
 import { spawn } from 'node:child_process';
 
 const child = spawn('npm', ['run', 'build'], {
