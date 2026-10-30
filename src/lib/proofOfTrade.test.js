@@ -100,7 +100,7 @@ test('both parties sign the same bytes, and one bad signature fails', () => {
     { vendor: 'ff', currency: 'xmr', volume: '5' },
     { vendor: body.vendor, currency: 'xmr', volume: '2' },
   ]);
-  assert.equal(verifyReceipt({ ...signed, hash: `00${signed.hash.slice(2)}` }), false);
+  assert.equal(verifyReceipt({ ...signed, hash: `${signed.hash[0] === '0' ? '1' : '0'}${signed.hash.slice(1)}` }), false);
   assert.equal(verifyReceipt({ ...signed, body: { ...signed.body, txid: 'other' } }), false);
   const moved = signReceipt(vendorKey, { ...body, at: body.at + 1 });
   assert.notEqual(moved.hash, signed.hash);
