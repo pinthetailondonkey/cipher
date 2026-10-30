@@ -28,6 +28,7 @@ import { boundReceipts } from '../../lib/vendorReviews';
 import { haptic } from '../../lib/haptics';
 import { noHexName } from '../../lib/npub';
 import IconButton from '../ui/IconButton';
+import Logo from '../Logo';
 import Badge from '../ui/Badge';
 import EmptyState from '../ui/EmptyState';
 import { SkeletonList } from '../ui/Skeleton';
@@ -529,7 +530,7 @@ export default function ChatList({ onOpenChat, onRefresh }) {
        the screen's name in the middle, one compose on the right. Everything
        the old row of icons and the drawer did lives inside the overflow, so
        every door still opens and nothing crowds the title. */
-    <div className="sticky top-0 z-fab -mx-4 bg-base px-4 pt-safe md:px-3">
+    <div className="sticky top-0 z-fab -mx-4 bg-header px-4 pt-safe md:px-3">
       <div className="flex h-14 items-center gap-1">
         <span className="relative">
           <IconButton
@@ -585,7 +586,11 @@ export default function ChatList({ onOpenChat, onRefresh }) {
             </>
           )}
         </span>
-        <h2 className="min-w-0 flex-1 truncate text-center text-xl font-semibold tracking-tight text-ink">Chats</h2>
+        <div className="flex min-w-0 flex-1 items-center justify-center gap-2">
+          {/* The logo's one home: 28px, 8px gap, Chats only (DESIGN.md). */}
+          <Logo size={28} className="shrink-0" />
+          <h2 className="min-w-0 truncate text-xl font-semibold tracking-tight text-ink">Chats</h2>
+        </div>
         <IconButton
           icon={<SquarePen size={22} />}
           label="New chat"
