@@ -4,7 +4,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { TEST_RELAY_OVERRIDE, TEST_RELAY_OVERRIDE_MARK } from './testRelayOverride.js';
+import { TEST_RELAY_OVERRIDE } from './testRelayOverride.js';
 
 // The pair that makes the test relay wall safe to exist.
 //
@@ -80,7 +80,14 @@ test('a build that ships resolves every row to its own address, and carries no w
   // Asserted before the rows so a leak is reported as a leak.
   assert.equal(text.includes(WALL_WS), false, 'the shipping bundle carries the wall relay address');
   assert.equal(text.includes(WALL_HTTP), false, 'the shipping bundle carries the wall host address');
-  assert.equal(text.includes(TEST_RELAY_OVERRIDE_MARK), false, 'the shipping bundle carries the wall module');
+  // No assertion on the module's mark string, and it should not come back. Its
+  // only reference is this test, so Rollup tree-shakes it out of EVERY bundle —
+  // measured on a real UI-test build that carries the wall: the address is in
+  // one output file, the mark in none. "Absent" is therefore true of the
+  // bundle that leaks as well as the bundle that does not, so the assertion
+  // could not fail, and an assertion that cannot fail reads as coverage while
+  // covering nothing. The two addresses above are the check; a string that
+  // cannot appear is not a second one.
   assert.ok(rows.length >= 13, `expected the called rows, measured ${rows.length}`);
   for (const row of rows) {
     assert.equal(row.active, row.shipped, `${row.id} must resolve to its own row in a build that ships`);
