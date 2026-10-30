@@ -337,9 +337,9 @@ test('with the vault locked the app renders without crashing', async ({ page }) 
     sessionStorage.setItem('cipher_session_sk', JSON.stringify(Array(32).fill(170)));
   });
   await page.reload();
-  // The rail rides md+ now; at phone width the shell's own menu button is
-  // the mounted landmark.
-  await page.getByRole('button', { name: 'Open menu' }).waitFor();
+  // The rail rides md+ now; at phone width the chat list's kebab is the
+  // mounted landmark.
+  await page.getByRole('button', { name: 'Chat list menu' }).waitFor();
 
   // Dexie creates the database file lazily — wait for the app to open it.
   const deadline = Date.now() + 10_000;

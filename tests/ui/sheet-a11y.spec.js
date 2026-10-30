@@ -13,7 +13,7 @@ test.describe('Sheet-class a11y on the boot flow', () => {
     await page.goto('/');
     // The app boots past the lock screen into the shell; one reload guards
     // against a cold boot that paints nothing (session restore races).
-    const shellButton = page.getByRole('button', { name: 'Open menu' }).first();
+    const shellButton = page.getByRole('button', { name: 'Chat list menu' }).first();
     await expect(shellButton).toBeVisible({ timeout: 15000 }).catch(async () => {
       await page.reload();
       await expect(shellButton).toBeVisible({ timeout: 15000 });

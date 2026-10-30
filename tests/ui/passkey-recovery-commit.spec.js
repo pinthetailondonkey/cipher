@@ -101,7 +101,7 @@ test('a refused recovery keeps the record, the pointers and the account recovera
   await page.getByRole('button', { name: 'Profile', exact: true }).click();
   await page.getByText('Backup', { exact: true }).click();
   await page.getByRole('button', { name: 'Set up a saved passkey' }).click();
-  await expect(page.getByText('A saved passkey is ready for future unlocks.')).toBeVisible({ timeout: 60000 });
+  await expect(page.getByText('A saved passkey opens this account on this device from now on. It does not replace the 12 words.')).toBeVisible({ timeout: 60000 });
   const record = await recordBytes(page);
   expect(record).toBeTruthy();
 
