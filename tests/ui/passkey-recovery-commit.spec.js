@@ -98,7 +98,7 @@ test('a refused recovery keeps the record, the pointers and the account recovera
   // The app's own enrollment makes the record: Backup → Set up a saved
   // passkey. importPasskeyIdentityFromNsec asks the authenticator and stores
   // the record under this account's key — nothing here is fabricated.
-  await page.getByRole('button', { name: 'Profile', exact: true }).click();
+  await page.getByRole('button', { name: 'You', exact: true }).click();
   await page.getByText('Backup', { exact: true }).click();
   await page.getByRole('button', { name: 'Set up a saved passkey' }).click();
   await expect(page.getByText('A saved passkey opens this account on this device from now on. It does not replace the 12 words.')).toBeVisible({ timeout: 60000 });

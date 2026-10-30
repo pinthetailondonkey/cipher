@@ -54,7 +54,7 @@ test('a legacy no-salt PIN vault switches with the right PIN and comes back wrap
   await cdp.send('WebAuthn.addVirtualAuthenticator', {
     options: { protocol: 'ctap2', ctap2Version: 'ctap2_1', transport: 'internal', hasResidentKey: true, hasUserVerification: true, isUserVerified: true, hasPrf: true },
   });
-  await page.getByRole('button', { name: 'Profile', exact: true }).click();
+  await page.getByRole('button', { name: 'You', exact: true }).click();
   await page.getByRole('button', { name: /Accounts/ }).click();
   await expect(page.getByRole('heading', { name: 'Accounts' })).toBeVisible();
 

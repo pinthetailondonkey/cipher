@@ -11,7 +11,7 @@ const shell = readFileSync(new URL('../AuthenticatedApp.jsx', import.meta.url), 
 
 test('tabs are exactly the four destinations, in order, with badge keys on chats and orders only', () => {
   assert.deepEqual(TAB_IDS, ['chat', 'explore', 'orders', 'profile']);
-  assert.deepEqual(TABS.map((tab) => tab.label), ['Chats', 'Menus', 'Orders', 'Profile']);
+  assert.deepEqual(TABS.map((tab) => tab.label), ['Chats', 'Menus', 'Orders', 'You']);
   assert.deepEqual(
     TABS.map((tab) => tab.badge || null),
     ['unread', null, 'needsAction', null],
