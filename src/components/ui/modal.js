@@ -6,18 +6,34 @@ import { useEffect, useRef } from 'react';
 export function useModalA11y(open, onClose) {
   const panelRef = useRef(null);
 
+  // The close callback reaches the listener through a ref so the focus
+  // effect runs for the life of the surface, not once per caller render.
+  // With onClose in that effect's deps, every keystroke in a modal's input
+  // re-ran the effect, and its panel.focus() pulled focus off the input —
+  // one character, then the mobile keyboard was gone (live 2026-10-30).
+  // Same pattern as dialogA11y.js: refs only move in effects, never render.
+  const closeRef = useRef(onClose);
+  useEffect(() => {
+    closeRef.current = onClose;
+  });
+
   useEffect(() => {
     if (!open || typeof document === 'undefined') return undefined;
     const previouslyFocused = document.activeElement;
-    const panel = panelRef.current;
-    panel?.focus({ preventScroll: true });
+    // Initial focus is an effect-time action on the node present at open.
+    panelRef.current?.focus({ preventScroll: true });
 
     const onKeyDown = (event) => {
       if (event.key === 'Escape') {
         event.stopPropagation();
-        onClose?.();
+        closeRef.current?.();
         return;
       }
+      // Containment reads the panel at event time, not the node this effect
+      // captured at open: a surface may re-bind its panel node while open
+      // (VendorMenuHome swaps two sections on its `page` state), and a stale
+      // capture traps a detached node — Tab died inside the vendor profile.
+      const panel = panelRef.current;
       if (event.key !== 'Tab' || !panel) return;
       const focusables = panel.querySelectorAll(
         'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
@@ -46,7 +62,7 @@ export function useModalA11y(open, onClose) {
       window.removeEventListener('keydown', onKeyDown);
       if (previouslyFocused instanceof HTMLElement) previouslyFocused.focus();
     };
-  }, [open, onClose]);
+  }, [open]);
 
   return panelRef;
 }
