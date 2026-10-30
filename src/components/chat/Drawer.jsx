@@ -68,7 +68,7 @@ export default function Drawer({ identity, open, onClose, onNavigate }) {
                   <Icon size={24} className="text-inkMuted" />
                   <span className="flex-1">{label}</span>
                   {badge > 0 && (
-                    <span className="flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-accent px-1.5 text-[10px] font-bold text-accentInk">{badge > 99 ? '99+' : badge}</span>
+                    <span className="flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-accent px-1.5 text-[12px] font-bold leading-none text-accentInk">{badge > 99 ? '99+' : badge}</span>
                   )}
                 </button>
               ))}
