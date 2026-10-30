@@ -15,8 +15,15 @@ import { useChatStore } from '../store/chatStore';
 const NAME_ID = 'profile-card-name';
 
 export default function ProfileModal({ pubkey, identity, onClose, onMessage }) {
-  const profiles = useProfiles(pubkey ? [pubkey] : []);
-  const profile = profiles[pubkey] || {};
+  // The card opens with the profile the store already holds — the same map
+  // the chat header draws its title from — and useProfiles refreshes it from
+  // the device's own cache and the relays on top. Reading only the cache left
+  // a cold open nameless and pictureless, even while the header behind the
+  // card already showed both. The fetched copy wins once it lands: both read
+  // the same saved row.
+  const storedProfile = useChatStore((state) => (pubkey ? state.profiles[pubkey] : undefined));
+  const fetched = useProfiles(pubkey ? [pubkey] : []);
+  const profile = fetched[pubkey] || storedProfile || {};
   const { vouchCount, loading, hasVouched, refresh } = useVouchCount({ identity, targetPubkey: pubkey });
   const { sendVouch } = useReputation({ identity });
   const [sending, setSending] = useState(false);
