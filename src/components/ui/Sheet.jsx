@@ -110,7 +110,7 @@ export default function Sheet({
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.98 }}
             transition={{ duration: 0.16, ease: 'easeOut' }}
-            className={`w-full max-w-md overflow-hidden overscroll-contain rounded-[28px] border border-line bg-panel pb-sheet shadow-2xl outline-none ${className}`}
+            className={`w-full max-w-[420px] overflow-hidden overscroll-contain rounded-[20px] border border-line bg-panel pb-sheet shadow-2xl outline-none ${className}`}
             onClick={(event) => event.stopPropagation()}
           >
             <div className="sticky top-0 bg-panel pt-2">

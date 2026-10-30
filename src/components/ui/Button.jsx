@@ -4,9 +4,13 @@ import { Loader2 } from 'lucide-react';
 // module so one press treatment covers every button in the app.
 export const pressable = 'active:scale-[0.98] transition-transform duration-100';
 
+// DESIGN.md: one solid primary per view; everything else is soft (accent
+// tint with accent text) or ghost. `secondary` stays as a name for the soft
+// tier so screens built against it do not turn into second primaries.
 const variants = {
-  primary: 'bg-accent hover:bg-accent text-accentInk shadow-lg',
-  secondary: 'border border-line bg-panelStrong text-ink hover:bg-ink/5 shadow-lg',
+  primary: 'bg-accent text-accentInk hover:bg-accent/90',
+  soft: 'bg-accentSoft text-accentText hover:bg-accentSoft/80',
+  secondary: 'bg-accentSoft text-accentText hover:bg-accentSoft/80',
   ghost: 'bg-transparent text-ink hover:bg-ink/5',
   danger: 'bg-danger text-accentInk hover:bg-danger/90',
 };

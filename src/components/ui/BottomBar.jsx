@@ -29,15 +29,15 @@ export default function BottomBar({ activeId, onSelect }) {
               aria-current={active ? 'page' : undefined}
               className={`relative flex min-h-[44px] flex-1 flex-col items-center justify-center gap-0.5 ${active ? 'text-accentText' : 'text-ink/40'}`}
             >
-              <span className={`relative flex h-7 w-12 items-center justify-center rounded-full ${active ? 'bg-accentSoft' : ''}`}>
-                <Icon size={20} strokeWidth={active ? 2.5 : 2} aria-hidden="true" />
+              <span className={`relative flex h-7 w-12 items-center justify-center ${active ? 'text-accentText' : ''}`}>
+                <Icon size={20} strokeWidth={active ? 2.5 : 2} fill={active ? 'currentColor' : 'none'} aria-hidden="true" />
                 {badge > 0 && (
-                  <span className="absolute -right-0.5 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-accent px-1 text-[10px] font-bold leading-none text-accentInk">
+                  <span className="absolute -right-0.5 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-accent px-1 text-[11px] font-bold leading-none text-accentInk">
                     {badge > 99 ? '99+' : badge}
                   </span>
                 )}
               </span>
-              <span className="text-[10px] font-semibold leading-none">{tab.label}</span>
+              <span className="text-[12px] font-semibold leading-none">{tab.label}</span>
             </button>
           );
         })}

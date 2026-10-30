@@ -17,6 +17,9 @@ module.exports = {
         panel: 'var(--panel)',
         panelStrong: 'var(--panel-strong)',
         panelAlt: 'var(--panel-alt)',
+        header: 'var(--header)',
+        bubbleIn: 'var(--bubble-in)',
+        bubbleOut: 'var(--bubble-out)',
         line: 'var(--border)',
         lineStrong: 'var(--border-strong)',
         ink: 'rgb(var(--text-rgb) / <alpha-value>)',
@@ -32,7 +35,7 @@ module.exports = {
         borderDark: 'var(--border-strong)',
       },
       fontFamily: {
-        sans: ['Inter', 'system-ui', 'sans-serif'],
+        sans: ['system-ui', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'Helvetica Neue', 'Arial', 'sans-serif'],
       },
       zIndex: {
         // Layer tokens live in one place: the CSS variables in src/index.css.
