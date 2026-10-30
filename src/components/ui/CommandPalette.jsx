@@ -94,6 +94,7 @@ export default function CommandPalette({ open, onClose, onOpenChat, onNavigateTa
     >
       <div
         ref={panelRef}
+        data-centred
         role="dialog"
         aria-modal="true"
         aria-label="Jump to"

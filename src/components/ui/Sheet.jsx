@@ -102,6 +102,7 @@ export default function Sheet({
           <motion.div
             ref={panelRef}
             tabIndex={-1}
+            data-centred
             role="dialog"
             aria-modal="true"
             aria-labelledby={labelledBy}

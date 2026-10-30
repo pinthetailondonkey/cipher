@@ -106,8 +106,15 @@ select:focus-visible {
 
 /* DESIGN.md: a dialog may be tall, but it is centred with air above and
    below — never edge to edge. 3rem leaves the overlay's 1rem padding plus
-   0.5rem of air on each side, so `align-items: center` has room to centre. */
-[role='dialog'][aria-modal='true'] {
+   0.5rem of air on each side, so `align-items: center` has room to centre.
+
+   Opt-in, not role-only (2026-10-30). `[role='dialog'][aria-modal='true']`
+   matched four full-screen panes that carry the role for a11y without being
+   centred dialogs — QRScanner, both VendorMenuHome panes and Drawer — and at
+   (0,2,0) it outranked their own Tailwind `max-h-[…]` (0,1,0) no matter the
+   stylesheet order, leaving the camera scanner 48px short of the bottom with
+   the chat visible underneath. A panel is shortened only because it says so. */
+[data-centred][role='dialog'][aria-modal='true'] {
   max-height: calc(100dvh - var(--sat) - var(--sab) - 3rem);
   overflow-y: auto;
   overscroll-behavior: contain;

@@ -71,6 +71,7 @@ export default function Dialog({
         <motion.form
           ref={panelRef}
           tabIndex={-1}
+          data-centred
           role="dialog"
           aria-modal="true"
           aria-label={title || 'Confirm'}
