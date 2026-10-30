@@ -163,6 +163,14 @@ textarea::placeholder {
   @media (min-width: 768px) {
     .pb-bar { padding-bottom: calc(var(--sab) + 1rem); }
   }
+  /* The scroller's half of the same rule (brief §3.3): the bar's clearance
+     comes off the parent and lands here, so a row scrolled to or focused
+     near the end still clears the bar. Same md+ reset — there is no bar up
+     there, so the scroll padding is the safe area and a little air. */
+  .scroll-pb-bar { scroll-padding-bottom: calc(var(--bar-h) + var(--sab)); }
+  @media (min-width: 768px) {
+    .scroll-pb-bar { scroll-padding-bottom: calc(var(--sab) + 1rem); }
+  }
   .pb-sheet { padding-bottom: calc(1.5rem + var(--sab)); }
   /* The column (brief §3.2) and the dialog panel (brief §3.6). Real utilities
      instead of arbitrary Tailwind with a nested calc(), which the traps warn
