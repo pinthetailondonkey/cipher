@@ -8,7 +8,12 @@ import { readFileSync, mkdirSync, writeFileSync } from 'node:fs';
 // Evidence beats assumption, so the record it writes says which SHA, which
 // build and which port actually answered.
 
-const PORT = Number(process.env.AUD_HARNESS_PORT || 8285); // AUDITOR
+// The default is playwright.config.js's own port, because the page this setup
+// checks is the page that config serves. It said 8285 while the config served
+// 8081, so a bare `npx playwright test` failed here, before any spec ran, and
+// read as a red suite rather than as a wrong number. The override stays for a
+// run that deliberately points somewhere else.
+const PORT = Number(process.env.AUD_HARNESS_PORT || 8081);
 
 function git(args) {
   return execFileSync('git', args, { encoding: 'utf8' }).trim();
