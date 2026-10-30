@@ -4,6 +4,8 @@
 // patch is laid over it again. Otherwise a reload undoes what the vendor did.
 // A tombstoned id was deleted on this device: nothing is written for it,
 // whatever copy the relay serves again. The caller skips the write on null.
+import { canonicalReceipt } from './proofOfTrade.js';
+
 export function mergeStoredMessage(existing, incoming, chatId, { tombstoned = false } = {}) {
   if (tombstoned) return null;
   const merged = { ...existing, ...incoming, chatId };
@@ -27,15 +29,32 @@ export function mergeStoredMessage(existing, incoming, chatId, { tombstoned = fa
   // receipt, written where the order-binding gate accepted it (useNIP44DM).
   // The relay copy never carries it, and `data` is replaced above, so without
   // this the mark would survive only when the gate happens to say yes again on
-  // the same history pass — a reload could change an order's tab. Carry it
-  // forward for the SAME receipt, by hash: the mark names one receipt, never a
-  // slot, and a row that never had one never gains one here.
+  // the same history pass — a reload could change an order's tab.
+  //
+  // It carries forward only for the SAME receipt, and a matching hash is not
+  // enough: `hash` is peer-authored text, and the peer who signed the genuine
+  // receipt knows that string and can paste it onto a body of its own. So the
+  // canonical bodies must agree too. This is not a security boundary — the
+  // tick and the money path verify signatures on their own — it is only that a
+  // mark this device wrote must never inherit onto content it did not write.
   const held = existing?.data?.receipt;
   const arriving = incoming?.data?.receipt;
-  if (held?.bound === true && arriving?.hash && arriving.hash === held.hash) {
+  if (held?.bound === true && arriving && sameReceipt(held, arriving)) {
     merged.data = { ...merged.data, receipt: { ...arriving, bound: true } };
   }
   return merged;
+}
+
+// Same receipt means the same signed content: the hash matches AND the bodies
+// canonicalize to the same bytes. A body that cannot be canonicalized (a
+// receipt needs a real time) is not the same receipt as anything.
+function sameReceipt(held, arriving) {
+  if (!held?.hash || arriving?.hash !== held.hash) return false;
+  try {
+    return JSON.stringify(canonicalReceipt(held.body)) === JSON.stringify(canonicalReceipt(arriving.body));
+  } catch {
+    return false;
+  }
 }
 
 export function patchStoredMessage(existing, patch) {
