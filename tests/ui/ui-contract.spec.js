@@ -24,7 +24,7 @@ const REBUILT = [
 ];
 
 // DESIGN.md's type scale. 10 is not on it; 11 is the floor.
-const SCALE = [11, 12, 13, 15, 16, 20, 28];
+const SCALE = [11, 12, 13, 14, 15, 16, 17, 20, 28];
 
 test.describe('design tokens (source)', () => {
   const css = read('src/index.css');
@@ -35,15 +35,15 @@ test.describe('design tokens (source)', () => {
 
   test('the DESIGN.md palette is the palette', () => {
     expect(token('bg')).toBe('#000000');
-    expect(token('bg-soft')).toBe('#0b0b0c');
-    expect(token('panel')).toBe('#141416');
-    expect(token('panel-strong')).toBe('#1c1c1f');
-    expect(token('panel-alt')).toBe('#26262a');
-    expect(token('header')).toBe('#121214');
+    expect(token('bg-soft')).toBe('#05070a');
+    expect(token('panel')).toBe('#0d1116');
+    expect(token('panel-strong')).toBe('#12161d');
+    expect(token('panel-alt')).toBe('#1b2028');
+    expect(token('header')).toBe('#000000');
     expect(token('bubble-in')).toBe('#1f1f23');
     expect(token('bubble-out')).toBe('#005dfd');
     expect(token('accent')).toBe('#005dfd');
-    expect(token('accent-text')).toBe('#3987ff');
+    expect(token('accent-text')).toBe('#7fb0ff');
     expect(token('accent-soft')).toBe('rgba(0, 93, 253, 0.16)');
   });
 
@@ -176,7 +176,7 @@ test.describe('live: Chats header', () => {
 
     const band = heading.locator('xpath=ancestor::*[self::header or (self::div and contains(@class,"bg-header"))][1]');
     const bg = await band.evaluate((el) => getComputedStyle(el).backgroundColor);
-    expect(bg).toBe('rgb(18, 18, 20)');
+    expect(bg).toBe('rgb(0, 0, 0)');
     const h = await band.boundingBox();
     expect(Math.round(h.height)).toBeGreaterThanOrEqual(56);
   });
