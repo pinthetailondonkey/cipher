@@ -72,6 +72,13 @@ test('a different receipt on the same row does not inherit the mark', () => {
   assert.equal(reloaded.data.receipt.bound, undefined, 'the mark names one receipt, never a slot');
 });
 
+test('an edit patch over a marked row keeps the mark and carries the change', () => {
+  const marked = markIt(mergeStoredMessage(undefined, receiptedRow('h1'), 'vendor'));
+  const edited = patchStoredMessage(marked, { status: 'shipped' });
+  assert.equal(edited.data.receipt.bound, true, 'a local patch replaces fields, never the whole receipt slot');
+  assert.equal(edited.data.status, 'shipped');
+});
+
 test('the merge never invents the mark for a row that never had one', () => {
   const plain = mergeStoredMessage(undefined, receiptedRow('h1'), 'vendor');
   const reloaded = mergeStoredMessage(plain, receiptedRow('h1'), 'vendor');
