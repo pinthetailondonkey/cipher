@@ -9,6 +9,13 @@
 //
 // The account key it seals is the same 32-byte account secret the PIN vault
 // holds. It is not the device secret: losing one must not open the other.
+//
+// LIMIT, stated where the code lives and not only in a commit message: a
+// virtual authenticator is not a phone. Chromium's CDP authenticator proves
+// this code path, and nothing about iOS or Android returning a second output.
+// If a platform drops it, this refuses as DeviceKeyMissing — so the device
+// path stands down and the PIN keeps working. That is what makes it safe to
+// carry forward before a phone has said anything.
 
 import {
   DeviceKeyCancelled,
