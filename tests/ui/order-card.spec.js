@@ -58,7 +58,7 @@ test.describe('order cards render', () => {
       await openWithCard(page, content);
 
       // The crash screen is the failure this file exists for.
-      await expect(page.getByRole('heading', { name: 'App Crashed' })).toHaveCount(0);
+      await expect(page.getByRole('heading', { name: 'Something went wrong', exact: true })).toHaveCount(0);
       // The card itself: the product name, on the card, in the thread.
       await expect(page.getByText('Washer')).toBeVisible();
       expect(errors, `uncaught errors while drawing ${type}`).toEqual([]);
