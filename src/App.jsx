@@ -10,19 +10,27 @@ const AuthenticatedApp = lazy(() => import('./AuthenticatedApp'));
 class ErrorBoundary extends React.Component {
   constructor(props) {
     super(props);
-    this.state = { hasError: false, error: null };
+    this.state = { hasError: false };
   }
 
-  static getDerivedStateFromError(error) {
-    return { hasError: true, error };
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+
+  // The screen somebody sees when this app breaks is not the place for a
+  // module path. The founder's ruling: plain words on the screen, the detail
+  // in the console, where the person debugging can find it and nobody else
+  // has to read it.
+  componentDidCatch(error, info) {
+    console.error('Cipher stopped while drawing the screen:', error, info);
   }
 
   render() {
     if (this.state.hasError) {
       return (
-        <div className="min-h-screen bg-scrim text-red-500 p-6 font-mono flex flex-col items-center justify-center">
-          <h1 className="text-2xl font-bold mb-4">App Crashed</h1>
-          <pre className="text-xs whitespace-pre-wrap bg-red-900/20 p-4 rounded-xl border border-red-500/50 w-full max-w-md overflow-auto">{this.state.error.toString()}</pre>
+        <div className="min-h-screen bg-scrim text-red-500 p-6 flex flex-col items-center justify-center">
+          <h1 className="text-2xl font-bold mb-4">Something went wrong</h1>
+          <p className="text-sm text-center max-w-md">Cipher had to stop. Reload to carry on. The details are in the browser&rsquo;s console.</p>
           <button onClick={() => window.location.reload()} className="mt-6 px-6 py-3 bg-ink text-scrim font-bold rounded-xl">Reload</button>
         </div>
       );
