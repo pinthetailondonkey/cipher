@@ -284,13 +284,20 @@ export function useNIP44DM({ identity }) {
                 if (await receiptMayBind(data, counterparty)) {
                   const accepted = acceptPayment(data, identity.sk);
                   if (accepted) {
-                    scopedSet(`receipt_${data.orderId}`, accepted.receipt);
+                    // The gate above said yes, and that answer is written onto
+                    // the receipt this row keeps. Nothing else sets it, and the
+                    // ledger reads direction only from a receipt carrying it —
+                    // the body is the peer's text, never evidence by itself.
+                    const boundReceipt = { ...accepted.receipt, bound: true };
+                    scopedSet(`receipt_${data.orderId}`, boundReceipt);
                     // S10: the mark of a receipt this device countersigned
                     // after it passed the order binding. A stored receipt
                     // without this mark is never re-signed for a dispute.
                     scopedSet(`bound_receipt_${data.orderId}`, accepted.receipt.hash);
                     if (accepted.published) rememberPublicView(accepted.published);
-                    data = { ...data, receipt: accepted.receipt, ...(accepted.published ? { published: accepted.published } : {}) };
+                    data = { ...data, receipt: boundReceipt, ...(accepted.published ? { published: accepted.published } : {}) };
+                    // The peer gets the unmarked receipt: the mark is this
+                    // device's own record of its own decision.
                     sendCountersign(sendDM, counterparty, data.orderId, accepted);
                   }
                 }
@@ -409,12 +416,15 @@ export function useNIP44DM({ identity }) {
           if (await receiptMayBind(data, counterparty)) {
             const accepted = acceptPayment(data, identity.sk);
             if (accepted) {
-              scopedSet(`receipt_${data.orderId}`, accepted.receipt);
+              // The same mark as the live path, written at the same place: the
+              // gate said yes, and only this line may say so.
+              const boundReceipt = { ...accepted.receipt, bound: true };
+              scopedSet(`receipt_${data.orderId}`, boundReceipt);
               // S10: same bound mark as the live path, so the dispute button
               // can never re-sign a receipt this device never cosigned.
               scopedSet(`bound_receipt_${data.orderId}`, accepted.receipt.hash);
               if (accepted.published) rememberPublicView(accepted.published);
-              data = { ...data, receipt: accepted.receipt, ...(accepted.published ? { published: accepted.published } : {}) };
+              data = { ...data, receipt: boundReceipt, ...(accepted.published ? { published: accepted.published } : {}) };
               sendCountersign(sendDM, counterparty, data.orderId, accepted);
             }
           }
