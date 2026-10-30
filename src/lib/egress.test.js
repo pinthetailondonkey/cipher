@@ -63,6 +63,23 @@ test('a clearnet row the founder never named does not ship', () => {
   }
 });
 
+// The gate above steps over every dynamic row, and the test relay wall's probe
+// skips them too, so an address on one of these rows is addressable by neither
+// guard. That is safe today only by construction — activeUrl returns '' before
+// it looks at anything else, and all four rows carry url: '' — and construction
+// is not an assertion: the next dynamic row can arrive with an address and
+// nothing here would notice. Measured before this test existed: give one
+// dynamic row an https:// address and both this suite and the wall's stay
+// green. So the construction is pinned.
+test('a dynamic row carries no address of its own', () => {
+  const dynamic = EGRESS.filter((entry) => entry.dynamic);
+  assert.ok(dynamic.length >= 4, `expected the dynamic rows, measured ${dynamic.length}`);
+  for (const entry of dynamic) {
+    assert.equal(String(entry.url || '').trim(), '',
+      `${entry.id} is dynamic and carries an address, which steps past the no-IP-leak gate and the wall's probe`);
+  }
+});
+
 test('every outbound host is listed, and nowhere else', () => {
   const hostOf = (url) => {
     if (/^stuns?:/i.test(url)) return url.replace(/^stuns?:/i, '').split(':')[0];
