@@ -2,14 +2,14 @@ import { test, expect } from '@playwright/test';
 import { seedVault } from './fixtures.js';
 
 // Every tab the bottom bar can reach, with the label on its nav button
-// (15.1: Chats | Menus | Orders | Profile, fixed order). The clipped-down
+// (15.1: Chats | Menus | Orders | You, fixed order). The clipped-down
 // assertion set must visit each tab the same way so the run is identical no
 // matter which tab is home.
 const TABS = [
   { key: 'chat', label: 'Chats' },
   { key: 'explore', label: 'Menus' },
   { key: 'orders', label: 'Orders' },
-  { key: 'profile', label: 'Profile' },
+  { key: 'profile', label: 'You' },
 ];
 
 async function openTab(page, tab) {

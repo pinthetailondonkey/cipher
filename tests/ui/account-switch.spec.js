@@ -51,7 +51,7 @@ async function seedTwoAccounts(page, { vaultB }) {
 async function openSwitcher(page) {
   await page.goto('/');
   await expect(page.getByRole('navigation', { name: 'Tabs' })).toBeVisible({ timeout: 20000 });
-  await page.getByRole('button', { name: 'Profile', exact: true }).click();
+  await page.getByRole('button', { name: 'You', exact: true }).click();
   await page.getByRole('button', { name: /Accounts/ }).click();
   await expect(page.getByRole('heading', { name: 'Accounts' })).toBeVisible();
 }

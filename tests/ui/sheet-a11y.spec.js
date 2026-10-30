@@ -59,9 +59,9 @@ test.describe('Sheet-class a11y on the boot flow', () => {
     {
       name: 'How to use (tutorial)',
       open: async (page) => {
-        // The guide's door is the Profile tab's own list, not the drawer.
+        // The guide's door is the You tab's own list, not the drawer.
         await page.getByRole('navigation', { name: 'Tabs' }).filter({ visible: true })
-          .getByRole('button', { name: 'Profile' }).click();
+          .getByRole('button', { name: 'You' }).click();
         await page.getByRole('button', { name: /How to use/ }).click();
       },
       dialogLabel: 'How to use',

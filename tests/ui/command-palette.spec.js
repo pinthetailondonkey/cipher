@@ -33,16 +33,16 @@ test.describe('Command palette', () => {
     const list = page.getByRole('listbox', { name: /Jump/i });
     await expect(list.getByRole('option', { name: 'Chats' })).toBeVisible();
     await expect(list.getByRole('option', { name: 'Menus' })).toBeVisible();
-    await expect(list.getByRole('option', { name: 'Profile' })).toBeVisible();
+    await expect(list.getByRole('option', { name: 'You' })).toBeVisible();
   });
 
   test('filtering narrows to the matching row', async ({ page }) => {
     await page.keyboard.press('Control+k');
     const field = page.getByRole('dialog', { name: 'Jump to' }).getByRole('textbox');
-    await field.fill('pro');
+    await field.fill('you');
     const list = page.getByRole('listbox', { name: /Jump/i });
     await expect(list.getByRole('option')).toHaveCount(1);
-    await expect(list.getByRole('option', { name: 'Profile' })).toBeVisible();
+    await expect(list.getByRole('option', { name: 'You' })).toBeVisible();
     await field.fill('zz');
     await expect(page.getByText('Nothing matches that.')).toBeVisible();
   });

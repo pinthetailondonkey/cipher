@@ -36,8 +36,8 @@ test.describe('Visual regression', () => {
   test('screenshot: profile tab', async ({ page }) => {
     await page.goto('/');
     await expect(page.getByRole('heading', { name: 'Chats' })).toBeVisible({ timeout: 20000 });
-    // Same phone nav: the bar's Profile tab opens the Wallet pane.
-    const profileDoor = page.getByRole('navigation', { name: 'Tabs' }).getByRole('button', { name: 'Profile' });
+    // Same phone nav: the bar's You tab opens the Wallet pane.
+    const profileDoor = page.getByRole('navigation', { name: 'Tabs' }).getByRole('button', { name: 'You' });
     await expect(profileDoor).toBeVisible({ timeout: 10000 });
     await profileDoor.click();
     await page.waitForTimeout(1000);
@@ -106,7 +106,7 @@ test.describe('Visual regression — conversation and settings', () => {
   test('screenshot: settings', async ({ page }) => {
     await page.goto('/');
     await expect(page.getByRole('heading', { name: 'Chats' })).toBeVisible({ timeout: 20000 });
-    const profileDoor = page.getByRole('navigation', { name: 'Tabs' }).getByRole('button', { name: 'Profile' });
+    const profileDoor = page.getByRole('navigation', { name: 'Tabs' }).getByRole('button', { name: 'You' });
     await expect(profileDoor).toBeVisible({ timeout: 10000 });
     await profileDoor.click();
     const privacy = page.getByRole('button', { name: /Privacy/i }).first();
