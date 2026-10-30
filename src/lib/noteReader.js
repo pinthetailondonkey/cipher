@@ -13,6 +13,15 @@ import { isCarrierFragment, openDeadDropNote } from './deadDrop.js';
 // Long enough for a slow relay, short enough that a person does not wonder
 // whether the page is broken. Reused as a plain line on screen ("The note
 // could not be opened."), which is the reader's existing fallback wording.
+//
+// It guards the RELAY path only. A relay query can be given up on: the note
+// stays on the relay, and this device's one-open is its own ledger mark, so a
+// silent relay costs a wait and nothing else. A carrier note is different — the
+// host deletes it as it hands it over, so the moment that fetch starts the note
+// is already spent, and the copy on its way back is the only one left. A
+// deadline on that fetch does not cancel it; it abandons it, and then the page
+// says "could not be opened" about a note nobody anywhere can read. So the
+// carrier branch below waits for its answer however long it takes.
 const DEADLINE_MS = 8000;
 
 export async function openNoteLink({
@@ -31,8 +40,12 @@ export async function openNoteLink({
 
   let timer = null;
   try {
-    const opened = await Promise.race([
-      openDeadDropNote({ fragment, pool, relays, hold: true }),
+    const opening = openDeadDropNote({ fragment, pool, relays, hold: true });
+    // A carrier answer is the last copy of its note, so this branch waits for
+    // the host rather than racing it. Everything after this line is shared: the
+    // same result, the same failures, and the same burn handed back to the page.
+    const opened = carrier ? await opening : await Promise.race([
+      opening,
       new Promise((_, reject) => {
         timer = setTimeout(() => reject(new Error('The note could not be opened.')), timeoutMs);
       }),
