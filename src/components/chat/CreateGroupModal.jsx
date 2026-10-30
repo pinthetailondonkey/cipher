@@ -38,10 +38,10 @@ export default function CreateGroupModal({ isOpen, onClose, createGroup }) {
   };
 
   return (
-    <div className="fixed inset-0 z-sheet flex items-end justify-center bg-scrim/80 p-0 sm:items-center sm:p-4" role="presentation" onMouseDown={(event) => {
+    <div className="fixed inset-0 z-sheet flex items-center justify-center bg-scrim/80 p-4 sm:p-6" role="presentation" onMouseDown={(event) => {
       if (event.target === event.currentTarget) onClose();
     }}>
-      <form ref={panelRef} onSubmit={submit} role="dialog" aria-modal="true" aria-labelledby="create-group-title" className="max-h-[calc(100dvh-env(safe-area-inset-top)-0.5rem)] w-full max-w-md overflow-y-auto rounded-t-3xl border border-line bg-panel p-5 pb-safe shadow-lg sm:rounded-3xl sm:p-6">
+      <form ref={panelRef} onSubmit={submit} data-centred role="dialog" aria-modal="true" aria-labelledby="create-group-title" className="w-full max-w-[420px] overflow-y-auto overscroll-contain rounded-[20px] border border-line bg-panel p-5 pb-safe shadow-lg outline-none sm:p-6">
         <div className="mb-5 flex items-center justify-between">
           <div>
             <h2 id="create-group-title" className="text-2xl font-bold tracking-tight text-ink">Create a space</h2>
