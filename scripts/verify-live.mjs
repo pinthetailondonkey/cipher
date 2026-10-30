@@ -126,4 +126,47 @@ if (servedFingerprint !== localFingerprint) {
   console.error('verify:live — the live bundle wears this build\'s name but not its bytes. Tampered, or built by a different toolchain.');
   process.exit(1);
 }
-console.log('verify:live — the live page is this build, down to the bytes.');
+
+// A bundle that matches is only half a proof. The service worker caches from
+// dist/asset-manifest.json, which `npm run build` writes separately from the
+// bundle — a bare `vite build` produces the SAME bundle name and SAME bytes
+// but never writes the manifest. A deploy like that would pass the check
+// above while the app cannot open offline. So the proof also fetches the
+// manifest and checks it names the assets this tree's build produced.
+const manifestPath = new URL('asset-manifest.json', url);
+let manifestOk = false;
+let servedManifest = '';
+try {
+  const manifestResponse = await fetch(manifestPath, { signal: AbortSignal.timeout(20000) });
+  if (manifestResponse.ok) {
+    servedManifest = await manifestResponse.text();
+    const listed = JSON.parse(servedManifest);
+    const files = new Set(Array.isArray(listed?.files) ? listed.files : []);
+    manifestOk = files.size > 0 && files.has(`/assets/${live}`);
+  } else {
+    console.error(`verify:live — the live asset-manifest.json answered ${manifestResponse.status}.`);
+  }
+} catch (error) {
+  console.error(`verify:live — the live asset-manifest.json could not be read: ${error?.cause?.code || error.message}`);
+}
+const localManifestPath = path.resolve('dist', 'asset-manifest.json');
+let localManifestOk = false;
+if (fs.existsSync(localManifestPath)) {
+  try {
+    const local = JSON.parse(fs.readFileSync(localManifestPath, 'utf8'));
+    localManifestOk = Array.isArray(local?.files) && local.files.includes(`/assets/${built}`);
+  } catch {
+    localManifestOk = false;
+  }
+}
+console.log(`  manifest    ${manifestOk ? 'present, names the entry' : 'missing or does not name the entry'}`);
+if (!localManifestOk) {
+  console.error('verify:live — this tree\'s build wrote no asset-manifest.json, so there is nothing to compare against. Run the full build.');
+  process.exit(2);
+}
+if (!manifestOk) {
+  console.error('verify:live — the live deploy does not serve an asset-manifest.json naming this build\'s entry. The app cannot open offline on that deploy.');
+  process.exit(1);
+}
+
+console.log('verify:live — the live page is this build, down to the bytes, and the offline manifest matches.');
