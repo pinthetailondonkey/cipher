@@ -87,12 +87,24 @@ test('a silent relay still gives up on the deadline', async () => {
     const fragment = _deadDropInternals.packFragment(
       new Uint8Array(32).fill(9), new Uint8Array(12).fill(3), new Uint8Array(32).fill(5),
     );
+    // The bound below is the assertion, not just a guard: it is shorter than
+    // the shipped eight seconds, so a deadline that ignored the caller's
+    // `timeoutMs` and used the constant would still be waiting here and the
+    // test would say so instead of passing.
+    //
+    // The reader builds its pool before it starts the deadline, so the module
+    // load is warmed here for the same reason: what is being timed is the wait,
+    // not node loading nostr-tools the first time.
+    await import('nostr-tools');
+    const started = Date.now();
     const outcome = await Promise.race([
-      openNoteLink({ fragment, relays: ['wss://silent.invalid'], timeoutMs: 20 })
+      openNoteLink({ fragment, relays: ['wss://silent.invalid'], timeoutMs: 200 })
         .then(() => 'opened', (error) => `rejected: ${error.message}`),
-      sleep(3000).then(() => 'hung'),
+      sleep(1000).then(() => 'still waiting after 1000ms'),
     ]);
-    assert.equal(outcome, 'rejected: The note could not be opened.', 'a relay that never answers still ends');
+    assert.equal(outcome, 'rejected: The note could not be opened.',
+      'a relay that never answers still ends, inside the deadline it was given');
+    assert.ok(Date.now() - started < 1000, 'and it ends on the caller\'s deadline, not a hardcoded one');
   } finally {
     if (previous === undefined) delete globalThis.WebSocket;
     else globalThis.WebSocket = previous;
