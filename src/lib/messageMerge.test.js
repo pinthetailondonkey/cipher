@@ -47,11 +47,19 @@ test('a message this device never changed is stored exactly as before', () => {
 // unmarked copy back, and the merge replaces `data` wholesale — so without a
 // rule here the mark would be lost on the first reload and the row would change
 // tabs by itself.
-const receiptedRow = (hash) => ({
+// A receipt shaped like a real one: canonicalization needs a real time, and a
+// receipt that cannot be canonicalized is not carried forward either.
+const receiptBody = () => ({
+  orderId: 'order-1', buyer: 'buyer', vendor: 'vendor', currency: 'btc',
+  address: 'bc1qexample', amount: '1000', txid: 'ab'.repeat(32),
+  at: 100, outcome: 'confirmed',
+});
+
+const receiptedRow = (hash, body = receiptBody()) => ({
   id: 'u2', isSender: false, pubkey: 'vendor', timestamp: 101,
   data: {
     type: 'order_update', orderId: 'order-1', status: 'paid',
-    receipt: { v: 1, hash, body: { orderId: 'order-1' }, sigs: {} },
+    receipt: { v: 1, hash, body, sigs: {} },
   },
 });
 
@@ -77,6 +85,17 @@ test('an edit patch over a marked row keeps the mark and carries the change', ()
   const edited = patchStoredMessage(marked, { status: 'shipped' });
   assert.equal(edited.data.receipt.bound, true, 'a local patch replaces fields, never the whole receipt slot');
   assert.equal(edited.data.status, 'shipped');
+});
+
+test('a genuine receipt\'s hash copied onto a body that does not verify carries no mark', () => {
+  // The peer signed the genuine receipt, so it knows its hash string and can
+  // paste it onto anything. Matching on the hash alone let the mark rewrite
+  // itself onto content this device never accepted, and the row then drew
+  // under Purchases. Same hash is not the same receipt.
+  const held = markIt(mergeStoredMessage(undefined, receiptedRow('h1'), 'vendor'));
+  const forged = receiptedRow('h1', { ...receiptBody(), buyer: 'attacker' });
+  const reloaded = mergeStoredMessage(held, forged, 'vendor');
+  assert.equal(reloaded.data.receipt.bound, undefined, 'the mark does not follow a copied hash onto foreign content');
 });
 
 test('the merge never invents the mark for a row that never had one', () => {
