@@ -1,0 +1,279 @@
+import { db } from '../../db';
+import { noHexName, shortNpub } from '../../lib/npub';
+import { getAuthenticatedPool } from '../../lib/pool';
+import { queryWithTimeout, profileRelays, groupOnlyRelays, searchRelays } from '../../lib/relays';
+import { useChatStore } from '../../store/chatStore';
+import { parseGroupReference, loadGroupProfile, fetchGroupMetadata } from '../../hooks/useNIP29Group';
+
+// A NIP-50 hit stands for the person a handle names only when that profile's
+// own name or display name is the handle. An approximate hit is somebody
+// else, and is never offered as the person who was asked for.
+export function profileNameMatches(event, handle) {
+  try {
+    const parsed = JSON.parse(event?.content || '{}');
+    const wanted = String(handle || '').toLowerCase();
+    const name = String(parsed.name || '').toLowerCase().replace(/^@/, '');
+    const display = String(parsed.display_name || '').toLowerCase().replace(/^@/, '');
+    return wanted !== '' && (name === wanted || display === wanted);
+  } catch (e) {
+    return false;
+  }
+}
+
+// An explicit group reference is a signed group address (naddr), and nothing
+// else. A word, a public key or a npub is not a group id — the old length
+// rule turned any 12–20 character word into a group result.
+export function explicitGroupReference(rawQuery) {
+  const raw = String(rawQuery || '').trim();
+  if (!/^naddr1/i.test(raw)) return '';
+  const parsed = parseGroupReference(raw);
+  const id = String(parsed.id || '').trim();
+  // parseGroupReference hands back the raw text when the address will not
+  // decode; that is not an id this search may act on.
+  return !id || id === raw ? '' : id;
+}
+
+export function usePeopleSearch({ identity }) {
+
+  const handleSearch = async () => {
+    const state = useChatStore.getState();
+    if (!state.searchQuery.trim()) return;
+    state.setIsSearching(true);
+    state.setSearchResults([]);
+    let rawQuery = state.searchQuery.trim();
+
+    try {
+      if (rawQuery.startsWith('http')) {
+        const url = new URL(rawQuery);
+        const gp = url.searchParams.get('g') || url.searchParams.get('group') || url.searchParams.get('join');
+        const np = url.searchParams.get('naddr');
+        if (gp) { rawQuery = gp; } 
+        else if (np) {
+          const { nip19 } = await import('nostr-tools');
+          const d = nip19.decode(np);
+          if (d.type === 'naddr') rawQuery = d.data.identifier;
+        }
+      }
+    } catch (e) {}
+
+    if (rawQuery.startsWith('@')) {
+      const usernameToFind = rawQuery.slice(1).toLowerCase().trim();
+
+      const loadExactProfile = async (pool, targetPubkey, fallbackName) => {
+        let name = fallbackName;
+        let picture = null;
+        let profileEvents = await queryWithTimeout(
+          pool,
+          profileRelays.slice(0, 1),
+          { kinds: [0], authors: [targetPubkey] },
+          5000
+        );
+        if (profileEvents.length === 0) {
+          profileEvents = await queryWithTimeout(
+            pool,
+            profileRelays.slice(1, 2),
+            { kinds: [0], authors: [targetPubkey] },
+            4000
+          );
+        }
+        if (profileEvents.length > 0) {
+          try {
+            const parsed = JSON.parse(profileEvents[0].content);
+            name = parsed.display_name || parsed.name || fallbackName;
+            picture = parsed.picture || null;
+          } catch (e) {}
+        }
+        state.setSearchResults([{ type: 'user', pubkey: targetPubkey, name, picture }]);
+        state.setIsSearching(false);
+      };
+
+      try {
+        const pool = await getAuthenticatedPool(identity);
+
+        // Exact pubkey from the local vault (works even before relays index the new account).
+        const vaults = JSON.parse(localStorage.getItem('cipher_vaults') || '{}');
+        for (const [pk, data] of Object.entries(vaults)) {
+          if ((data.handle || '').toLowerCase() === usernameToFind) {
+            await loadExactProfile(pool, pk, '@' + usernameToFind);
+            return;
+          }
+        }
+
+        // Kind 10003 username registry, published to the same relays as the profile.
+        const regEvents = await queryWithTimeout(
+          pool,
+          profileRelays,
+          { kinds: [10003], '#t': ['cipher_username_' + usernameToFind], limit: 10 },
+          5000
+        );
+        const regMatch = regEvents.find((ev) => {
+          const usernameTag = ev.tags?.find((t) => t[0] === 'username')?.[1];
+          return !usernameTag || usernameTag.toLowerCase() === usernameToFind;
+        });
+        if (regMatch) {
+          await loadExactProfile(pool, regMatch.pubkey, '@' + usernameToFind);
+          return;
+        }
+
+        // NIP-50 on the search relays, then confirm that hit with an exact author query.
+        console.log('🔍 [Search] Using NIP-50 to find profile...');
+        const searchEvents = await queryWithTimeout(
+          pool,
+          searchRelays,
+          { kinds: [0], search: usernameToFind, limit: 20 },
+          5000
+        );
+        const exact = searchEvents.find((ev) => profileNameMatches(ev, usernameToFind));
+        if (exact) {
+          await loadExactProfile(pool, exact.pubkey, '@' + usernameToFind);
+          return;
+        }
+      } catch (err) {
+        console.error('Username search failed:', err);
+      }
+
+      state.setSearchResults([]);
+      state.setIsSearching(false);
+      return;
+    }
+
+    const groupReference = explicitGroupReference(rawQuery);
+    if (groupReference) {
+      try {
+        const profile = await loadGroupProfile(identity, groupReference);
+        state.setSearchResults([{ type: 'group', id: profile.id, name: profile.name, isChannel: false, creator: profile.creator }]);
+        state.setIsSearching(false);
+        return;
+      } catch (error) {
+        console.warn('[search] naddr group lookup failed:', error);
+      }
+    }
+
+    rawQuery = rawQuery.replace(/^@/, '');
+    if (/^[0-9a-f]{64,}$/i.test(rawQuery)) rawQuery = rawQuery.slice(0, 64);
+
+    const isNpub = rawQuery.startsWith('npub1');
+    const isHex = /^[0-9a-f]{64}$/i.test(rawQuery);
+    const isNip05 = rawQuery.includes('@');
+
+    let pool;
+    try {
+      const { SimplePool, nip19 } = await import('nostr-tools');
+      pool = new SimplePool({ enablePing: true, enableReconnect: true });
+
+      const localMatches = await db.profiles.filter(p => 
+        (p.name && p.name.toLowerCase().includes(rawQuery.toLowerCase())) || 
+        (p.displayName && p.displayName.toLowerCase().includes(rawQuery.toLowerCase()))
+      ).toArray();
+
+      if (localMatches.length > 0) {
+        state.setSearchResults(localMatches.map(p => ({ type: 'user', pubkey: p.pubkey, name: p.displayName, picture: p.picture })));
+        state.setIsSearching(false); return;
+      }
+
+      if (isNip05 && !isNpub) {
+        const [name, domain] = rawQuery.split('@');
+        // Name lookups load as set by the founder: no refusal card, the visit
+        // goes through (load-all + VPN tip, docs/NO-IP-LEAKS.md).
+        try {
+          const res = await fetch(`https://${domain}/.well-known/nostr.json?name=${name}`);
+          const data = await res.json();
+          const targetPubkey = data.names?.[name];
+          if (targetPubkey) {
+            state.setSearchResults([{ type: 'user', pubkey: targetPubkey, name, picture: null }]);
+            state.setIsSearching(false); return;
+          }
+        } catch (e) {}
+      }
+
+      if (isNpub || isHex) {
+        let targetPubkey = rawQuery;
+        if (isNpub) {
+          const decoded = nip19.decode(rawQuery);
+          targetPubkey = decoded.data;
+          if (typeof targetPubkey !== 'string') {
+            targetPubkey = Array.from(targetPubkey).map(b => b.toString(16).padStart(2, '0')).join('');
+          }
+        }
+        state.setSearchResults([{ type: 'user', pubkey: targetPubkey, name: noHexName(null, targetPubkey), picture: null }]);
+
+        const profileEvents = await queryWithTimeout(
+          pool,
+          profileRelays.slice(0, 1),
+          { kinds: [0], authors: [targetPubkey] },
+          5000
+        );
+
+        if (profileEvents.length > 0) {
+          try {
+            const p = JSON.parse(profileEvents[0].content);
+            state.setSearchResults([{ 
+              type: 'user', pubkey: targetPubkey, 
+              name: p.display_name || p.name || shortNpub(targetPubkey),
+              picture: p.picture 
+            }]);
+          } catch (e) {}
+        }
+        state.setIsSearching(false); return;
+      }
+
+      // Search text goes only to the search rows in Connections.
+      const publicSearchRelays = searchRelays;
+      const events = await Promise.race([
+        Promise.all([
+          pool.querySync(publicSearchRelays, { kinds: [0, 41], search: rawQuery, limit: 30 }),
+          pool.querySync(groupOnlyRelays, { kinds: [9002], limit: 200 })
+        ]).then(res => [...res[0], ...res[1]]),
+        new Promise(resolve => setTimeout(() => resolve([]), 4000))
+      ]);
+
+      const matchedProfiles = [];
+      const matchedGroups = [];
+
+      events.forEach(ev => {
+        if (ev.kind === 0) {
+          try {
+            const d = JSON.parse(ev.content);
+            matchedProfiles.push({ type: 'user', pubkey: ev.pubkey, name: d.display_name || d.name || shortNpub(ev.pubkey), picture: d.picture });
+          } catch (e) {}
+        } else if (ev.kind === 41) {
+          try {
+            const d = JSON.parse(ev.content);
+            // A channel metadata hit is a claim, not a group: it is offered
+            // only once the group relays hold metadata for that id.
+            matchedGroups.push({ type: 'group', id: ev.tags.find(t => t[0] === 'd')?.[1], name: d.name, isChannel: d.isChannel, creator: ev.pubkey, confirmed: false });
+          } catch (e) {}
+        } else if (ev.kind === 39000 || ev.kind === 9002) {
+          const getTag = (t) => ev.tags.find(x => x[0] === t)?.[1];
+          const groupId = getTag('h') || getTag('d');
+          const groupName = getTag('name');
+          if (groupId && groupName && groupName.toLowerCase().includes(rawQuery.toLowerCase())) {
+            matchedGroups.push({
+              type: 'group',
+              id: groupId,
+              name: groupName,
+              isChannel: ev.tags.some((tag) => tag[0] === 'channel' || tag[0] === 'broadcast'),
+              creator: ev.pubkey,
+            });
+          }
+        }
+      });
+
+      const uniqueUsers = Array.from(new Map(matchedProfiles.map(p => [p.pubkey, p])).values());
+      const uniqueGroups = Array.from(new Map(matchedGroups.map(g => [g.id, g])).values());
+      const confirmedGroups = await Promise.all(uniqueGroups.slice(0, 10).map(async (group) => {
+        if (group.confirmed !== false) return group;
+        const meta = await fetchGroupMetadata(identity, group.id).catch(() => null);
+        if (!meta) return null;
+        return { ...group, name: meta.name || group.name, picture: meta.picture || null, isChannel: false };
+      }));
+      state.setSearchResults([...uniqueUsers.slice(0, 10), ...confirmedGroups.filter(Boolean)]);
+    } catch (err) { 
+      console.error("Search failed entirely:", err); 
+    } finally { 
+      pool?.destroy();
+      state.setIsSearching(false); 
+    }
+  };
+  return { handleSearch };
+}

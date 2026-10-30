@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cipher — privacy</title>
+<meta name="description" content="What Cipher keeps, what a relay can see, and what nobody here can do for you.">
+<style>
+  :root {
+    --paper: #faf6ef;
+    --ink: #2b2b26;
+    --shade: #6b665c;
+    --line: #e4ddcf;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --paper: #16181c;
+      --ink: #e8e4dc;
+      --shade: #a5a099;
+      --line: #2c2f35;
+    }
+  }
+  html, body { background: var(--paper); }
+  body {
+    color: var(--ink);
+    font-family: Georgia, 'Times New Roman', serif;
+    line-height: 1.6;
+    margin: 0;
+  }
+  main {
+    max-width: 42em;
+    margin: 0 auto;
+    padding: 3rem 1.25rem 4rem;
+  }
+  h1 { font-size: 2rem; line-height: 1.2; margin: 0 0 1.5rem; }
+  h2 { font-size: 1.05rem; margin: 2.5rem 0 0.75rem; }
+  p { margin: 0 0 1rem; }
+  ul { margin: 0 0 1rem; padding-left: 1.25rem; }
+  li { margin: 0 0 0.4rem; }
+  .lead { font-size: 1.15rem; }
+  a { color: inherit; }
+  footer { margin-top: 3rem; color: var(--shade); font-size: 0.9rem; }
+</style>
+</head>
+<body>
+<main>
+  <h1>What Cipher holds</h1>
+  <p class="lead">Plain words, no promises Cipher cannot keep.</p>
+
+  <h2>On your device</h2>
+  <ul>
+    <li>Your account is a key made on your device. There is no phone number, no email address and no account form.</li>
+    <li>Your 12 words are the only way back into an account. They stay on your device and never travel to anyone here.</li>
+    <li>Messages, pictures and order details are kept on the device in an encrypted database, so a stolen copy without the key is not readable.</li>
+    <li>Nobody here can reset a PIN, open an account, or hand back lost words.</li>
+  </ul>
+
+  <h2>What travels</h2>
+  <ul>
+    <li>Messages are sealed end to end before they leave the device. A relay stores sealed text, not the words inside it.</li>
+    <li>Groups are shared through a relay. The relay can see which keys belong to a group and when each one posts; it cannot read what is posted.</li>
+    <li>Payments go from the buyer to the vendor's own address. Cipher holds no money, and no public block explorer is ever called from the app.</li>
+    <li>Order receipts are sealed like messages. A relay carries a receipt from one person in the order to the other, and cannot read it.</li>
+  </ul>
+
+  <h2>What a relay can see</h2>
+  <ul>
+    <li>A relay sees the connection: an address and a time, unless you are on Tor or a VPN.</li>
+    <li>In a browser, the browser version does not hide your address by itself. Use a VPN alongside it.</li>
+    <li>The desktop app carries Tor inside it and routes through it.</li>
+  </ul>
+
+  <h2>What Cipher does not do</h2>
+  <ul>
+    <li>No analytics, no ad code, no trackers from other companies.</li>
+    <li>No selling, renting or trading of anything about you.</li>
+    <li>No reading of your messages, because the relays do not hold the key.</li>
+  </ul>
+
+  <h2>Before you trust it further</h2>
+  <p>Cipher is new. Encryption is only as good as the code that makes the keys, and that code should be read by people who do not work here. Treat any claim on this site as a claim, not a guarantee.</p>
+
+  <footer>
+    <p><a href="/download">Get Cipher</a></p>
+  </footer>
+</main>
+</body>
+</html>

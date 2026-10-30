@@ -1,0 +1,338 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* The one look, worn everywhere: pure black ground, blue accent, charcoal
+   panels. Dark only — no light set, no theme registry, no picker. */
+:root {
+  color-scheme: dark;
+  --z-fab: 40;
+  --z-sheet: 60;
+  --z-call: 80;
+  --z-toast: 100;
+  --sat: env(safe-area-inset-top, 0px);
+  --sab: env(safe-area-inset-bottom, 0px);
+  --nav-h: 4rem;
+  /* The below-md bottom bar (15.1). Scroll roots under it pad by this plus
+     the safe area so the last row clears the bar; md+ has no bar, so the
+     padding utility collapses to breathing room there. */
+  --bar-h: 3.5rem;
+  --app-edge: max(1.25rem, calc(50% - 14rem + 1.25rem));
+  --bg: #000000;
+  --bg-soft: #0a0a0a;
+  --panel: #111111;
+  --panel-strong: #171717;
+  --panel-alt: #1d1d1d;
+  --border: rgba(255, 255, 255, 0.08);
+  --border-strong: rgba(255, 255, 255, 0.12);
+  --text: #f5f5f5;
+  --text-rgb: 245 245 245;
+  --scrim-rgb: 0 0 0;
+  --text-muted: #9ca3af;
+  --text-subtle: #8b93a0;
+  --accent: #005dfd;
+  --accent-text: #3987ff;
+  --accent-soft: rgba(0, 93, 253, 0.14);
+  --accent-ink: #ffffff;
+  --success: #10b981;
+  --success-rgb: 16 185 129;
+  --danger: #ef4444;
+  --danger-rgb: 239 68 68;
+  --glow-a: rgba(0, 93, 253, 0.13);
+  --glow-b: rgba(0, 93, 253, 0.06);
+  --glass-panel: rgba(28, 28, 30, 0.7);
+  --glass-header: rgba(10, 10, 10, 0.75);
+  --glass-shadow: rgba(0, 0, 0, 0.37);
+  --hover-wash: rgba(255, 255, 255, 0.06);
+  /* Layer tokens: the only z values any component may use. fab floats over
+     content, sheet overlays content and chrome, call takes the phone,
+     toast answers to no one. */
+  --z-fab: 40;
+  --z-sheet: 60;
+  --z-call: 80;
+  --z-toast: 100;
+}
+
+html, body, #root {
+  height: 100%;
+  min-height: 100dvh;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  overscroll-behavior: none;
+  background: var(--bg);
+}
+
+body {
+  background: var(--bg) !important;
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  overscroll-behavior-y: none;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+button, input, textarea, select {
+  font: inherit;
+}
+
+button, a, [role='button'] {
+  touch-action: manipulation;
+}
+
+img {
+  max-width: 100%;
+  display: block;
+}
+
+:focus-visible {
+  outline: 2px solid rgba(0, 93, 253, 0.9);
+  outline-offset: 2px;
+}
+
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+  outline: none;
+}
+
+[role='dialog'][aria-modal='true'] {
+  max-height: calc(100dvh - var(--sat) - var(--sab) - 0.5rem);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: rgba(156, 163, 175, 0.8);
+}
+
+::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  background: transparent;
+}
+
+.cipher-shell {
+  background:
+    radial-gradient(circle at top, var(--glow-a), transparent 28%),
+    radial-gradient(circle at bottom left, var(--glow-b), transparent 28%),
+    var(--bg);
+}
+
+.cipher-tab {
+  position: relative;
+  overflow: hidden;
+}
+
+@layer utilities {
+  .pt-safe { padding-top: var(--sat); }
+  .pb-safe { padding-bottom: var(--sab); }
+  /* Below md the tab bar owns the bottom edge: content pads by the bar plus
+     the safe area so the last row and the composer clear it. md+ has no bar,
+     so the same utility gives rows breathing room instead. */
+  .pb-bar { padding-bottom: calc(var(--bar-h) + var(--sab)); }
+  @media (min-width: 768px) {
+    .pb-bar { padding-bottom: calc(var(--sab) + 1rem); }
+  }
+  .pb-sheet { padding-bottom: calc(1.5rem + var(--sab)); }
+  .top-safe { top: calc(var(--sat) + 1rem); }
+  .fab-pos { bottom: calc(var(--nav-h) + var(--sab) + 1.25rem); right: var(--app-edge); }
+  .fab-menu-pos { bottom: calc(var(--nav-h) + var(--sab) + 6rem); right: var(--app-edge); }
+  .touch-target { min-width: 44px; min-height: 44px; }
+
+  /* Elevation without arbitrary z-[...] literals (master §1). */
+  .z-fab { z-index: var(--z-fab); }
+  .z-sheet { z-index: var(--z-sheet); }
+  .z-call { z-index: var(--z-call); }
+  .z-toast { z-index: var(--z-toast); }
+
+  /* Typing indicator: Telegram's three bouncing dots.
+     Hold the base glyph in place so the row does not shift. */
+  .typing-dots span {
+    display: inline-block;
+    animation: typing-bounce 1.2s ease-in-out infinite;
+  }
+  .typing-dots span:nth-child(2) { animation-delay: 0.15s; }
+  .typing-dots span:nth-child(3) { animation-delay: 0.3s; }
+  @keyframes typing-bounce {
+    0%, 60%, 100% { transform: translateY(0); opacity: 0.5; }
+    30% { transform: translateY(-3px); opacity: 1; }
+  }
+
+  /* List skeletons: hover-wash to ink/10 and back. */
+  .shimmer {
+    background: linear-gradient(100deg, var(--hover-wash) 40%, var(--panel-alt) 60%, var(--hover-wash));
+    background-size: 200% 100%;
+    animation: shimmer-slide 1.4s ease infinite;
+  }
+  @keyframes shimmer-slide {
+    from { background-position: 100% 0; }
+    to { background-position: -100% 0; }
+  }
+
+  .linear-glow {
+    position: absolute;
+    top: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 100%;
+    max-width: 600px;
+    height: 200px;
+    background: radial-gradient(circle, var(--glow-a) 0%, rgba(0,0,0,0) 70%);
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .hybrid-panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 1rem;
+  }
+
+  .hybrid-button {
+    transition: all 0.2s ease;
+    border-radius: 0.75rem;
+  }
+
+  .hybrid-button:hover {
+    background: var(--hover-wash);
+  }
+
+  .hybrid-button:active {
+    transform: scale(0.98);
+  }
+
+  .neon-blue {
+    color: var(--accent);
+    text-shadow: 0 0 10px var(--accent-soft);
+  }
+
+  .neon-green {
+    color: #10b981;
+    text-shadow: 0 0 10px rgba(16, 185, 129, 0.5);
+  }
+
+  .mono {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  }
+
+  .glass-panel {
+    background: var(--glass-panel);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid var(--border);
+    box-shadow: 0 8px 32px 0 var(--glass-shadow);
+  }
+
+  .glass-header {
+    background: var(--glass-header);
+    backdrop-filter: blur(24px);
+    -webkit-backdrop-filter: blur(24px);
+    border-bottom: 1px solid var(--border);
+  }
+
+  /* Skeleton shimmer: hover-wash to ink at 10%, on a small loop. */
+  @keyframes skeleton-shimmer {
+    0% { background-color: var(--hover-wash); }
+    55%, 100% { background-color: rgb(var(--text-rgb) / 0.10); }
+  }
+
+  .skeleton {
+    background-color: var(--hover-wash);
+    border-radius: 0.75rem;
+    animation: skeleton-shimmer 1.8s ease-in-out infinite;
+  }
+}
+
+  /* Escrow timeline (§4): a 5-beat rail with its connector line. Pulse
+     and shimmer ride the global prefers-reduced-motion kill below, and
+     this pair repeats it per-animation for completeness. */
+  .escrow-beat {
+    align-items: flex-start;
+    gap: 0.5rem;
+    padding-bottom: 10px;
+    position: relative;
+  }
+
+  .escrow-beat:last-child {
+    padding-bottom: 0;
+  }
+
+  .escrow-beat:not(:last-child)::before {
+    background: var(--border);
+    border-radius: 1px;
+    bottom: -2px;
+    content: '';
+    left: 5px;
+    position: absolute;
+    top: 14px;
+    width: 2px;
+  }
+
+  .escrow-beat .escrow-dot {
+    flex: none;
+    height: 12px;
+    width: 12px;
+    border: 2px solid var(--border-strong);
+    border-radius: 9999px;
+    background: transparent;
+    margin-top: 3px;
+  }
+
+  .escrow-beat .escrow-dot[data-state='done'] {
+    background: var(--success);
+    border-color: var(--success);
+  }
+
+  .escrow-beat .escrow-dot[data-state='current'] {
+    background: var(--accent);
+    border-color: var(--accent);
+  }
+
+  .escrow-beat .escrow-dot[data-state='unknown'] {
+    background: var(--panel-alt);
+    border-color: var(--border-strong);
+  }
+
+  .escrow-pulse {
+    animation: escrow-pulse 1.4s ease-in-out infinite;
+  }
+
+  .escrow-shimmer {
+    background-image: linear-gradient(90deg, var(--hover-wash), rgba(255, 255, 255, 0.1), var(--hover-wash));
+    background-size: 200% 100%;
+    animation: escrow-shimmer 1.6s linear infinite;
+  }
+
+  @keyframes escrow-pulse {
+    0%,
+    100% {
+      box-shadow: 0 0 0 0 var(--accent-soft);
+    }
+    50% {
+      box-shadow: 0 0 0 5px var(--accent-soft);
+    }
+  }
+
+  @keyframes escrow-shimmer {
+    from {
+      background-position: 200% 0;
+    }
+    to {
+      background-position: -200% 0;
+    }
+  }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

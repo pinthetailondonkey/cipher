@@ -1,0 +1,54 @@
+#!/bin/sh
+# pre-commit secret scan — founder order 2026-10-27
+# blocks staged additions carrying key-shaped strings. Zero dependencies.
+
+PATTERNS='BEGIN [A-Z ]*PRIVATE|nsec1[a-z0-9]{50,}|xprv[1-9A-HJ-NP-Za-km-z]{20,}|sk-(live|proj|ant)-|ghp_[A-Za-z0-9]{20,}|gh_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|AIza[A-Za-z0-9_-]{20,}|xox[baprs]-[A-Za-z0-9-]{10,}|VERCEL_OIDC_TOKEN|AWS_ACCESS_KEY_ID|api[_-]key.*['"'"'""][A-Za-z0-9/_-]{16,}'
+
+# The scanner never scans its own pattern text — the law's tooling cannot
+# pass its own scan without rewriting the patterns, so additions to this
+# file alone are excluded. Anything else is held to the full scan.
+# No -w: word boundaries refuse to end on a dash, so real tokens like
+# sk-proj-… and xoxb-… (word chars right after the dash) never matched.
+# Proven by a staged fake that sailed clean through the old scan.
+hits=$(git diff --cached -U0 -- . ':(exclude).githooks/pre-commit' | grep '^+' | grep -Ei -- "$PATTERNS")
+if [ -n "$hits" ]; then
+  echo "pre-commit: refusing — staged addition matches a secret pattern:" >&2
+  echo "$hits" | head -5 >&2
+  exit 1
+fi
+
+# Narrow extra rules (added 2026-10-27). Each looks at one file's staged
+# additions at a time. None of them touches public hex pubkeys: a name
+# containing "pub" is never a secret name here (GROUP_RELAY_PUBKEY passes).
+adds() { git diff --cached -U0 -- "$1" | grep '^+' | grep -v '^+++'; }
+files=$(git diff --cached --name-only --diff-filter=ACMR -- . ':(exclude).githooks/pre-commit')
+fail=0
+refuse() { echo "pre-commit: refusing — $1 ($2)" >&2; echo "$3" | head -3 >&2; fail=1; }
+
+# Names that hold a secret: secret, priv, nsec, key, or sk as a whole word.
+NAME='([A-Za-z0-9_]*(secret|priv|nsec|key)[A-Za-z0-9_]*|(^|[^A-Za-z0-9])sk[A-Za-z0-9_]*)'
+ASSIGN='"?'"'"'?[[:space:]]*[:=][[:space:]]*["'"'"'`]?'
+HEX64="${NAME}${ASSIGN}[0-9a-fA-F]{64}([^0-9a-fA-F]|\$)"
+AWS='aws_secret_access_key'"${ASSIGN}"'[A-Za-z0-9/+=]{20,}'
+WORDS='(mnemonic|seed|recovery[_ ]?phrase)[A-Za-z0-9_]*'"${ASSIGN}"'([a-z]{3,8} ){11,23}[a-z]{3,8}'
+ONION='[a-z2-7]{16,56}\.onion'
+
+for f in $files; do
+  a=$(adds "$f")
+  [ -n "$a" ] || continue
+  h=$(echo "$a" | grep -Eio -- "$HEX64" | grep -vi 'pub')
+  [ -n "$h" ] && refuse "a bare 64-hex value is assigned to a secret-looking name" "$f" "$h"
+  h=$(echo "$a" | grep -Ei -- "$AWS")
+  [ -n "$h" ] && refuse "an AWS secret access key is assigned" "$f" "$h"
+  h=$(echo "$a" | grep -Ei -- "$WORDS" | grep -v 'abandon abandon abandon abandon')
+  [ -n "$h" ] && refuse "a recovery phrase (12 or more words) is assigned to mnemonic or seed" "$f" "$h"
+  if echo "$a" | grep -q 'FOUNDER_GROUP_ONION' && echo "$a" | grep -Eiq -- "$ONION"; then
+    refuse "FOUNDER_GROUP_ONION together with an .onion address: the founder's onion never enters history. Keep it uncommitted, or move the address out of the file" "$f" "$(echo "$a" | grep -Ei -e 'FOUNDER_GROUP_ONION' -e "$ONION")"
+  fi
+done
+[ "$fail" = 1 ] && exit 1
+if git diff --cached --name-only | grep -qE '^\.env(\.|$)|\.env\.local$|^\.vercel/'; then
+  echo "pre-commit: refusing — env or build-output files are never committed" >&2
+  exit 1
+fi
+exit 0

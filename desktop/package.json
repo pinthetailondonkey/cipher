@@ -1,0 +1,23 @@
+{
+  "name": "cipher",
+  "productName": "Cipher",
+  "version": "1.0.0",
+  "description": "Cipher messenger and shop, wrapped so every connection rides Tor. Design: docs/DESKTOP.md.",
+  "main": "src/main.js",
+  "private": true,
+  "license": "UNLICENSED",
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test test/",
+    "prepare:linux": "node scripts/prepare-pack.mjs linux",
+    "prepare:win": "node scripts/prepare-pack.mjs win",
+    "web": "npm --prefix .. run build:desktop",
+    "verify:asar": "node scripts/verify-asar.mjs",
+    "dist": "npm run web && npm run prepare:linux && electron-builder --linux && npm run verify:asar",
+    "dist:win": "npm run web && npm run prepare:win && electron-builder --win && npm run verify:asar"
+  },
+  "devDependencies": {
+    "electron": "33.4.11",
+    "electron-builder": "^25.1.8"
+  }
+}

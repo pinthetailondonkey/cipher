@@ -1,0 +1,242 @@
+// A payment watcher you run. The phone asks this. This process asks a Monero
+// wallet RPC, or a Bitcoin node, that you point it at. Bitcoin is a
+// scantxoutset scan of the address. It does not need a wallet or an index.
+// It does not call a public block explorer.
+//
+// On Bitcoin, seen means the payment is already in a block. There is no
+// zero-confirmation path, because a scan of the UTXO set cannot see a
+// transaction that is only in the mempool. One or two confirmations is the
+// window where the vendor can see the money and must not ship. The order
+// is confirmed at three blocks, and not before.
+//
+//   XMR_WALLET_RPC=http://127.0.0.1:18083 BTC_RPC_URL=http://user:pass@127.0.0.1:8332 node scripts/payment-watcher.mjs
+//
+// GET /payment?address=&currency=xmr|btc
+// 200 { address, currency, txid, confirmations, amount, outputAmount, time } or
+//     { address, currency, pending: true },
+//     signed with `x-cipher-sig: v1=<hex hmac-sha256>` over the timestamp
+//     and the raw body bytes (`<ts>:<body>`, the order's child token is
+//     the key), with `x-cipher-ts` in unix seconds. The phone rejects an
+//     unsigned, re-stamped or stale answer, so only the watcher's own word
+//     moves an order. The body echoes the address and currency it was asked
+//     about: a signed reply for one order replayed as another order's check
+//     is the one forgery the signature alone cannot see. (security re-attack)
+//     The check token is a per-order child: HMAC of the base WATCH_TOKEN
+//     over the version, currency and address exactly as asked. The phone
+//     derives it before each check, so the base token never authenticates
+//     a request — a token captured for one order opens nothing else, and
+//     the pasted base secret is dead weight on the wire. (drill round three)
+//     `time` is the block or event time of the transfer, in
+//     unix seconds, and the oldest one in the covering set. The phone uses it
+//     to refuse a transfer recorded before the order's address was issued.
+// 503 { error } when that currency's node is not configured.
+//
+// Every amount leaves here in whole coins, as a decimal string. Monero wallet
+// RPC answers in piconero, so it is shifted twelve places before it enters the
+// report. `amount` is the sum of every output to the address. `outputAmount`
+// and `txid` are the largest single output, which is what a receipt names.
+//
+// Monero direction. The wallet's `get_transfers` answers come in buckets:
+// `in` is a transfer that arrived and is mined, `pool` is one that arrived and
+// is still unconfirmed, and `pending`, `out` and `failed` are this wallet's
+// own sends. This watcher asks only for `in` and `pool`, and
+// `src/lib/paymentWatch.js` checks every row's own label again, dropping a row
+// marked `pending`, `out` or `failed` even if the wallet filed it wrong. The
+// vendor's own outgoing spend can therefore never be read as an incoming
+// payment. (security S3)
+
+import http from 'node:http';
+import fs from 'node:fs';
+import { createHmac, timingSafeEqual } from 'node:crypto';
+import { childWatcherToken, incomingMoneroTransfers, parseExactAmounts, reportFromTransfers, rowsFromScan } from '../src/lib/paymentWatch.js';
+
+if (fs.existsSync('.env')) process.loadEnvFile('.env');
+
+const port = Number(process.env.PORT || process.env.WATCH_PORT || 8788);
+const xmrRpc = String(process.env.XMR_WALLET_RPC || '').trim();
+const btcRpc = String(process.env.BTC_RPC_URL || '').trim();
+const watchToken = String(process.env.WATCH_TOKEN || '');
+// WATCH_HOST widens the listen address back on purpose: the default is the
+// machine itself, so a vendor box on Tails never serves the LAN. A phone on
+// the same network sets WATCH_HOST=0.0.0.0 and gets exactly what it got before.
+const watchHost = String(process.env.WATCH_HOST || '127.0.0.1');
+
+// The check token is the order's child: HMAC of the base secret over the
+// version, the currency and the address exactly as asked. The base token
+// itself authenticates nothing — an open-ended token is dead, and a child
+// captured for one order answers for no other address, currency or order.
+async function tokenMatches(presented, address, currency) {
+  const expected = await childWatcherToken(watchToken, address, currency);
+  const a = Buffer.from(String(presented || ''));
+  const b = Buffer.from(expected);
+  if (!watchToken || a.length !== b.length) return false;
+  return timingSafeEqual(a, b);
+}
+
+// Every 200 answer is signed so the phone can tell a forged report from a real
+// one. The signature covers the timestamp and the exact body bytes; the
+// order's child token is the key — the same one the phone presented and
+// verifies with. The phone also checks `x-cipher-ts` is within two minutes
+// of its own clock — which bites only because the timestamp itself is inside
+// the signature: a replay of a captured answer cannot re-stamp the date.
+// Every answer also echoes the address and currency it looked up, so a
+// signed reply for one order replayed as another order's check answers
+// nothing. (security re-attack)
+async function signedAnswer(res, address, currency, report) {
+  // Awaited: the child token is an async derivation, and an un-awaited
+  // promise turned every successful check into a 502 at the signature line
+  // (caught by the executed probe, never by the unit tests).
+  const token = await childWatcherToken(watchToken, address, currency);
+  const body = JSON.stringify({ address, currency, ...report });
+  const ts = Math.floor(Date.now() / 1000);
+  const sig = `v1=${createHmac('sha256', token).update(`${ts}:${body}`).digest('hex')}`;
+  res.writeHead(200, { 'Content-Type': 'application/json', 'x-cipher-sig': sig, 'x-cipher-ts': String(ts) });
+  res.end(body);
+}
+
+async function rpc(url, body, { exactAmounts = false } = {}) {
+  const parsed = new URL(url);
+  const headers = { 'Content-Type': 'application/json' };
+  if (parsed.username || parsed.password) {
+    const token = Buffer.from(`${decodeURIComponent(parsed.username)}:${decodeURIComponent(parsed.password)}`).toString('base64');
+    headers.Authorization = `Basic ${token}`;
+    parsed.username = '';
+    parsed.password = '';
+  }
+  const response = await fetch(parsed.href, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) throw new Error(`Wallet RPC answered ${response.status}`);
+  const text = await response.text();
+  const payload = exactAmounts ? parseExactAmounts(text) : JSON.parse(text);
+  if (payload.error) throw new Error(payload.error.message || 'Wallet RPC rejected the request');
+  return payload.result;
+}
+
+async function moneroTransfers(address) {
+  const result = await rpc(`${xmrRpc.replace(/\/$/, '')}/json_rpc`, {
+    jsonrpc: '2.0',
+    id: '0',
+    method: 'get_transfers',
+    // Arriving transfers only. `pending` and `out` are this wallet's own
+    // sends; asking for them would feed money leaving into a check for
+    // money arriving. incomingMoneroTransfers enforces the same filter row
+    // by row. (security S3)
+    params: { in: true, pool: true },
+  }, { exactAmounts: true });
+  const rows = incomingMoneroTransfers(result);
+  return reportFromTransfers(rows, address, 'xmr');
+}
+
+function bitcoinDescriptor(address) {
+  const text = String(address || '').trim();
+  if (!/^(bc1|tb1|bcrt1|[123mn2])[a-zA-Z0-9]{10,100}$/.test(text)) {
+    throw Object.assign(new Error('That is not a Bitcoin address this watcher can scan.'), { status: 400 });
+  }
+  return `addr(${text})`;
+}
+
+// scantxoutset cannot date its unspents, so each mined block height is asked
+// for its time. A height the node cannot date stays undated, and the phone
+// then refuses to confirm an order from an undated transfer. (security S1)
+async function bitcoinBlockTimes(heights) {
+  const rows = await Promise.all([...new Set(heights.filter(Number.isInteger))].map(async (height) => {
+    try {
+      const stats = await rpc(btcRpc, {
+        jsonrpc: '1.0',
+        id: 'cipher',
+        method: 'getblockstats',
+        params: [height, ['time']],
+      });
+      const time = Number(stats?.time);
+      return Number.isFinite(time) && time > 0 ? [height, time] : null;
+    } catch {
+      return null;
+    }
+  }));
+  return new Map(rows.filter(Boolean));
+}
+
+async function bitcoinTransfers(address) {
+  const scan = await rpc(btcRpc, {
+    jsonrpc: '1.0',
+    id: 'cipher',
+    method: 'scantxoutset',
+    params: ['start', [bitcoinDescriptor(address)]],
+  }, { exactAmounts: true });
+  const rows = rowsFromScan(scan, address);
+  const times = await bitcoinBlockTimes(rows.map((row) => row.height));
+  for (const row of rows) if (times.has(row.height)) row.timestamp = times.get(row.height);
+  return reportFromTransfers(rows, address, 'btc');
+}
+
+const server = http.createServer(async (req, res) => {
+  const url = new URL(req.url || '/', 'http://127.0.0.1');
+  if (req.method !== 'GET' || url.pathname !== '/payment') {
+    res.writeHead(404, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Not found' }));
+    return;
+  }
+  const address = url.searchParams.get('address') || '';
+  const currency = (url.searchParams.get('currency') || '').toLowerCase();
+  const header = String(req.headers.authorization || '');
+  const presented = header.startsWith('Bearer ') ? header.slice(7) : (url.searchParams.get('token') || '');
+  if (!watchToken) {
+    res.writeHead(503, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Set WATCH_TOKEN. This watcher refuses an open check.' }));
+    return;
+  }
+  if (!(await tokenMatches(presented, address, currency))) {
+    res.writeHead(401, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'The watcher token is wrong.' }));
+    return;
+  }
+  try {
+    let report;
+    if (currency === 'xmr') {
+      if (!xmrRpc) throw Object.assign(new Error('This watcher has no Monero wallet.'), { status: 503 });
+      report = await moneroTransfers(address);
+    } else if (currency === 'btc') {
+      if (!btcRpc) throw Object.assign(new Error('This watcher has no Bitcoin wallet.'), { status: 503 });
+      report = await bitcoinTransfers(address);
+    } else {
+      throw Object.assign(new Error('Say currency=xmr or currency=btc.'), { status: 400 });
+    }
+    await signedAnswer(res, address, currency, report);
+  } catch (error) {
+    const status = error.status || 502;
+    console.error('[watcher]', error.message);
+    res.writeHead(status, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: error.message || 'The watcher failed.' }));
+  }
+});
+
+if (process.argv[1] && process.argv[1].endsWith('payment-watcher.mjs')) {
+  if (!watchToken || (!xmrRpc && !btcRpc)) {
+    console.error('[watcher] A vendor runs this. It will not listen until both of these are set:');
+    console.error('  WATCH_TOKEN=a-long-secret');
+    console.error('  XMR_WALLET_RPC=http://127.0.0.1:18083   or   BTC_RPC_URL=http://user:pass@127.0.0.1:8332');
+    console.error('Start the Monero wallet first:');
+    console.error('  monero-wallet-rpc --rpc-bind-ip 127.0.0.1 --rpc-bind-port 18083 --disable-rpc-login --wallet-file YOUR_WALLET --password YOUR_PASSWORD');
+    console.error('Then: WATCH_TOKEN=a-long-secret XMR_WALLET_RPC=http://127.0.0.1:18083 npm run watch');
+    console.error('Paste http://THIS_MACHINE:8788/payment?token=a-long-secret into Connections. The phone never calls a block explorer.');
+    process.exit(1);
+  }
+  server.listen(port, watchHost, () => {
+    console.log(`[watcher] http://127.0.0.1:${port}/payment?token=${watchToken}`);
+    if (watchHost !== '127.0.0.1') console.log(`[watcher] Listening on ${watchHost}. Any device on this network can ask this watcher.`);
+    console.log('[watcher] To serve this box as an onion service instead, add to torrc:');
+    console.log('[watcher]   HiddenServiceDir /var/lib/tor/cipher-watcher/');
+    console.log(`[watcher]   HiddenServicePort 80 127.0.0.1:${port}`);
+    console.log('[watcher] then reload tor; the .onion name sits in that directory\'s hostname file.');
+    console.log('[watcher] An onion needs a TLS certificate before the phone will call it over https. Plain http is refused except on this same machine.');
+    if (!xmrRpc) console.log('[watcher] XMR_WALLET_RPC is not set. Monero checks will fail loudly.');
+    if (!btcRpc) console.log('[watcher] BTC_RPC_URL is not set. Bitcoin checks will fail loudly.');
+    console.log('[watcher] The phone confirms Bitcoin at 3 and Monero at 10, unless cipher_confirmations overrides it.');
+    console.log('[watcher] Paste that URL into Connections. This process asks your wallet. It does not ask a block explorer.');
+  });
+}
+
+export { server };

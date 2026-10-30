@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cipher</title>
+<meta name="description" content="A messenger and a shop. Open it in your browser, or install it to your home screen.">
+<style>
+  :root {
+    --paper: #faf6ef;
+    --ink: #2b2b26;
+    --shade: #6b665c;
+    --line: #e4ddcf;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --paper: #16181c;
+      --ink: #e8e4dc;
+      --shade: #a5a099;
+      --line: #2c2f35;
+    }
+  }
+  html, body { background: var(--paper); }
+  body {
+    color: var(--ink);
+    font-family: Georgia, 'Times New Roman', serif;
+    line-height: 1.6;
+    margin: 0;
+  }
+  main {
+    max-width: 42em;
+    margin: 0 auto;
+    padding: 3rem 1.25rem 4rem;
+  }
+  h1 { font-size: 2rem; line-height: 1.2; margin: 0 0 1.5rem; }
+  h2 { font-size: 1.05rem; margin: 2.5rem 0 0.75rem; }
+  p { margin: 0 0 1rem; }
+  ul { margin: 0 0 1rem; padding-left: 1.25rem; }
+  li { margin: 0 0 0.4rem; }
+  .lead { font-size: 1.15rem; }
+  .quote {
+    border-left: 3px solid var(--line);
+    padding-left: 1rem;
+    color: var(--shade);
+    font-style: italic;
+  }
+  .plain {
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 1.25rem;
+    margin-top: 1.25rem;
+  }
+  .plain p:last-child, .plain ul:last-child { margin-bottom: 0; }
+  a { color: inherit; }
+  footer { margin-top: 3rem; color: var(--shade); font-size: 0.9rem; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Cipher</h1>
+  <p class="lead">A messenger and a shop for your phone's browser, or your own computer.</p>
+
+  <h2>Open it now</h2>
+  <div class="plain">
+    <p><a href="/">Cipher on the web</a> — no phone number, no account form. Your account is a key made on your device.</p>
+  </div>
+
+  <h2>On an iPhone or iPad</h2>
+  <ol>
+    <li>Open <a href="/">ciphermessenger.org</a> in Safari.</li>
+    <li>Tap the Share button.</li>
+    <li>Choose Add to Home Screen.</li>
+  </ol>
+  <p>Cipher then opens like an app, in its own window.</p>
+
+  <h2>On Android</h2>
+  <p>The browser version works today. A signed Android package is not published yet; when it is, it will be on this page and nowhere else.</p>
+
+  <h2>On a computer</h2>
+  <p>A portable Linux build with Tor inside is made and checksummed, but it is not published yet. It is not on this page because there is no file to download here yet, and a link that leads nowhere is worse than none.</p>
+
+  <h2>What you can trust before you trust anything else</h2>
+  <blockquote class="quote">
+    <p>Cipher is a messenger and a shop. Your messages, payments and pictures travel encrypted.</p>
+    <p>The desktop app routes everything through Tor, built in. In a browser, use a VPN alongside it: the browser version does not hide your address by itself.</p>
+    <p>Your 12 words are the only way back into an account. They stay on your device. Nobody here can reset a PIN or restore an account for you.</p>
+  </blockquote>
+
+  <h2>Updates</h2>
+  <p>The web version updates when you reload it. An installed copy updates the same way. Nothing installs itself in the background.</p>
+
+  <footer>
+    <p><a href="/privacy">How Cipher handles what it holds</a></p>
+  </footer>
+</main>
+</body>
+</html>
