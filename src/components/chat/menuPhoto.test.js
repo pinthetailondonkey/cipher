@@ -28,15 +28,18 @@ test('the listing form offers a photo, and only there: uploaded privately, refus
   // The picker is the form's fourth row, and the only file door in the view.
   assert.match(form, /type="file"/);
   assert.equal((view.match(/type="file"/g) || []).length, 1);
-  // The file goes out encrypted, to the hosts the device names.
-  assert.match(view.slice(storefrontStart, formEnd), /uploadPrivateMedia\(file, blossomServers\(\)\)/);
+  // The file goes out encrypted, to the hosts the device names. It takes the
+  // attachment door, which re-encodes a photo before encrypting it; the raw
+  // upload is no longer reachable from this picker.
+  assert.match(view.slice(storefrontStart, formEnd), /uploadAttachment\(file, blossomServers\(\)\)/);
+  assert.doesNotMatch(view.slice(storefrontStart, formEnd), /uploadPrivateMedia\(file, blossomServers\(\)\)/);
   // A host that refuses is the shared toast's sentence, never re-inlined.
   assert.match(view.slice(storefrontStart, formEnd), /photoRefusalToast\(/);
 });
 
 test('the posted product carries the entry the upload returns, and the row draws it through the DM gate', () => {
   const storefront = view.slice(storefrontStart, formEnd);
-  assert.match(storefront, /setPhoto\(await uploadPrivateMedia\(file, blossomServers\(\)\)\)/);
+  assert.match(storefront, /setPhoto\(await uploadAttachment\(file, blossomServers\(\)\)\)/);
   assert.match(storefront, /image: photo/);
   // The menu row no longer hands the field to Picture as a plain src.
   assert.match(view, /<ProductImage value=\{item\.product\.image\}/);
