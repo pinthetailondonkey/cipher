@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { resolveObjectURL } from 'node:buffer';
 import fs from 'node:fs';
 import test from 'node:test';
-import { attachmentsFor, decryptMedia, encryptMedia, isPrivateMedia, openPrivateMedia, releasePrivateMedia, sendPrivateImage, uploadPrivateMedia } from './mediaCrypto.js';
+import { attachmentsFor, decryptMedia, encryptMedia, isPrivateMedia, openPrivateMedia, photoRefusalToast, releasePrivateMedia, sendPrivateImage, uploadPrivateMedia } from './mediaCrypto.js';
 
 const jpeg = () => new Blob([new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3, 4, 5, 6, 7, 8])], { type: 'image/jpeg' });
 
@@ -45,6 +45,25 @@ test('a host that refuses the encrypted file fails the send, with no plaintext r
   const composer = fs.readFileSync(new URL('../features/chat/useComposer.js', import.meta.url), 'utf8');
   assert.equal(composer.includes('uploadToBlossom'), false);
   assert.match(composer, /sendPrivateImage\(file, blossomServers\(\)\)/);
+});
+
+test('the photo toast shows the upload refusal: fixed sentence, three hosts, then a count', async () => {
+  const refused = 'The photo was not sent. No media host took the encrypted file.';
+  const sentence = 'No media host took the encrypted file.';
+  // An error that is not the upload's own sentence is a browser string and
+  // never reaches the screen; nor does a refusal that names no host.
+  assert.equal(photoRefusalToast('Could not read the file'), refused);
+  assert.equal(photoRefusalToast(sentence), refused);
+  assert.equal(photoRefusalToast(`${sentence} `), refused);
+  // One host, no tail.
+  assert.equal(photoRefusalToast(`${sentence} https://blossom.primal.net: 500`), `${refused} https://blossom.primal.net: 500`);
+  // Three hosts fill the line, still no tail.
+  const three = 'https://blossom.primal.net: 403; https://nostr.build: 500; https://blossom.band: Failed to fetch';
+  assert.equal(photoRefusalToast(`${sentence} ${three}`), `${refused} ${three}`);
+  // Four hosts: three shown, one counted, singular.
+  assert.equal(photoRefusalToast(`${sentence} ${three}; http://media2abc.onion: 401`), `${refused} ${three}; and 1 more host`);
+  // Five hosts: two counted, plural.
+  assert.equal(photoRefusalToast(`${sentence} ${three}; http://media2abc.onion: 401; https://media.example: the host answered for a different file`), `${refused} ${three}; and 2 more hosts`);
 });
 
 test('an encrypted photo goes to an http host and comes back, with a throwaway key bound to that host', async () => {
