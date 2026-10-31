@@ -59,10 +59,13 @@ test.describe('Sheet-class a11y on the boot flow', () => {
     {
       name: 'How to use (tutorial)',
       open: async (page) => {
-        // The guide's door is the You tab's own list, not the drawer.
-        await page.getByRole('navigation', { name: 'Tabs' }).filter({ visible: true })
-          .getByRole('button', { name: 'You' }).click();
-        await page.getByRole('button', { name: /How to use/ }).click();
+        // The You tab's How to use row opens the full-screen guide now, not
+        // this sheet. The after-signup tour is still this sheet and still has
+        // to meet the floor, so the entry boots the app the way a first run
+        // does: the new-account flag raises the sheet on its own.
+        await page.evaluate(() => localStorage.setItem('cipher_new_account', 'true'));
+        await page.reload();
+        await page.waitForTimeout(1000);
       },
       dialogLabel: 'How to use',
       closeFallback: async (page) => page.getByRole('button', { name: 'Close guide' }).click(),
