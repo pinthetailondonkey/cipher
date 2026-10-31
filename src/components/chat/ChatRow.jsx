@@ -13,6 +13,7 @@ import {
   Store,
 } from 'lucide-react';
 import { haptic } from '../../lib/haptics';
+import useLongPress from '../../hooks/useLongPress';
 import Badge from '../ui/Badge';
 import { formatRelativeTime } from './relativeTime';
 
@@ -68,8 +69,6 @@ export default function ChatRow({
   divider,
   onOpen,
   onReveal,
-  onPressStart,
-  onPressCancel,
   onMenuOpen,
   onMenuClose,
   onMenuBack,
@@ -82,7 +81,32 @@ export default function ChatRow({
   onToggleBlock,
 }) {
   const x = useMotionValue(0);
+  // A drag's click arrives at drag end, so a short window is right for it.
+  // A press's click can arrive long after the press fired — a finger or a
+  // mouse held down to read the menu — so the press leaves a flag instead:
+  // the next click is swallowed once, and pointerdown clears it so a press
+  // that ends in a cancel without a click cannot eat a later real click.
   const lastDragAt = useRef(0);
+  const pressFired = useRef(false);
+  const clickConsumed = () => {
+    if (pressFired.current) {
+      pressFired.current = false;
+      return true;
+    }
+    return Date.now() - lastDragAt.current < 300;
+  };
+
+  // The row's menu door: a 500ms still finger. A drift, a lift or a cancel
+  // gives the press up (the hook owns the timer and its cleanup).
+  const pressProps = useLongPress(() => {
+    pressFired.current = true;
+    haptic('light');
+    onMenuOpen();
+  });
+  const onPointerDown = (event) => {
+    pressFired.current = false;
+    pressProps.onPointerDown(event);
+  };
   const pinOpacity = useTransform(x, [12, SWIPE_TRIGGER], [0, 1]);
   const muteOpacity = useTransform(x, [-SWIPE_TRIGGER, -12], [1, 0]);
   const isDm = chat.type === 'dm';
@@ -140,7 +164,7 @@ export default function ChatRow({
        words are its spoken label, not text on the row. */
     <button
       type="button"
-      onClick={onReveal}
+      onClick={() => { if (clickConsumed()) return; onReveal(); }}
       aria-label="Show message preview"
       className="flex min-w-0 flex-1 items-center gap-2 text-left"
     >
@@ -148,7 +172,7 @@ export default function ChatRow({
       <Eye size={14} aria-hidden="true" className="shrink-0 text-inkMuted" />
     </button>
   ) : (
-    <button type="button" onClick={onOpen} className="min-w-0 flex-1 truncate text-left text-[14px] text-inkMuted">
+    <button type="button" onClick={() => { if (clickConsumed()) return; onOpen(); }} className="min-w-0 flex-1 truncate text-left text-[14px] text-inkMuted">
       {previewText || (isDm ? 'Tap to chat' : (chat.group.isChannel ? 'Menu' : 'Public group'))}
     </button>
   );
@@ -156,10 +180,9 @@ export default function ChatRow({
   return (
     <div
       className="relative"
-      onPointerDown={onPressStart}
-      onPointerUp={onPressCancel}
-      onPointerLeave={onPressCancel}
-      onPointerCancel={onPressCancel}
+      {...pressProps}
+      onPointerDown={onPointerDown}
+      onPointerLeave={pressProps.onPointerCancel}
       onContextMenu={(e) => { e.preventDefault(); onMenuOpen(); }}
     >
       <motion.div style={{ opacity: pinOpacity }} className="pointer-events-none absolute inset-0 flex items-center gap-2 bg-accentSoft pl-5 text-accentText">
@@ -187,7 +210,7 @@ export default function ChatRow({
               <button
                 type="button"
                 onClick={() => {
-                  if (Date.now() - lastDragAt.current < 300) return;
+                  if (clickConsumed()) return;
                   onOpen();
                 }}
                 onKeyDown={menuKey}

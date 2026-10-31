@@ -76,8 +76,18 @@ export function __runCleanups() {
 }
 
 export function useLayoutEffect(effect, deps) { return useEffect(effect, deps); }
+export function useInsertionEffect(effect, deps) { return useEffect(effect, deps); }
 export function useSyncExternalStore(_subscribe, getSnapshot) { return getSnapshot(); }
-export function useContext() { return undefined; }
+// framer-motion is bundled through this shim for the row press witness, so
+// the context default has to come back rather than undefined.
+export function useContext(context) { return context?._default; }
+export function useTransition() { return [false, (fn) => fn()]; }
+export function useDeferredValue(value) { return value; }
+export function Component() {}
+Component.prototype.isReactComponent = {};
+export function PureComponent() {}
+PureComponent.prototype = Object.create(Component.prototype);
+PureComponent.prototype.isReactComponent = {};
 export function createContext(defaultValue) { return { Provider: ({ children }) => children, _default: defaultValue }; }
 export function useReducer(reducer, initial) {
   const [state, set] = useState(initial);
@@ -87,7 +97,11 @@ export function useId() { return 'id'; }
 export function useImperativeHandle() {}
 export function useDebugValue() {}
 export function memo(component) { return component; }
-export function forwardRef(component) { return function Forwarded(props) { return component(props, null); }; }
+// Real react hands back an object, not a function: the walker can then tell
+// a wrapper it must not call (framers's motion.*, lucide) from a component.
+export function forwardRef(component) {
+  return { $$typeof: Symbol.for('react.forward_ref'), render: component };
+}
 export function isValidElement(value) { return Boolean(value) && typeof value === 'object' && 'type' in value; }
 export function cloneElement(element, props) { return { type: element.type, props: { ...element.props, ...props } }; }
 export function createElement(type, props, ...children) {
@@ -114,6 +128,7 @@ export const jsxDEV = jsx;
 
 const ENTRY = `
 export { default as ChatList } from ${JSON.stringify(path.join(ROOT, 'src/components/chat/ChatList.jsx'))};
+export { default as ChatRow } from ${JSON.stringify(path.join(ROOT, 'src/components/chat/ChatRow.jsx'))};
 export { default as Drawer } from ${JSON.stringify(path.join(ROOT, 'src/components/chat/Drawer.jsx'))};
 export { default as SearchView } from ${JSON.stringify(path.join(ROOT, 'src/components/chat/SearchView.jsx'))};
 export { useChatStore } from ${JSON.stringify(path.join(ROOT, 'src/store/chatStore.js'))};
@@ -122,7 +137,11 @@ export * as hooks from './react-shim.js';
 
 // The store reads its selectors through zustand's own useCallback, so zustand
 // has to come through the shim too or the shimmed hooks are bypassed.
+// framer-motion (the row's drag and the menu's motion values) is bundled in
+// for the same reason: it imports react itself, so left external it would
+// bind the real react's dispatcher, which no shimmed hook sets.
 const isShimmed = (id) => id === 'react' || id === 'react/jsx-runtime' || id === 'zustand' || id.startsWith('zustand/');
+const isBundled = (id) => isShimmed(id) || /^(framer-motion|motion-dom|motion-utils)(\/|$)/.test(id);
 
 let app = null;
 
@@ -136,7 +155,7 @@ before(async () => {
   const { rolldown } = await import('rolldown');
   const bundle = await rolldown({
     input: path.join(OUT, 'entry.js'),
-    external: (id) => !isShimmed(id) && !id.startsWith('.') && !path.isAbsolute(id),
+    external: (id) => !isBundled(id) && !id.startsWith('.') && !path.isAbsolute(id),
     platform: 'node',
     resolve: {
       alias: {
@@ -155,12 +174,20 @@ after(() => {
 });
 
 // The smallest tree runner that can hold a component's hook slots across
-// re-renders. ChatRow is a leaf: the rows themselves are what the filter
-// decides, so its props are the assertion surface.
-function createTree(component, props) {
+// re-renders. By default a ChatRow is a leaf: the rows themselves are what
+// the filter decides, so its props are the assertion surface. A tree that
+// names ChatRow in `instantiate` runs the row for real instead, so its own
+// press can be pressed and its own buttons clicked.
+function createTree(component, props, { instantiate = [] } = {}) {
   const instances = new Map();
   const hosts = [];
   const rows = [];
+  // By default a row is a leaf whose props are the assertion surface. A tree
+  // that asks for ChatRow runs the row for real, so a press can be pressed
+  // and a click can be clicked; its hosts are flagged so the row's own
+  // buttons can be told from the header's.
+  rows.execute = instantiate.includes('ChatRow');
+  rows.depth = 0;
   const opaque = [];
   const focusables = [];
   let focusCalls = 0;
@@ -185,7 +212,7 @@ function createTree(component, props) {
       return;
     }
     if (typeof type === 'string') {
-      const host = { tag: type, props: ownProps };
+      const host = { tag: type, props: ownProps, row: rows.depth > 0 };
       hosts.push(host);
       walk(ownProps.children, `${at}/${type}`);
       return;
@@ -200,14 +227,16 @@ function createTree(component, props) {
     }
     if (type.name === 'ChatRow') {
       rows.push(ownProps);
-      return;
+      if (!rows.execute) return;
     }
     const instance = instances.get(at) || { slots: [], cursor: 0, mounted: false };
     instances.set(at, instance);
     app.hooks.__setCurrent(instance);
-    const output = type(ownProps);
+    if (type.name === 'ChatRow') rows.depth += 1;
+    const output = type.prototype?.isReactComponent ? new type(ownProps).render() : type(ownProps);
     app.hooks.__clearCurrent();
     walk(output, `${at}/${type.name}`);
+    if (type.name === 'ChatRow') rows.depth -= 1;
     instance.mounted = true;
     for (const effect of app.hooks.__takeEffects()) {
       const cleanup = effect();
@@ -372,15 +401,7 @@ test('the filter field always sits under the title and narrows the list as it is
 });
 
 test('a row keeps its actions without a three-dot: a long press opens the menu', async () => {
-  globalThis.window = {
-    setInterval: () => 0,
-    clearInterval: () => {},
-    setTimeout: (fn, ms) => setTimeout(fn, ms),
-    clearTimeout: (id) => clearTimeout(id),
-  };
-  seedStore();
-  app.useChatStore.setState({ pinnedChats: [], archivedChats: [] });
-  const tree = createTree(app.ChatList, { onOpenChat: () => {}, onRefresh: null });
+  const { tree, pressTargets } = pressRow();
 
   let { rows } = tree.render();
   assert.equal(rows.length, 4, 'every chat has a row');
@@ -390,15 +411,138 @@ test('a row keeps its actions without a three-dot: a long press opens the menu',
     assert.equal(typeof row.onReveal, 'function', 'the blurred preview has a reveal of its own');
   }
   assert.deepEqual(rows.map((row) => row.divider), [true, true, true, false], 'the divider runs between rows, not past the last one');
+  assert.equal(pressTargets.length, 4, 'the row carries its own press, not a prop from the list');
 
-  rows[0].onPressStart();
-  await new Promise((resolve) => setTimeout(resolve, 520));
+  pressTargets[0]({ button: 0, isPrimary: true, clientX: 10, clientY: 10 });
+  await settle(520);
   ({ rows } = tree.render());
   assert.equal(rows.filter((row) => row.menuOpen).length, 1, 'a long press opens exactly one row menu');
-  const open = rows.find((row) => row.menuOpen);
-  open.onMenuClose();
+  const openIndex = rows.findIndex((row) => row.menuOpen);
+  // The menu's own panel hangs off the pressed row: close it from there.
+  const closeButton = tree.render().hosts.find((host) => host.tag === 'button' && host.props['aria-label'] === 'Close options');
+  assert.ok(closeButton, 'the open menu offers a close');
+  closeButton.props.onClick({});
   ({ rows } = tree.render());
   assert.equal(rows.filter((row) => row.menuOpen).length, 0, 'closing the menu puts it away');
+  assert.equal(openIndex, 0, 'the pressed row is the one whose menu opened');
+});
+
+// The row runs the press itself now (useLongPress), so this tree executes
+// ChatRow: the finger is a pointer event and the click that follows it is
+// the real button's onClick. A press that opened the menu must swallow that
+// click, or every long press would also navigate into the chat it just
+// opened the menu over.
+const pressRow = () => {
+  globalThis.window = {
+    setInterval: () => 0,
+    clearInterval: () => {},
+    setTimeout: (fn, ms) => setTimeout(fn, ms),
+    clearTimeout: (id) => clearTimeout(id),
+    addEventListener: () => {},
+    removeEventListener: () => {},
+    matchMedia: () => ({ matches: false, addEventListener: () => {}, removeEventListener: () => {} }),
+    innerWidth: 390,
+    innerHeight: 844,
+  };
+  seedStore();
+  app.useChatStore.setState({ pinnedChats: [], archivedChats: [] });
+  const opened = [];
+  const tree = createTree(
+    app.ChatList,
+    { onOpenChat: (type, id) => opened.push(id), onRefresh: null },
+    { instantiate: ['ChatRow'] },
+  );
+  const view = tree.render();
+  const rowButtons = view.hosts.filter((host) => host.tag === 'button' && host.row);
+  const pressTargets = view.hosts.filter((host) => host.row && typeof host.props.onPointerDown === 'function')
+    .map((host) => host.props.onPointerDown);
+  return { tree, opened, rowButtons, pressTargets };
+};
+
+const settle = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+test('a long press opens the row menu and the click that follows does not also open the chat', async () => {
+  const { tree, opened, rowButtons, pressTargets } = pressRow();
+  assert.equal(pressTargets.length, 4, 'every row binds the press itself');
+  const target = tree.render().rows[0].name;
+  const pressed = rowButtons.findIndex((host) => textOf(host.props.children) === target);
+  assert.ok(pressed >= 0, 'the pressed row has a title button');
+
+  pressTargets[0]({ button: 0, isPrimary: true, clientX: 10, clientY: 10 });
+  await settle(520);
+  const after = tree.render();
+  assert.equal(after.rows.filter((row) => row.menuOpen).length, 1, 'the press opened exactly one menu');
+  rowButtons[pressed].props.onClick({});
+
+  const clicked = tree.render();
+  assert.equal(clicked.rows.filter((row) => row.menuOpen).length, 1, 'the menu stays open after the trailing click');
+  assert.deepEqual(opened, [], 'the trailing click did not also navigate into the chat');
+});
+
+test('a long hold that reads the menu before releasing still swallows the release click', async () => {
+  const { tree, opened, rowButtons, pressTargets } = pressRow();
+  const target = tree.render().rows[0].name;
+  const pressed = rowButtons.findIndex((host) => textOf(host.props.children) === target);
+  assert.ok(pressed >= 0, 'the held row has a title button');
+
+  pressTargets[0]({ button: 0, isPrimary: true, clientX: 10, clientY: 10 });
+  await settle(520);
+  // The finger stays down two more seconds reading the menu, so any window
+  // measured from the moment the press fired has long expired by the release.
+  await settle(2000);
+  const after = tree.render();
+  assert.equal(after.rows.filter((row) => row.menuOpen).length, 1, 'the hold opened the menu');
+  rowButtons[pressed].props.onClick({});
+
+  const clicked = tree.render();
+  assert.equal(clicked.rows.filter((row) => row.menuOpen).length, 1, 'the menu stays open after the release click');
+  assert.deepEqual(opened, [], 'the late release click did not navigate into the chat');
+});
+
+test('a hold that is released with no click does not eat the next real tap', async () => {
+  const { tree, opened, rowButtons, pressTargets } = pressRow();
+  const target = tree.render().rows[0].name;
+  const pressed = rowButtons.findIndex((host) => textOf(host.props.children) === target);
+  assert.ok(pressed >= 0, 'the held row has a title button');
+
+  // The finger drifts off the row and lifts where no click ever arrives, so
+  // whatever the press leaves behind has nothing to swallow. The next tap is
+  // a real one and must work on that first tap.
+  pressTargets[0]({ button: 0, isPrimary: true, clientX: 10, clientY: 10 });
+  await settle(520);
+  const held = tree.render();
+  assert.equal(held.rows.filter((row) => row.menuOpen).length, 1, 'the hold opened the menu');
+
+  pressTargets[0]({ button: 0, isPrimary: true, clientX: 10, clientY: 10 });
+  await settle(100);
+  tree.render().rows[0].onPointerUp?.({});
+  rowButtons[pressed].props.onClick({});
+
+  assert.equal(opened.length, 1, 'the first tap after the clickless release navigates');
+
+  // And the press still arms: a fresh hold after that still opens the menu.
+  // A clear that replaced the hook's own arming handler would leave this
+  // list empty while the tap above still passed.
+  pressTargets[0]({ button: 0, isPrimary: true, clientX: 10, clientY: 10 });
+  await settle(520);
+  const again = tree.render();
+  assert.equal(again.rows.filter((row) => row.menuOpen).length, 1, 'a fresh hold still opens the menu');
+});
+
+test('a short tap on the same row still opens the chat exactly once', async () => {
+  const { tree, opened, rowButtons, pressTargets } = pressRow();
+  const target = tree.render().rows[0].name;
+  const pressed = rowButtons.findIndex((host) => textOf(host.props.children) === target);
+  assert.ok(pressed >= 0, 'the tapped row has a title button');
+
+  pressTargets[0]({ button: 0, isPrimary: true, clientX: 10, clientY: 10 });
+  await settle(100);
+  tree.render().rows[0].onPointerUp?.({});
+  rowButtons[pressed].props.onClick({});
+
+  assert.equal(opened.length, 1, 'a short tap navigates once');
+  const after = tree.render();
+  assert.equal(after.rows.filter((row) => row.menuOpen).length, 0, 'a short tap opens no menu');
 });
 
 test('the new message screen says what it searches and has a submit that works', () => {

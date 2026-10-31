@@ -66,7 +66,7 @@ export default function Dialog({
         onMouseDown={(event) => {
           if (event.target === event.currentTarget) onClose?.();
         }}
-        className="fixed inset-0 z-sheet flex items-center justify-center bg-scrim/60 px-[var(--gutter)]"
+        className="fixed inset-0 z-sheet flex items-center justify-center bg-scrim/60 px-[var(--gutter)] py-[var(--gutter)]"
       >
         <motion.form
           ref={panelRef}
