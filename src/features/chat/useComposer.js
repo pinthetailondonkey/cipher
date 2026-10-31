@@ -8,6 +8,7 @@ import { sendOutcome } from '../../lib/sendOutcome';
 import { createRecordingSession } from './recordingSession';
 import { sendPrivateImage, uploadPrivateMedia } from '../../lib/mediaCrypto';
 import { blossomServers } from '../../lib/egress';
+import { timerSeconds } from '../../lib/disappearing';
 
 export function useComposer({ identity, sendDM, sendGroupMessage }) {
   const view = useChatStore((s) => s.view);
@@ -73,15 +74,7 @@ export function useComposer({ identity, sendDM, sendGroupMessage }) {
     let msgPayload = customPayload || { type: 'text', message: text };
     const _chatIdForTimer = (view === 'dm' ? activeDm : activeGroup?.id);
     const _timerStr = useChatStore.getState().disappearingTimers?.[_chatIdForTimer];
-    const _secs = (() => {
-      if (!_timerStr || _timerStr === 'off') return 0;
-      if (_timerStr.endsWith('m')) return parseInt(_timerStr) * 60 || 0;
-      if (_timerStr === '1h') return 3600;
-      if (_timerStr === '24h') return 86400;
-      if (_timerStr === '7d') return 604800;
-      if (_timerStr === '30d') return 2592000;
-      return 0;
-    })();
+    const _secs = timerSeconds(_timerStr);
     if (_secs > 0 && !msgPayload.expires_at) msgPayload.expires_at = Math.floor(Date.now() / 1000) + _secs;
     const replyId = replyingTo ? replyingTo.id : null;
     const isDmView = view === 'dm';

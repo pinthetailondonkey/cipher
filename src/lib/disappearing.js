@@ -12,6 +12,31 @@
 
 const MAX_STAMP_SECONDS = 2592000; // 30 days — the roster's own longest timer
 
+// The roster's choices as seconds, owned in the one place that speaks this
+// vocabulary. Every site that stamps or sweeps reads this table — a private
+// chain anywhere else is how a new option gets offered but never honored.
+const TIMER_SECONDS = new Map([
+  ['1h', 3600],
+  ['24h', 86400],
+  ['3d', 259200],
+  ['7d', 604800],
+  ['30d', 2592000],
+]);
+
+// A chat's timer setting as seconds: the roster's own choices, the legacy
+// minute shape, and nothing else. Off, empty, a near-miss word and anything
+// unknown all read as no timer at all — 0 — never a silent guess.
+export function timerSeconds(value) {
+  if (typeof value !== 'string' || !value) return 0;
+  const fixed = TIMER_SECONDS.get(value);
+  if (fixed != null) return fixed;
+  if (value.endsWith('m')) {
+    const minutes = parseInt(value, 10);
+    return minutes > 0 ? minutes * 60 : 0;
+  }
+  return 0;
+}
+
 // The carried stamp on a stored row, or null. A DM carries it in `data`
 // (the payload object); a group message carries it sealed away only as the
 // rawContent JSON. Malformed JSON, a stamp that is not a positive number,

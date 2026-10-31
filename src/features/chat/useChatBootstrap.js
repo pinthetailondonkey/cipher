@@ -16,7 +16,7 @@ import { useGroupKeyReconciler } from '../../hooks/useGroupKeyReconciler';
 import { flushSecuringGroupSends } from '../../hooks/useNIP29Group';
 import { bindMemberBaselinePublisher, sealMemberBaseline } from '../../lib/crypto/memberBaseline';
 import { sortMessages } from './media';
-import { rowExpired } from '../../lib/disappearing';
+import { rowExpired, timerSeconds } from '../../lib/disappearing';
 import { listingFromEvent, vendorListingFilter } from '../../lib/listing';
 import { activeUrl, entryById } from '../../lib/egress';
 import { isNativeShell, registerWithGateway, subscribeBrowser, subscribeNative } from '../../lib/pushGateway';
@@ -554,13 +554,7 @@ export function useChatBootstrap({
         return true;
       });
       if (kept.length !== messages.length) messages = kept;
-      if (!timerStr || timerStr === 'off') return messages;
-      let seconds = 0;
-      if (String(timerStr).endsWith('m')) seconds = parseInt(timerStr, 10) * 60;
-      else if (timerStr === '1h') seconds = 3600;
-      else if (timerStr === '24h') seconds = 86400;
-      else if (timerStr === '7d') seconds = 604800;
-      else if (timerStr === '30d') seconds = 2592000;
+      const seconds = timerSeconds(timerStr);
       if (!seconds) return messages;
       const timerKept = messages.filter((message) => {
         const keep = (now - message.timestamp) < seconds;

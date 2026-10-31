@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
 import test from 'node:test';
+import { fileURLToPath } from 'node:url';
 import { clampGroupBody, clampedExpiresAt, rowExpired, rowExpiresAt } from './disappearing.js';
+import * as disappearing from './disappearing.js';
 
 const dataRow = (seconds) => ({ data: { type: 'text', expires_at: seconds }, timestamp: 1000 });
 const groupRow = (seconds, json) => ({ rawContent: json ?? JSON.stringify({ type: 'text', message: 'hi', expires_at: seconds }), data: { type: 'text', message: 'hi' }, timestamp: 1000 });
@@ -59,4 +63,53 @@ test('the group body carries a clamped stamp, and the saved JSON agrees with the
   const raw = clampGroupBody({ expires_at: now + 3600 }, 'not json at all', now);
   assert.equal(raw.plaintext, 'not json at all');
   assert.deepEqual(raw.parsed, { expires_at: now + 3600 });
+});
+
+test('every roster choice parses to its seconds — one parser, and a 3-day pick is exactly 3 days', () => {
+  assert.equal(typeof disappearing.timerSeconds, 'function', 'timerSeconds is exported from the module that owns this vocabulary');
+  const seconds = (value) => disappearing.timerSeconds?.(value);
+  assert.equal(seconds('3d'), 259200, 'the new fact: a 3-day pick stamps 3 days, not a silent 0');
+  assert.equal(seconds('off'), 0, 'off is no timer');
+  assert.equal(seconds(undefined), 0, 'no setting is no timer');
+  assert.equal(seconds(''), 0, 'empty is no timer');
+  assert.equal(seconds('1h'), 3600);
+  assert.equal(seconds('24h'), 86400, 'the day the roster always had');
+  assert.equal(seconds('7d'), 604800);
+  assert.equal(seconds('30d'), 2592000, 'the roster\'s longest, unchanged');
+  assert.equal(seconds('15m'), 900, 'a legacy minute value still parses');
+  assert.equal(seconds('3days'), 0, 'a near-miss word is no timer');
+  assert.equal(seconds('3D'), 0, 'case is not tolerated');
+});
+
+test('the one parser is wired at every site that stamps or sweeps — no private chains left behind', () => {
+  const srcRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+  const sites = [
+    'components/chat/GroupView.jsx',
+    'features/chat/useComposer.js',
+    'features/chat/useChatBootstrap.js',
+  ];
+  for (const site of sites) {
+    const source = fs.readFileSync(path.join(srcRoot, site), 'utf8');
+    assert.ok(source.includes('timerSeconds('), `${site} takes its seconds from timerSeconds`);
+    assert.ok(!source.includes('function disappearingSeconds'), `${site} keeps no private copy of the parser`);
+  }
+  // The vocabulary must live in one place: no file under src may still compare
+  // a timer to a roster value by hand, or a new option is only ever honored
+  // where someone remembered to extend the chain.
+  const rosterCompare = /===\s*(['"])(?:7d|30d)\1|(['"])(?:7d|30d)\2\s*===/;
+  const seen = [];
+  const offenders = [];
+  const walk = (dir) => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) walk(full);
+      else if (/\.(js|jsx|mjs)$/.test(entry.name)) {
+        seen.push(full);
+        if (rosterCompare.test(fs.readFileSync(full, 'utf8'))) offenders.push(path.relative(srcRoot, full));
+      }
+    }
+  };
+  walk(srcRoot);
+  assert.ok(seen.length > 100, `the walk sees the whole tree (${seen.length} files), not an empty corner`);
+  assert.deepEqual(offenders, [], 'the 7d/30d vocabulary lives in timerSeconds alone; no hand comparison remains');
 });

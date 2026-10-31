@@ -17,6 +17,7 @@ import { haptic } from '../../lib/haptics';
 import { noHexName } from '../../lib/npub';
 import { stampArrival } from '../../features/chat/media';
 import { sendOutcome } from '../../lib/sendOutcome';
+import { timerSeconds } from '../../lib/disappearing';
 import Picture from '../ui/Picture';
 
 function GroupStorefront({ items, pinnedId, canList, onBuy, onList, pendingLists = [], now = 0, onRetrySecure }) {
@@ -111,16 +112,6 @@ function readPayload(message) {
     return { type: 'text', message: message.rawContent };
   }
   return { type: 'text', message: message.rawContent };
-}
-
-function disappearingSeconds(timer) {
-  if (!timer || timer === 'off') return 0;
-  if (String(timer).endsWith('m')) return (parseInt(timer, 10) || 0) * 60;
-  if (timer === '1h') return 3600;
-  if (timer === '24h') return 86400;
-  if (timer === '7d') return 604800;
-  if (timer === '30d') return 2592000;
-  return 0;
 }
 
 export default function GroupView({
@@ -251,7 +242,7 @@ export default function GroupView({
     if (!groupId) return 'failed';
     const replyId = replyingTo?.id || null;
     const payload = customPayload || { type: 'text', message: text };
-    const seconds = disappearingSeconds(useChatStore.getState().disappearingTimers?.[groupId]);
+    const seconds = timerSeconds(useChatStore.getState().disappearingTimers?.[groupId]);
     if (seconds > 0) payload.expires_at = Math.floor(Date.now() / 1000) + seconds;
     const tempId = `temp-${Date.now()}`;
     const optimistic = stampArrival({

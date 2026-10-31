@@ -14,6 +14,7 @@ import Button from '../ui/Button';
 const TIMER_CHOICES = [
   { value: 'off', label: 'Off' },
   { value: '24h', label: '1 day' },
+  { value: '3d', label: '3 days' },
   { value: '7d', label: '1 week' },
   { value: '30d', label: '1 month' },
 ];
