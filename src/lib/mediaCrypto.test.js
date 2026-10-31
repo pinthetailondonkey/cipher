@@ -45,6 +45,14 @@ test('a host that refuses the encrypted file fails the send, with no plaintext r
   const composer = fs.readFileSync(new URL('../features/chat/useComposer.js', import.meta.url), 'utf8');
   assert.equal(composer.includes('uploadToBlossom'), false);
   assert.match(composer, /sendPrivateImage\(file, blossomServers\(\)\)/);
+  // The photo toast appends the upload's reasons only when the error is the
+  // upload's own refusal sentence: an earlier throw (reading or encrypting
+  // the file) is a raw browser string and never reaches the screen, and the
+  // host list is capped at three so the toast stays a line.
+  assert.match(composer, /const REFUSED = 'No media host took the encrypted file\.';/);
+  assert.match(composer, /let message = `The photo was not sent\. \$\{REFUSED\}`;/);
+  assert.match(composer, /startsWith\(REFUSED\)/);
+  assert.match(composer, /slice\(0, 3\)/);
 });
 
 test('the document sender names its media hosts — with none named, no host is ever asked', () => {
