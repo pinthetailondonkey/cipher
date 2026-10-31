@@ -322,7 +322,7 @@ function rejectAuthWaiters(session, error) {
 function flushGroupSubs(session) {
   if (session.ws?.readyState !== WebSocket.OPEN) return;
   for (const [subId, filter] of session.subs) {
-    session.ws.send(JSON.stringify(['REQ', subId, filter]));
+    session.ws.send(JSON.stringify(['REQ', subId, ...filter]));
   }
 }
 
