@@ -45,14 +45,29 @@ test('a host that refuses the encrypted file fails the send, with no plaintext r
   const composer = fs.readFileSync(new URL('../features/chat/useComposer.js', import.meta.url), 'utf8');
   assert.equal(composer.includes('uploadToBlossom'), false);
   assert.match(composer, /sendPrivateImage\(file, blossomServers\(\)\)/);
-  // The photo toast appends the upload's reasons only when the error is the
-  // upload's own refusal sentence: an earlier throw (reading or encrypting
-  // the file) is a raw browser string and never reaches the screen, and the
-  // host list is capped at three so the toast stays a line.
-  assert.match(composer, /const REFUSED = 'No media host took the encrypted file\.';/);
-  assert.match(composer, /let message = `The photo was not sent\. \$\{REFUSED\}`;/);
-  assert.match(composer, /startsWith\(REFUSED\)/);
-  assert.match(composer, /slice\(0, 3\)/);
+  // The formatting itself is measured in the test below; the composer is
+  // pinned only to hand the error's own text to it, not to format inline.
+  assert.match(composer, /photoRefusalToast\(err\?\.message\)/);
+});
+
+test('the photo toast shows the upload refusal: fixed sentence, three hosts, then a count', async () => {
+  const { photoRefusalToast } = await import('./mediaCrypto.js');
+  const refused = 'The photo was not sent. No media host took the encrypted file.';
+  const sentence = 'No media host took the encrypted file.';
+  // An error that is not the upload's own sentence is a browser string and
+  // never reaches the screen; nor does a refusal that names no host.
+  assert.equal(photoRefusalToast('Could not read the file'), refused);
+  assert.equal(photoRefusalToast(sentence), refused);
+  assert.equal(photoRefusalToast(`${sentence} `), refused);
+  // One host, no tail.
+  assert.equal(photoRefusalToast(`${sentence} https://blossom.primal.net: 500`), `${refused} https://blossom.primal.net: 500`);
+  // Three hosts fill the line, still no tail.
+  const three = 'https://blossom.primal.net: 403; https://nostr.build: 500; https://blossom.band: Failed to fetch';
+  assert.equal(photoRefusalToast(`${sentence} ${three}`), `${refused} ${three}`);
+  // Four hosts: three shown, one counted, singular.
+  assert.equal(photoRefusalToast(`${sentence} ${three}; http://media2abc.onion: 401`), `${refused} ${three}; and 1 more host`);
+  // Five hosts: two counted, plural.
+  assert.equal(photoRefusalToast(`${sentence} ${three}; http://media2abc.onion: 401; https://media.example: the host answered for a different file`), `${refused} ${three}; and 2 more hosts`);
 });
 
 test('the document sender names its media hosts — with none named, no host is ever asked', () => {
