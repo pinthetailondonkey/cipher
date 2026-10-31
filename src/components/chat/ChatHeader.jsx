@@ -236,7 +236,7 @@ export default function ChatHeader({ mode }) {
             <>
               <p className="mono text-center text-2xl font-bold tracking-widest text-ink">{safety.number}</p>
               <p className="mt-3 text-[13px] leading-relaxed text-inkSubtle">
-                Read these 15 numbers with {title} on a call or in person. If they match, this chat is between you two and nobody else.
+                Read these 15 numbers with {title} in person. If they match, this chat is between you two and nobody else.
               </p>
               {keyChanged && (
                 <div className="mt-3 rounded-xl border border-line bg-panelStrong p-3">

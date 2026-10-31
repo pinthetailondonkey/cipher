@@ -19,10 +19,6 @@ const steps = [
     desc: "Open Discover to find menus and groups to join, or Menus for the current listings.",
   },
   {
-    title: "Voice Calls",
-    desc: "Start an encrypted voice call from the header of any chat. No one else hears it.",
-  },
-  {
     title: "Selling",
     desc: "Open Profile, add a paying address to turn on selling, then publish your products and share your menu.",
   },
