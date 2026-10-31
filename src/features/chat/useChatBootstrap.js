@@ -37,6 +37,7 @@ export function useChatBootstrap({
 }) {
   const groups = useChatStore((s) => s.groups);
   const groupMessages = useChatStore((s) => s.groupMessages);
+  const dms = useChatStore((s) => s.dms);
   const setGroupMessages = useChatStore((s) => s.setGroupMessages);
   const setDms = useChatStore((s) => s.setDms);
   const setProfiles = useChatStore((s) => s.setProfiles);
@@ -539,6 +540,16 @@ export function useChatBootstrap({
     if (!groupSenderKey) return;
     fetchProfilesForPubkeys(groupSenderKey.split(','));
   }, [groupSenderKey]);
+
+  // The same mirror for DM peers: the sorted key set of the dms map, so the
+  // fetch fires when a NEW peer appears live after bootstrap, not on every
+  // message. Until this existed a late-arriving first DM showed the npub in
+  // the header and the row until a reload fetched kind 0.
+  const dmPeerKey = useMemo(() => Object.keys(dms).sort().join(','), [dms]);
+  useEffect(() => {
+    if (!dmPeerKey) return;
+    fetchProfilesForPubkeys(dmPeerKey.split(','));
+  }, [dmPeerKey]);
 
   useEffect(() => {
     const interval = setInterval(async () => {
