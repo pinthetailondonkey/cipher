@@ -71,6 +71,11 @@ export default function ChatList({ onOpenChat, onRefresh }) {
   const [menuFor, setMenuFor] = useState(null);
   const [menuPanel, setMenuPanel] = useState('main');
   const [headerMenuOpen, setHeaderMenuOpen] = useState(false);
+  // The refresh item runs its fetch with the menu held open, because the
+  // spinning arrow inside the menu is the only sign the press did anything.
+  // The list itself never swaps away for a refresh: the global loader would
+  // replace the whole screen, thread and all, for what is a re-read.
+  const [refreshing, setRefreshing] = useState(false);
   const [archivedOpen, setArchivedOpen] = useState(true);
   const [now, setNow] = useState(() => Date.now());
   const pressTimer = useRef(null);
@@ -310,7 +315,23 @@ export default function ChatList({ onOpenChat, onRefresh }) {
                   Notifications
                 </MenuItem>
                 {onRefresh && (
-                  <MenuItem icon={<RefreshCw size={14} className={loading ? 'animate-spin' : 'text-inkMuted'} />} onClick={() => { setHeaderMenuOpen(false); onRefresh(); }}>
+                  <MenuItem
+                    icon={<RefreshCw size={14} className={loading || refreshing ? 'animate-spin' : 'text-inkMuted'} />}
+                    onClick={async () => {
+                      if (refreshing) return;
+                      setRefreshing(true);
+                      try {
+                        await onRefresh();
+                      } catch {
+                        // fetchChats has already said why in a toast; the
+                        // press is answered either way, so the spinner stops
+                        // and the menu closes whatever the fetch returned.
+                      } finally {
+                        setRefreshing(false);
+                        setHeaderMenuOpen(false);
+                      }
+                    }}
+                  >
                     Refresh chats
                   </MenuItem>
                 )}
