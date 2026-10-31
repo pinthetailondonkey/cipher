@@ -47,6 +47,17 @@ test('a host that refuses the encrypted file fails the send, with no plaintext r
   assert.match(composer, /sendPrivateImage\(file, blossomServers\(\)\)/);
 });
 
+test('the document sender names its media hosts — with none named, no host is ever asked', () => {
+  // The document path rides uploadPrivateMedia directly. A call with no
+  // servers loops over an empty list and throws without asking any host, so
+  // every document send died as "no host took the file". The call site is
+  // pinned here the same way the composer's is above.
+  const input = fs.readFileSync(new URL('../components/MessageInput.jsx', import.meta.url), 'utf8');
+  assert.match(input, /import \{ blossomServers \} from '\.\.\/lib\/egress';/);
+  assert.match(input, /uploadPrivateMedia\(file, blossomServers\(\)\)/);
+  assert.doesNotMatch(input, /uploadPrivateMedia\(file\)\s*;/);
+});
+
 test('an encrypted photo goes to an http host and comes back, with a throwaway key bound to that host', async () => {
   const { createServer } = await import('node:http');
   const { createHash } = await import('node:crypto');
