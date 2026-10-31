@@ -46,20 +46,27 @@ test.describe('opening a profile from the chat header', () => {
     await page.getByRole('button', { name: 'Ada' }).click();
     await expect(page.getByRole('button', { name: 'Chat options' })).toBeVisible({ timeout: 10000 });
 
-    // The card names itself from the name it shows — 'Ada', or the short
-    // npub when no name is held — never a hex key.
-    const dialog = page.getByRole('dialog', { name: /Ada|npub1/ });
-    // What stands in while the card's chunk is in flight.
+    // The tap under test: the DM header's own Profile door.
+    await page.getByRole('button', { name: 'Profile', exact: true }).click();
+
+    // Any dialog stands for the card; the spinner stands in while the card's
+    // chunk is in flight.
+    const anyDialog = page.getByRole('dialog').first();
     const loading = page.getByRole('status', { name: 'Opening…' });
 
     // (a) The tap answers with something visible rather than nothing: the
     // card itself, or the spinner that now stands in for it.
     await expect
-      .poll(async () => (await dialog.isVisible()) || (await loading.isVisible()), { timeout: 5000 })
+      .poll(async () => (await anyDialog.isVisible()) || (await loading.isVisible()), { timeout: 5000 })
       .toBeTruthy();
 
-    // (b) The card lands as a dialog that carries the peer's name.
-    await expect(dialog).toBeVisible({ timeout: 10000 });
+    // (b) The card lands carrying the peer's name. The name is asserted as
+    // the display name the store already holds, NOT a name-or-npub pair:
+    // before the fix the card opened nameless and fell back to the short
+    // npub, and an alternation would let that pass. The pre-fix tree must go
+    // red HERE, on the missing name.
+    const card = page.getByRole('dialog', { name: 'Ada' });
+    await expect(card).toBeVisible({ timeout: 10000 });
 
     // A chunk that fails to arrive used to throw to the root error boundary
     // and take the whole app with it; the crash screen must stay away.
