@@ -94,7 +94,7 @@ export default function Create({ identity, onCreated, go }) {
 
   return (
     <>
-      <h1 className="mb-2 text-center text-2xl font-bold tracking-tight text-ink">Welcome to Cipher</h1>
+      <h1 className="mb-2 text-center text-2xl font-bold tracking-tight text-ink">No phone number. No account.</h1>
       <p className="mb-5 max-w-[280px] text-center text-[13px] leading-relaxed text-inkMuted">Pick a handle and a PIN ({MIN_PIN_LENGTH} digits).</p>
 
       <form onSubmit={handleSubmit} className="flex w-full flex-col gap-4 rounded-3xl border border-line bg-panel p-6">
