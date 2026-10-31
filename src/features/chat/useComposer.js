@@ -234,9 +234,21 @@ export function useComposer({ identity, sendDM, sendGroupMessage }) {
       }
     } catch (err) {
       console.error('[media] Encrypted photo upload failed:', err);
-      // The upload error already names each host it tried and why each one
-      // refused; hiding that left nothing to act on.
-      setToast({ type: 'error', message: 'The photo was not sent. ' + (err?.message || 'No media host took the encrypted file.') });
+      // Only the upload's own refusal sentence carries host reasons. An
+      // earlier throw — reading or encrypting the file — is a raw browser
+      // string, and that never reaches the screen.
+      const REFUSED = 'No media host took the encrypted file.';
+      let message = `The photo was not sent. ${REFUSED}`;
+      const raw = String(err?.message || '');
+      if (raw.startsWith(REFUSED)) {
+        // First three hosts, then a count: a toast is a line, not a wall.
+        const reasons = raw.slice(REFUSED.length).trim().split('; ').filter(Boolean);
+        const shown = reasons.slice(0, 3);
+        const rest = reasons.length - shown.length;
+        const tail = rest > 0 ? `; and ${rest} more host${rest === 1 ? '' : 's'}` : '';
+        if (shown.length) message = `The photo was not sent. ${REFUSED} ${shown.join('; ')}${tail}`;
+      }
+      setToast({ type: 'error', message });
     } finally {
       setUploadingImage(false);
     }
