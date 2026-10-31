@@ -1,10 +1,11 @@
-// The idle screen: icon in the accent-soft circle, one title, one line, and
-// the one action the user should take next. Slang may flavor this copy.
+// The idle screen: one icon, one title, one line, and the one action the
+// user should take next. No card around it — an empty list is quiet, not
+// boxed. Screens do not hand-roll an empty state.
 export default function EmptyState({ icon = null, title, line = null, action = null, className = '' }) {
   return (
-    <div className={`flex flex-col items-center rounded-2xl border border-line bg-panel px-6 py-12 text-center ${className}`}>
+    <div className={`flex flex-col items-center px-[var(--gutter)] py-12 text-center ${className}`}>
       {icon && (
-        <span className="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-accentSoft text-accentText">
+        <span className="mb-3 text-inkSubtle [&_svg]:h-7 [&_svg]:w-7" aria-hidden="true">
           {icon}
         </span>
       )}
