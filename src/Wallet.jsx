@@ -17,6 +17,7 @@ import { compressImage } from './lib/imageCompression';
 import { loadVendorPaymentConfig, readPaymentAddresses, saveVendorPaymentConfig, savePaymentAddresses } from './lib/vendorPayments';
 import PrivacySettings from './components/chat/PrivacySettings';
 import Connections from './components/chat/Connections';
+import HowToGuide from './components/chat/HowToGuide';
 import Avatar from './components/ui/Avatar';
 import Picture from './components/ui/Picture';
 import ScreenHeader from './components/ui/ScreenHeader';
@@ -381,6 +382,7 @@ export default function Wallet({ identity, onOpenChat, startView = 'main' }) {
 
   if (view === 'privacy') return <PrivacySettings onBack={() => setView('main')} />;
   if (view === 'connections') return <Connections onBack={() => setView('main')} />;
+  if (view === 'how_to') return <HowToGuide onBack={() => setView('main')} />;
 
   if (view === 'vendor') {
     return <Suspense fallback={<div className="flex h-full items-center justify-center bg-scrim"><div className="h-7 w-7 animate-spin rounded-full border-2 border-ink/20 border-t-accentText" /></div>}><VendorDashboard identity={identity} products={readCachedProducts().filter((product) => product.vendorPubkey === identity.pk)} onBack={() => setView('main')} onCreate={() => setView('product')} /></Suspense>;
@@ -549,7 +551,7 @@ export default function Wallet({ identity, onOpenChat, startView = 'main' }) {
         </Card>
 
         <Card label="Security & Privacy">
-          <ListRow icon={BookOpen} title="How to use" subtitle="A walkthrough of the app" onClick={() => useChatStore.getState().setShowTutorial(true)} />
+          <ListRow icon={BookOpen} title="How to use" subtitle="A walkthrough of the app" onClick={() => setView('how_to')} />
           <ListRow icon={Shield} title="Privacy" subtitle="Calls, last seen, blocked" onClick={() => setView('privacy')} />
           <ListRow icon={Globe} title="Connections" subtitle="Watcher and push" onClick={() => setView('connections')} />
         </Card>
