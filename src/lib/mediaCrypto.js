@@ -116,6 +116,23 @@ export async function sendPrivateImage(file, servers, { compress = compressImage
   return uploadPrivateMedia(clean, servers, upload);
 }
 
+// The toast for a failed photo upload. Only the upload's own refusal
+// sentence carries host reasons; an earlier throw (reading or encrypting
+// the file) is a raw browser string and never reaches the screen. The host
+// list is capped at three so the toast stays a line, not a wall.
+export function photoRefusalToast(raw) {
+  const sentence = 'No media host took the encrypted file.';
+  const refused = `The photo was not sent. ${sentence}`;
+  const text = String(raw || '');
+  if (!text.startsWith(sentence)) return refused;
+  const reasons = text.slice(sentence.length).trim().split('; ').filter(Boolean);
+  if (!reasons.length) return refused;
+  const shown = reasons.slice(0, 3);
+  const rest = reasons.length - shown.length;
+  const tail = rest > 0 ? `; and ${rest} more host${rest === 1 ? '' : 's'}` : '';
+  return `${refused} ${shown.join('; ')}${tail}`;
+}
+
 export function isPrivateMedia(entry) {
   return Boolean(entry && typeof entry === 'object' && entry.url && entry.key && entry.iv);
 }
