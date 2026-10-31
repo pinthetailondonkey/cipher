@@ -11,9 +11,16 @@ import { isPrivateMedia } from '../../lib/mediaCrypto';
 // URL but drops the key and the buyer's photo never opens again. A plain URL
 // is a string and keeps the input it always had. Only typing replaces the
 // photo, and only with a string.
+//
+// The listing the sheet was opened on still holds its entry while the URL box
+// shows, so a misclick offers that photo back whole: closing the sheet used
+// to be the only way, and the upload was already paid for.
 
 export default function ProductEditModal({ editingProduct, onClose, onSubmit }) {
   const product = editingProduct?.msg?.data || editingProduct?.product || null;
+  // The photo the listing arrived with, if it has one. It is what "Keep the
+  // photo" restores; a plain-URL listing has nothing to offer back.
+  const attached = isPrivateMedia(product?.image) ? product.image : null;
   const [title, setTitle] = useState('');
   const [price, setPrice] = useState('');
   const [description, setDescription] = useState('');
@@ -58,9 +65,12 @@ export default function ProductEditModal({ editingProduct, onClose, onSubmit }) 
               <Button variant="ghost" size="sm" onClick={() => setPhoto('')}>Use a URL</Button>
             </>
           ) : (
-            <div className="min-w-0 flex-1">
-              <Input label="Image URL" value={photo || ''} onChange={(event) => setPhoto(event.target.value)} />
-            </div>
+            <>
+              <div className="min-w-0 flex-1">
+                <Input label="Image URL" value={photo || ''} onChange={(event) => setPhoto(event.target.value)} />
+              </div>
+              {attached && <Button variant="ghost" size="sm" onClick={() => setPhoto(attached)}>Keep the photo</Button>}
+            </>
           )}
         </div>
         {error && <p role="alert" className="text-[13px] text-danger">{error}</p>}
