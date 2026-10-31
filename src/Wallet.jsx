@@ -552,7 +552,7 @@ export default function Wallet({ identity, onOpenChat, startView = 'main' }) {
 
         <Card label="Security & Privacy">
           <ListRow icon={BookOpen} title="How to use" subtitle="A walkthrough of the app" onClick={() => setView('how_to')} />
-          <ListRow icon={Shield} title="Privacy" subtitle="Calls, last seen, blocked" onClick={() => setView('privacy')} />
+          <ListRow icon={Shield} title="Privacy" subtitle="Last seen, blocked" onClick={() => setView('privacy')} />
           <ListRow icon={Globe} title="Connections" subtitle="Watcher and push" onClick={() => setView('connections')} />
         </Card>
 

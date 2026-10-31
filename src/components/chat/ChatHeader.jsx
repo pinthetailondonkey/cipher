@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { ChevronLeft, MoreVertical, Phone, Shield, ShieldAlert } from 'lucide-react';
+import { ChevronLeft, MoreVertical, Shield, ShieldAlert } from 'lucide-react';
 import { useChatStore } from '../../store/chatStore';
-import { callsAvailable, startCall } from '../../lib/voiceCall';
 import { haptic } from '../../lib/haptics';
 import { safetyNumberFor, verifySafetyNumber } from '../../lib/safetyNumber';
 import { shortNpub } from '../../lib/npub';
@@ -94,14 +93,8 @@ export default function ChatHeader({ mode }) {
   const keyChanged = Boolean(safety?.changed);
   const subtitle = keyChanged ? 'key changed — re-verify' : (mode === 'dm' ? 'encrypted' : 'group');
 
-  const placeCall = async () => {
-    const result = await startCall({ peer: activeDm, name: title });
-    if (!result.ok) setToast({ type: 'error', message: result.error });
-  };
-
-  // Header: 56px bar with back left, peer mark centred, kebab right. The
-  // voice call stays a direct tap in DMs — it is not buried in the menu.
-  // Timer and group info ride in the kebab so the row never crowds.
+  // Header: 56px bar with back left, peer mark centred, kebab right. Timer
+  // and group info ride in the kebab so the row never crowds.
   const [menuOpen, setMenuOpen] = useState(false);
   // The comparison door: the kebab row opens the sheet, and the sheet carries
   // the 15 digits, the changed warning and — only while the flag is up — the
@@ -180,11 +173,6 @@ export default function ChatHeader({ mode }) {
           />
         </button>
         <div className="flex shrink-0 items-center">
-          {mode === 'dm' && callsAvailable && (
-            <button type="button" onClick={placeCall} aria-label="Voice call" className="touch-target flex items-center justify-center text-ink/70 hover:text-ink">
-              <Phone size={19} />
-            </button>
-          )}
           <button
             type="button"
             onClick={() => setMenuOpen((open) => !open)}
