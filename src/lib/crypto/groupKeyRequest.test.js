@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict';
+import { readdirSync, readFileSync, statSync } from 'node:fs';
+import path from 'node:path';
 import test from 'node:test';
 import {
   GKEY_RETRY_CAP_MS,
@@ -259,4 +261,100 @@ test('securing becomes stuck after the threshold and a retry resets the clock', 
     sends: waiting,
     exhausted: true,
   }), { flush: true, ids: ['list-1'], exhausted: true });
+});
+
+// ---- The armed-send population -------------------------------------------
+// queueSecuringSend arms only through sendGroupMessage's client id, so a
+// call without one is a send NO_KEY drops forever while its toast promises
+// otherwise — the dropped-listing bug, which lived in exactly one of three
+// caller files for weeks because nothing named the population. These two
+// tests walk src and read the components, so a new or unarmed caller shows
+// up here as a named diff instead of as silence on a user's screen.
+const SRC_ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '../../../src');
+
+function listSrcFiles(dir, out = []) {
+  for (const name of readdirSync(dir)) {
+    if (name === 'node_modules' || name === 'dist') continue;
+    const full = path.join(dir, name);
+    if (statSync(full).isDirectory()) listSrcFiles(full, out);
+    else if (/\.(js|jsx)$/.test(name) && !/\.test\.js$/.test(name)) out.push(full);
+  }
+  return out;
+}
+
+// Split one call's argument list at top-level commas only; anything nested
+// in (), [] or {} belongs to its own argument.
+function callArguments(source, openIndex) {
+  let depth = 0;
+  let current = '';
+  const args = [];
+  for (let i = openIndex; i < source.length; i += 1) {
+    const ch = source[i];
+    if ('([{'.includes(ch)) depth += 1;
+    if (')]}'.includes(ch)) depth -= 1;
+    if (depth === 0) return current.trim() ? [...args, current.trim()] : args;
+    if (i === openIndex) continue;
+    if (ch === ',' && depth === 1) {
+      args.push(current.trim());
+      current = '';
+    } else {
+      current += ch;
+    }
+  }
+  return null;
+}
+
+function groupSendCallSites() {
+  const sites = [];
+  const call = /\bsendGroupMessage\s*\(/g;
+  for (const file of listSrcFiles(SRC_ROOT)) {
+    const source = readFileSync(file, 'utf8');
+    call.lastIndex = 0;
+    let match = call.exec(source);
+    while (match !== null) {
+      const args = callArguments(source, match.index + match[0].length - 1);
+      const line = source.slice(0, match.index).split('\n').length;
+      sites.push({ file: path.relative(SRC_ROOT, file), line, args });
+      match = call.exec(source);
+    }
+  }
+  return sites;
+}
+
+test('every sendGroupMessage call carries a client id, from a population this test names', () => {
+  const sites = groupSendCallSites();
+  assert.ok(sites.length >= 5, `expected at least five call sites, walked ${sites.length}`);
+  const files = [...new Set(sites.map((site) => site.file))].sort();
+  const expected = [
+    'components/chat/GroupView.jsx',
+    'features/chat/useCommerce.js',
+    'features/chat/useComposer.js',
+  ];
+  const unexpected = files.filter((file) => !expected.includes(file));
+  assert.deepEqual(unexpected, [], `new sendGroupMessage caller(s) — arm them with a client id or edit this list: ${unexpected.join(', ')}`);
+  const missing = expected.filter((file) => !files.includes(file));
+  assert.deepEqual(missing, [], `expected sendGroupMessage caller(s) gone: ${missing.join(', ')}`);
+  const unarmed = sites
+    .filter((site) => site.args == null || site.args.length < 3 || ['', 'null', 'undefined'].includes(site.args[2]))
+    .map((site) => `${site.file}:${site.line}`);
+  assert.deepEqual(unarmed, [], 'sendGroupMessage called without a client id — the securing queue arms only through it, so NO_KEY drops these sends forever');
+});
+
+test('the group menu item is saved before the send and comes back out on hard failure', () => {
+  const source = readFileSync(path.join(SRC_ROOT, 'components/chat/GroupView.jsx'), 'utf8');
+  const start = source.indexOf('const postListing = async');
+  assert.ok(start !== -1, 'postListing not found in GroupView.jsx');
+  const body = source.slice(start, source.indexOf('\n  };', start));
+  const savedAt = body.indexOf('await saveMessage(groupId, optimistic)');
+  const sendAt = body.indexOf('sendGroupMessage(groupId, payload, tempId');
+  assert.ok(savedAt !== -1 && sendAt !== -1 && savedAt < sendAt,
+    'the optimistic product row must be in the database before the send is tried');
+  assert.ok(body.includes("deliveryStatus: 'sending'"), 'the optimistic row starts as sending');
+  const noKeyAt = body.indexOf("error === 'NO_KEY'");
+  const flipAt = body.indexOf("deliveryStatus: 'securing'");
+  assert.ok(noKeyAt !== -1 && flipAt > noKeyAt, 'NO_KEY flips the row to securing');
+  const removeAt = body.indexOf('message.id !== tempId && message.clientId !== tempId');
+  assert.ok(removeAt > sendAt, 'a hard failure drops the optimistic row after the send');
+  assert.ok(body.indexOf('db.messages.delete(tempId)') > removeAt, 'the stored temp row is deleted with the optimistic one');
+  assert.ok(body.includes("message: 'Failed to send to group'"), 'the failure toast keeps the composer word');
 });
