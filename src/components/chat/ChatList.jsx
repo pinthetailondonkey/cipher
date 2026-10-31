@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Bell,
   Bookmark,
@@ -78,7 +78,6 @@ export default function ChatList({ onOpenChat, onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
   const [archivedOpen, setArchivedOpen] = useState(true);
   const [now, setNow] = useState(() => Date.now());
-  const pressTimer = useRef(null);
 
   useEffect(() => {
     const tick = window.setInterval(() => setNow(Date.now()), 1000);
@@ -86,14 +85,12 @@ export default function ChatList({ onOpenChat, onRefresh }) {
   }, []);
 
   // A long press is the row's menu now that the three-dot button is gone:
-  // the same panel the kebab used to open, with the same actions.
-  const startPress = (id) => {
-    cancelPress();
-    pressTimer.current = window.setTimeout(() => {
-      haptic('light');
-      setMenuPanel('main');
-      setMenuFor(id);
-    }, 450);
+  // the same panel the kebab used to open, with the same actions. The row
+  // runs the press itself (useLongPress in ChatRow); this only picks the
+  // panel it opens.
+  const openRowMenu = (id) => {
+    setMenuPanel('main');
+    setMenuFor(id);
   };
   const reveal = (id) => {
     setRevealed((prev) => {
@@ -101,12 +98,6 @@ export default function ChatList({ onOpenChat, onRefresh }) {
       next.add(id);
       return next;
     });
-  };
-  const cancelPress = () => {
-    if (pressTimer.current) {
-      clearTimeout(pressTimer.current);
-      pressTimer.current = null;
-    }
   };
   const open = (type, id, group) => {
     setRevealed(new Set());
@@ -241,12 +232,7 @@ export default function ChatList({ onOpenChat, onRefresh }) {
       divider={divider}
       onOpen={() => open(chat.type, chat.id, chat.group)}
       onReveal={() => reveal(chat.id)}
-      onPressStart={() => startPress(chat.id)}
-      onPressCancel={cancelPress}
-      onMenuOpen={() => {
-        setMenuPanel('main');
-        setMenuFor(chat.id);
-      }}
+      onMenuOpen={() => openRowMenu(chat.id)}
       onMenuClose={() => { setMenuFor(null); setMenuPanel('main'); }}
       onMenuBack={() => setMenuPanel('main')}
       onOpenMuteMenu={() => { setMenuPanel('mute'); setMenuFor(chat.id); }}
