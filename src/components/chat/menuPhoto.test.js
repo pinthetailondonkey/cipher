@@ -82,6 +82,10 @@ test('editing a listing keeps an attached photo whole, and the URL box serves on
   // The URL box renders for a plain string alone; an entry gets the words.
   assert.match(edit, /\{isPrivateMedia\(photo\) \? \(/);
   assert.match(edit, /Photo attached/);
+  // The photo the listing arrived with is held for "Keep the photo", and the
+  // offer is gated on it — a plain-URL listing has nothing to restore.
+  assert.match(edit, /const attached = isPrivateMedia\(product\?\.image\) \? product\.image : null;/);
+  assert.match(edit, /\{attached && <Button[\s\S]*?>Keep the photo<\/Button>\}/);
   // The image field is never a String state that swallows the entry.
   assert.match(edit, /useState\(null\);/);
 });
@@ -234,6 +238,41 @@ test('the shape held decides the row: a box for a plain URL, words for an entry'
     const entryHosts = settled(entryTree);
     assert.equal(entryHosts.some((host) => host.props['aria-label'] === 'Image URL'), false, 'no box is handed the entry object');
     assert.match(entryHosts.map((host) => textOf(host.props.children)).join(' '), /Photo attached/);
+  });
+});
+
+// "Use a URL" drops the entry from state. Closing the sheet used to be the
+// only way back, and it re-seeds from the payload — a misclick lost a photo
+// the upload had already paid for. The sheet it was opened on still holds the
+// entry, so it offers that entry back while the box is showing, and only for
+// a listing that has one.
+test('a misclicked URL box offers the original photo back, whole', () => {
+  withDocument(() => {
+    const calls = [];
+    const tree = createTree(editApp.ProductEditModal, {
+      editingProduct: { msg: { id: 'm1', data: listing(entry) } },
+      onClose: () => {},
+      onSubmit: (product) => calls.push(product),
+    });
+    let hosts = settled(tree);
+    ng(hosts, 'Use a URL').props.onClick();
+    hosts = tree.render();
+    assert.ok(hosts.find((host) => host.props['aria-label'] === 'Image URL'), 'the box is showing');
+    ng(hosts, 'Keep the photo').props.onClick();
+    hosts = tree.render();
+    assert.equal(hosts.some((host) => host.props['aria-label'] === 'Image URL'), false, 'the box gives way to the photo again');
+    hosts.find((host) => host.tag === 'form').props.onSubmit({ preventDefault() {} });
+    assert.equal(calls[0].image, entry, 'the very object is back, untouched');
+    assert.deepEqual(calls[0].image, { url: entry.url, key: entry.key, iv: entry.iv, mime: entry.mime });
+  });
+});
+
+test('a plain-URL listing has no photo to keep, so the offer is absent', () => {
+  withDocument(() => {
+    const tree = createTree(editApp.ProductEditModal, { editingProduct: { msg: { id: 'm2', data: listing('https://old.example/a.jpg') } }, onClose: () => {}, onSubmit: () => {} });
+    const hosts = settled(tree);
+    assert.ok(hosts.find((host) => host.props['aria-label'] === 'Image URL'));
+    assert.equal(hosts.some((host) => host.tag === 'button' && textOf(host.props.children) === 'Keep the photo'), false, 'nothing to restore');
   });
 });
 
