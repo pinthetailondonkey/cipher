@@ -4,6 +4,7 @@ import { ChevronRight } from 'lucide-react';
 import Logo from './Logo';
 import Sheet from './ui/Sheet';
 import Button from './ui/Button';
+import VendorInfoPanel from './onboarding/VendorInfoPanel';
 
 const steps = [
   {
@@ -19,8 +20,11 @@ const steps = [
     desc: "Open Discover to find menus and groups to join, or Menus for the current listings.",
   },
   {
+    // The Selling step is a door, not prose. Its body would teach the paying
+    // address path a second time, and the vendor panel already carries it, so
+    // the entry keeps only its word and the tap swaps this sheet's body.
     title: "Selling",
-    desc: "Open Profile, add a paying address to turn on selling, then publish your products and share your menu.",
+    vendorPanel: true,
   },
   {
     title: "Your Keys",
@@ -37,6 +41,10 @@ export default function TutorialModal({ isOpen, onClose }) {
 
 function TutorialSteps({ onClose }) {
   const [currentStep, setCurrentStep] = useState(0);
+  // True while the Selling step's panel holds the body. State, not a route:
+  // the panel is this same sheet's child, so the dialog name and the close
+  // control are the ones line below already renders.
+  const [vendorPanel, setVendorPanel] = useState(false);
 
   const handleNext = () => {
     if (currentStep < steps.length - 1) {
@@ -52,36 +60,46 @@ function TutorialSteps({ onClose }) {
 
   return (
     <Sheet open onClose={onClose} title="How to use" label="How to use" closeLabel="Close guide">
-      <div className="pb-6 pt-2 text-center">
-        <AnimatePresence mode="wait">
-          <motion.div
-            key={currentStep}
-            initial={{ x: 20, opacity: 0 }}
-            animate={{ x: 0, opacity: 1 }}
-            exit={{ x: -20, opacity: 0 }}
-            transition={{ type: 'spring', stiffness: 380, damping: 34 }}
-            className="flex flex-col items-center"
-          >
-            <div className="mb-6 mt-1">
-              <Logo size={72} />
-            </div>
-            <h2 className="mb-3 text-[22px] font-bold tracking-tight text-ink">{step.title}</h2>
-            <p className="mb-4 px-2 text-[14px] leading-relaxed text-inkMuted">{step.desc}</p>
-            {last && (
-              <p className="mb-4 px-2 text-[13px] leading-relaxed text-accentText">You can reopen this guide any time under Profile → How to use.</p>
-            )}
-            <div className="mb-6 flex gap-2">
-              {steps.map((_, i) => (
-                <span key={i} className={`h-1.5 w-1.5 rounded-full transition-all duration-300 ${i === currentStep ? 'h-1.5 w-6 bg-accent' : 'bg-ink/10'}`} />
-              ))}
-            </div>
-          </motion.div>
-        </AnimatePresence>
-        <Button onClick={handleNext} fullWidth>
-          {last ? 'Start Using Cipher' : 'Next'}
-          {!last && <ChevronRight size={18} className="ml-1 inline" />}
-        </Button>
-      </div>
+      {vendorPanel ? (
+        <VendorInfoPanel onBack={() => setVendorPanel(false)} />
+      ) : (
+        <div className="pb-6 pt-2 text-center">
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={currentStep}
+              initial={{ x: 20, opacity: 0 }}
+              animate={{ x: 0, opacity: 1 }}
+              exit={{ x: -20, opacity: 0 }}
+              transition={{ type: 'spring', stiffness: 380, damping: 34 }}
+              className="flex flex-col items-center"
+            >
+              <div className="mb-6 mt-1">
+                <Logo size={72} />
+              </div>
+              {step.vendorPanel ? (
+                <Button onClick={() => setVendorPanel(true)} fullWidth>{step.title}</Button>
+              ) : (
+                <>
+                  <h2 className="mb-3 text-[22px] font-bold tracking-tight text-ink">{step.title}</h2>
+                  <p className="mb-4 px-2 text-[14px] leading-relaxed text-inkMuted">{step.desc}</p>
+                </>
+              )}
+              {last && (
+                <p className="mb-4 px-2 text-[13px] leading-relaxed text-accentText">You can reopen this guide any time under Profile → How to use.</p>
+              )}
+              <div className="mb-6 flex gap-2">
+                {steps.map((_, i) => (
+                  <span key={i} className={`h-1.5 w-1.5 rounded-full transition-all duration-300 ${i === currentStep ? 'h-1.5 w-6 bg-accent' : 'bg-ink/10'}`} />
+                ))}
+              </div>
+            </motion.div>
+          </AnimatePresence>
+          <Button onClick={handleNext} fullWidth>
+            {last ? 'Start Using Cipher' : 'Next'}
+            {!last && <ChevronRight size={18} className="ml-1 inline" />}
+          </Button>
+        </div>
+      )}
     </Sheet>
   );
 }

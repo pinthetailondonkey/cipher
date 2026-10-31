@@ -55,7 +55,7 @@ test.describe('Visual regression', () => {
     });
     await page.goto('/');
     // The first screen's own heading; the boot paint has none.
-    await expect(page.getByRole('heading', { name: 'Welcome to Cipher' })).toBeVisible({ timeout: 20000 });
+    await expect(page.getByRole('heading', { name: 'No phone number. No account.' })).toBeVisible({ timeout: 20000 });
     await page.waitForTimeout(500);
     await page.screenshot({ path: 'test-results/onboarding.png', fullPage: true });
   });
