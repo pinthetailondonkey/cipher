@@ -50,7 +50,7 @@ test.describe('opening a profile from the chat header', () => {
     // npub when no name is held — never a hex key.
     const dialog = page.getByRole('dialog', { name: /Ada|npub1/ });
     // What stands in while the card's chunk is in flight.
-    const loading = page.getByRole('status', { name: 'Loading' });
+    const loading = page.getByRole('status', { name: 'Opening…' });
 
     // (a) The tap answers with something visible rather than nothing: the
     // card itself, or the spinner that now stands in for it.

@@ -19,9 +19,11 @@ const VendorMenuHome = lazy(loadVendorMenuHome);
 // veil and layer the sheets themselves paint. The null this boundary used to
 // fall back to was the founder's blank-profile bug: the tap produced zero
 // visible response, and a chunk that failed to arrive threw to the root
-// error boundary and took the whole app with it.
+// error boundary and took the whole app with it. The label says what the
+// person did, in the app's own plain-gerund waiting words ('Checking
+// vouches…', 'Trying…') — the app nowhere says the system word 'Loading'.
 const overlayFallback = (
-  <div className="fixed inset-0 z-sheet flex items-center justify-center bg-scrim/60" role="status" aria-label="Loading">
+  <div className="fixed inset-0 z-sheet flex items-center justify-center bg-scrim/60" role="status" aria-label="Opening…">
     <div className="h-7 w-7 animate-spin rounded-full border-2 border-ink/20 border-t-blue-500" />
   </div>
 );
@@ -51,10 +53,13 @@ export default function ChatOverlays({
   const setVendorStorefrontPubkey = useChatStore((state) => state.setVendorStorefrontPubkey);
 
   // Warm both lazy chunks once, the moment the overlays mount, so the first
-  // real open draws the surface instead of the fallback.
+  // real open draws the surface instead of the fallback. A prefetch that
+  // fails (offline, relay down) must not reject unhandled: the fetch is
+  // retried by the lazy import at the next real open, and until then the
+  // fallback is the answer — never an unhandled rejection.
   useEffect(() => {
-    loadProfileModal();
-    loadVendorMenuHome();
+    loadProfileModal().catch(() => {});
+    loadVendorMenuHome().catch(() => {});
   }, []);
 
   const jumpBookmark = (chatId, msgId, isGroup) => {
