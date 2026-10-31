@@ -3,20 +3,28 @@ import Sheet from '../ui/Sheet';
 import Button from '../ui/Button';
 import Input from '../ui/Input';
 import Textarea from '../ui/Textarea';
+import { isPrivateMedia } from '../../lib/mediaCrypto';
+
+// The image field is two shapes. An attached photo is a private entry
+// ({ url, key, iv, mime }) and stays one: seeded as the object, named on the
+// sheet, and handed back whole on save — flattening it to a string keeps the
+// URL but drops the key and the buyer's photo never opens again. A plain URL
+// is a string and keeps the input it always had. Only typing replaces the
+// photo, and only with a string.
 
 export default function ProductEditModal({ editingProduct, onClose, onSubmit }) {
   const product = editingProduct?.msg?.data || editingProduct?.product || null;
   const [title, setTitle] = useState('');
   const [price, setPrice] = useState('');
   const [description, setDescription] = useState('');
-  const [image, setImage] = useState('');
+  const [photo, setPhoto] = useState(null);
   const [error, setError] = useState('');
 
   useEffect(() => {
     setTitle(product?.title || product?.name || '');
     setPrice(String(product?.priceUsd ?? product?.price ?? ''));
     setDescription(product?.description || '');
-    setImage(product?.image || '');
+    setPhoto(product?.image || null);
     setError('');
   }, [product]);
 
@@ -31,7 +39,10 @@ export default function ProductEditModal({ editingProduct, onClose, onSubmit }) 
       setError('Enter a price greater than 0.');
       return;
     }
-    onSubmit?.({ title: title.trim(), priceUsd: amount, description: description.trim(), image: image.trim() });
+    // A typed URL is trimmed; a held entry is handed over untouched, so the
+    // key and iv survive the edit.
+    const image = isPrivateMedia(photo) ? photo : String(photo || '').trim();
+    onSubmit?.({ title: title.trim(), priceUsd: amount, description: description.trim(), image });
   };
 
   return (
@@ -40,7 +51,18 @@ export default function ProductEditModal({ editingProduct, onClose, onSubmit }) 
         <Input label="Name" value={title} onChange={(event) => setTitle(event.target.value)} />
         <Input label="Price" inputMode="decimal" value={price} onChange={(event) => setPrice(event.target.value)} />
         <Textarea label="Note" rows={3} value={description} onChange={(event) => setDescription(event.target.value)} />
-        <Input label="Image URL" value={image} onChange={(event) => setImage(event.target.value)} />
+        <div className="flex items-center gap-3">
+          {isPrivateMedia(photo) ? (
+            <>
+              <p className="min-w-0 flex-1 text-[13px] text-inkMuted">Photo attached</p>
+              <Button variant="ghost" size="sm" onClick={() => setPhoto('')}>Use a URL</Button>
+            </>
+          ) : (
+            <div className="min-w-0 flex-1">
+              <Input label="Image URL" value={photo || ''} onChange={(event) => setPhoto(event.target.value)} />
+            </div>
+          )}
+        </div>
         {error && <p role="alert" className="text-[13px] text-danger">{error}</p>}
         <Button type="submit" fullWidth>Save listing</Button>
       </form>
