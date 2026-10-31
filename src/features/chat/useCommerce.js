@@ -11,6 +11,7 @@ import { readCachedProducts } from '../../lib/listing';
 import { activeUrl, entryById } from '../../lib/egress';
 import { publicReceipt, rememberPublicView, receiptBindsOrder, signPublicView, signReceipt } from '../../lib/proofOfTrade';
 import { frozenIssuedMethods, issuedPaymentMethods, newestOwnIssuedMethods, orderPaymentDetails, orderRecordForReceipt, orderState, reopenedStatus } from '../../lib/orderActions';
+import { paymentAddressesProblem } from '../../lib/paymentAddress';
 import { stampArrival } from './media';
 import { createSingleFlight } from '../../lib/singleFlight';
 
@@ -260,6 +261,15 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
           }
           if (!paymentMethods.btc && !paymentMethods.xmr) {
             setToast({ type: 'error', message: 'Set payment addresses in Profile first' });
+            setSelectedMessage(null);
+            return;
+          }
+          // An address that is not a well-formed address of its coin is never
+          // sent to a buyer: the acceptance refuses rather than hand out a
+          // typo no chain check could ever match.
+          const addressProblem = paymentAddressesProblem(paymentMethods);
+          if (addressProblem) {
+            setToast({ type: 'error', message: addressProblem.message });
             setSelectedMessage(null);
             return;
           }

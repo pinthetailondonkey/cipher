@@ -1,5 +1,6 @@
 import { bech32 } from '@scure/base';
 import { deriveMoneroAddress } from './moneroAddress';
+import { checkPaymentAddress } from './paymentAddress';
 import { scopeKey, scopedGet, scopedRaw, scopedSet } from './storage';
 
 const LEGACY_ADDRESS_KEYS = {
@@ -200,6 +201,13 @@ export async function getOrderPaymentMethods(identity, orderId, mainAddresses, p
     }
     if (wantsXmr && !paymentMethods.xmr) {
       throw new Error('Turn on Monero subaddress derivation (a private view key in Profile) so this order gets its own address. The shared account address cannot tell this order\'s payment from any other.');
+    }
+    // An address is checked by its own checksum before it is recorded or
+    // returned, so a badly formed one is never issued and never sent.
+    for (const [currency, address] of [['BTC', paymentMethods.btc], ['XMR', paymentMethods.xmr]]) {
+      if (!address) continue;
+      const check = checkPaymentAddress(currency, address, { network: settings.btcNetwork || 'bc' });
+      if (!check.ok) throw new Error(check.message);
     }
 
     settings.btcIndex = nextBtcIndex;
