@@ -891,7 +891,12 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
         image: updatedProduct.image, description: updatedProduct.description, updatedFrom: msg.id,
       };
       if (msg.isGroup && activeGroup) {
-        const sent = await sendGroupMessage(activeGroup.id, payload);
+        // Armed with a client id like every other group send. The securing
+        // queue replays the payload verbatim, and the edit marker
+        // (updatedFrom) rides the payload, so the deferred send is the same
+        // edit — without the id, NO_KEY dropped it forever while the toast
+        // promised it would go out.
+        const sent = await sendGroupMessage(activeGroup.id, payload, `temp-${Date.now()}`);
         if (sent?.error === 'NO_KEY') {
           setToast({ type: 'success', message: 'Securing… the edit will send when the group key arrives.' });
           setEditingProduct(null);
@@ -918,7 +923,10 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
       image: product.image,
       description: product.description,
     };
-    const results = await Promise.allSettled([...new Set(groupIds)].map((groupId) => sendGroupMessage(groupId, payload)));
+    // One client id per group: a keyless group's send is actually queued,
+    // so the securing count below counts sends the queue really holds.
+    const stamp = Date.now();
+    const results = await Promise.allSettled([...new Set(groupIds)].map((groupId) => sendGroupMessage(groupId, payload, `temp-${stamp}-${groupId}`)));
     const delivered = results.filter((result) => result.status === 'fulfilled' && result.value?.success && !result.value.queued).length;
     const queued = results.filter((result) => result.status === 'fulfilled' && result.value?.success && result.value.queued).length;
     const securing = results.filter((result) => result.status === 'fulfilled' && result.value?.error === 'NO_KEY').length;
