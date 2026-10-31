@@ -65,7 +65,6 @@ test.describe('Sheet-class a11y on the boot flow', () => {
         // does: the new-account flag raises the sheet on its own.
         await page.evaluate(() => localStorage.setItem('cipher_new_account', 'true'));
         await page.reload();
-        await page.waitForTimeout(1000);
       },
       dialogLabel: 'How to use',
       closeFallback: async (page) => page.getByRole('button', { name: 'Close guide' }).click(),

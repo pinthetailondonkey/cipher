@@ -340,7 +340,7 @@ test("the guide is the founder's fifteen steps, verbatim", async (t) => {
       ],
       [
         'Orders',
-        'Open Orders for everything you bought or sold. Each order shows what it was for, how it was paid, and where it stands. A receipt covers exactly one transaction, so if you paid twice you have two receipts. If something is wrong, the order is where you raise it.',
+        'Open Orders for everything you bought or sold. Each order shows what it was for, how it was paid, and where it stands. A receipt covers exactly one transaction, so if you paid twice you have two receipts. If something goes wrong, the order is where you raise it.',
       ],
       [
         'Selling',

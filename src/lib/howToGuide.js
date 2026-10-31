@@ -44,7 +44,7 @@ export const HOW_TO_STEPS = [
   },
   {
     title: "Orders",
-    body: "Open Orders for everything you bought or sold. Each order shows what it was for, how it was paid, and where it stands. A receipt covers exactly one transaction, so if you paid twice you have two receipts. If something is wrong, the order is where you raise it.",
+    body: "Open Orders for everything you bought or sold. Each order shows what it was for, how it was paid, and where it stands. A receipt covers exactly one transaction, so if you paid twice you have two receipts. If something goes wrong, the order is where you raise it.",
   },
   {
     title: "Selling",

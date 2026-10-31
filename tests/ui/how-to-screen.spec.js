@@ -11,7 +11,6 @@ test('the How to use row opens a scrollable full-screen guide at 390px', async (
   await page.addInitScript(seedVault);
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/');
-  await page.waitForTimeout(1000);
   // One reload guards against a cold boot that paints nothing (session
   // restore races), same as sheet-a11y.
   const youTab = page.getByRole('navigation', { name: 'Tabs' }).getByRole('button', { name: 'You' });
@@ -21,9 +20,10 @@ test('the How to use row opens a scrollable full-screen guide at 390px', async (
   });
 
   await youTab.click();
-  await page.waitForTimeout(600);
-  await page.getByRole('button', { name: /How to use/ }).click();
-  await page.waitForTimeout(600);
+  // Every wait below is web-first: nothing here sleeps for the app.
+  const howToRow = page.getByRole('button', { name: /How to use/ });
+  await expect(howToRow).toBeVisible();
+  await howToRow.click();
 
   // Not a sheet: no dialog carries the guide's name, and the screen's own
   // header carries the title with a back arrow.
