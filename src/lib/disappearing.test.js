@@ -94,9 +94,10 @@ test('the one parser is wired at every site that stamps or sweeps — no private
     assert.ok(!source.includes('function disappearingSeconds'), `${site} keeps no private copy of the parser`);
   }
   // The vocabulary must live in one place: no file under src may still compare
-  // a timer to a roster value by hand, or a new option is only ever honored
-  // where someone remembered to extend the chain.
-  const rosterCompare = /===\s*(['"])(?:7d|30d)\1|(['"])(?:7d|30d)\2\s*===/;
+  // a timer to a roster value by hand — any of the five, the 3-day value this
+  // roster offers included — or a new option is only ever honored where
+  // someone remembered to extend the chain.
+  const rosterCompare = /===\s*(['"])(?:1h|24h|3d|7d|30d)\1|(['"])(?:1h|24h|3d|7d|30d)\2\s*===/;
   const seen = [];
   const offenders = [];
   const walk = (dir) => {
