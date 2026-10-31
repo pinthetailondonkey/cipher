@@ -39,6 +39,32 @@ export function rowExpired(row, now = Math.floor(Date.now() / 1000)) {
   return stamp != null && now >= stamp;
 }
 
+// A row whose payload is a vendor's listing. A dm row carries the payload
+// in `data`; a group row carries it as rawContent JSON — the same two
+// shapes the carried stamp reads.
+function rowIsProduct(row) {
+  if (row?.data?.type === 'product') return true;
+  if (row?.rawContent) {
+    try {
+      return JSON.parse(row.rawContent)?.type === 'product';
+    } catch {
+      return false;
+    }
+  }
+  return false;
+}
+
+// The keep decision for the sweep's TIMER arm, and only that arm: the chat
+// timer ages chat messages, not a vendor's listing. A product row used to
+// be swept with them the moment a header timer was set, from the state and
+// the database both, and every pinned listing id then dangled on every
+// surface that reads it. A row's own carried stamp is not this function's
+// business — self-expiring rows still die in the arm that reads the stamp.
+export function timerSweepKeepsRow(row, now = Math.floor(Date.now() / 1000), seconds = 0) {
+  if (rowIsProduct(row)) return true;
+  return (now - (row?.timestamp || 0)) < seconds;
+}
+
 // The stamp a receiver is willing to honor, clamped before saving. A
 // sender-written stamp absurdly far out (billions of seconds, past the
 // roster's own longest choice) would promise a message that never dies —

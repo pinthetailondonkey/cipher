@@ -16,7 +16,7 @@ import { useGroupKeyReconciler } from '../../hooks/useGroupKeyReconciler';
 import { flushSecuringGroupSends } from '../../hooks/useNIP29Group';
 import { bindMemberBaselinePublisher, sealMemberBaseline } from '../../lib/crypto/memberBaseline';
 import { sortMessages } from './media';
-import { rowExpired } from '../../lib/disappearing';
+import { rowExpired, timerSweepKeepsRow } from '../../lib/disappearing';
 import { listingFromEvent, vendorListingFilter } from '../../lib/listing';
 import { activeUrl, entryById } from '../../lib/egress';
 import { isNativeShell, registerWithGateway, subscribeBrowser, subscribeNative } from '../../lib/pushGateway';
@@ -566,7 +566,7 @@ export function useChatBootstrap({
       else if (timerStr === '30d') seconds = 2592000;
       if (!seconds) return messages;
       const timerKept = messages.filter((message) => {
-        const keep = (now - message.timestamp) < seconds;
+        const keep = timerSweepKeepsRow(message, now, seconds);
         if (!keep && message.id) expiredIds.push(message.id);
         return keep;
       });
