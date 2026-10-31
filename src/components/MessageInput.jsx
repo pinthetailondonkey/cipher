@@ -6,7 +6,7 @@ import Sheet from './ui/Sheet';
 import IconButton from './ui/IconButton';
 import { scopedGet, scopedSet } from '../lib/storage';
 import { haptic } from '../lib/haptics';
-import { uploadPrivateMedia } from '../lib/mediaCrypto';
+import { uploadAttachment } from '../lib/mediaCrypto';
 import { blossomServers } from '../lib/egress';
 
 // Draft restore per chat: same scoped keys the composer already clears on
@@ -103,8 +103,11 @@ export default function MessageInput({ sendMessage, handleImageUpload, startReco
     setToast({ type: 'success', message: 'Sending the file…' });
     try {
       // The document rides the existing voice-note sender: same encrypted
-      // upload, same payload shape, the file's name carried alongside.
-      const entry = await uploadPrivateMedia(file, blossomServers());
+      // upload, same payload shape, the file's name carried alongside. This
+      // picker has no accept attribute, so an image can arrive here: the one
+      // attachment door re-encodes it, which drops EXIF and location, and
+      // passes anything else — a PDF — through untouched.
+      const entry = await uploadAttachment(file, blossomServers());
       const outcome = await sendMessage('', { type: 'audio', ...entry, name: file.name });
       if (outcome === 'sent') setToast({ type: 'success', message: 'File sent!' });
       else if (outcome === 'queued') setToast({ type: 'success', message: 'File queued. It will send when a relay answers.' });

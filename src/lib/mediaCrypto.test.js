@@ -3,6 +3,12 @@ import { resolveObjectURL } from 'node:buffer';
 import fs from 'node:fs';
 import test from 'node:test';
 import { attachmentsFor, decryptMedia, encryptMedia, isPrivateMedia, openPrivateMedia, photoRefusalToast, releasePrivateMedia, sendPrivateImage, uploadPrivateMedia } from './mediaCrypto.js';
+import * as mediaCrypto from './mediaCrypto.js';
+
+// Read through the namespace, not a named import: on the base tree the door
+// does not exist, and a missing named export fails the whole file at link time
+// with no per-test split. This way each door test goes red on its own line.
+const { uploadAttachment } = mediaCrypto;
 
 const jpeg = () => new Blob([new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3, 4, 5, 6, 7, 8])], { type: 'image/jpeg' });
 
@@ -70,15 +76,71 @@ test('the photo toast shows the upload refusal: fixed sentence, three hosts, the
   assert.equal(photoRefusalToast(`${sentence} ${three}; http://media2abc.onion: 401; https://media.example: the host answered for a different file`), `${refused} ${three}; and 2 more hosts`);
 });
 
-test('the document sender names its media hosts — with none named, no host is ever asked', () => {
-  // The document path rides uploadPrivateMedia directly. A call with no
-  // servers loops over an empty list and throws without asking any host, so
-  // every document send died as "no host took the file". The call site is
-  // pinned here the same way the composer's is above.
+// The document path used to call uploadPrivateMedia(file, blossomServers())
+// here. It now calls the one attachment door, which keeps the raw upload for
+// anything that is not an image. The reason the pin exists is unchanged: a
+// call with no servers asks no host, and every document send died that way.
+test('the document path goes through the attachment door, naming its hosts', () => {
   const input = fs.readFileSync(new URL('../components/MessageInput.jsx', import.meta.url), 'utf8');
   assert.match(input, /import \{ blossomServers \} from '\.\.\/lib\/egress';/);
-  assert.match(input, /uploadPrivateMedia\(file, blossomServers\(\)\)/);
-  assert.doesNotMatch(input, /uploadPrivateMedia\(file\)\s*;/);
+  assert.match(input, /uploadAttachment\(file, blossomServers\(\)\)/);
+  assert.doesNotMatch(input, /uploadPrivateMedia\(file, blossomServers\(\)\)/,
+    'the sender does not pick its own door');
+  assert.doesNotMatch(input, /uploadAttachment\(file\)\s*;/);
+});
+
+test('the shop picker uses the attachment door, so a menu photo is re-encoded', () => {
+  // This picker accepts only images, so it is the encoder's door. Before the
+  // change it handed the raw file straight to the upload.
+  const view = fs.readFileSync(new URL('../components/chat/GroupView.jsx', import.meta.url), 'utf8');
+  assert.match(view, /uploadAttachment\(file, blossomServers\(\)\)/,
+    'the menu photo goes through the door that drops EXIF and location');
+  assert.doesNotMatch(view, /uploadPrivateMedia\(file, blossomServers\(\)\)/,
+    'the raw upload is gone from this picker');
+});
+
+test('an image attachment is re-encoded first, and the upload carries the encoder output', async () => {
+  const original = new Blob([new Uint8Array([0xff, 0xd8, 0xff, 0xe1, 0x45, 0x78, 0x69, 0x66, 0, 0, 1, 2])], { type: 'image/jpeg' });
+  const stripped = new Blob([new Uint8Array([0xff, 0xd8, 0xff, 0xdb, 3, 4])], { type: 'image/jpeg' });
+  const seen = [];
+  const compress = async (file) => { seen.push(await bytesOf(file)); return stripped; };
+  let uploaded = null;
+  const upload = async (bytes) => { uploaded = bytes; return { url: 'https://media.example/a' }; };
+  const entry = await uploadAttachment(original, ['https://media.example'], { compress, upload });
+  // The encoder got the plaintext original. If encryption ran first it would
+  // have been handed ciphertext.
+  assert.deepEqual(seen, [await bytesOf(original)], 'the encoder is handed the original file');
+  // What reached the host is the encoder's output, so EXIF and location bytes
+  // are gone from the encrypted payload.
+  assert.deepEqual(await bytesOf(await decryptMedia(uploaded, entry)), await bytesOf(stripped),
+    'the upload carries the re-encoded bytes');
+});
+
+test('a PDF is not re-encoded: the compressor never runs and its bytes arrive intact', async () => {
+  const original = new Blob([new Uint8Array([0x25, 0x50, 0x44, 0x46, 1, 2, 3, 4])], { type: 'application/pdf' });
+  let compressCalls = 0;
+  const compress = async () => { compressCalls += 1; return new Blob([new Uint8Array([0])]); };
+  let uploaded = null;
+  const upload = async (bytes) => { uploaded = bytes; return { url: 'https://media.example/b' }; };
+  const entry = await uploadAttachment(original, ['https://media.example'], { compress, upload });
+  assert.equal(compressCalls, 0, 'a non-image never reaches the image encoder');
+  // The corruption control: a canvas round-trip would have destroyed a PDF,
+  // so the bytes that arrive must be the file's own.
+  assert.deepEqual(await bytesOf(await decryptMedia(uploaded, entry)), await bytesOf(original),
+    'the bytes that arrive are the file’s own');
+});
+
+test('an image whose re-encode throws uploads nothing — there is no raw fallback', async () => {
+  let uploadCalls = 0;
+  const compress = async () => { throw new Error('canvas refused'); };
+  const upload = async () => { uploadCalls += 1; return { url: 'https://media.example/c' }; };
+  await assert.rejects(
+    () => uploadAttachment(new Blob([new Uint8Array([0xff, 0xd8, 0xff, 0xe0])], { type: 'image/jpeg' }), ['https://media.example'], { compress, upload }),
+    /canvas refused/,
+  );
+  // A try/catch fallback to the raw bytes would make this 1 and would reopen
+  // the hole with a green suite over it.
+  assert.equal(uploadCalls, 0, 'the raw bytes never reached a host');
 });
 
 test('the photo toast shows the upload refusal: fixed sentence, three hosts, then a count', async () => {

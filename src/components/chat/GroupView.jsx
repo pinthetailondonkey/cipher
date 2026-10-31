@@ -17,7 +17,7 @@ import { haptic } from '../../lib/haptics';
 import { noHexName } from '../../lib/npub';
 import { stampArrival } from '../../features/chat/media';
 import { sendOutcome } from '../../lib/sendOutcome';
-import { uploadPrivateMedia, photoRefusalToast } from '../../lib/mediaCrypto';
+import { uploadAttachment, photoRefusalToast } from '../../lib/mediaCrypto';
 import { blossomServers } from '../../lib/egress';
 import { ProductImage } from '../ui/PrivateMedia';
 
@@ -39,7 +39,7 @@ function GroupStorefront({ items, pinnedId, canList, onBuy, onList, pendingLists
     if (!file) return;
     setAddingPhoto(true);
     try {
-      setPhoto(await uploadPrivateMedia(file, blossomServers()));
+      setPhoto(await uploadAttachment(file, blossomServers()));
     } catch (error) {
       console.error('[shop] Encrypted photo upload failed:', error);
       useChatStore.getState().setToast({ type: 'error', message: photoRefusalToast(error?.message) });

@@ -116,6 +116,16 @@ export async function sendPrivateImage(file, servers, { compress = compressImage
   return uploadPrivateMedia(clean, servers, upload);
 }
 
+// One door for an attachment, so a caller cannot pick the wrong one. A photo
+// is re-encoded first, which drops EXIF and location (VISION.md invariant 5),
+// and encrypted after; anything else — a PDF — keeps its bytes, because a
+// canvas round-trip would destroy the file. There is no raw fallback: if the
+// re-encode throws, nothing is uploaded.
+export async function uploadAttachment(file, servers, { compress = compressImage, upload = uploadCiphertext } = {}) {
+  const bytes = file.type?.startsWith('image/') ? await compress(file) : file;
+  return uploadPrivateMedia(bytes, servers, upload);
+}
+
 // The toast for a failed photo upload. Only the upload's own refusal
 // sentence carries host reasons; an earlier throw (reading or encrypting
 // the file) is a raw browser string and never reaches the screen. The host
