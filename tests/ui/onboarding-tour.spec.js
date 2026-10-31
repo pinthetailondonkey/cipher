@@ -84,17 +84,22 @@ test.describe('After-signup tour: the Selling step', () => {
     await expect(page.getByRole('dialog', { name: 'How to use' })).toHaveCount(1);
   });
 
-  test('closing exits the tour and clears the new-account flag, from step one and from the panel', async ({ page }) => {
-    // Control: the exit that existed before this change. It passes on both
-    // arms — it is here so the panel's exit is measured against something.
+  // CONTROL, not a witness: the exit that existed before this change. It has
+  // to pass on the base tree too — that is what makes the panel's exit below
+  // measurable against something. It is its own test so the base arm can show
+  // it green while the witnesses are red; folded into the panel test it would
+  // disappear into a red total and prove nothing.
+  test('control: closing from step one exits the tour and clears the new-account flag', async ({ page }) => {
     await openTour(page);
     await expect.poll(() => showTutorial(page)).toBe(true);
     await page.getByRole('button', { name: 'Close guide' }).click();
     await expect(page.getByRole('dialog', { name: 'How to use' })).toBeHidden({ timeout: 5000 });
     await expect.poll(() => newAccountFlag(page)).toBeNull();
     await expect.poll(() => showTutorial(page)).toBe(false);
+  });
 
-    // Witness: the same exit taken from inside the vendor panel.
+  // WITNESS: the same exit taken from inside the vendor panel.
+  test('closing from the vendor panel exits the tour and clears the new-account flag', async ({ page }) => {
     await openTour(page);
     await advanceToSelling(page);
     await page.getByRole('button', { name: 'Selling' }).click();
