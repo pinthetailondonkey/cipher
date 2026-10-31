@@ -1520,6 +1520,13 @@ export function useNIP29Group({ identity }) {
   }, [identity, setGroupMessages, setGroupTypingUsers, setGroupMembers, appendSystemMessage]);
 
   const pinMessage = useCallback(async (groupId, messageEventId) => {
+    // A temp- id is this device's own placeholder for a row still sending
+    // or securing. A kind-9005 e-tag pointing at it can never resolve for
+    // any peer, and the row's id changes the moment the relay answers, so
+    // the pin would dangle locally too. Wait for the row to send.
+    if (typeof messageEventId === 'string' && messageEventId.startsWith('temp-')) {
+      throw new Error('This item is still sending.');
+    }
     // S9: the pinned slot belongs to the group, so it moves only for a
     // creator or admin — the same standing the membership control kinds
     // demand. A member's pin goes nowhere and moves no one's slot.
