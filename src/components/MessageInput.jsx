@@ -7,6 +7,7 @@ import IconButton from './ui/IconButton';
 import { scopedGet, scopedSet } from '../lib/storage';
 import { haptic } from '../lib/haptics';
 import { uploadPrivateMedia } from '../lib/mediaCrypto';
+import { blossomServers } from '../lib/egress';
 
 // Draft restore per chat: same scoped keys the composer already clears on
 // send (draft-dm-*, draft-group-*). A switch of chat swaps the draft with it;
@@ -103,7 +104,7 @@ export default function MessageInput({ sendMessage, handleImageUpload, startReco
     try {
       // The document rides the existing voice-note sender: same encrypted
       // upload, same payload shape, the file's name carried alongside.
-      const entry = await uploadPrivateMedia(file);
+      const entry = await uploadPrivateMedia(file, blossomServers());
       const outcome = await sendMessage('', { type: 'audio', ...entry, name: file.name });
       if (outcome === 'sent') setToast({ type: 'success', message: 'File sent!' });
       else if (outcome === 'queued') setToast({ type: 'success', message: 'File queued. It will send when a relay answers.' });

@@ -234,7 +234,9 @@ export function useComposer({ identity, sendDM, sendGroupMessage }) {
       }
     } catch (err) {
       console.error('[media] Encrypted photo upload failed:', err);
-      setToast({ type: 'error', message: 'The photo was not sent. No media host took the encrypted file.' });
+      // The upload error already names each host it tried and why each one
+      // refused; hiding that left nothing to act on.
+      setToast({ type: 'error', message: 'The photo was not sent. ' + (err?.message || 'No media host took the encrypted file.') });
     } finally {
       setUploadingImage(false);
     }
