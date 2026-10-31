@@ -131,8 +131,15 @@ test.describe('rebuilt components follow the spec (source)', () => {
   test('Sheet: centred, max 420, radius 20 — never a bottom sheet', () => {
     const src = read('src/components/ui/Sheet.jsx');
     expect(src).toMatch(/items-center justify-center/);
-    expect(src).toMatch(/max-w-\[420px\]/);
+    // The 420 cap moved from an arbitrary utility into the .panel-w token
+    // (w3-r2 d51bc57), so the panel carries the token at the call site...
+    expect(src).toMatch(/\bpanel-w\b/);
     expect(src).toMatch(/rounded-\[20px\]/);
+    // ...and the number stays pinned in the rule itself. Naming the class
+    // alone would go green on a token that silently widened, so read the
+    // stylesheet: .panel-w must still cap at 420.
+    const css = read('src/index.css');
+    expect(css).toMatch(/\.panel-w\s*\{[^}]*max-width:\s*min\(420px\b/);
     // The bottom-rising shell is gone for good (founder ruling 2026-10-29).
     expect(src).not.toMatch(/items-end|rounded-t-\[|translateY\(100%\)/);
   });
