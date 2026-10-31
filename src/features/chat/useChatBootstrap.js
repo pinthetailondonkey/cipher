@@ -435,6 +435,9 @@ export function useChatBootstrap({
       if (dmPubkeys.length > 0) fetchProfilesForPubkeys(dmPubkeys);
     } catch (err) {
       console.error('Fetch error:', err);
+      // A refresh the relays refused used to be silent: the press looked
+      // like a dead button. The failure is said out loud instead.
+      useChatStore.getState().setToast({ type: 'error', message: 'The chats could not be refreshed.' });
     } finally {
       setLoading(false);
     }
