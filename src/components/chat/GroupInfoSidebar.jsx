@@ -5,7 +5,7 @@ import { createSettleGate, rosterInFlight, rosterNotice } from '../../lib/member
 import Avatar from '../ui/Avatar';
 import Badge from '../ui/Badge';
 import Button from '../ui/Button';
-import Picture from '../ui/Picture';
+import { ProductImage } from '../ui/PrivateMedia';
 import Sheet from '../ui/Sheet';
 import { MediaImage } from '../ui/PrivateMedia';
 import { copyText } from '../../lib/copyText';
@@ -480,7 +480,7 @@ export default function GroupInfoSidebar({
           <p className="flex items-center gap-2 border-b border-line px-4 py-2.5 text-[13px] text-inkMuted"><ShoppingCart size={15} /> Products</p>
           {pinnedProduct && (
             <div className="flex items-center gap-3 border-b border-line px-4 py-3">
-              <Picture src={pinnedProduct.product.image} alt="" loading="lazy" className="h-10 w-10 rounded-xl object-cover" fallback={<span className="flex h-10 w-10 items-center justify-center rounded-xl bg-panelAlt text-inkSubtle"><Package size={16} /></span>} />
+              <ProductImage value={pinnedProduct.product.image} loading="lazy" className="h-10 w-10 rounded-xl object-cover" fallback={<span className="flex h-10 w-10 items-center justify-center rounded-xl bg-panelAlt text-inkSubtle"><Package size={16} /></span>} />
               <div className="min-w-0 flex-1">
                 <p className="truncate text-[15px] font-semibold text-ink">{pinnedProduct.product.title || pinnedProduct.product.name || 'Item'}</p>
                 <p className="mono truncate text-[13px] text-accentText">{pinnedProduct.product.price || pinnedProduct.product.priceUsd || 'Ask'}</p>
@@ -492,7 +492,7 @@ export default function GroupInfoSidebar({
           {products.length === 0 && <p className="px-4 py-3 text-[13px] text-inkMuted">Nothing on the menu yet.</p>}
           {products.filter(({ message }) => message.id !== pinnedId).map(({ message, product }) => (
             <div key={message.id} className="flex items-center gap-3 border-b border-line px-4 py-3 last:border-0">
-              <Picture src={product.image} alt="" loading="lazy" className="h-10 w-10 rounded-xl object-cover" fallback={<span className="flex h-10 w-10 items-center justify-center rounded-xl bg-panelAlt text-inkSubtle"><Package size={16} /></span>} />
+              <ProductImage value={product.image} loading="lazy" className="h-10 w-10 rounded-xl object-cover" fallback={<span className="flex h-10 w-10 items-center justify-center rounded-xl bg-panelAlt text-inkSubtle"><Package size={16} /></span>} />
               <div className="min-w-0 flex-1">
                 <p className="truncate text-[15px] font-semibold text-ink">{product.title || product.name || 'Item'}</p>
                 <p className="mono truncate text-[13px] text-accentText">{product.price || product.priceUsd || 'Ask'}</p>

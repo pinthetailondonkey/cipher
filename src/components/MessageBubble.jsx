@@ -11,7 +11,7 @@ import LinkPreview from './chat/LinkPreview';
 import { firstUrl } from '../lib/linkPreview';
 import Sheet from './ui/Sheet';
 import Picture from './ui/Picture';
-import { MediaImage } from './ui/PrivateMedia';
+import { MediaImage, ProductImage } from './ui/PrivateMedia';
 import { attachmentsFor } from '../lib/mediaCrypto';
 import { allowsLinkPreviews } from '../lib/privacy';
 import { orderActionsFor, orderState } from '../lib/orderActions';
@@ -151,7 +151,7 @@ function OrderReceipt({ content, isBuyer = false, disputeReason = '', deviceMark
     // Telegram's attached card: the card takes the full bubble width, up
     // to 280px, and the product shot crops flat to 28:9.
     <div className="w-full max-w-[280px] overflow-hidden rounded-2xl border border-line bg-panel text-left">
-      <Picture src={product.image} alt="" className="aspect-[28/9] w-full object-cover" />
+      <ProductImage value={product.image} className="aspect-[28/9] w-full object-cover" />
       <div className="p-3">
         <div className="flex items-start justify-between gap-2">
           <p className="text-[15px] font-semibold text-ink">{title}</p>
@@ -591,7 +591,7 @@ export default function MessageBubble({ message, data, onAction, senderName, ide
           </div>
         )}
         {attachments.layout === 'audio' && <VoiceNote item={attachments.items[0]} name={content.name || ''} sent={isSender} className="mb-1" />}
-        {content.type === 'product' && <Picture src={content.image} alt="" loading="lazy" className="mb-1 max-h-40 rounded-xl object-cover" />}
+        {content.type === 'product' && <ProductImage value={content.image} loading="lazy" className="mb-1 max-h-40 rounded-xl object-cover" />}
         {content.type === 'product' && isPinnedListing && (
           <p className="mb-1 inline-flex items-center gap-1 rounded-full border border-accentText px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-accentText"><BadgeCheck size={12} /> Pinned</p>
         )}

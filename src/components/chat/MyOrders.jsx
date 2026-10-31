@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { CheckCircle2, Package, ReceiptText, Store } from 'lucide-react';
 import ScreenHeader from '../ui/ScreenHeader';
-import Picture from '../ui/Picture';
+import { ProductImage } from '../ui/PrivateMedia';
 import ReceiptInspect from './ReceiptInspect';
 import { scopedGet } from '../../lib/storage';
 import { haptic } from '../../lib/haptics';
@@ -89,7 +89,7 @@ export default function MyOrders({ dms = null, profiles = null, onBack, onOpenCh
                   {/* One compact row, the same rhythm as a chat row: picture,
                       what was bought, who from, when, and the status it is at. */}
                   <button type="button" onClick={() => onOpenChat?.(peerPubkey)} className="flex min-h-[72px] w-full items-center gap-3 px-4 py-2.5 text-left active:bg-ink/5">
-                    <Picture src={product.image} alt="" loading="lazy" className="h-12 w-12 shrink-0 rounded-xl object-cover" fallback={<span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-panelAlt text-inkMuted"><Package size={18} /></span>} />
+                    <ProductImage value={product.image} loading="lazy" className="h-12 w-12 shrink-0 rounded-xl object-cover" fallback={<span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-panelAlt text-inkMuted"><Package size={18} /></span>} />
                     <span className="flex min-w-0 flex-1 items-center gap-2">
                       <span className="min-w-0 flex-1">
                         <span className="block truncate text-[16px] font-semibold text-ink">{product.title || product.name || 'Order'}</span>

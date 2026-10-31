@@ -17,14 +17,36 @@ import { haptic } from '../../lib/haptics';
 import { noHexName } from '../../lib/npub';
 import { stampArrival } from '../../features/chat/media';
 import { sendOutcome } from '../../lib/sendOutcome';
-import Picture from '../ui/Picture';
+import { uploadPrivateMedia, photoRefusalToast } from '../../lib/mediaCrypto';
+import { blossomServers } from '../../lib/egress';
+import { ProductImage } from '../ui/PrivateMedia';
 
 function GroupStorefront({ items, pinnedId, canList, onBuy, onList, pendingLists = [], now = 0, onRetrySecure }) {
   const [open, setOpen] = useState(false);
   const [title, setTitle] = useState('');
   const [price, setPrice] = useState('');
   const [note, setNote] = useState('');
+  const [photo, setPhoto] = useState(null);
+  const [addingPhoto, setAddingPhoto] = useState(false);
   const [formError, setFormError] = useState('');
+  // A menu photo leaves the device the way a chat photo does: encrypted to a
+  // host this device names, its key riding the listing payload itself. A
+  // host that refuses is the shared toast's sentence — the photo is simply
+  // not attached, and the listing can still post without it.
+  const pickPhoto = async (event) => {
+    const file = (event.target.files || [])[0];
+    event.target.value = '';
+    if (!file) return;
+    setAddingPhoto(true);
+    try {
+      setPhoto(await uploadPrivateMedia(file, blossomServers()));
+    } catch (error) {
+      console.error('[shop] Encrypted photo upload failed:', error);
+      useChatStore.getState().setToast({ type: 'error', message: photoRefusalToast(error?.message) });
+    } finally {
+      setAddingPhoto(false);
+    }
+  };
   const money = (product) => {
     const amount = product.priceUsd ?? product.price ?? '';
     if (amount === '' || amount == null) return 'Ask';
@@ -41,7 +63,7 @@ function GroupStorefront({ items, pinnedId, canList, onBuy, onList, pendingLists
       onClick={() => onBuy(item)}
       className={`flex w-full items-center gap-3 border-b border-ink/5 p-4 text-left last:border-0 active:bg-ink/5 ${featuredCard ? 'bg-ink/[0.06]' : ''}`}
     >
-      <Picture src={item.product.image} alt="" className="h-12 w-12 object-cover" fallback={<span className="flex h-12 w-12 items-center justify-center bg-ink/5 text-[11px] text-ink/30">Item</span>} />
+      <ProductImage value={item.product.image} className="h-12 w-12 object-cover" fallback={<span className="flex h-12 w-12 items-center justify-center bg-ink/5 text-[11px] text-ink/30">Item</span>} />
       <span className="min-w-0 flex-1">
         {featuredCard && <span className="block text-[11px] font-semibold uppercase tracking-[0.08em] text-accentText">Pinned</span>}
         <span className="block truncate text-[15px] font-semibold text-ink">{item.product.title || item.product.name || 'Item'}</span>
@@ -80,13 +102,24 @@ function GroupStorefront({ items, pinnedId, canList, onBuy, onList, pendingLists
           if (!title.trim()) { setFormError('Add a name.'); return; }
           if (!Number.isFinite(amount) || amount <= 0) { setFormError('Enter a price greater than 0.'); return; }
           setFormError('');
-          onList({ title: title.trim(), priceUsd: amount, description: note.trim(), currency: 'USD' });
-          setTitle(''); setPrice(''); setNote(''); setOpen(false);
+          onList({ title: title.trim(), priceUsd: amount, description: note.trim(), currency: 'USD', image: photo || undefined });
+          setTitle(''); setPrice(''); setNote(''); setPhoto(null); setOpen(false);
         }} className="overflow-hidden rounded-2xl border border-line bg-panel">
           <input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Item" className="w-full border-b border-ink/5 bg-transparent px-4 py-3 text-[15px] text-ink outline-none placeholder:text-ink/30" />
           <input value={price} onChange={(event) => setPrice(event.target.value)} placeholder="Price in USD" inputMode="decimal" className="w-full border-b border-ink/5 bg-transparent px-4 py-3 text-[15px] text-ink outline-none placeholder:text-ink/30" />
           <input value={note} onChange={(event) => setNote(event.target.value)} placeholder="Note" className="w-full border-b border-ink/5 bg-transparent px-4 py-3 text-[15px] text-ink outline-none placeholder:text-ink/30" />
-          <button type="submit" className="w-full bg-accent py-3.5 font-bold text-accentInk">Post to menu</button>
+          <div className="flex w-full items-center border-b border-ink/5">
+            <label className="min-w-0 flex-1 cursor-pointer px-4 py-3">
+              <span className={`block truncate text-[15px] ${photo ? 'text-ink' : 'text-ink/30'}`}>
+                {addingPhoto ? 'Adding the photo…' : photo ? 'Photo added' : 'Add a photo'}
+              </span>
+              <input type="file" accept="image/*" className="hidden" onChange={pickPhoto} disabled={addingPhoto} />
+            </label>
+            {photo && !addingPhoto && (
+              <button type="button" onClick={() => setPhoto(null)} className="shrink-0 px-4 py-3 text-[13px] font-semibold text-ink/45">Remove</button>
+            )}
+          </div>
+          <button type="submit" disabled={addingPhoto} className="w-full bg-accent py-3.5 font-bold text-accentInk">Post to menu</button>
           {formError && <p role="alert" className="px-4 py-3 text-[13px] text-danger">{formError}</p>}
         </form>
       )}

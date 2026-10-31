@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { openPrivateMedia, releasePrivateMedia } from '../../lib/mediaCrypto';
+import { isPrivateMedia, openPrivateMedia, releasePrivateMedia } from '../../lib/mediaCrypto';
 import Picture from './Picture';
 
 // Loading rule set by the founder: every attachment opens when it renders —
@@ -52,4 +52,14 @@ export function MediaImage({ item, className = '' }) {
 export function MediaAudio({ item, className = '' }) {
   if (item.shape === 'private') return <PrivateAudio entry={item.entry} className={className} />;
   return <audio controls preload="metadata" src={item.entry.url} className={className} onClick={(event) => event.stopPropagation()} />;
+}
+
+// A product photo rides its listing payload as either a plain URL (the
+// pre-photo shape) or a private entry — the same { url, key, iv, mime } a DM
+// photo rides inside its sealed message. The pick is the bubble's own: a
+// private entry goes through the same open-and-decrypt render, a plain URL
+// stays a Picture exactly as before.
+export function ProductImage({ value, alt = '', className = '', fallback = null, loading }) {
+  if (isPrivateMedia(value)) return <MediaImage item={{ shape: 'private', entry: value }} className={className} />;
+  return <Picture src={value} alt={alt} loading={loading} className={className} fallback={fallback} />;
 }
