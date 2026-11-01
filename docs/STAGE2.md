@@ -144,7 +144,8 @@ Result:
 | 3 | Group invite link, Message Requests (approve), group info (remove) | `src/lib/groupJoin.js`, `src/lib/crypto/groupKeyRequest.js`, `src/components/chat/MessageRequests.jsx` |
 | 4 | Chat composer (photo), tap to view | `src/features/chat/useComposer.js`, `src/lib/mediaCrypto.js`, `src/lib/imageCompression.js` |
 
-Entry points for Tests 1, 2 and 4 exist in the app today. Test 3's approval
-screen does not: its run is expected to end in a product gap, not a passing
-Result line, until a join-approval gate is built. The criteria above are not
-relaxed to fit what exists.
+Entry points for Tests 1, 2, 3 and 4 exist in the app today. Test 3's
+approval screen is the Join-requests door on Message Requests and the group
+info sidebar (gate merged at 3a2e57b); the run is expected to pass now that
+the join-approval gate is built. The criteria above are not relaxed to fit
+what exists.
