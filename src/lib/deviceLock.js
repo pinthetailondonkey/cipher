@@ -40,11 +40,19 @@ async function wrapAndVerify({ provider, pk, pin, skArray, open, innerFor }) {
   // existing key is reused by the provider, never overwritten.
   const dk = await provider.enroll(pk);
   try {
-    provider.forget?.(pk);
+    // One setup asks the person once. enroll just prompted the authenticator
+    // (it created the passkey, or read the existing one, and fetched its
+    // secret), so the freshly-made secret stays cached in the provider for
+    // the wrap-and-verify of this same creation. Forcing forget here would
+    // make the browser ask for the authenticator again on each read-back —
+    // on iOS 15/16 standalone that reprompts twice more for one setup. Real
+    // create/unlock failures (and the provider's retry loop for them) still
+    // throw out of enroll untouched; this only skips the redundant prompts.
     const inner = await innerFor();
     const vault = await wrapDeviceVault(provider, pk, dk, inner);
-    // Read it back the way the next unlock will: secret fetched fresh.
-    provider.forget?.(pk);
+    // Read it back and require it to give back the same key; the secret that
+    // enroll fetched stays in memory, so this is a crypto round-trip check,
+    // not a second authenticator prompt.
     if (pin === null) {
       const back = await unwrapDeviceVault(vault, pk, provider);
       if (JSON.stringify(back) !== JSON.stringify(inner)) throw new DeviceKeyUnavailable('verify-failed');
