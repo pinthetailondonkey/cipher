@@ -170,10 +170,14 @@ test('the workspace build-flag carrier is refused in a build that is not desktop
   // .grok/app-env.json is merged into the environment by
   // scripts/with-app-env.mjs, so a value in it reaches any build run from this
   // tree — including one that ships. It is how a desktop build is meant to be
-  // given its doors, and a desktop build is the only one allowed to carry it.
+  // given its doors, and a desktop build is the one allowed to carry it.
   const grok = join(TREE, '.grok');
   const carrier = join(grok, 'app-env.json');
   assert.equal(existsSync(carrier), false, 'a .grok/app-env.json already exists; refusing to overwrite it');
+  // The directory may hold files other than the carrier (README says the
+  // folder is untracked build-flag space). Only the fixture is removed on the
+  // way out, and the directory itself only if this case created it.
+  const grokExisted = existsSync(grok);
   mkdirSync(grok, { recursive: true });
   try {
     writeFileSync(carrier, '{"VITE_TEST_HOOKS":"1"}\n');
@@ -183,7 +187,7 @@ test('the workspace build-flag carrier is refused in a build that is not desktop
     assert.equal(run.text.includes(WALL_WS), false, 'a refused build still wrote the wall to disk');
   } finally {
     rmSync(carrier, { force: true });
-    rmSync(grok, { recursive: true, force: true });
+    if (!grokExisted) rmSync(grok, { recursive: true, force: true });
   }
 });
 
