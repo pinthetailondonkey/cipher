@@ -155,6 +155,9 @@ textarea::placeholder {
 
 @layer utilities {
   .pt-safe { padding-top: var(--sat); }
+  @media (min-width: 768px) {
+    .pt-safe { padding-top: 0; }
+  }
   .pb-safe { padding-bottom: var(--sab); }
   /* Below md the tab bar owns the bottom edge: content pads by the bar plus
      the safe area so the last row and the composer clear it. md+ has no bar,

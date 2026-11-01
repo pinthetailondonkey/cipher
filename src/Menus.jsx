@@ -211,7 +211,7 @@ export default function Menus({ identity, setActiveTab }) {
       {/* The same 44px filter field the chat list wears: 16px side margins,
           one 12px corner, magnifier left, clear on the right once there is
           text. It narrows the menus already loaded here. */}
-      <div className="px-4 pb-2">
+      <div className="px-4 pb-2 pt-safe">
         <div className="flex h-11 items-center gap-2 rounded-xl border border-line bg-panel px-3">
           <Search size={16} className="shrink-0 text-inkSubtle" aria-hidden="true" />
           <input
