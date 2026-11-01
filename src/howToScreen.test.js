@@ -324,7 +324,7 @@ test("the guide is the founder's fifteen steps, verbatim", async (t) => {
       ],
       [
         'The chat list menu',
-        'The menu at the top of Chats holds the smaller tools. Burn note writes something that is said once and then gone. Saved holds the messages you kept. Scan opens the camera for an address. Notifications shows what happened while you were away. Refresh re-reads your chats from the relays.',
+        'The menu at the top of Chats holds the smaller tools. Burn note writes something that is said once and then gone. Saved holds the messages you kept. Scan opens the camera for an address. Notifications shows what happened while you were away. Refresh re-reads your chats from the network.',
       ],
       [
         'Menus',

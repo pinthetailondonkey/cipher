@@ -144,7 +144,7 @@ export default function Discover({ identity, onJoined }) {
       } catch (err) {
         console.error("Failed to fetch groups:", err);
         if (!alive) return;
-        setDirectoryUnavailable('The relay did not answer this screen.');
+        setDirectoryUnavailable('The server did not answer this screen.');
         setRealGroups(useChatStore.getState().groups || []);
       } finally {
         if (alive) {
@@ -249,7 +249,7 @@ export default function Discover({ identity, onJoined }) {
                 that matched nothing, or a directory that really is empty.
                 "No groups" must never stand in for "could not ask". */}
             <p className="text-[15px] font-semibold text-ink">
-              {directoryFailed ? 'Could not reach the relay' : query.trim() ? 'Nothing matches that search' : 'No menus or groups yet'}
+              {directoryFailed ? 'Could not reach the server' : query.trim() ? 'Nothing matches that search' : 'No menus or groups yet'}
             </p>
             {directoryFailed ? (
               <p className="mt-1 px-4 text-[13px] text-inkMuted">There may be menus and groups, but this screen could not ask. Use Try again above.</p>

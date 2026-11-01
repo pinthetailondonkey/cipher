@@ -71,7 +71,7 @@ export function readCachedProducts() {
 // listing. A row is never 'published' on the writer's say-so alone.
 export const PRODUCT_DELIVERY_WORDS = {
   queued: 'Saved and will send.',
-  unconfirmed: 'Not found on the relays we just asked.',
+  unconfirmed: 'Not found on the servers we just asked.',
 };
 
 // What a publish can honestly say, in the order the facts arrive: a relay

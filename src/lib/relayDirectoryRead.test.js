@@ -93,7 +93,7 @@ test('one answering relay is enough, and events from the other are kept', async 
 test('no configured relay is its own unavailable answer', async () => {
   const result = await readDirectory([], FILTER, {});
   assert.equal(result.status, READ_UNAVAILABLE);
-  assert.match(whyUnavailable(result.answers), /No relay/);
+  assert.match(whyUnavailable(result.answers), /No server/);
 });
 
 // The identity goes with the read: a member-scoped relay can only answer an

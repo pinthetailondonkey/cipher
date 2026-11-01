@@ -223,7 +223,7 @@ export function useComposer({ identity, sendDM, sendGroupMessage }) {
       } else if (outcome === 'queued') {
         // The encrypted file reached a host and the message is in the outbox,
         // but no relay has it: say queued, not sent.
-        setToast({ type: 'success', message: media.length > 1 ? 'Album queued. It will send when a relay answers.' : 'Image queued. It will send when a relay answers.' });
+        setToast({ type: 'success', message: media.length > 1 ? 'Album queued. It will send when the network is back.' : 'Image queued. It will send when the network is back.' });
       }
     } catch (err) {
       console.error('[media] Encrypted photo upload failed:', err);
@@ -257,7 +257,7 @@ export function useComposer({ identity, sendDM, sendGroupMessage }) {
           const entry = await uploadPrivateMedia(file, blossomServers());
           const outcome = await sendMessage('', { type: 'audio', ...entry });
           if (outcome === 'sent') setToast({ type: 'success', message: 'Voice note sent!' });
-          else if (outcome === 'queued') setToast({ type: 'success', message: 'Voice note queued. It will send when a relay answers.' });
+          else if (outcome === 'queued') setToast({ type: 'success', message: 'Voice note queued. It will send when the network is back.' });
         } catch (err) {
           console.error('[media] Encrypted voice upload failed:', err);
           setToast({ type: 'error', message: 'The voice note was not sent. No media host took the encrypted file.' });

@@ -700,7 +700,7 @@ export function useChatBootstrap({
         return;
       }
       if (read?.status === 'unavailable') {
-        useChatStore.getState().setToast({ type: 'info', message: 'The relay would not say whether that group exists. Trying to join anyway.' });
+        useChatStore.getState().setToast({ type: 'info', message: 'The server would not say whether that group exists. Trying to join anyway.' });
       }
       joinGroupById(joinId);
     })();

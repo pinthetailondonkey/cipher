@@ -222,8 +222,8 @@ export async function readDirectory(relays, filter, {
 
 // Plain, short words for the screen. A reason is data, not a sentence.
 export function whyUnavailable(answers) {
-  if (!answers || answers.length === 0) return 'No relay is configured for this screen.';
+  if (!answers || answers.length === 0) return 'No server is configured for this screen.';
   const reasons = answers.map((answer) => answer.reason).filter(Boolean);
-  if (reasons.some((reason) => /auth/i.test(reason))) return 'The relay asked this account to prove itself and the read stopped there.';
-  return 'The relay did not answer this screen.';
+  if (reasons.some((reason) => /auth/i.test(reason))) return 'The server asked this account to prove itself and the read stopped there.';
+  return 'The server did not answer this screen.';
 }

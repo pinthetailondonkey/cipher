@@ -122,7 +122,7 @@ export function joinRefusal(error) {
   if (error?.said) return error.message;
   const reason = String(error?.message || '');
   if (!reason) return 'Could not join that group.';
-  if (/timed out|did not answer|socket closed|not answer/i.test(reason)) return 'The group relay did not answer. Try again in a moment.';
+  if (/timed out|did not answer|socket closed|not answer/i.test(reason)) return 'The group server did not answer. Try again in a moment.';
   if (/unlock|signed in|require/i.test(reason)) return 'Unlock your account, then try again.';
   if (/restricted|not allowed|denied|blocked|banned/i.test(reason)) return 'You are not allowed in that group.';
   return 'Could not join that group.';

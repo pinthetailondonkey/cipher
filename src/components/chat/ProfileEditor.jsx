@@ -63,7 +63,7 @@ export default function ProfileEditor({ identity }) {
       // the one published, so the card is one event on both relays.
       const card = await publishVendorCard({ isVendor, identity, event: nostrEvent });
       setMessage(isVendor && !card.published
-        ? 'Profile saved. Your card could not be published to the group relay.'
+        ? 'Profile saved. Your card could not be published to the group server.'
         : 'Profile published.');
     } catch (error) {
       console.error('[ProfileEditor] Profile publish failed:', error);
