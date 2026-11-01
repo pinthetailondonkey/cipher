@@ -99,7 +99,7 @@ test('a watcher you run can mark seen, then confirmed, and silence is not a succ
     address: '8abc',
     currency: 'xmr',
     state: 'seen',
-    fetchImpl: () => watcherAnswer({ address: '8abc', currency: 'xmr', source: 'watcher', txid: 'ab', confirmations: 10 }),
+    fetchImpl: () => watcherAnswer({ address: '8abc', currency: 'xmr', source: 'watcher', txid: 'ab', confirmations: 10, amount: '0.5' }),
   });
   assert.equal(confirmed.state, 'confirmed');
   await assert.rejects(
@@ -295,7 +295,11 @@ test('wallet transfers become a watcher report, and a miss stays pending', () =>
     { address: '8abc', txid: 'yes', confirmations: 2 },
   ], '8abc', 'xmr'), { source: 'watcher', txid: 'yes', confirmations: 2, confirmed: false });
   assert.equal(reportFromTransfers([{ address: '8abc', txid: 'yes', confirmations: 9 }], '8abc', 'xmr').confirmed, false);
-  assert.equal(reportFromTransfers([{ address: '8abc', txid: 'yes', confirmations: 10 }], '8abc', 'xmr').confirmed, true);
+  // The piconero law: an amountless report never confirms, however deep —
+  // depth without a countable amount marks seen at most.
+  const amountless = reportFromTransfers([{ address: '8abc', txid: 'yes', confirmations: 10 }], '8abc', 'xmr');
+  assert.equal(amountless.confirmed, false);
+  assert.equal(amountless.amount, undefined);
   assert.deepEqual(reportFromTransfers([], '8abc', 'xmr'), { pending: true });
   const watcher = fs.readFileSync(new URL('../../scripts/payment-watcher.mjs', import.meta.url), 'utf8');
   assert.match(watcher, /reportFromTransfers\(rows, address, 'xmr'\)/);
@@ -604,6 +608,68 @@ test('a bitcoin amount is quoted before parsing, and a float row counts for noth
   assert.equal(reportFromTransfers(floats, 'bc1q', 'btc').amount, undefined);
   const watcher = fs.readFileSync(new URL('../../scripts/payment-watcher.mjs', import.meta.url), 'utf8');
   assert.match(watcher, /scantxoutset[\s\S]{0,200}exactAmounts: true/);
+});
+
+// The piconero law, red-first witnesses a-c: an amount that is not a plain
+// decimal, e-notation included, is not a coin amount. It is quoted on the
+// wire, refused at the row, and a transaction with any uncountable output
+// has a total nobody can vouch for: the readable outputs alone are a lower
+// bound, never the sum. Such a transaction names no amount and never
+// confirms — it does not silently count the part that happens to parse.
+test('e-notation amounts are quoted, and a transaction with an uncountable output refuses', () => {
+  // WITNESS a (monero row): an e-notation piconero amount is quoted, never a float.
+  assert.deepEqual(parseExactAmounts('{"in":[{"amount":1e-12,"txid":"en"}]}'), { in: [{ amount: '1e-12', txid: 'en' }] });
+  assert.equal(atomicToCoins('1e-12', 'xmr'), null);
+  const enRows = moneroRows([{ address: '8sub', txid: 'en', confirmations: 10, amount: 1e-12 }]);
+  assert.equal(enRows[0].amount, undefined);
+  const enReport = reportFromTransfers(enRows, '8sub', 'xmr');
+  assert.equal(enReport.confirmed, false);
+  assert.equal(enReport.amount, undefined);
+  // WITNESS b (bitcoin scan row): the same refusal on the scantxoutset rail.
+  const btcScan = parseExactAmounts('{"unspents":[{"txid":"aa","height":107,"amount":1e-5}]}');
+  assert.deepEqual(btcScan.unspents[0].amount, '1e-5');
+  const btcRows = rowsFromScan({ height: 110, unspents: btcScan.unspents }, 'bc1q');
+  assert.equal(btcRows[0].amount, undefined);
+  const btcReport = reportFromTransfers(btcRows, 'bc1q', 'btc');
+  assert.equal(btcReport.confirmed, false);
+  assert.equal(btcReport.amount, undefined);
+  // WITNESS c (split transaction): one counted output beside an e-notation
+  // one is a lower bound, not a sum. The transaction refuses instead of
+  // undercounting what arrived.
+  const mixed = { height: 110, unspents: [{ txid: 'aa', height: 108, amount: '0.006' }, { txid: 'aa', height: 108, amount: 1e-5 }] };
+  const mixedReport = reportFromTransfers(rowsFromScan(mixed, 'bc1q'), 'bc1q', 'btc');
+  assert.equal(mixedReport.amount, undefined);
+  assert.equal(mixedReport.confirmed, false);
+  // A fully countable transaction still sums and confirms as before.
+  const clean = { height: 110, unspents: [{ txid: 'aa', height: 108, amount: '0.006' }, { txid: 'aa', height: 108, amount: '0.004' }] };
+  const cleanReport = reportFromTransfers(rowsFromScan(clean, 'bc1q'), 'bc1q', 'btc');
+  assert.equal(cleanReport.amount, '0.01');
+  assert.equal(cleanReport.confirmed, true);
+});
+
+// WITNESS d (no-demand walk): a report with no countable amount — absent,
+// or e-notation once quoted — cannot confirm an order that handed in no
+// demand. Depth alone used to be the only thing standing there; now the
+// amount is too. Depth below the bar still marks seen, and a real amount
+// at confirming depth still confirms, so the refusal bites only the
+// unprovable case.
+test('a report with no countable amount never confirms the no-demand path', async () => {
+  const watcherUrl = 'https://watch.example/payment?token=secret';
+  const base = { watcherUrl, address: '8sub', currency: 'xmr', state: 'address_issued' };
+  // An e-notation amount inside the signed answer is quoted at the parse,
+  // so it arrives as a string no amount reader can count.
+  await assert.rejects(
+    () => checkPayment({ ...base, fetchImpl: () => watcherAnswer({ address: '8sub', currency: 'xmr', txid: 'en', confirmations: 10, amount: 1e-12 }) }),
+    /did not report an amount/,
+  );
+  await assert.rejects(
+    () => checkPayment({ ...base, fetchImpl: () => watcherAnswer({ address: '8sub', currency: 'xmr', txid: 'na', confirmations: 10 }) }),
+    /did not report an amount/,
+  );
+  const young = await checkPayment({ ...base, fetchImpl: () => watcherAnswer({ address: '8sub', currency: 'xmr', txid: 'young', confirmations: 1 }) });
+  assert.equal(young.state, 'seen');
+  const paid = await checkPayment({ ...base, fetchImpl: () => watcherAnswer({ address: '8sub', currency: 'xmr', txid: 'ok', confirmations: 10, amount: '0.5' }) });
+  assert.equal(paid.state, 'confirmed');
 });
 
 // Row 19c-w. A watcher that refuses is answering in its own words: the body

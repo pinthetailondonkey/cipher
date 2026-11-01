@@ -123,11 +123,13 @@ export function atomicToCoins(value, currency) {
 }
 
 // A piconero amount can pass 2^53, where JSON.parse would round it, and a
-// bitcoin amount parsed as a number is a binary float. Quote every plain
-// number under an "amount" key before parsing so no digit is lost and no
-// amount ever becomes a float.
+// bitcoin amount parsed as a number is a binary float. Quote every number
+// under an "amount" key before parsing — the plain decimals and the
+// exponent forms alike, 1e-12 included — so no digit is lost and no amount
+// ever becomes a float. An amount left unquoted is a float no amount reader
+// accepts, so a transaction carrying one refuses instead of undercounting.
 export function parseExactAmounts(text) {
-  return JSON.parse(String(text).replace(/("amount"\s*:\s*)(\d+(?:\.\d+)?)(?![\d.eE])/g, '$1"$2"'));
+  return JSON.parse(String(text).replace(/("amount"\s*:\s*)(\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)(?![\d.eE])/g, '$1"$2"'));
 }
 
 export function moneroRows(rows) {
@@ -230,31 +232,39 @@ export function reportFromTransfers(transfers, address, currency) {
   const rows = (Array.isArray(transfers) ? transfers : []).filter((row) => row && (row.address === wanted || row.addr === wanted) && row.txid);
   const tx = rows.length ? chosenTransaction(rows, currency) : null;
   if (!tx) return { pending: true };
+  // The amount law: the report speaks for the whole transaction only when
+  // every one of its outputs is countable. An output the app cannot read
+  // exactly — an e-notation answer that slipped the quoting, a float, a
+  // garbled string — makes the total a guess: the readable outputs alone
+  // are a lower bound, never the sum. Such a transaction names no amount,
+  // carries no date drawn from a partial reading, and never confirms, at
+  // any depth. It does not silently count the part that happens to parse.
+  const counted = tx.rows.filter((row) => coinUnits(row.amount, currency) != null);
+  const whole = counted.length === tx.rows.length;
   // Outputs of the one transaction. It is only as deep as its shallowest
   // output, so the sum cannot confirm before every part does.
-  const counted = tx.rows.filter((row) => coinUnits(row.amount, currency) != null);
   const depthOf = counted.length ? counted : tx.rows;
   const confirmations = Math.min(...depthOf.map((row) => Number(row.confirmations) || 0));
   const report = {
     source: 'watcher',
     txid: tx.txid,
     confirmations,
-    confirmed: confirmations >= confirmationsRequired(currency),
+    confirmed: whole && confirmations >= confirmationsRequired(currency),
   };
-  if (counted.length) {
+  if (whole) {
     report.amount = unitsToCoins(tx.total, currency);
     const largest = counted.reduce((top, row) => {
       const units = coinUnits(row.amount, currency);
       return units > top ? units : top;
     }, 0n);
     report.outputAmount = unitsToCoins(largest, currency);
-  }
-  // When the chain dates every part of the transfer, the report carries the
-  // oldest date. The order that consumes the txid can then refuse one that
-  // was recorded before its address even existed. (security S1)
-  const dates = counted.map((row) => Number(row.timestamp));
-  if (counted.length && dates.every((value) => Number.isFinite(value) && value > 0)) {
-    report.time = Math.min(...dates);
+    // When the chain dates every part of the transfer, the report carries
+    // the oldest date. The order that consumes the txid can then refuse one
+    // that was recorded before its address even existed. (security S1)
+    const dates = counted.map((row) => Number(row.timestamp));
+    if (dates.every((value) => Number.isFinite(value) && value > 0)) {
+      report.time = Math.min(...dates);
+    }
   }
   return report;
 }
@@ -408,6 +418,16 @@ export async function checkPayment({ watcherUrl, address, currency, state, amoun
     if (!Number.isFinite(time) || time < 1231006505 || time > now + 7200) {
       delete report.time;
     }
+  }
+  // The piconero law: depth alone never confirms. A report that names no
+  // amount this device can count — absent, or written so no amount reader
+  // accepts it — may mark the payment seen, but at confirming depth it
+  // moves nothing: an order cannot be paid by a total nobody vouched for.
+  // (Backstop of the same law reportFromTransfers enforces at the source;
+  // the gate reads the facts again instead of trusting the reporter.)
+  if (Number(report.confirmations) >= confirmationsRequired(currency)
+    && (report.amount == null || report.amount === '' || coinUnits(report.amount, currency) == null)) {
+    throw new Error('The watcher did not report an amount.');
   }
   // A transfer the chain dates before this order's address was issued is
   // refused before anything moves, seen or confirmed. (security S1)
