@@ -166,7 +166,7 @@ export default function ThreadScroll({ messages, emptyState, renderMessage }) {
         >
           <ChevronDown size={18} />
           {belowCount > 0 && (
-            <span className="absolute -right-1 -top-1 rounded-full bg-accent px-1.5 py-0.5 text-[10px] font-bold leading-none text-accentInk">
+            <span className="absolute -right-1 -top-1 rounded-full bg-accent px-1.5 py-0.5 text-[11px] font-bold leading-none text-accentInk">
               {belowCount > 99 ? '99+' : belowCount}
             </span>
           )}

@@ -46,7 +46,7 @@ export default function BroadcastModal({ isOpen, onClose, product, groups = [], 
                 className="h-4 w-4 accent-[var(--accent)]"
               />
               <span className="min-w-0 flex-1 truncate text-sm text-ink">{group.name || group.id}</span>
-              <span className="truncate text-[10px] text-inkSubtle">{group.id.slice(0, 8)}</span>
+              <span className="truncate text-[11px] text-inkSubtle">{group.id.slice(0, 8)}</span>
             </label>
           ))}
         </div>

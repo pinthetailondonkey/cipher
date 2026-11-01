@@ -37,7 +37,7 @@ export default function MessageContextMenu({ open, onClose, onAction, items = []
             type="button"
             aria-label={`React ${emoji}`}
             onClick={() => act('react', emoji)}
-            className="touch-target flex items-center justify-center text-[22px] active:scale-95"
+            className="touch-target flex items-center justify-center text-[20px] active:scale-95"
           >
             {emoji}
           </button>

@@ -60,7 +60,7 @@ export default function MyProfileModal({ identity }) {
         <div className="flex items-center gap-4">
           <Avatar src={profile.picture} name={name} size="lg" />
           <div className="min-w-0">
-            <h2 id="my-profile-name" className="truncate text-[22px] font-bold tracking-tight text-ink">{name}</h2>
+            <h2 id="my-profile-name" className="truncate text-[20px] font-bold tracking-tight text-ink">{name}</h2>
             <p className="truncate text-[13px] text-inkMuted">{identity?.pk ? shortNpub(identity.pk) : 'No key loaded'}</p>
           </div>
         </div>

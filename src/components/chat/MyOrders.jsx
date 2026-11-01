@@ -106,7 +106,7 @@ export default function MyOrders({ dms = null, profiles = null, onBack, onOpenCh
                         <span className="truncate text-[13px] text-inkMuted">{names[peerPubkey]?.displayName || names[peerPubkey]?.name || peerRole(isBuyer)}</span>
                         <span className="flex shrink-0 items-center gap-1.5">
                           {countersigned && <CheckCircle2 size={14} className="text-success" aria-label="Countersigned receipt" />}
-                          <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider ${statusTone(state.status)}`}>{state.status.replaceAll('_', ' ')}</span>
+                          <span className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wider ${statusTone(state.status)}`}>{state.status.replaceAll('_', ' ')}</span>
                         </span>
                       </span>
                     </span>

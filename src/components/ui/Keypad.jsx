@@ -37,7 +37,7 @@ export default function Keypad({
     onChange(value.slice(0, -1));
   };
 
-  const keyClass = `flex h-16 w-16 items-center justify-center rounded-full text-[24px] font-semibold text-ink active:bg-ink/10 ${pressable}`;
+  const keyClass = `flex h-16 w-16 items-center justify-center rounded-full text-[20px] font-semibold text-ink active:bg-ink/10 ${pressable}`;
 
   return (
     <div className="flex w-full flex-col items-center gap-6">

@@ -380,7 +380,7 @@ export default function GroupInfoSidebar({
       <div className="flex items-center gap-3 px-4 pb-3 pt-2">
         <Avatar src={group?.picture} name={group?.name || 'Group'} size={44} />
         <div className="min-w-0 flex-1">
-          <h2 className="truncate text-[22px] font-bold tracking-tight text-ink">{group?.name || 'Group'}</h2>
+          <h2 className="truncate text-[20px] font-bold tracking-tight text-ink">{group?.name || 'Group'}</h2>
           {/* The count is the relay's signed roster or nothing. It used to
               read "1 member" whenever the list had not loaded — a number the
               device had no evidence for. Unknown shows no chip at all. */}

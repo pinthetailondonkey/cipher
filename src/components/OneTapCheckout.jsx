@@ -132,7 +132,7 @@ export default function OneTapCheckout({ product, open = true, onConfirmOrder, o
         </div>
         <div className="rounded-2xl border border-line bg-panelStrong p-4">
           <p className="text-[12px] text-inkSubtle">Amount due</p>
-          <p className="font-mono text-[22px] font-bold text-ink">{amount}</p>
+          <p className="font-mono text-[20px] font-bold text-ink">{amount}</p>
         </div>
         {/* The delivery address. Words are Money Moves' spec verbatim: the
             top breath is two lines, hints sit under their labels, the miss

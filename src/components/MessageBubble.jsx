@@ -155,7 +155,7 @@ function OrderReceipt({ content, isBuyer = false, disputeReason = '', deviceMark
       <div className="p-3">
         <div className="flex items-start justify-between gap-2">
           <p className="text-[15px] font-semibold text-ink">{title}</p>
-          <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold ${pill.className}`}>{pill.text}</span>
+          <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-bold ${pill.className}`}>{pill.text}</span>
         </div>
         {price && <p className="mt-1 text-[15px] font-bold text-accentText">{price}</p>}
         {nextStep && <p className="mt-0.5 text-[12px] leading-snug text-ink/50">{nextStep}</p>}
@@ -272,7 +272,7 @@ function PaymentBlock({ rows }) {
           <span className="flex justify-center rounded-md bg-scrim/80 p-1">
             <QRCodeSVG value={uri} size={120} level="M" />
           </span>
-          <span className="select-all break-all text-center font-mono text-[10px] text-scrim/80">{address}</span>
+          <span className="select-all break-all text-center font-mono text-[11px] text-scrim/80">{address}</span>
           <span className="flex w-full items-center justify-between gap-1 border-t border-scrim/15 pt-1">
             <button
               type="button"
@@ -404,7 +404,7 @@ export default function MessageBubble({ message, data, onAction, senderName, ide
     : null;
   const timeLabel = validTimestamp === null ? '' : new Date(validTimestamp * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   const time = (
-    <span className={`float-right ml-2 mt-[5px] inline-flex items-center gap-1 rounded-full px-1.5 py-[3px] text-[10px] leading-none ${isSender ? 'bg-scrim/25 text-accentInk/80' : 'bg-panelAlt text-inkSubtle'}`}>
+    <span className={`float-right ml-2 mt-[5px] inline-flex items-center gap-1 rounded-full px-1.5 py-[3px] text-[11px] leading-none ${isSender ? 'bg-scrim/25 text-accentInk/80' : 'bg-panelAlt text-inkSubtle'}`}>
       {message?.edited && <span>edited</span>}
       {isSender && deliveryLabel && <span className={message?.deliveryStatus === 'failed' ? 'text-danger' : ''}>{deliveryLabel}</span>}
       {ticks}
@@ -593,7 +593,7 @@ export default function MessageBubble({ message, data, onAction, senderName, ide
         {attachments.layout === 'audio' && <VoiceNote item={attachments.items[0]} name={content.name || ''} sent={isSender} className="mb-1" />}
         {content.type === 'product' && <ProductImage value={content.image} loading="lazy" className="mb-1 max-h-40 rounded-xl object-cover" />}
         {content.type === 'product' && isPinnedListing && (
-          <p className="mb-1 inline-flex items-center gap-1 rounded-full border border-accentText px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-accentText"><BadgeCheck size={12} /> Pinned</p>
+          <p className="mb-1 inline-flex items-center gap-1 rounded-full border border-accentText px-2 py-0.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-accentText"><BadgeCheck size={12} /> Pinned</p>
         )}
         {paidRows.length > 0 && (
           // The payment block: one black inset panel per coin. The address
@@ -604,7 +604,7 @@ export default function MessageBubble({ message, data, onAction, senderName, ide
               <div key={`${currency}-${address}`} className="flex flex-col items-center rounded-xl bg-panelStrong p-2">
                 {amount && <p className="mb-1 select-all text-center font-mono text-[15px] font-bold text-inkMuted">Pay {amount} {currency}</p>}
                 <QRCodeSVG value={uri} size={120} level="M" />
-                <span className="mt-1 select-all break-all text-center font-mono text-[10px] text-inkMuted">{address}</span>
+                <span className="mt-1 select-all break-all text-center font-mono text-[11px] text-inkMuted">{address}</span>
                 <div className="mt-2 flex flex-wrap items-center justify-center gap-2">
                   <button type="button" onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); copyText(address); }} className="min-h-[44px] rounded-full border border-line px-3 py-1.5 text-[13px] font-semibold text-accentText">Copy address</button>
                   <button type="button" onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); haptic('light'); sharePayment(currency, address, amount, uri); }} className="min-h-[44px] rounded-full border border-line px-3 py-1.5 text-[13px] font-semibold text-accentText">Share link</button>

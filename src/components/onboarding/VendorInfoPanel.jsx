@@ -7,7 +7,7 @@ import Button from '../ui/Button';
 export default function VendorInfoPanel({ onBack }) {
   return (
     <div className="pb-6 pt-2 text-center">
-      <h2 className="mb-3 text-[22px] font-bold tracking-tight text-ink">Selling</h2>
+      <h2 className="mb-3 text-[20px] font-bold tracking-tight text-ink">Selling</h2>
       <p className="mb-4 px-2 text-[14px] leading-relaxed text-inkMuted">
         Turn on selling in Profile and add a paying address. Publish items to your menu and share the link. Orders reach you in chat, and payment goes straight to your address. Cipher never holds the money.
       </p>

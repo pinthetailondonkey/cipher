@@ -76,7 +76,7 @@ function TutorialSteps({ onClose }) {
                 <Button onClick={() => setVendorPanel(true)} fullWidth>{step.title}</Button>
               ) : (
                 <>
-                  <h2 className="mb-3 text-[22px] font-bold tracking-tight text-ink">{step.title}</h2>
+                  <h2 className="mb-3 text-[20px] font-bold tracking-tight text-ink">{step.title}</h2>
                   <p className="mb-4 px-2 text-[14px] leading-relaxed text-inkMuted">{step.desc}</p>
                 </>
               )}

@@ -99,7 +99,7 @@ export default function VendorProfilePage({
         <div className="flex min-w-0 flex-1 items-center gap-3">
           <Avatar src={profile.picture} name={name} size={44} />
           <div className="min-w-0">
-            <h1 className="truncate text-[22px] font-bold tracking-tight text-ink">{name}</h1>
+            <h1 className="truncate text-[20px] font-bold tracking-tight text-ink">{name}</h1>
             <p className="mono truncate text-[12px] text-inkSubtle">{shortNpub(vendorPubkey, 16)}</p>
           </div>
         </div>
@@ -118,7 +118,7 @@ export default function VendorProfilePage({
         {REVIEW_WIRING_LANDED && summary.count > 0 && (
           <section className="rounded-2xl border border-line bg-panelStrong px-4 py-4">
             <div className="flex items-center gap-3">
-              <p className="text-[26px] font-bold tracking-tight text-ink">{summary.average}</p>
+              <p className="text-[28px] font-bold tracking-tight text-ink">{summary.average}</p>
               <div aria-hidden="true" className="flex items-center gap-0.5">
                 {[1, 2, 3, 4, 5].map((star) => (
                   <Star key={star} size={13} className="text-accentText" fill="currentColor" />
