@@ -12,7 +12,6 @@ import IdentityBackup from './components/chat/IdentityBackup';
 import MyOrders from './components/chat/MyOrders';
 import MessageRequests from './components/chat/MessageRequests';
 import { db } from './db';
-import Logo from './components/Logo';
 import { compressImage } from './lib/imageCompression';
 import { loadVendorPaymentConfig, readPaymentAddresses, saveVendorPaymentConfig, savePaymentAddresses } from './lib/vendorPayments';
 import PrivacySettings from './components/chat/PrivacySettings';

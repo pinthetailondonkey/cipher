@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { ChevronRight } from 'lucide-react';
-import Logo from './Logo';
 import Sheet from './ui/Sheet';
 import Button from './ui/Button';
 import VendorInfoPanel from './onboarding/VendorInfoPanel';
@@ -73,9 +72,6 @@ function TutorialSteps({ onClose }) {
               transition={{ type: 'spring', stiffness: 380, damping: 34 }}
               className="flex flex-col items-center"
             >
-              <div className="mb-6 mt-1">
-                <Logo size={72} />
-              </div>
               {step.vendorPanel ? (
                 <Button onClick={() => setVendorPanel(true)} fullWidth>{step.title}</Button>
               ) : (
