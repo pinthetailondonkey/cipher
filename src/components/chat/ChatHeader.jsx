@@ -185,6 +185,26 @@ export default function ChatHeader({ mode }) {
           </button>
         </div>
       </div>
+      {/* The verify-contact row, DM only and only once a safety record exists:
+          the 15 digits live here on the header (read via safetyNumberFor) and
+          the row is the door to the comparison sheet. When the safety engine
+          flags a changed key, the same row becomes the red banner — the first
+          thing a returned chat sees — still one tap from the read-out. The
+          sticky parent keeps it pinned under the title bar. */}
+      {mode === 'dm' && safety && (
+        <button
+          type="button"
+          aria-label={keyChanged ? 'Security check required' : 'Verify contact codes'}
+          onClick={() => { haptic('light'); setSafetyOpen(true); }}
+          className={`flex w-full items-center justify-between gap-2 border-t border-line px-3 py-2 text-left active:bg-ink/5 ${keyChanged ? 'bg-danger/10' : 'bg-panel/50'}`}
+        >
+          <span className={`flex min-w-0 items-center gap-1.5 text-[12px] font-semibold ${keyChanged ? 'text-danger' : 'text-inkSubtle'}`}>
+            {keyChanged ? <ShieldAlert size={14} /> : <Shield size={14} />}
+            <span className="truncate">{keyChanged ? 'Key changed — verify with your contact' : 'Verify codes'}</span>
+          </span>
+          <span className={`mono shrink-0 text-[12px] tracking-widest ${keyChanged ? 'text-danger' : 'text-ink'}`}>{safety.number}</span>
+        </button>
+      )}
       {menuOpen && activeChatId && (
         <div className="absolute right-2 top-full z-fab mt-1 w-56 rounded-2xl border border-line bg-panel p-1">
           <button
