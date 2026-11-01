@@ -14,6 +14,12 @@ import { signReceipt, verifyReceipt as verifyReceipt2 } from './proofOfTrade.js'
 const hexOf = (bytes) => [...bytes].map((byte) => byte.toString(16).padStart(2, '0')).join('');
 
 const names = (actions) => actions.map((item) => item.action);
+
+// The pill word the card would render, read from the same source the browser
+// bundles. One function, one truth: the parity walk and the source pin share it.
+const orderLabelSrc = fs.readFileSync(new URL('../components/MessageBubble.jsx', import.meta.url), 'utf8');
+const labelFn = orderLabelSrc.slice(orderLabelSrc.indexOf('function orderLabel'), orderLabelSrc.indexOf('function nextStepOf'));
+const orderLabelOf = new Function('content', `${labelFn}; return orderLabel(content).text;`);
 const request = (isSender, data = {}) => ({ id: 'order-1', isSender, timestamp: 10, data: { type: 'order_request', status: 'pending', product: { title: 'Tee' }, ...data } });
 const update = (id, isSender, status, timestamp, extra = {}) => ({ id, isSender, timestamp, data: { type: 'order_update', orderId: 'order-1', status, ...extra } });
 
@@ -717,4 +723,123 @@ test('F-BC1: the verified-receipt arm behaves exactly as before', () => {
   assert.equal(orderState([mine, riding], 'order-1', mine, buyer, vendor).paymentState, 'confirmed');
   const tampered = { ...riding, data: { ...riding.data, receipt: { ...signed, body: { ...signed.body, amount: '9' } } } };
   assert.equal(orderState([mine, tampered], 'order-1', mine, buyer, vendor).paymentState, 'created');
+});
+
+// BACKLOG 11: the buyer's order card walks the same payment beats the vendor's
+// walks — created, address_issued, seen, confirmed — nothing skips. The beats
+// are per-device EVIDENCE (F7 above), never synchronized events: each side
+// advances on its own watcher check, its own wallet sight or a two-sided
+// receipt. Parity here means the LADDER: every beat reachable on both sides
+// by the same derivation, the same pill word for the same derived state, and
+// no render branch that lets isSender or paymentSeenBy skip a rung.
+
+test('11b: every payment beat is reachable on both the buyer and the vendor card, same pill each', () => {
+  const card = { type: 'order_request', status: ORDER_STATUS.PENDING, paymentState: 'created', product: { title: 'Tee' } };
+  // The vendor's real acceptance payload: address_issued, no paymentSeenBy
+  // (useCommerce sendAcceptance) — the wallet-sight 'vendor' mark is a
+  // separate PAID update (useCommerce confirm_payment), never the acceptance.
+  const acceptance = { type: 'order_update', orderId: 'order-1', status: ORDER_STATUS.ACCEPTED, paymentState: 'address_issued', paymentMethods: { btc: 'bc1qtest' }, coinCurrency: 'btc', coinAmount: '0.01' };
+
+  const walk = (isBuyer, { acceptance: withAcceptance = false, buyerPatch, vendorSight = false, ownUpdate } = {}) => {
+    const messages = [{ id: 'order-1', isSender: isBuyer, timestamp: 10, data: card }];
+    if (withAcceptance) messages.push({ id: 'u1', isSender: !isBuyer, timestamp: 11, data: acceptance });
+    if (buyerPatch && isBuyer) messages[0] = { ...messages[0], localPatch: buyerPatch };
+    if (ownUpdate) messages.push({ id: 'u2', isSender: true, timestamp: 12, data: { type: 'order_update', orderId: 'order-1', status: ownUpdate.status, paymentState: ownUpdate.paymentState, paymentSeenBy: ownUpdate.paymentSeenBy } });
+    if (vendorSight && !isBuyer) messages.push({ id: 'u2', isSender: true, timestamp: 12, data: { type: 'order_update', orderId: 'order-1', status: ORDER_STATUS.PAID, paymentState: 'seen', paymentSeenBy: 'vendor' } });
+    const request = isBuyer
+      ? { data: card, isSender: true, localPatch: buyerPatch }
+      : { data: card, isSender: false, localPatch: vendorSight ? { paymentState: 'seen', paymentSeenBy: 'vendor' } : undefined };
+    return orderState(messages, 'order-1', request, 'own', 'peer');
+  };
+
+  const beats = [
+    ['created', (isBuyer) => walk(isBuyer, {}), 'Awaiting payment'],
+    ['address_issued', (isBuyer) => walk(isBuyer, { acceptance: true }), 'Address sent'],
+    // The buyer reaches seen/confirmed with its own watcher check (the local
+    // patch, security S6); the vendor reaches the same beats with its own
+    // chain check (an own-sent update, paymentSeenBy 'watcher', useCommerce
+    // :656-680). Same beat, same pill, each side earning it on its own.
+    ['seen (watcher)', (isBuyer) => walk(isBuyer, {
+      acceptance: true,
+      buyerPatch: { paymentState: 'seen', paymentSeenBy: 'watcher' },
+      ownUpdate: isBuyer ? null : { status: ORDER_STATUS.ACCEPTED, paymentState: 'seen', paymentSeenBy: 'watcher' },
+    }), 'Seen on-chain'],
+    ['confirmed', (isBuyer) => walk(isBuyer, {
+      acceptance: true,
+      buyerPatch: { paymentState: 'confirmed', paymentSeenBy: 'watcher' },
+      ownUpdate: isBuyer ? null : { status: ORDER_STATUS.ACCEPTED, paymentState: 'confirmed', paymentSeenBy: 'watcher' },
+    }), 'Confirmed'],
+    // The vendor's own wallet sight: 'Marked paid' with the honest
+    // 'Not checked on-chain' line — the wallet is not a chain confirmation.
+    // The sight is the VENDOR's evidence, never the buyer's (F7): the buyer's
+    // card stays at its own earned beat while the vendor's advances. Same
+    // ladder on both cards; the evidence stays local, as the beats are
+    // per-device by design. Pinned here so nobody "fixes" it into a shared
+    // claim later.
+    ['vendor sight (one-sided)', (isBuyer) => walk(isBuyer, { acceptance: true, vendorSight: true }), null],
+  ];
+  for (const [name, build, pill] of beats) {
+    const buyer = build(true);
+    const vendor = build(false);
+    if (name.startsWith('vendor sight')) {
+      // one-sided evidence: different states, each the honest one for its side
+      assert.equal(buyer.paymentState, 'address_issued', `${name}: the buyer does not inherit the vendor's wallet sight`);
+      assert.equal(vendor.paymentState, 'seen', `${name}: the vendor's own sight moves their card`);
+      assert.equal(orderLabelOf(buyer), 'Address sent', `${name}: buyer pill`);
+      assert.equal(orderLabelOf(vendor), 'Marked paid', `${name}: vendor pill`);
+      continue;
+    }
+    assert.equal(buyer.paymentState, vendor.paymentState, `${name}: both sides derive the same paymentState`);
+    assert.equal(orderLabelOf(buyer), pill, `${name}: buyer pill`);
+    assert.equal(orderLabelOf(vendor), pill, `${name}: vendor pill`);
+  }
+});
+
+// The pill words live in MessageBubble's orderLabel. This file cannot import
+// the component (it would drag the whole React tree into a node test), so the
+// pin reads the source: the label branches on paymentState/status/
+// paymentSeenBy only — never on isSender — and the next-step walker branches
+// on isBuyer only for WHO acts, never for WHETHER a beat renders. Either
+// condition breaking is the drift this pin exists to catch.
+test('11b pin: the beat words never branch on who is looking', () => {
+  const src = fs.readFileSync(new URL('../components/MessageBubble.jsx', import.meta.url), 'utf8');
+  const start = src.indexOf('function orderLabel');
+  const end = src.indexOf('function OrderReceipt');
+  assert.ok(start !== -1 && end !== -1 && end > start, 'orderLabel and nextStepOf sit where the pin expects them');
+  const label = src.slice(start, src.indexOf('function nextStepOf'));
+  assert.doesNotMatch(label, /\bisSender\b|\bisBuyer\b/, 'orderLabel never asks who is looking');
+  const walker = src.slice(src.indexOf('function nextStepOf'), end);
+  // every isBuyer ternary in the walker names WHO acts; the assertion is that
+  // the LADDER branches (confirmed/seen/address_issued states) are decided
+  // before any isBuyer is consulted. A line that both tests a beat state AND
+  // branches on isBuyer is fine — the walk's parity already proves no beat
+  // hides — but a beat state gated on isBuyer ALONE would be the drift. So the
+  // pin asserts each beat line that asks isBuyer also names the state it serves.
+  const ladder = walker.split('\n').filter((line) => /confirmed|seen|address_issued/.test(line));
+  for (const line of ladder) {
+    if (/\bisBuyer\b/.test(line)) {
+      assert.match(line, /confirmed|seen|paid/i, `a beat line asks isBuyer only to name who acts: ${line.trim()}`);
+    }
+  }
+  // the receipt renders from one derivation, spread into the card, for both arms
+  assert.match(src, /OrderReceipt content=\{\{ \.\.\.content, \.\.\.orderState\(chatMessages/);
+  assert.equal(src.match(/<OrderReceipt /g)?.length, 1, 'exactly one OrderReceipt call site — both sides share it');
+});
+
+// Documented invariant (stallion's measure, watch-out c): paymentSeenBy is
+// FIRST-WRITER-WINS inside one derivation — adopt() takes the first source
+// that names it and only rank-gates paymentState. Both real writers agree
+// ('watcher' from a chain check, 'vendor' from wallet sight), so no live bug;
+// the pin makes the ordering dependence a named fact an auditor can check.
+test('11b pin: paymentSeenBy is first-writer-wins, and both real writers agree', () => {
+  const card = { type: 'order_request', status: ORDER_STATUS.PENDING, paymentState: 'created', product: { title: 'Tee' } };
+  const messages = [
+    { id: 'order-1', isSender: true, timestamp: 10, data: card, localPatch: { paymentState: 'seen', paymentSeenBy: 'watcher' } },
+    { id: 'u1', isSender: true, timestamp: 12, data: { type: 'order_update', orderId: 'order-1', status: ORDER_STATUS.PAID, paymentState: 'seen', paymentSeenBy: 'vendor' } },
+  ];
+  const state = orderState(messages, 'order-1', { ...messages[0] }, 'own', 'peer');
+  assert.equal(state.paymentSeenBy, 'watcher', 'the first writer holds the seenBy; the rank-gate does not reopen it');
+  // and the pill is the honest one for a wallet-sight world: the word tracks
+  // the evidence class, not the recency.
+  assert.equal(state.paymentState, 'seen');
 });
