@@ -199,7 +199,7 @@ export default function AuthenticatedApp({ identity }) {
                 <Suspense fallback={tabFallback}>
                   {activeTab === 'explore' && (
                     <div className="relative flex h-full w-full flex-col md:border-x md:border-line">
-                      <div className="relative z-fab flex items-center px-4 pb-1 pt-3 pt-safe">
+                      <div className="relative z-fab flex items-center px-4 pb-1 pt-[calc(0.75rem+var(--sat))]">
                         <button type="button" onClick={() => useChatStore.getState().setShowDrawer(true)} aria-label="Open menu" className="-ml-1 touch-target p-2 text-ink/50 hover:text-ink md:hidden"><Menu size={20} /></button>
                         <Segmented
                           ariaLabel="Discover sections"

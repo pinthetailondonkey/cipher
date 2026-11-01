@@ -542,7 +542,7 @@ export default function MessageBubble({ message, data, onAction, senderName, ide
           // F7: the badge reads derived payment facts, not what the update
           // itself claims — a received "confirmed" with no receipt behind it
           // reads back as its real state.
-          <OrderReceipt content={{ ...content, ...orderState(chatMessages, message?.id, { data: content }, '', activeDm) }} isBuyer={isSender} disputeReason={disputeReason} deviceMark={message?.deviceMark || null} />
+          <OrderReceipt content={{ ...content, ...orderState(chatMessages, message?.id, message, '', activeDm) }} isBuyer={isSender} disputeReason={disputeReason} deviceMark={message?.deviceMark || null} />
         )}
         {(content.type === 'cipher_order' || content.type === 'order_update') && (
           <ReceiptDoor message={message} content={content} />

@@ -822,7 +822,8 @@ test('11b pin: the beat words never branch on who is looking', () => {
     }
   }
   // the receipt renders from one derivation, spread into the card, for both arms
-  assert.match(src, /OrderReceipt content=\{\{ \.\.\.content, \.\.\.orderState\(chatMessages/);
+  assert.match(src, /OrderReceipt content=\{\{ \.\.\.content, \.\.\.orderState\(chatMessages, message\?\.id, message, /, 'the bubble passes the real message shape, so the buyer localPatch and isSender reach the derivation');
+  assert.doesNotMatch(src, /orderState\(chatMessages, message\?\.id, \{ data: content \}/, 'the wrapper shape that drops localPatch must not come back');
   assert.equal(src.match(/<OrderReceipt /g)?.length, 1, 'exactly one OrderReceipt call site — both sides share it');
 });
 

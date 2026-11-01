@@ -481,7 +481,7 @@ export default function Wallet({ identity, onOpenChat, startView = 'main' }) {
       {/* status renders through the shared ui/Toast queue; no local pill */}
 
       {/* HEADER PROFILE CARD */}
-      <div className="flex flex-col items-center px-4 pb-2 pt-3 pt-safe md:pt-8">
+      <div className="flex flex-col items-center px-4 pb-2 pt-[calc(0.75rem+var(--sat))] md:pt-8">
         <div className="mb-2 flex w-full items-center px-1 md:hidden">
           <button type="button" onClick={() => useChatStore.getState().setShowDrawer(true)} aria-label="Open menu" className="-ml-1 touch-target p-2 text-inkMuted hover:text-ink"><Menu size={20} /></button>
         </div>
