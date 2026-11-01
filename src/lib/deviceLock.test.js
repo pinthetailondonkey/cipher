@@ -3,6 +3,7 @@ import test from 'node:test';
 import { decryptKey, encryptKey, isLegacyVault } from '../useIdentity.js';
 import { destroyDeviceKeys, sealNewVault, upgradeStoredVault } from './deviceLock.js';
 import { DeviceKeyCancelled, DeviceKeyMissing, DeviceKeyUnavailable, isDeviceVault, makeSecretProvider } from './vaultEnvelope.js';
+import { prfProvider } from './devicePrf.js';
 
 const PK = 'd'.repeat(64);
 const OTHER = 'e'.repeat(64);
@@ -33,7 +34,10 @@ function fakeProvider({ failOn = null, secrets = new Map(), destroyed = [] } = {
       return { k: 'prf', id: 'fake' };
     },
     getSecret: async (pk) => {
-      if (failOn === 'get' && !cache.has(pk)) throw new DeviceKeyMissing('gone');
+      // A real provider failure at read time: the native store will not yield
+      // the key it just made. This no longer relies on the sealing flow forcing
+      // a forget (which was the cause of the extra setup prompts).
+      if (failOn === 'get') throw new DeviceKeyMissing('gone');
       if (cache.has(pk)) return cache.get(pk);
       const secret = secrets.get(pk);
       if (!secret) throw new DeviceKeyMissing('no-key');
@@ -234,4 +238,57 @@ test('destroying keys never throws, never hangs, and reports what it could not c
   assert.deepEqual(failed.sort(), ['boom', 'hang']);
   assert.ok(Date.now() - started < 1000);
   assert.deepEqual(await destroyDeviceKeys(null, ['a']), []);
+});
+
+// Regression (founder, iPhone 15/16 home-screen PWA): one account setup prompted
+// for the passkey three times instead of once. The single enrolment is the one
+// authenticator step; the wrap-and-verify read-backs reuse the secret it fetched
+// instead of forcing a fresh unlock each time. This drives the real prf provider
+// against a fake WebAuthn so a create and each unlock are each one prompt.
+test('one account setup prompts for the passkey exactly once, not once per read-back', async () => {
+  const saved = {
+    localStorage: globalThis.localStorage,
+    navigator: globalThis.navigator,
+    window: globalThis.window,
+    location: globalThis.location,
+  };
+  const store = new Map();
+  const ls = {
+    getItem: (k) => (store.has(k) ? store.get(k) : null),
+    setItem: (k, v) => { store.set(k, String(v)); },
+    removeItem: (k) => { store.delete(k); },
+  };
+  const prompts = { create: 0, get: 0 };
+  // Real WebAuthn PRF output is deterministic per credential, so the create and
+  // any unlock of the same record must agree.
+  const prf = crypto.getRandomValues(new Uint8Array(32));
+  const credId = new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]);
+  class FakeCredential {
+    getClientExtensionResults() { return { prf: { results: { first: prf } } }; }
+  }
+  globalThis.localStorage = ls;
+  globalThis.window = { PublicKeyCredential: function PublicKeyCredential() {}, isSecureContext: true };
+  globalThis.navigator = {
+    credentials: {
+      create: async () => { prompts.create += 1; const c = new FakeCredential(); c.rawId = credId; return c; },
+      get: async () => { prompts.get += 1; const c = new FakeCredential(); c.rawId = credId; return c; },
+    },
+  };
+  globalThis.location = { hostname: 'ciphermessenger.org' };
+  try {
+    const sk = newSk();
+    prfProvider.forget();
+    const vault = await sealNewVault({ ...deps(prfProvider), pk: PK, pin: PIN, skArray: sk });
+    // The vault really round-trips, so this is a correctness fix, not a prompt dodge.
+    assert.deepEqual(await decryptKey(vault, PIN, { pk: PK, provider: prfProvider }), sk);
+    const total = prompts.create + prompts.get;
+    assert.ok(total <= 1,
+      `one setup should prompt once; got create=${prompts.create} unlock=${prompts.get} (total ${total})`);
+  } finally {
+    globalThis.localStorage = saved.localStorage;
+    globalThis.navigator = saved.navigator;
+    globalThis.window = saved.window;
+    globalThis.location = saved.location;
+    prfProvider.forget();
+  }
 });
