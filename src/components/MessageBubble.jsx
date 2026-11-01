@@ -622,7 +622,7 @@ export default function MessageBubble({ message, data, onAction, senderName, ide
           </div>
         )}
         {text ? (
-          <p className="whitespace-pre-wrap break-words text-[14.5px] leading-[1.28]">
+          <p className="message-body whitespace-pre-wrap break-words text-[14.5px] leading-[1.28]">
             {urlTokens(text).map((token, i) => (
               typeof token === 'string'
                 ? <React.Fragment key={i}>{token}</React.Fragment>
