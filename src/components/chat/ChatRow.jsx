@@ -7,6 +7,7 @@ import {
   Ban,
   Bell,
   BellOff,
+  Check,
   Eye,
   Pin,
   PinOff,
@@ -31,6 +32,17 @@ const SWIPE_TRIGGER = 72;
 
 const initialsOf = (name) => name.split(/\s+/).filter(Boolean).slice(0, 2)
   .map((word) => word[0].toUpperCase()).join('') || '?';
+
+// How long a timed mute still has to run, from the store's mutedUntil
+// timestamp. Spoken in minutes and hours, never in a raw clock.
+const remainingLabel = (ms) => {
+  const minutes = Math.max(0, Math.round(ms / 60000));
+  if (minutes < 1) return 'less than a minute';
+  if (minutes < 60) return `${minutes} min`;
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  return rest ? `${hours} h ${rest} min` : `${hours} h`;
+};
 
 export function MenuItem({ icon, children, onClick, danger = false }) {
   return (
@@ -62,6 +74,8 @@ export default function ChatRow({
   pinned,
   archived,
   blocked,
+  mutedUntil,
+  mutedRemainingMs,
   menuDoor,
   isRevealed,
   menuOpen,
@@ -81,6 +95,12 @@ export default function ChatRow({
   onToggleBlock,
 }) {
   const x = useMotionValue(0);
+  // The current mute, decoded from the store's mutedUntil marker: 'forever'
+  // for a forever mute, a future timestamp for a timed mute, else no mute.
+  // Remaining time arrives from ChatList's ticking clock, not Date.now()
+  // during render.
+  const mutedForever = mutedUntil === 'forever';
+  const mutedTimedLeftMs = mutedRemainingMs > 0 ? mutedRemainingMs : 0;
   // A drag's click arrives at drag end, so a short window is right for it.
   // A press's click can arrive long after the press fired — a finger or a
   // mouse held down to read the menu — so the press leaves a flag instead:
@@ -253,9 +273,17 @@ export default function ChatRow({
                 <MenuItem icon={<ArrowLeft size={14} className="text-inkMuted" />} onClick={onMenuBack}>
                   Mute for
                 </MenuItem>
+                {muted && (
+                  <div className="border-b border-line px-3 py-1.5 text-[12px] text-inkMuted">
+                    {mutedForever
+                      ? 'Muted forever'
+                      : (mutedTimedLeftMs > 0 ? `Muted, ${remainingLabel(mutedTimedLeftMs)} left` : 'Currently muted')}
+                  </div>
+                )}
                 {MUTE_DURATIONS.map((duration) => (
                   <MenuItem key={duration.label} onClick={() => { onMute(duration.ms); onMenuClose(); }}>
                     {duration.label}
+                    {duration.ms === -1 && mutedForever && <Check size={14} className="ml-auto text-accentText" />}
                   </MenuItem>
                 ))}
                 {muted && <MenuItem icon={<Bell size={14} className="text-inkMuted" />} onClick={() => { onUnmute(); onMenuClose(); }}>Unmute</MenuItem>}

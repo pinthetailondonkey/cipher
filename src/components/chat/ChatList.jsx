@@ -145,7 +145,12 @@ export default function ChatList({ onOpenChat, onRefresh }) {
       : { displayName: noHexName(profile, pubkey), picture: null, name: noHexName(profile, pubkey) };
     const commercial = msgs.some((m) => m.data?.type === 'cipher_order' || m.data?.type === 'order_request' || m.data?.type === 'product');
     const menuDoor = commercial || soldTo.has(pubkey.toLowerCase());
-    return { type: 'dm', id: pubkey, lastMsg: msgs[msgs.length - 1], profile: safeProfile, vendor: commercial, menuDoor };
+    // A vendor row is any shopable chat, not only one a product message
+    // crossed: a bound receipt names the peer a vendor too, and that row
+    // should carry the storefront door (and the Vendor segment) just the
+    // same. The storefront open path is the one every received-product door
+    // uses — the peer's key goes to the same store setter. (BACKLOG 16.10)
+    return { type: 'dm', id: pubkey, lastMsg: msgs[msgs.length - 1], profile: safeProfile, vendor: menuDoor, menuDoor };
   });
 
   const groupList = groups.map(g => ({
@@ -222,6 +227,8 @@ export default function ChatList({ onOpenChat, onRefresh }) {
       typing={typingFor(chat)}
       unread={unreadCounts[chat.id] || 0}
       muted={isMuted(chat.id)}
+      mutedUntil={mutedUntil[chat.id]}
+      mutedRemainingMs={typeof mutedUntil[chat.id] === 'number' ? mutedUntil[chat.id] - now : 0}
       pinned={pinned}
       archived={archivedChats.includes(chat.id)}
       blocked={chat.type === 'dm' && blockedUsers.includes(chat.id)}
