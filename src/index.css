@@ -70,6 +70,11 @@
 
 html, body, #root {
   height: 100%;
+  /* iOS older than the dvh units: -webkit-fill-available reaches the real
+     bottom of the screen in both Safari and the home-screen app, so the tab
+     bar is not left floating above a black band. dvh still wins where it is
+     supported. */
+  min-height: -webkit-fill-available;
   min-height: 100dvh;
   width: 100%;
   margin: 0;
