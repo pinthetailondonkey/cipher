@@ -1,3 +1,4 @@
+import Logo from './components/Logo';
 import React, { useState } from "react";
 import { RefreshCw } from "lucide-react";
 import Button from './components/ui/Button';
@@ -119,6 +120,10 @@ export default function LockScreen({ identity }) {
         background: 'radial-gradient(ellipse 55% 38% at 12% 0%, var(--glow-a), transparent 65%), radial-gradient(ellipse 50% 30% at 92% 100%, var(--glow-b), transparent 70%)',
       }} />
       <div className="my-auto flex w-full max-w-sm flex-col items-center">
+
+        <div className="mb-6">
+          <Logo size={72} />
+        </div>
 
         {mode === 'unlock' ? (
           <>
