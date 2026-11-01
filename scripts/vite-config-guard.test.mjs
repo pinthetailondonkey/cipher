@@ -34,6 +34,30 @@ const ONION_LITERAL = /[a-z2-7]{16,56}\.onion/;
 const WALL_WS = 'ws://127.0.0.1:9';
 const WALL_HTTP = 'http://127.0.0.1:9';
 
+// The tree has two legitimate states, and this suite has to say which cases it
+// can prove in each. ONION-DOORS.md keeps the desktop onion in the untracked
+// .grok/app-env.json, and vite.config.js refuses every non-desktop build for
+// as long as that file sits in the tree — including the builds these tests
+// would run. So:
+// - The desktop cases (door present, door absent, media-door shapes) do not
+//   depend on the carrier. Each supplies its own fixture door in the spawned
+//   environment, and the carrier only reaches a build through the
+//   file-presence check, which is desktop-only and never fires for them.
+//   They run in both tree states and never skip: the desktop refusals are the
+//   rule the carrier exists for, so they matter most exactly where it sits.
+// - The non-desktop cases cannot run beside the carrier: the refusal under
+//   test fires before anything is measured. They skip, naming the carrier,
+//   and run again in a tree without one — a fresh clone, CI, the deploy lane.
+// - The carrier-fixture case plants its own file and needs the path free.
+const CARRIER = join(TREE, '.grok', 'app-env.json');
+const CARRIER_PRESENT = existsSync(CARRIER);
+const NOT_BESIDE_THE_CARRIER = CARRIER_PRESENT
+  ? 'this tree carries .grok/app-env.json (the founder door carrier), so a non-desktop build refuses before anything is measured; this case runs where no carrier is present'
+  : false;
+const CARRIER_PATH_BUSY = CARRIER_PRESENT
+  ? 'this case plants its own .grok/app-env.json and the founder door carrier already occupies that path'
+  : false;
+
 // Nothing from the surrounding shell may reach the build: every case supplies
 // its own answer, and an inherited flag would blur which one won.
 function cleanEnv() {
@@ -84,7 +108,7 @@ function build({ fileLines = null, env = cleanEnv(), allowCarrier = false } = {}
   }
 }
 
-test('a .env.local is refused by its presence, before its contents are read', () => {
+test('a .env.local is refused by its presence, before its contents are read', { skip: NOT_BESIDE_THE_CARRIER }, () => {
   // Red first, before this refusal existed: with VITE_TEST_HOOKS=1 in this
   // file a plain build exited 0 and the bundle carried the test relay wall.
   const flagged = build({ fileLines: ['VITE_TEST_HOOKS=1'] });
@@ -100,7 +124,7 @@ test('a .env.local is refused by its presence, before its contents are read', ()
   assert.match(harmless.stderr, /vite refuses: \.env\.local is present/);
 });
 
-test('the deliberate test build still builds, and its bytes carry the wall and no door', () => {
+test('the deliberate test build still builds, and its bytes carry the wall and no door', { skip: NOT_BESIDE_THE_CARRIER }, () => {
   // The control. Without it the refusals above could pass for the trivial
   // reason that no build ever succeeds — and the failure being guarded against
   // is precisely that the flag DOES reach the bundle when the build says it
@@ -112,7 +136,7 @@ test('the deliberate test build still builds, and its bytes carry the wall and n
   assert.equal(ONION_LITERAL.test(run.text), false, 'a build that ships carried an onion address');
 });
 
-test('a door in a non-desktop build is refused, because the address would be written into the bytes', () => {
+test('a door in a non-desktop build is refused, because the address would be written into the bytes', { skip: NOT_BESIDE_THE_CARRIER }, () => {
   // Measured before this refusal: VITE_GROUP_ONION in the environment produced
   // exit 0 and the literal in dist/assets while activeUrl resolved clearnet.
   const run = build({ env: { ...cleanEnv(), VITE_GROUP_ONION: FIXTURE_DOOR } });
@@ -125,7 +149,10 @@ test('a desktop build without a door is refused here, not only in build:desktop'
   // The refusal used to live only in build-desktop.mjs, so every other desktop
   // build — CIPHER_DESKTOP_BUILD=1 npm run build — shipped a clear address
   // behind a desktop shell and exited 0.
-  const run = build({ env: { ...cleanEnv(), CIPHER_DESKTOP_BUILD: '1' } });
+  // allowCarrier: a desktop build never trips the carrier's presence check,
+  // and the carrier's values are not in this spawned environment, so the
+  // founder's door file in the tree does not change this outcome.
+  const run = build({ env: { ...cleanEnv(), CIPHER_DESKTOP_BUILD: '1' }, allowCarrier: true });
   assert.notEqual(run.status, 0, 'a desktop build without a door built a bundle');
   assert.match(run.stderr, /vite refuses: CIPHER_DESKTOP_BUILD=1 without a VITE_GROUP_ONION/);
 });
@@ -133,13 +160,13 @@ test('a desktop build without a door is refused here, not only in build:desktop'
 test('a desktop build with a door carries it, so the refusal is a rule and not a wall', () => {
   // The positive half. If this failed, every refusal above would still pass
   // while the desktop build — the one build that is SUPPOSED to carry a door —
-  // had been broken by the guard.
-  const run = build({ env: { ...cleanEnv(), CIPHER_DESKTOP_BUILD: '1', VITE_GROUP_ONION: FIXTURE_DOOR } });
+  // had been broken by the guard. allowCarrier for the same reason as above.
+  const run = build({ env: { ...cleanEnv(), CIPHER_DESKTOP_BUILD: '1', VITE_GROUP_ONION: FIXTURE_DOOR }, allowCarrier: true });
   assert.equal(run.status, 0, `the desktop build failed:\n${run.stderr.slice(-2000)}`);
   assert.equal(ONION_LITERAL.test(run.text), true, 'the desktop bundle does not carry its door');
 });
 
-test('the workspace build-flag carrier is refused in a build that is not desktop', () => {
+test('the workspace build-flag carrier is refused in a build that is not desktop', { skip: CARRIER_PATH_BUSY }, () => {
   // .grok/app-env.json is merged into the environment by
   // scripts/with-app-env.mjs, so a value in it reaches any build run from this
   // tree — including one that ships. It is how a desktop build is meant to be
@@ -172,26 +199,27 @@ test('a desktop media door is checked for shape, and the good shape still builds
   const desktop = { ...cleanEnv(), CIPHER_DESKTOP_BUILD: '1', VITE_GROUP_ONION: FIXTURE_GROUP_DOOR };
 
   // The positive control: a well-formed media door builds and its literal is
-  // in the produced bytes.
-  const good = build({ env: { ...desktop, VITE_MEDIA_ONION: FIXTURE_MEDIA_DOOR } });
+  // in the produced bytes. All four cases below carry allowCarrier: a desktop
+  // build never trips the carrier's presence check.
+  const good = build({ env: { ...desktop, VITE_MEDIA_ONION: FIXTURE_MEDIA_DOOR }, allowCarrier: true });
   assert.equal(good.status, 0, `a desktop build with a good media door failed:\n${good.stderr.slice(-2000)}`);
   assert.equal(good.text.includes('fixturemediafixturemedia.onion'), true,
     'the media door did not reach the bytes, so this control proves nothing');
 
   // A clear host is refused, before Vite runs, and no bundle is written.
-  const clear = build({ env: { ...desktop, VITE_MEDIA_ONION: 'https://media.example.com' } });
+  const clear = build({ env: { ...desktop, VITE_MEDIA_ONION: 'https://media.example.com' }, allowCarrier: true });
   assert.notEqual(clear.status, 0, 'a desktop build accepted a cleartext media door');
   assert.match(clear.stderr, /vite refuses: VITE_MEDIA_ONION is set to/);
   assert.equal(ONION_LITERAL.test(clear.text), false, 'a refused build still wrote an onion to disk');
 
   // A loopback near-miss is not an onion either.
-  const loopback = build({ env: { ...desktop, VITE_MEDIA_ONION: 'https://127.0.0.1:9050' } });
+  const loopback = build({ env: { ...desktop, VITE_MEDIA_ONION: 'https://127.0.0.1:9050' }, allowCarrier: true });
   assert.notEqual(loopback.status, 0, 'a desktop build accepted a loopback media door');
   assert.match(loopback.stderr, /vite refuses: VITE_MEDIA_ONION is set to/);
 
   // Unset is the shipped state: it builds, and the clear fallback is named on
   // the build's own output rather than left silent.
-  const unset = build({ env: desktop });
+  const unset = build({ env: desktop, allowCarrier: true });
   assert.equal(unset.status, 0, `a desktop build without a media door failed:\n${unset.stderr.slice(-2000)}`);
   assert.match(unset.stderr, /vite warns: this desktop build carries no VITE_MEDIA_ONION/);
 });
