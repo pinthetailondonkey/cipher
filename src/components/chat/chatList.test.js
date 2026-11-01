@@ -129,7 +129,6 @@ export const jsxDEV = jsx;
 const ENTRY = `
 export { default as ChatList } from ${JSON.stringify(path.join(ROOT, 'src/components/chat/ChatList.jsx'))};
 export { default as ChatRow } from ${JSON.stringify(path.join(ROOT, 'src/components/chat/ChatRow.jsx'))};
-export { default as Drawer } from ${JSON.stringify(path.join(ROOT, 'src/components/chat/Drawer.jsx'))};
 export { default as SearchView } from ${JSON.stringify(path.join(ROOT, 'src/components/chat/SearchView.jsx'))};
 export { useChatStore } from ${JSON.stringify(path.join(ROOT, 'src/store/chatStore.js'))};
 export * as hooks from './react-shim.js';
@@ -570,53 +569,4 @@ test('the new message screen says what it searches and has a submit that works',
   assert.equal(labelledButton(hosts, 'Search').props.disabled, false, 'submit wakes up with text in the field');
   labelledButton(hosts, 'Search').props.onClick({});
   assert.equal(searched, 1, 'the submit action runs the same search Enter runs');
-});
-
-test('the phone drawer is a dialog: Escape closes it, Tab stays inside, focus comes back', () => {
-  const listeners = [];
-  const restored = [];
-  globalThis.HTMLElement = class HTMLElement {};
-  const opener = Object.assign(new globalThis.HTMLElement(), { focus() { restored.push('opener'); } });
-  globalThis.window = {
-    setInterval: () => 0,
-    clearInterval: () => {},
-    addEventListener: (type, handler) => listeners.push({ type, handler }),
-    removeEventListener: () => {},
-  };
-  globalThis.document = { activeElement: opener, contains: (node) => node === opener };
-
-  let closed = 0;
-  const identity = { pk: 'a'.repeat(64), npub: 'a'.repeat(64), lockApp: () => {} };
-  const tree = createTree(app.Drawer, {
-    identity,
-    open: true,
-    onClose: () => { closed += 1; },
-    onNavigate: () => {},
-  });
-  const { opaque } = tree.render();
-
-  const panelNode = opaque.find((node) => node.props.role === 'dialog');
-  assert.ok(panelNode, 'the drawer panel is a dialog');
-  assert.equal(panelNode.props['aria-modal'], 'true', 'the rest of the screen is out of reach');
-  assert.equal(panelNode.props.tabIndex, -1, 'the panel can take focus');
-  assert.equal(panelNode.props['aria-label'], 'Menu', 'the dialog has a name');
-  assert.ok(tree.panelFocus() > 0, 'opening the drawer moves focus into it');
-
-  const keydown = listeners.filter((entry) => entry.type === 'keydown').at(-1);
-  assert.ok(keydown, 'the drawer listens for keys while it is open');
-  keydown.handler({ key: 'Escape', stopPropagation() {} });
-  assert.equal(closed, 1, 'Escape closes the drawer');
-
-  let firstFocused = 0;
-  const first = { focus() { firstFocused += 1; } };
-  const last = { focus() {} };
-  tree.focusables.push(first, last);
-  globalThis.document.activeElement = last;
-  let prevented = false;
-  keydown.handler({ key: 'Tab', shiftKey: false, preventDefault() { prevented = true; } });
-  assert.equal(prevented, true, 'Tab at the last control stays in the drawer');
-  assert.equal(firstFocused, 1, 'the wrap lands on the first control');
-
-  app.hooks.__runCleanups();
-  assert.deepEqual(restored, ['opener'], 'closing the drawer gives focus back to the control that opened it');
 });

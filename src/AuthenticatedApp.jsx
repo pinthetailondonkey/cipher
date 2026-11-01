@@ -1,9 +1,7 @@
 import React, { lazy, Suspense, useCallback, useEffect, useState } from 'react';
-import { Menu } from 'lucide-react';
 import TutorialModal from './components/TutorialModal';
 import Rail from './components/ui/Rail';
 import BottomBar from './components/ui/BottomBar';
-import Drawer from './components/chat/Drawer';
 import GlobalDialog from './components/GlobalDialog';
 import CallOverlay from './components/chat/CallOverlay';
 import DeadDropModal from './components/chat/DeadDropModal';
@@ -27,20 +25,6 @@ export default function AuthenticatedApp({ identity }) {
   const unreadTotal = useChatStore(barUnreadTotalOf);
   const needsAction = useChatStore(ordersNeedActionOf);
   const [exploreMode, setExploreMode] = useState('shop');
-  const showDrawer = useChatStore((state) => state.showDrawer);
-  // The drawer deep-links into Wallet views (Orders, Connections); the nonce
-  // remounts Wallet when one is tapped while it is already mounted.
-  const [profileStartView, setProfileStartView] = useState('main');
-  const [profileNavNonce, setProfileNavNonce] = useState(0);
-  const openDrawerSection = useCallback((tab, mode = null, startView = 'main') => {
-    useChatStore.getState().setShowDrawer(false);
-    if (mode) setExploreMode(mode);
-    if (tab === 'profile') {
-      setProfileStartView(startView);
-      setProfileNavNonce((n) => n + 1);
-    }
-    setActiveTab(tab);
-  }, []);
   const openChatFromProfile = useCallback((pubkey) => {
     useChatStore.getState().openChat('dm', pubkey);
     setActiveTab('chat');
@@ -149,9 +133,6 @@ export default function AuthenticatedApp({ identity }) {
     <div className="relative flex h-[100dvh] w-full justify-center overflow-hidden bg-base text-ink md:justify-start">
       {/* The shell glow is drawn once by App.jsx; screens add no own copies
           — a 120px live blur re-rasterizes per frame and stung Safari. */}
-      {/* Drawer first so the shaded sheets later in the DOM keep painting
-          above it — all of them share the z-sheet token now. */}
-      <Drawer identity={identity} open={showDrawer} onClose={() => useChatStore.getState().setShowDrawer(false)} onNavigate={openDrawerSection} />
       {/* The one toast queue for the whole app: setToast, pushToast and every
           old status pill route through this render. */}
       <Toast />
@@ -200,7 +181,6 @@ export default function AuthenticatedApp({ identity }) {
                   {activeTab === 'explore' && (
                     <div className="relative flex h-full w-full flex-col md:border-x md:border-line">
                       <div className="relative z-fab flex items-center px-4 pb-1 pt-[calc(0.75rem+var(--sat))]">
-                        <button type="button" onClick={() => useChatStore.getState().setShowDrawer(true)} aria-label="Open menu" className="-ml-1 touch-target p-2 text-ink/50 hover:text-ink md:hidden"><Menu size={20} /></button>
                         <Segmented
                           ariaLabel="Discover sections"
                           className="flex-1"
@@ -218,16 +198,15 @@ export default function AuthenticatedApp({ identity }) {
                   )}
                   {activeTab === 'orders' && (
                     <div className="h-full w-full md:border-x md:border-line">
-                      {/* The Orders tab is MyOrders directly, no drawer detour and
-                          no back arrow: role-aware inside (buyer rows are the
-                          requests this device sent, vendor rows the ones it
-                          received), and the kebab opens the drawer for the rest. */}
-                      <MyOrders identity={identity} onOpenChat={openChatFromProfile} onMenu={() => useChatStore.getState().setShowDrawer(true)} />
+                      {/* The Orders tab is MyOrders directly: role-aware inside
+                          (buyer rows are the requests this device sent, vendor
+                          rows the ones it received). */}
+                      <MyOrders identity={identity} onOpenChat={openChatFromProfile} />
                     </div>
                   )}
                   {activeTab === 'profile' && (
                     <div className="h-full w-full md:border-x md:border-line">
-                      <Wallet key={profileNavNonce} identity={identity} onOpenChat={openChatFromProfile} startView={profileStartView} />
+                      <Wallet identity={identity} onOpenChat={openChatFromProfile} />
                     </div>
                   )}
                 </Suspense>

@@ -2,7 +2,7 @@ import { lazy, Suspense, useRef, useState, useEffect } from 'react'
 import {
   User, AlertCircle, RefreshCw,
   Lock, ArrowLeft, Copy, CreditCard, Camera,
-  BarChart3, Package, KeyRound, Menu, Users, SlidersHorizontal, Shield, BookOpen, Globe
+  BarChart3, Package, KeyRound, Users, SlidersHorizontal, Shield, BookOpen, Globe
 } from 'lucide-react'
 import { uploadToBlossom } from '@nostr-wot/blossom'
 import { useProfiles, updateProfileCache } from './useProfiles'
@@ -482,9 +482,6 @@ export default function Wallet({ identity, onOpenChat, startView = 'main' }) {
 
       {/* HEADER PROFILE CARD */}
       <div className="flex flex-col items-center px-4 pb-2 pt-[calc(0.75rem+var(--sat))] md:pt-8">
-        <div className="mb-2 flex w-full items-center px-1 md:hidden">
-          <button type="button" onClick={() => useChatStore.getState().setShowDrawer(true)} aria-label="Open menu" className="-ml-1 touch-target p-2 text-inkMuted hover:text-ink"><Menu size={20} /></button>
-        </div>
         <div className="relative mb-4">
           <input type="file" accept="image/*" onChange={(e) => { setShowUploadSheet(false); handleImageUpload(e, 'profile'); }} className="hidden" id="main-avatar-upload" ref={avatarInput} />
           <button type="button" onClick={() => setShowUploadSheet(true)} aria-label="Change profile photo" className={`relative block rounded-full ${pressable}`}>

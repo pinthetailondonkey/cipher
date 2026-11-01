@@ -425,8 +425,6 @@ export const useChatStore = create((set) => ({
   setShowNotifCenter: (v) => set({ showNotifCenter: v }),
   showBookmarks: false,
   setShowBookmarks: (v) => set({ showBookmarks: v }),
-  showDrawer: false,
-  setShowDrawer: (v) => set({ showDrawer: v }),
 
   newMessage: '',
   newGroupName: '',

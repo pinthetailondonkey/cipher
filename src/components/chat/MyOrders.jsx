@@ -27,7 +27,7 @@ const LEDGER_VIEWS = [
   { id: 'purchases', label: 'Purchases' },
 ];
 
-export default function MyOrders({ dms = null, profiles = null, onBack, onOpenChat, onMenu, identity }) {
+export default function MyOrders({ dms = null, profiles = null, onBack, onOpenChat, identity }) {
   const ownPubkey = identity?.pk;
   const storeDms = useChatStore((state) => state.dms);
   const storeProfiles = useChatStore((state) => state.profiles);
@@ -56,7 +56,7 @@ export default function MyOrders({ dms = null, profiles = null, onBack, onOpenCh
 
   return (
     <div className="h-full overflow-y-auto bg-transparent">
-      <ScreenHeader title={incoming ? 'Incoming Orders' : 'My Orders'} onBack={onBack} onMenu={onMenu} />
+      <ScreenHeader title={incoming ? 'Incoming Orders' : 'My Orders'} onBack={onBack} />
       <div className="px-4 pt-3">
         <div className="grid grid-cols-2 rounded-xl border border-line p-1" role="tablist" aria-label="Orders ledger">
           {LEDGER_VIEWS.map((view) => (
