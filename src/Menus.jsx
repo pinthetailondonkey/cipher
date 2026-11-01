@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { ORDER_STATUS } from './lib/paymentState';
-import { Search, ChevronRight, ShoppingBag, X } from 'lucide-react';
+import { Search, ChevronRight, ShoppingBag, X, Link2 } from 'lucide-react';
 import OneTapCheckout from './components/OneTapCheckout';
 import { useNIP44DM } from './hooks/useNIP44DM';
 import { useChatStore } from './store/chatStore';
@@ -45,7 +45,19 @@ function MenuTile({ item, onBuy, onCopyLink }) {
         />
       </div>
       <div className="px-1.5 pb-1 pt-2.5">
-        <p className="truncate text-[15px] font-semibold text-ink">{item.name}</p>
+        <div className="flex items-start justify-between gap-2">
+          <p className="min-w-0 flex-1 truncate text-[15px] font-semibold text-ink">{item.name}</p>
+          {/* The link is one icon tap, not a labelled row: the card's job is
+              Buy, and the link rides along. */}
+          <button
+            type="button"
+            aria-label="Copy link"
+            onClick={() => { haptic('light'); onCopyLink?.(item); }}
+            className="-mr-1 -mt-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-inkSubtle active:bg-ink/5"
+          >
+            <Link2 size={16} />
+          </button>
+        </div>
         <p className="text-[14px] font-bold text-accentText">{priceLabel(item.price, item.currency)}</p>
         <button
           type="button"
@@ -54,16 +66,9 @@ function MenuTile({ item, onBuy, onCopyLink }) {
         >
           Buy
         </button>
-        <button
-          type="button"
-          onClick={() => { haptic('light'); onCopyLink?.(item); }}
-          className="mt-1 flex min-h-[44px] w-full items-center justify-center rounded-xl py-2 text-[12px] font-semibold text-ink/50"
-        >
-          Copy link
-        </button>
         {/* A menu link is public: whoever holds it can open the menu. Said
             once, small, above the tap rather than after it. */}
-        <p className="mt-0.5 text-center text-[11px] leading-snug text-inkSubtle">Anyone with the link can open this menu.</p>
+        <p className="mt-1 text-center text-[11px] leading-snug text-inkSubtle">Anyone with the link can open this menu.</p>
       </div>
     </article>
   );
