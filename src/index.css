@@ -68,6 +68,27 @@
   --z-toast: 100;
 }
 
+/* The bottom safe area in a standalone (home-screen) iOS app. The shell runs
+   full-bleed under the home indicator (viewport-fit=cover), and the zone the
+   indicator owns is WebKit's: web content cannot paint or be touched there,
+   so the tab bar must clear it. A home-screen viewport can report
+   env(safe-area-inset-bottom) as 0 even on a Face ID iPhone, which sends
+   --sab (and so .pb-safe on the bar) to 0 and leaves the bar's labels sitting
+   exactly in the indicator zone, cut off. Standalone therefore floors the
+   inset to the documented home-indicator height (34px) so the bar always
+   clears it (and pb-bar / scroll-pb-bar / fab-pos get the same correct inset
+   they were missing). Browser mode is untouched: this only matches while a
+   home-screen app is running.
+   `:root[data-standalone]` is the same rule reached through the JS standalone
+   probe in main.jsx, kept as a selector so the behaviour can be measured in
+   Chromium, which cannot emulate display-mode. */
+@media (display-mode: standalone) {
+  :root { --sab: max(env(safe-area-inset-bottom, 0px), 34px); }
+}
+:root[data-standalone] {
+  --sab: max(env(safe-area-inset-bottom, 0px), 34px);
+}
+
 html, body, #root {
   height: 100%;
   min-height: 100dvh;
