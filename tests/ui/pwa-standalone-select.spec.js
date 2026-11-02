@@ -73,17 +73,30 @@ for (const size of PHONE_SIZES) {
       // -webkit-touch-callout as a computed style (CSS.supports says false),
       // so asserting its computed value here is a coin flip, not a test — the
       // phone is the only honest oracle for the behaviour itself. What a
-      // desktop CAN prove deterministically is that the declaration ships
-      // inside the standalone block, byte-checked against this spec's
-      // STANDALONE_RULES constant (the same constant the CONTROL case proves
-      // the browser build does not leak).
-      const shipped = await page.evaluate(async () => {
-        const res = await fetch('/src/index.css');
-        return res.ok ? res.text() : null;
+      // desktop CAN prove deterministically is that the live stylesheet the
+      // app actually loaded carries the declaration inside the standalone
+      // media rule (fetched text is the SPA shell; the stylesheets are the
+      // truth).
+      const hasCalloutNone = await page.evaluate(() => {
+        const walk = (rules) => {
+          for (const rule of Array.from(rules || [])) {
+            if (rule.media && /display-mode:\s*standalone/.test(rule.media.mediaText)) {
+              if (/-webkit-touch-callout:\s*none/.test(rule.cssText)) return true;
+            }
+            if (rule.cssRules && walk(rule.cssRules)) return true;
+          }
+          return false;
+        };
+        for (const sheet of Array.from(document.styleSheets)) {
+          try {
+            if (walk(sheet.cssRules)) return true;
+          } catch {
+            // cross-origin sheet: unreadable, skip
+          }
+        }
+        return false;
       });
-      if (shipped) {
-        expect(shipped).toMatch(/@media \(display-mode: standalone\)[\s\S]*-webkit-touch-callout:\s*none/);
-      }
+      expect(hasCalloutNone).toBe(true);
       const filterSelect = await filter.evaluate((el) => getComputedStyle(el).userSelect);
       expect(filterSelect).toBe('text');
     });
