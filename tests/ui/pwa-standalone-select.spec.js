@@ -68,33 +68,25 @@ for (const size of PHONE_SIZES) {
       expect(navSelect).toBe('none');
       const btnSelect = await nav.getByRole('button', { name: 'Chats' }).evaluate((el) => getComputedStyle(el).userSelect);
       expect(btnSelect).toBe('none');
-      // Item 2: the shipped standalone CSS turns the iOS long-press link
-      // callout off on chrome. Desktop Chromium does not expose
-      // -webkit-touch-callout as a computed style (CSS.supports says false),
-      // so asserting its computed value here is a coin flip, not a test — the
-      // phone is the only honest oracle for the behaviour itself. What a
-      // desktop CAN prove deterministically is that the live stylesheet the
-      // app actually loaded carries the declaration inside the standalone
-      // media rule (fetched text is the SPA shell; the stylesheets are the
-      // truth).
-      const hasCalloutNone = await page.evaluate(() => {
-        const walk = (rules) => {
-          for (const rule of Array.from(rules || [])) {
-            if (rule.media && /display-mode:\s*standalone/.test(rule.media.mediaText)) {
-              if (/-webkit-touch-callout:\s*none/.test(rule.cssText)) return true;
-            }
-            if (rule.cssRules && walk(rule.cssRules)) return true;
-          }
-          return false;
-        };
-        for (const sheet of Array.from(document.styleSheets)) {
-          try {
-            if (walk(sheet.cssRules)) return true;
-          } catch {
-            // cross-origin sheet: unreadable, skip
-          }
-        }
-        return false;
+      // Item 2: the shipped CSS turns the iOS long-press link callout off on
+      // chrome. Blink parses -webkit-touch-callout but keeps it out of the
+      // CSSOM (CSS.supports says false, and a rule dumped through cssRules
+      // loses the declaration), so neither computed style nor rule-walking
+      // can see it on a desktop — the phone is the only behavioural oracle.
+      // What a desktop CAN prove: the built CSS asset the app actually loaded
+      // contains the declaration inside the standalone block. Read that asset
+      // as text: the loading <link>'s href names the hashed file the build
+      // shipped.
+      const hasCalloutNone = await page.evaluate(async () => {
+        const link = Array.from(document.querySelectorAll('link[rel="stylesheet"]'))
+          .map((l) => l.getAttribute('href'))
+          .find((href) => href && href.includes('/assets/'));
+        if (!link) return false;
+        const res = await fetch(link);
+        if (!res.ok) return false;
+        const css = await res.text();
+        const block = css.split('@media (display-mode:standalone)').slice(1).join('');
+        return /-webkit-touch-callout:\s*none/.test(block);
       });
       expect(hasCalloutNone).toBe(true);
       const filterSelect = await filter.evaluate((el) => getComputedStyle(el).userSelect);
