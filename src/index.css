@@ -68,27 +68,6 @@
   --z-toast: 100;
 }
 
-/* The bottom safe area in a standalone (home-screen) iOS app. The shell runs
-   full-bleed under the home indicator (viewport-fit=cover), and the zone the
-   indicator owns is WebKit's: web content cannot paint or be touched there,
-   so the tab bar must clear it. A home-screen viewport can report
-   env(safe-area-inset-bottom) as 0 even on a Face ID iPhone, which sends
-   --sab (and so .pb-safe on the bar) to 0 and leaves the bar's labels sitting
-   exactly in the indicator zone, cut off. Standalone therefore floors the
-   inset to the documented home-indicator height (34px) so the bar always
-   clears it (and pb-bar / scroll-pb-bar / fab-pos get the same correct inset
-   they were missing). Browser mode is untouched: this only matches while a
-   home-screen app is running.
-   `:root[data-standalone]` is the same rule reached through the JS standalone
-   probe in main.jsx, kept as a selector so the behaviour can be measured in
-   Chromium, which cannot emulate display-mode. */
-@media (display-mode: standalone) {
-  :root { --sab: max(env(safe-area-inset-bottom, 0px), 34px); }
-}
-:root[data-standalone] {
-  --sab: max(env(safe-area-inset-bottom, 0px), 34px);
-}
-
 html, body, #root {
   height: 100%;
   min-height: 100dvh;
@@ -350,5 +329,46 @@ textarea::placeholder {
     animation-duration: 0.01ms !important;
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
+  }
+}
+
+/* Installed home-screen app (standalone) feels native: app chrome must not
+   grab a text-selection. Scope everything to the installed PWA so the browser
+   build is untouched. We target the app's real chrome structure (the tab
+   bar, every header, all buttons), and re-enable selection on the message
+   bodies and text fields a user legitimately copies. */
+@media (display-mode: standalone) {
+  /* The bottom tab bar and every header row are chrome. */
+  nav[aria-label="Tabs"],
+  nav[aria-label="Tabs"] *,
+  header,
+  header *,
+  /* Buttons and menu/pill chrome everywhere. */
+  button,
+  [role="button"],
+  [role="menuitem"],
+  .menu-item,
+  .chip,
+  /* Rows and their titles (chat list rows, order rows) are chrome, not
+     copyable message content. */
+  [data-chrome],
+  [data-chrome] * {
+    -webkit-user-select: none;
+    user-select: none;
+    /* iOS: a long-press on chrome must not pop the link callout either. */
+    -webkit-touch-callout: none;
+  }
+
+  /* What must stay copyable: the actual message text a user reads (message
+     bodies), and any text in an input or contenteditable. These win because
+     they appear later. */
+  .message-body,
+  .message-body *,
+  input,
+  textarea,
+  [contenteditable="true"],
+  [contenteditable=""] {
+    -webkit-user-select: text;
+    user-select: text;
   }
 }
