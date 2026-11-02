@@ -1,4 +1,4 @@
-import { db } from '../../db';
+import { db as appDb } from '../../db';
 import { refetchMembersCached, trustedGroupCreator } from './groupMembership';
 import { generateGroupKey } from './groupCipher';
 import { distributeGroupKey } from './groupKeyDistribution';
@@ -33,7 +33,16 @@ export function reconcileRunKey(memberSignature, epoch) {
   return `${memberSignature}|${epochNumber}`;
 }
 
-export async function rememberMembers(groupId, members) {
+// Test seam: the membership table lives behind the app DB proxy, which has no
+// IndexedDB in node. Tests swap in a table that can fail on purpose.
+let membershipDb = null;
+export function __setMembershipDbForTests(next) { membershipDb = next || null; }
+const memberTable = () => (membershipDb || appDb).groupMemberSigs;
+
+// `strict` rethrows a failed write. The rotation path needs that: a removed
+// member must be stripped from the snapshot before the new epoch is stored, so a
+// failed strip has to abort the rotation rather than report success.
+export async function rememberMembers(groupId, members, { strict = false } = {}) {
   const normalized = normalizeMembers(members);
   const pubkeys = normalized.map((member) => memberKey(member));
   let roles = {};
@@ -42,7 +51,7 @@ export async function rememberMembers(groupId, members) {
   let previousSignature = '';
   if (!explicitRoles) {
     try {
-      const existing = await db.groupMemberSigs.get(groupId);
+      const existing = await memberTable().get(groupId);
       previousSignature = existing?.signature || '';
       const previous = existing?.roles && typeof existing.roles === 'object' ? existing.roles : {};
       for (const pubkey of pubkeys) {
@@ -56,7 +65,7 @@ export async function rememberMembers(groupId, members) {
       if (typeof member === 'object' && member.role) roles[member.pubkey] = member.role;
     }
     try {
-      const existing = await db.groupMemberSigs.get(groupId);
+      const existing = await memberTable().get(groupId);
       previousSignature = existing?.signature || '';
     } catch {
       previousSignature = '';
@@ -64,7 +73,7 @@ export async function rememberMembers(groupId, members) {
   }
   // `members` stays a string array. Dexie indexes that field, and object values fail the put.
   try {
-    await db.groupMemberSigs.put({
+    await memberTable().put({
       groupId,
       signature,
       members: pubkeys,
@@ -73,6 +82,7 @@ export async function rememberMembers(groupId, members) {
     });
     if (signature !== previousSignature) queueMemberBaseline(groupId, pubkeys);
   } catch (error) {
+    if (strict) throw error;
     console.warn('[group-key] Could not store the membership snapshot:', error);
   }
   return pubkeys.map((pubkey) => (roles[pubkey] ? { pubkey, role: roles[pubkey] } : pubkey));
@@ -85,7 +95,7 @@ export async function loadMemberSnapshot(groupId) {
 
 export async function loadMemberSnapshotRecord(groupId) {
   try {
-    const row = await db.groupMemberSigs.get(groupId);
+    const row = await memberTable().get(groupId);
     if (!Array.isArray(row?.members)) return null;
     const roles = row.roles && typeof row.roles === 'object' ? row.roles : {};
     const members = row.members.filter(Boolean).map((member) => {
@@ -265,7 +275,7 @@ export async function rotateGroupEpoch({ identity, groupId, remainingPubkeys, pu
   // member, and both timestamps stamp the same whole second, so the
   // "newer snapshot" check collapsed to equality and shipped the key the
   // rotation existed to withhold.
-  await rememberMembers(groupId, recipients);
+  await rememberMembers(groupId, recipients, { strict: true });
   await putGroupKey(groupId, nextEpoch, newKey);
   // A failed publish must not leave them eligible to re-request the new
   // epoch — the strip above already saw to that.

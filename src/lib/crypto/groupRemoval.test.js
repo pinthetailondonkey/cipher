@@ -7,7 +7,7 @@ import {
   __setGroupKeyStoreForTests, putGroupKey, getGroupKey, getCurrentGroupKey,
 } from './groupKeyStore.js';
 import { generateGroupKey, toHex, fromHex } from './groupCipher.js';
-import { rotateGroupEpoch } from './groupKeyRotation.js';
+import { rotateGroupEpoch, __setMembershipDbForTests } from './groupKeyRotation.js';
 import { parseGroupKeyBundle, distributeGroupKey } from './groupKeyDistribution.js';
 import { encodeGroupPayload, decodeGroupEvent } from './groupMessageCodec.js';
 
@@ -172,4 +172,37 @@ test('a rotation that leaves the sender out still withholds the new epoch from t
   assert.equal(published.length, 1);
   assert.equal(published.some((e) => e.tags.some((t) => t[0] === 'p' && t[1] === cPk)), false);
   assert.throws(() => nip44.v2.decrypt(published[0].content, nip44.v2.utils.getConversationKey(A, cPk)));
+});
+
+test('a removal whose membership strip cannot be written aborts before the new epoch is stored', async () => {
+  setAtRestKeyProvider(() => SESSION);
+
+  const A = generateSecretKey(); const aPk = getPublicKey(A);
+  const B = generateSecretKey(); const bPk = getPublicKey(B);
+  const STRIP_GROUP = 'audit-removal-strip-group';
+  const epoch0 = generateGroupKey();
+  asMember('A');
+  await putGroupKey(STRIP_GROUP, 0, epoch0);
+
+  // The membership table refuses every write, as a full or locked store would.
+  const failingSigs = { put: async () => { throw new Error('QuotaExceededError'); }, get: async () => undefined };
+  const fake = devices.get('A');
+  __setMembershipDbForTests({ groupMemberSigs: failingSigs });
+
+  const published = [];
+  await assert.rejects(
+    rotateGroupEpoch({
+      identity: { sk: A, pk: aPk },
+      groupId: STRIP_GROUP,
+      remainingPubkeys: [bPk],
+      publish: async (event) => { published.push(event); },
+    }),
+    /QuotaExceededError/,
+  );
+
+  // No new epoch was stored, and nothing was sent to anyone.
+  __setMembershipDbForTests(null);
+  assert.equal(fake.rows.some((r) => r.groupId === STRIP_GROUP && r.epoch === 1), false, 'no epoch 1 stored');
+  assert.equal((await getCurrentGroupKey(STRIP_GROUP)).epoch, 0, 'still on epoch 0');
+  assert.equal(published.length, 0, 'no key bundle published');
 });
