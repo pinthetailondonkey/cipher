@@ -159,6 +159,12 @@ async function reconcile({ groupId, members, isOwner, identity }) {
   const currentSet = new Set(members);
   const removed = [...prevSet].filter(pk => !currentSet.has(pk));
   if (removed.length > 0) {
+    // The strip is the removal guarantee: the removed member must be off the
+    // snapshot before the new epoch exists, or a failed snapshot write leaves
+    // them on the record while the rotation reports success (the same gap
+    // rotateGroupEpoch closed with strict). Strict here aborts the removal
+    // before putGroupKey stores the new epoch or anything is published.
+    await rememberMembers(groupId, members, { strict: true });
     const nextEpoch = current.epoch + 1;
     const newKey = generateGroupKey();
     await putGroupKey(groupId, nextEpoch, newKey);
