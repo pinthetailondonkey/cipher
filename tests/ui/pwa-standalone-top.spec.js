@@ -22,11 +22,21 @@ for (const size of PHONE_SIZES) {
     test.beforeEach(async ({ page }) => {
       await page.addInitScript(seedVault);
       // Force the standalone media query the way the installed app matches it.
+      // Do NOT mutate the MediaQueryList the native matchMedia returns: under
+      // the iphone project's isMobile emulation its `matches` is getter-only,
+      // and Object.assign on it throws, killing the app before it boots.
+      // Return a plain object that answers the standalone query only.
       await page.addInitScript(`
         (() => {
-          const real = window.matchMedia.bind(window);
-          window.matchMedia = (q) => Object.assign(real(q), {
-            matches: /display-mode\\s*:\\s*standalone/.test(q),
+          window.matchMedia = (q) => ({
+            matches: /display-mode\\s*:\\s*standalone/.test(String(q)),
+            media: String(q),
+            onchange: null,
+            addListener() {},
+            removeListener() {},
+            addEventListener() {},
+            removeEventListener() {},
+            dispatchEvent() { return false; },
           });
         })()
       `);
