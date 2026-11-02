@@ -33,7 +33,7 @@ const PHONE_SIZES = [
 // The exact declarations inside the src/index.css `@media (display-mode:
 // standalone)` block, injected verbatim so the rules behave as they would if
 // the installed app matched the query. These MUST track src/index.css.
-const STANDALONE_RULES = `nav[aria-label="Tabs"],nav[aria-label="Tabs"] *,header,header *,button,[role="button"],[role="menuitem"],.menu-item,.chip,[data-chrome],[data-chrome] *{-webkit-user-select:none;user-select:none}
+const STANDALONE_RULES = `nav[aria-label="Tabs"],nav[aria-label="Tabs"] *,header,header *,button,[role="button"],[role="menuitem"],.menu-item,.chip,[data-chrome],[data-chrome] *{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
 .message-body,.message-body *,input,textarea,[contenteditable="true"],[contenteditable=""]{-webkit-user-select:text;user-select:text}`;
 
 for (const size of PHONE_SIZES) {
@@ -68,6 +68,9 @@ for (const size of PHONE_SIZES) {
       expect(navSelect).toBe('none');
       const btnSelect = await nav.getByRole('button', { name: 'Chats' }).evaluate((el) => getComputedStyle(el).userSelect);
       expect(btnSelect).toBe('none');
+      // Item 2: iOS long-press link callout is off on chrome too.
+      const navCallout = await nav.evaluate((el) => getComputedStyle(el).webkitTouchCallout);
+      expect(navCallout).toBe('none');
       const filterSelect = await filter.evaluate((el) => getComputedStyle(el).userSelect);
       expect(filterSelect).toBe('text');
     });

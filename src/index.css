@@ -355,6 +355,8 @@ textarea::placeholder {
   [data-chrome] * {
     -webkit-user-select: none;
     user-select: none;
+    /* iOS: a long-press on chrome must not pop the link callout either. */
+    -webkit-touch-callout: none;
   }
 
   /* What must stay copyable: the actual message text a user reads (message
