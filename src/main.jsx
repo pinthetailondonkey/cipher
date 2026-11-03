@@ -36,6 +36,11 @@ if (typeof window !== 'undefined') {
     // rotates screen.height — without the guard a landscape viewport would be
     // billed as the whole strip and the floor would vanish with it.
     //
+    // Portrait is judged against `tallest`, not the current innerHeight, so the
+    // software keyboard cannot look like a rotation: a 375x667 phone with the
+    // keyboard up is 375x320, and comparing to that would call it landscape and
+    // drop the band mid-sentence.
+    //
     // The delta is also refused when it is not inset-sized. On a phone the only
     // thing between screen.height and innerHeight is the status bar, but a
     // resizable standalone surface (a desktop PWA window, an iPad in Split
@@ -51,7 +56,7 @@ if (typeof window !== 'undefined') {
       const innerH = Math.round(window.innerHeight || 0);
       if (!screenH || !innerH) return;
       if (innerH > tallest) tallest = innerH;
-      const portrait = (window.innerWidth || 0) <= innerH;
+      const portrait = (window.innerWidth || 0) <= tallest;
       const delta = Math.max(0, screenH - tallest);
       const strip = portrait && delta > 0 && delta <= MAX_INSET ? delta : 0;
       document.documentElement.style.setProperty('--strip', `${strip}px`);

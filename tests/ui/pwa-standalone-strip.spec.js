@@ -135,9 +135,13 @@ test('the strip survives the software keyboard, because the screen does not move
   expect((await bar(page)).strip).toBe('59px');
 
   // Type: `interactive-widget=resizes-content` shrinks the viewport by a
-  // keyboard. A strip read as screen.height - innerHeight would jump to 59 +
-  // keyboard; the max-tracking is what keeps it at the install-time band.
-  await page.setViewportSize({ width: 393, height: 452 });
+  // keyboard. Two things must hold. The strip must not grow (a naive
+  // screen.height - innerHeight would read 59 + keyboard), AND the bar must not
+  // jump: at a real keyboard height the viewport is narrower than it is tall is
+  // false — 393 wide over a 320 keyboard — so a portrait test written against
+  // the CURRENT innerHeight calls it landscape and drops the band mid-sentence.
+  // That is why the height here goes below the width.
+  await page.setViewportSize({ width: 393, height: 320 });
   await resize(page);
   const typed = await bar(page);
   expect(typed.strip).toBe('59px');
