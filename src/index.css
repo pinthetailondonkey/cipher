@@ -12,6 +12,9 @@
   --z-toast: 100;
   --sat: env(safe-area-inset-top, 0px);
   --sab: env(safe-area-inset-bottom, 0px);
+  /* The unreachable strip (0 in a browser tab, measured in a standalone app —
+     see the standalone rule below). */
+  --strip: 0px;
   --nav-h: 4rem;
   /* The below-md bottom bar (15.1). Scroll roots under it pad by this plus
      the safe area so the last row clears the bar; md+ has no bar, so the
@@ -83,11 +86,29 @@
    probe in main.jsx, kept as a selector so the behaviour can be measured in
    Chromium, which cannot emulate display-mode. */
 @media (display-mode: standalone) {
-  :root { --sab: max(env(safe-area-inset-bottom, 0px), 34px); }
+  :root {
+    --sab: max(0px, max(env(safe-area-inset-bottom, 0px), 34px) - var(--strip));
+    background: var(--panel-strong);
+  }
 }
 :root[data-standalone] {
-  --sab: max(env(safe-area-inset-bottom, 0px), 34px);
+  --sab: max(0px, max(env(safe-area-inset-bottom, 0px), 34px) - var(--strip));
+  background: var(--panel-strong);
 }
+
+/* The strip below the viewport in a standalone app (WebKit 313800): a fresh
+   home-screen install gets a layout viewport shorter than the physical screen
+   by the status-bar inset, and that band at the bottom is outside every layout
+   viewport — no element can be positioned onto it from CSS, only the canvas
+   reaches it. --strip is measured in main.jsx, so this rule only ever fires as
+   tall as the platform really is short; a browser tab measures 0 and nothing
+   moves.
+
+   Two consequences, both here:
+   - the canvas is painted the bar's own ground, so the band reads as the bar
+     reaching the physical bottom instead of an unexplained black gap;
+   - --sab loses the strip, because the strip already covers the home-indicator
+     zone. Padding for that zone twice would lift the bar's labels by both. */
 
 html, body, #root {
   height: 100%;
