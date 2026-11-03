@@ -1,7 +1,18 @@
 # P0 REVIEW — iOS installed-PWA bottom gap
 
-Status: **not committed, not pushed, not deployed.** All four gates green: build
-pass, lint 0 errors, 953 unit, 168 UI.
+Status: **committed and pushed to `main`; NOT deployed; NOT physically verified on
+an iPhone.**
+
+| | |
+|---|---|
+| committed | `99d73f1` implementation, `2f7c5a2` spec repair |
+| pushed | yes, `origin/main` |
+| deployed | **no** |
+| on a real iPhone | **no** |
+| gates | build pass, lint 0 errors, 953 unit, 168 UI, 13 strip |
+
+A follow-up commit fixes one defect this document's own lifecycle probe found
+(keyboard dropped the band, §3b).
 
 Repo `/home/aegis/cipher`, HEAD `aaac94a` when the review began. Nothing outside
 the three files in §4 was touched.
@@ -132,6 +143,54 @@ registered exactly once.
 
 ---
 
+## 3b. Lifecycle — measured, and one real defect found and fixed
+
+The review asked whether background/bfcache restore can leave `--strip` stale.
+Measured with a throwaway probe driving the full sequence (launch, background,
+return at a new size, rotate out, rotate back, keyboard open, keyboard close):
+
+| step | strip | nav padding | bar bottom vs viewport |
+|---|---|---|---|
+| return from background, 640 tall | 59px | 0 | 640 = bottom |
+| rotate to landscape | 0px | 34px | 341 = 375 − 34 |
+| rotate back to portrait | 59px | 0 | 667 = bottom |
+| **keyboard open, 320 tall** | **0px**, then **59px** after the fix | **34px**, then **0px** | 320 = bottom |
+| keyboard closed | 59px | 0 | 667 = bottom |
+
+**The defect:** portrait was judged as `innerWidth <= innerHeight`. With the
+keyboard up on a 393-wide phone the viewport is 393x320, so that test reads
+*landscape* and the correction drops mid-sentence — 34px of extra padding and the
+bar visibly stepping up while typing. Judging portrait against `tallest` instead
+fixes it, because `tallest` is the phone's real height, not the keyboard's.
+
+Both directions were proven: the strengthened keyboard arm (which now shrinks
+below the viewport's width, the case that exposes it) fails with
+`Expected "59px" Received "0px"` against the pre-fix line and passes after.
+
+Staleness on restore: no `pageshow` or `visibilitychange` handler was added. The
+browser fires `resize` when the viewport actually changes on return, which the
+existing listener already handles, and the probe confirms the correct value after
+a return, a rotation each way and a keyboard cycle. Adding handlers would be
+redundant — so, deliberately, none were.
+
+---
+
+## 3c. The CSS-only alternative — built, not yet decided
+
+`apple-mobile-web-app-status-bar-style: default` instead of `black-translucent`
+may make the layout viewport full-screen and remove the band with no JavaScript.
+Two isolated builds are prepared from the same committed SHA (main untouched):
+
+- **Variant A** — as committed (JS correction on, `black-translucent`).
+- **Variant B** — status bar `default`, and the `--strip` write disabled, so the
+  CSS correction is inert.
+
+**This cannot be decided by the test suite.** The new spec fakes the band with
+`matchMedia`, which variant B does not change, so variant B would fail that spec
+by construction. Only a device can say. Instructions in §8b.
+
+---
+
 ## 4. Complete diff
 
 `src/index.css` — `--strip: 0px` default; both standalone rules now also paint
@@ -222,3 +281,40 @@ Do this before and after the build:
 6. Foreground after backgrounding: no shift.
 7. Repeat in Safari as a tab: byte-identical to before, html background back to
    black.
+
+---
+
+## 8b. On-device A/B — the one thing still open
+
+Both variants are already built and served from this machine, from the same
+commit, main untouched:
+
+```
+Variant A (as committed)  http://192.168.1.154:8091/
+Variant B (CSS-only)      http://192.168.1.154:8092/
+```
+
+On the iPhone, for each URL: Safari → open → Share → Add to Home Screen →
+launch from the icon. Look only at the bottom of the screen.
+
+| what you should see | A | B |
+|---|---|---|
+| no black band, bar reaches the bottom | expect yes | the question |
+| status bar / time area | translucent, our black behind it | system band, not ours |
+| tab bar labels clear of the indicator | yes | yes |
+
+Then report just: does B still show the black band, yes or no.
+
+**If B removes the band**: B wins — one line, no JavaScript, and we can delete
+`measureStrip`. **If B still shows it**: A is the answer and this is settled.
+
+Caveats about these URLs, stated rather than discovered:
+
+- They are plain `http://` on a LAN address, which is **not a secure context**, so
+  the service worker does not register on either. Irrelevant for a layout test.
+- The phone must be on the same network as this machine (`192.168.1.154`). If it
+  is not, say so and they can be tunnelled or the two patches applied to the live
+  host instead.
+- Variant B is a patched build, not a branch: `index.html` one word
+  (`black-translucent` → `default`) and `main.jsx` one line (the `--strip` write
+  disabled). Nothing else differs; both were built from `9752b60`.
