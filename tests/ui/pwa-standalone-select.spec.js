@@ -43,7 +43,11 @@ for (const size of PHONE_SIZES) {
     test.beforeEach(async ({ page }) => {
       await page.addInitScript(seedVault);
       await page.goto('/');
-      await page.waitForTimeout(1200);
+      // The chat list (and the filter box inside it) arrives on a lazy chunk,
+      // so a fixed sleep raced it: one run failed here on the 16 Pro Max arm
+      // with the textbox simply not in the DOM yet. Wait for the shell the
+      // page is capable of, not for a stopwatch.
+      await expect(page.getByRole('navigation', { name: 'Tabs' })).toBeVisible({ timeout: 15000 });
     });
 
     test('CONTROL: the browser build leaves chrome selectable (nothing leaked)', async ({ page }) => {
