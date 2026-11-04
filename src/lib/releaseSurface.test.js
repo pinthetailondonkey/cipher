@@ -101,9 +101,10 @@ test('the listing send reports the outbox\'s real answer and keeps the form when
 test('the confirmed checkout names the vendor, says what happens next, and jumps to the chat', () => {
   const checkout = read('../components/OneTapCheckout.jsx');
   // The send button never borrows the sealed-note words as a long label;
-  // the trust line rides a toast.
+  // the trust line is said once, on the confirmation card itself.
   assert.equal(/Sealed\. Only the vendor can open it\.<\//.test(checkout), false);
-  assert.match(checkout, /pushToast\(\{ type: 'success', message: 'Sealed\. Only the vendor can open it\.' \}\)/);
+  assert.equal(/pushToast/.test(checkout), false,
+    'the toast fires once at most in one place; the card carries the line, so no second firing');
   assert.match(checkout, /Order sent\. Waiting for them to accept\./);
   assert.match(checkout, /<Avatar src=\{vendorProfile\.picture\}/);
   assert.match(checkout, /onJumpToChat/);

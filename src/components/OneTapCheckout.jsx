@@ -10,7 +10,6 @@ import Sheet from './ui/Sheet';
 import Picture from './ui/Picture';
 import Input from './ui/Input';
 import Avatar from './ui/Avatar';
-import { pushToast } from './ui/toast';
 import { useChatStore } from '../store/chatStore';
 import { noHexName } from '../lib/npub';
 import { orderProduct, priceLabel } from '../lib/listing';
@@ -111,10 +110,6 @@ export default function OneTapCheckout({ product, open = true, onConfirmOrder, o
       });
       await onConfirmOrder?.(cipherOrder(product, url));
       setConfirmed(true);
-      // Trust stays with the fact the send produced, said where the eye
-      // already is: the sealed note is exactly what the buyer just paid to
-      // have made — one open, that vendor, and never again.
-      pushToast({ type: 'success', message: 'Sealed. Only the vendor can open it.' });
     } catch (error) {
       console.error('[OneTapCheckout] Order confirmation failed:', error);
       setOrderError(error?.message || 'Could not send your order request.');
@@ -142,7 +137,7 @@ export default function OneTapCheckout({ product, open = true, onConfirmOrder, o
           <p className="mt-1 text-[13px] leading-relaxed text-inkMuted">Order sent. Waiting for them to accept.</p>
           <button
             type="button"
-            onClick={() => { pushToast({ type: 'info', message: 'Sealed. Only the vendor can open it.' }); onJumpToChat?.(); }}
+            onClick={() => { onJumpToChat?.(); }}
             className="mt-5 flex min-h-[44px] w-full items-center justify-center gap-2 rounded-xl bg-accent px-4 text-[14px] font-bold text-accentInk"
           >
             <MessageCircle size={16} /> Go to the chat

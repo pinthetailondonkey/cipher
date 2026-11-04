@@ -133,7 +133,12 @@ export default function ChatHeader({ mode }) {
   // card for the newest open request is what a jump can anchor on; before
   // an address exists, or after the deal closed, there is nothing to jump
   // to and no pill — MyOrders already carries the whole ledger.
-  const dmThread = mode === 'dm' && activeDm ? useChatStore.getState().dms[activeDm] : null;
+  // Subscribed, not getState(): a refund or merge landing while the header
+  // sits parked must retire the pill without waiting for some other
+  // re-render. Same selector shape DmView uses for its own thread read.
+  // The Hook runs on every render; the ternary only guards what it reads.
+  const subscribedDm = useChatStore((state) => (state.activeDm ? state.dms[state.activeDm] : null));
+  const dmThread = mode === 'dm' ? subscribedDm : null;
   const orderAnchor = payableOrderAnchorOf(dmThread);
 
   // Header: 56px bar with back left, peer mark centred, kebab right. Timer
