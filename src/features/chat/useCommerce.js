@@ -7,7 +7,7 @@ import { getAuthenticatedPool } from '../../lib/pool';
 import { generalRelays } from '../../lib/relays';
 import { ORDER_STATUS, RECEIPT_OUTCOME, acceptAmount, acceptanceDemand, amountCovers, nextPaymentState, orderCoinAmount } from '../../lib/paymentState';
 import { checkPayment } from '../../lib/paymentWatch';
-import { readCachedProducts } from '../../lib/listing';
+import { readCachedProducts, orderProduct } from '../../lib/listing';
 import { activeUrl, entryById } from '../../lib/egress';
 import { publicReceipt, rememberPublicView, receiptBindsOrder, signPublicView, signReceipt } from '../../lib/proofOfTrade';
 import { frozenIssuedMethods, issuedPaymentMethods, newestOwnIssuedMethods, orderPaymentDetails, orderRecordForReceipt, orderState, reopenedStatus } from '../../lib/orderActions';
@@ -91,7 +91,78 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
   const setEditingProduct = useChatStore((s) => s.setEditingProduct);
   const activeGroup = useChatStore((s) => s.activeGroup);
   const activeDm = useChatStore((s) => s.activeDm);
-  const setBroadcastProduct = useChatStore((s) => s.setBroadcastProduct);
+  // One checkout for every surface: Menus buys straight into it, and the
+  // group listing and chat product land here from startOrderWithVendor. The
+  // sheet sends its own cipher_order through beginOrderWithVendor once the
+  // sealed note exists.
+  const beginOrderWithVendor = async (order) => {
+    const vendorPubkey = order?.vendorPubkey;
+    if (!identity?.sk || !vendorPubkey) {
+      setToast({ type: 'error', message: 'Unlock your account to contact the seller.' });
+      return;
+    }
+    if (vendorPubkey === identity.pk) {
+      setToast({ type: 'error', message: 'You cannot place an order with yourself.' });
+      return;
+    }
+
+    const paymentMethod = scopedGet('preferred_payment_method', 'btc');
+    const payload = { type: 'cipher_order', status: ORDER_STATUS.PENDING, paymentState: 'created', paymentMethod, product: orderProduct(order), delivery: order.delivery };
+    const tempId = `temp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const optimisticMessage = stampArrival({
+      id: tempId,
+      clientId: tempId,
+      isSender: true,
+      isGroup: false,
+      pubkey: identity.pk,
+      timestamp: Math.floor(Date.now() / 1000),
+      local_timestamp: Date.now(),
+      deliveryStatus: 'sending',
+      data: payload,
+    });
+
+    openChat('dm', vendorPubkey);
+    setVendorStorefrontPubkey(null);
+    setDms((current) => ({
+      ...current,
+      [vendorPubkey]: [...(current[vendorPubkey] || []), optimisticMessage],
+    }));
+    await saveMessage(vendorPubkey, optimisticMessage);
+
+    const result = await sendDM(vendorPubkey, payload, tempId);
+    if (!result.success) {
+      setDms((current) => ({
+        ...current,
+        [vendorPubkey]: (current[vendorPubkey] || []).filter((message) => message.clientId !== tempId),
+      }));
+      await db.messages.delete(tempId);
+      setToast({ type: 'error', message: result.error || 'The order request could not be sent.' });
+      return;
+    }
+
+    let confirmedMessage = {
+      ...optimisticMessage,
+      id: result.event.id,
+      timestamp: result.event.created_at,
+      deliveryStatus: result.queued ? 'queued' : 'sent',
+    };
+    await saveMessage(vendorPubkey, confirmedMessage);
+    if (result.queued && !(await db.outbox.get(result.event.id))) {
+      confirmedMessage = { ...confirmedMessage, deliveryStatus: 'sent' };
+      await saveMessage(vendorPubkey, confirmedMessage);
+    }
+    setDms((current) => ({
+      ...current,
+      [vendorPubkey]: (current[vendorPubkey] || []).map((message) => (
+        message.clientId === tempId ? confirmedMessage : message
+      )),
+    }));
+    useChatStore.getState().setCheckoutProduct(null);
+    setToast({
+      type: 'success',
+      message: result.queued ? 'Order saved and will send when connected.' : 'Order request sent to seller.',
+    });
+  };
 
   // The screen and the database both take the change. A history fetch rebuilds
   // the chat from the database, so a change kept only on screen is lost on reload.
@@ -817,7 +888,10 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
     return true;
   };
 
-  const beginOrderWithVendor = async (vendorPubkey, product, listingId) => {
+  // One checkout for every surface. The Buy tap seals a fresh burn-once
+  // delivery note from the empty address on the sheet, so the sheet is the
+  // single gate: a note the buyer has not filled cannot leave this device.
+  const startOrderWithVendor = (vendorPubkey, product, listingId) => {
     if (!identity?.sk || !vendorPubkey) {
       setToast({ type: 'error', message: 'Unlock your account to contact the seller.' });
       return;
@@ -826,7 +900,6 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
       setToast({ type: 'error', message: 'You cannot place an order with yourself.' });
       return;
     }
-
     const orderProduct = {
       id: listingId || product.id || null,
       title: product.title || product.name || 'Product',
@@ -836,69 +909,14 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
       image: product.image || '',
       description: product.description || '',
     };
-    const paymentMethod = scopedGet('preferred_payment_method', 'btc');
-    const payload = { type: 'order_request', status: ORDER_STATUS.PENDING, paymentState: 'created', paymentMethod, product: orderProduct };
-    const tempId = `temp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    const optimisticMessage = stampArrival({
-      id: tempId,
-      clientId: tempId,
-      isSender: true,
-      isGroup: false,
-      pubkey: identity.pk,
-      timestamp: Math.floor(Date.now() / 1000),
-      local_timestamp: Date.now(),
-      deliveryStatus: 'sending',
-      data: payload,
-    });
-
-    openChat('dm', vendorPubkey);
-    setVendorStorefrontPubkey(null);
-    setDms((current) => ({
-      ...current,
-      [vendorPubkey]: [...(current[vendorPubkey] || []), optimisticMessage],
-    }));
-    await saveMessage(vendorPubkey, optimisticMessage);
-
-    const result = await sendDM(vendorPubkey, payload, tempId);
-    if (!result.success) {
-      setDms((current) => ({
-        ...current,
-        [vendorPubkey]: (current[vendorPubkey] || []).filter((message) => message.clientId !== tempId),
-      }));
-      await db.messages.delete(tempId);
-      setToast({ type: 'error', message: result.error || 'The order request could not be sent.' });
-      return;
-    }
-
-    let confirmedMessage = {
-      ...optimisticMessage,
-      id: result.event.id,
-      timestamp: result.event.created_at,
-      deliveryStatus: result.queued ? 'queued' : 'sent',
-    };
-    await saveMessage(vendorPubkey, confirmedMessage);
-    if (result.queued && !(await db.outbox.get(result.event.id))) {
-      confirmedMessage = { ...confirmedMessage, deliveryStatus: 'sent' };
-      await saveMessage(vendorPubkey, confirmedMessage);
-    }
-    setDms((current) => ({
-      ...current,
-      [vendorPubkey]: (current[vendorPubkey] || []).map((message) => (
-        message.clientId === tempId ? confirmedMessage : message
-      )),
-    }));
-    setToast({
-      type: 'success',
-      message: result.queued ? 'Order saved and will send when connected.' : 'Order request sent to seller.',
-    });
-  };
-
-  // Every caller goes through here. The guard clears however the send ends,
-  // so a failed request does not leave Buy locked out.
-  const startOrderWithVendor = (...args) => {
-    // Built on the first press, not during render.
+    // One checkout for every surface: the group listing and chat product
+    // land in the same sealed-note sheet the Menus Buy opens. The guard
+    // clears however the send ends, so a failed request does not leave
+    // Buy locked out.
     if (!orderGuardRef.current) orderGuardRef.current = createSingleFlight();
-    return orderGuardRef.current(() => beginOrderWithVendor(...args));
+    return orderGuardRef.current(() => {
+      setCheckoutProduct({ ...orderProduct, vendorPubkey });
+    });
   };
 
   const handleSaveEditedProduct = async (updatedProduct) => {
@@ -963,6 +981,7 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
   return {
     handleOrderAction,
     startOrderWithVendor,
+    beginOrderWithVendor,
     handleSaveEditedProduct,
     handleBroadcastSubmit,
   };

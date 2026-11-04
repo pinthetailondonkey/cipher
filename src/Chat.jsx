@@ -11,6 +11,7 @@ import ChatOverlays from './features/chat/ChatOverlays';
 import GroupWaiting from './components/chat/GroupWaiting';
 import { useMyGroups, useGroupDirectory } from './features/chat/useGroupDirectory';
 import { useChatBootstrap } from './features/chat/useChatBootstrap';
+import OneTapCheckout from './components/OneTapCheckout';
 import { useCommerce } from './features/chat/useCommerce';
 import { useComposer } from './features/chat/useComposer';
 import { useMessageCommands } from './features/chat/useMessageCommands';
@@ -57,6 +58,9 @@ export default function Chat({ identity }) {
     sendVouch,
     openChat: directory.openChat,
   });
+  // The checkout product the group listing and chat product Buy taps set:
+  // the same store key the Menus pane reads, so one sheet serves both.
+  const checkoutProduct = useChatStore((s) => s.checkoutProduct);
   const composer = useComposer({ identity, sendDM, sendGroupMessage });
   const commands = useMessageCommands({
     identity,
@@ -155,6 +159,21 @@ export default function Chat({ identity }) {
         handleSaveEditedProduct={commerce.handleSaveEditedProduct}
         handleBroadcastSubmit={commerce.handleBroadcastSubmit}
       />
+      {/* The checkout the group listing and chat product Buy taps open —
+          the same sheet the Menus pane draws. It rides this thread view so
+          closing it lands in the seller's DM without moving tabs. */}
+      {checkoutProduct && (
+        <OneTapCheckout
+          product={checkoutProduct}
+          identity={identity}
+          onConfirmOrder={commerce.beginOrderWithVendor}
+          onClose={() => {
+            const vendor = checkoutProduct.vendorPubkey;
+            useChatStore.getState().setCheckoutProduct(null);
+            if (vendor) directory.openChat('dm', vendor);
+          }}
+        />
+      )}
     </div>
   );
 }
