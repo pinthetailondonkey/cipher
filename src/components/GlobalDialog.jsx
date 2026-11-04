@@ -21,6 +21,7 @@ export default function GlobalDialog() {
       inputLocked={Boolean(dialog?.inputLocked)}
       inputRows={dialog?.inputRows || 4}
       inputPlaceholder={dialog?.placeholder || ''}
+      reasonChips={dialog?.reasonChips || null}
     />
   );
 }
