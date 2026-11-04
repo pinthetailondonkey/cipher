@@ -329,6 +329,12 @@ export default function Menus({ identity, setActiveTab }) {
           product={checkoutProduct}
           identity={identity}
           onConfirmOrder={confirmOrder}
+          onJumpToChat={() => {
+            const vendor = checkoutProduct.vendorPubkey;
+            setCheckoutProduct(null);
+            if (vendor) useChatStore.getState().openChat('dm', vendor);
+            setActiveTab?.('chat');
+          }}
           onClose={() => setCheckoutProduct(null)}
         />
       )}

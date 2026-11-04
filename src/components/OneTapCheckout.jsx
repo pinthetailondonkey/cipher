@@ -4,10 +4,15 @@ import { deliveryMissMap, deliveryMisses, emptyDelivery, sealedNoteText, withFie
 import { createDeadDropNote } from '../lib/deadDrop';
 import { getAuthenticatedPool } from '../lib/pool';
 import { generalRelays } from '../lib/relays';
-import { Check, Loader2, ShoppingBag } from 'lucide-react';
+import { useProfiles } from '../useProfiles';
+import { Loader2, MessageCircle, ShoppingBag } from 'lucide-react';
 import Sheet from './ui/Sheet';
 import Picture from './ui/Picture';
 import Input from './ui/Input';
+import Avatar from './ui/Avatar';
+import { pushToast } from './ui/toast';
+import { useChatStore } from '../store/chatStore';
+import { noHexName } from '../lib/npub';
 import { orderProduct, priceLabel } from '../lib/listing';
 
 // The order body carries a POINTER ONLY (Deal's carrier evaluation): the
@@ -65,7 +70,7 @@ function DeliveryField({ spec, value, miss, onChange, onBlur }) {
 // One tap from the menu. Every surface that hands over a product opens
 // checkout as the Sheet; §4 anatomy: image, title, price, payment block,
 // actions.
-export default function OneTapCheckout({ product, open = true, onConfirmOrder, onClose, identity }) {
+export default function OneTapCheckout({ product, open = true, onConfirmOrder, onJumpToChat, onClose, identity }) {
   const [confirmed, setConfirmed] = useState(false);
   const [sending, setSending] = useState(false);
   const [orderError, setOrderError] = useState('');
@@ -77,6 +82,14 @@ export default function OneTapCheckout({ product, open = true, onConfirmOrder, o
   const amount = priceLabel(order.product.price, order.product.currency);
   const title = order.product.title;
   const image = product?.image || '';
+  // The confirmation card names the person the order went to. The store map
+  // answers immediately for a vendor this device already knows; the same
+  // profile hook the profile card uses fills a cold open over the relays.
+  const vendorPubkey = product?.vendorPubkey || '';
+  const vendorStored = useChatStore((state) => (vendorPubkey ? state.profiles[vendorPubkey] : undefined));
+  const vendorFetched = useProfiles(vendorPubkey ? [vendorPubkey] : []);
+  const vendorProfile = vendorFetched[vendorPubkey] || vendorStored || {};
+  const vendorName = noHexName(vendorProfile, vendorPubkey);
 
   const confirmOrder = async () => {
     if (confirmed || sending) return;
@@ -98,6 +111,10 @@ export default function OneTapCheckout({ product, open = true, onConfirmOrder, o
       });
       await onConfirmOrder?.(cipherOrder(product, url));
       setConfirmed(true);
+      // Trust stays with the fact the send produced, said where the eye
+      // already is: the sealed note is exactly what the buyer just paid to
+      // have made — one open, that vendor, and never again.
+      pushToast({ type: 'success', message: 'Sealed. Only the vendor can open it.' });
     } catch (error) {
       console.error('[OneTapCheckout] Order confirmation failed:', error);
       setOrderError(error?.message || 'Could not send your order request.');
@@ -114,6 +131,25 @@ export default function OneTapCheckout({ product, open = true, onConfirmOrder, o
       label={title ? `Checkout — ${title}` : 'Checkout'}
       bodyClassName="max-h-[68vh] overflow-y-auto"
     >
+      {/* After the send lands the sheet becomes the confirmation moment:
+          who it went to, what is happening now, and the jump into that
+          chat. The trust line about the sealed note rides the toast, not a
+          stretched button label. */}
+      {confirmed ? (
+        <div className="flex flex-col items-center py-4 text-center">
+          <Avatar src={vendorProfile.picture} name={vendorName} pubkey={vendorPubkey} size="lg" />
+          <p className="mt-3 text-[15px] font-semibold text-ink">{vendorName}</p>
+          <p className="mt-1 text-[13px] leading-relaxed text-inkMuted">Order sent. Waiting for them to accept.</p>
+          <button
+            type="button"
+            onClick={() => { pushToast({ type: 'info', message: 'Sealed. Only the vendor can open it.' }); onJumpToChat?.(); }}
+            className="mt-5 flex min-h-[44px] w-full items-center justify-center gap-2 rounded-xl bg-accent px-4 text-[14px] font-bold text-accentInk"
+          >
+            <MessageCircle size={16} /> Go to the chat
+          </button>
+        </div>
+      ) : (
+        <>
       <div className="space-y-4">
         <div className="flex items-start gap-3">
           <div className="h-20 w-20 shrink-0 overflow-hidden rounded-2xl border border-line bg-panelStrong">
@@ -175,12 +211,14 @@ export default function OneTapCheckout({ product, open = true, onConfirmOrder, o
         <button
           type="button"
           onClick={confirmOrder}
-          disabled={confirmed || sending}
+          disabled={sending}
           className="flex min-h-[52px] w-full items-center justify-center gap-2 rounded-full bg-accent font-bold text-accentInk active:bg-accent disabled:opacity-60"
         >
-          {sending ? <><Loader2 size={17} className="animate-spin" /> Sealing…</> : confirmed ? <><Check size={17} /> Sealed. Only the vendor can open it.</> : 'Seal and send'}
+          {sending ? <><Loader2 size={17} className="animate-spin" /> Sealing…</> : 'Seal and send'}
         </button>
       </div>
+        </>
+      )}
     </Sheet>
   );
 }

@@ -167,6 +167,11 @@ export default function Chat({ identity }) {
           product={checkoutProduct}
           identity={identity}
           onConfirmOrder={commerce.beginOrderWithVendor}
+          onJumpToChat={() => {
+            const vendor = checkoutProduct.vendorPubkey;
+            useChatStore.getState().setCheckoutProduct(null);
+            if (vendor) directory.openChat('dm', vendor);
+          }}
           onClose={() => {
             const vendor = checkoutProduct.vendorPubkey;
             useChatStore.getState().setCheckoutProduct(null);

@@ -96,6 +96,26 @@ test('the listing send reports the outbox\'s real answer and keeps the form when
   assert.match(wallet, /setStatus\(outcome\.status\)\s*\n\s*setTitle\(''\)/);
 });
 
+// ————— the order-confirmed moment —————
+
+test('the confirmed checkout names the vendor, says what happens next, and jumps to the chat', () => {
+  const checkout = read('../components/OneTapCheckout.jsx');
+  // The send button never borrows the sealed-note words as a long label;
+  // the trust line rides a toast.
+  assert.equal(/Sealed\. Only the vendor can open it\.<\//.test(checkout), false);
+  assert.match(checkout, /pushToast\(\{ type: 'success', message: 'Sealed\. Only the vendor can open it\.' \}\)/);
+  assert.match(checkout, /Order sent\. Waiting for them to accept\./);
+  assert.match(checkout, /<Avatar src=\{vendorProfile\.picture\}/);
+  assert.match(checkout, /onJumpToChat/);
+  assert.match(checkout, />\s*Go to the chat\s*</);
+  // Every call site hands over the jump so no confirmed sheet dead-ends.
+  for (const site of ['../Menus.jsx', '../Chat.jsx']) {
+    const source = read(site);
+    assert.ok(source.includes('<OneTapCheckout') && source.includes('onJumpToChat='), `${site} wires onJumpToChat`);
+    assert.match(source, /openChat\('dm', vendor\)/);
+  }
+});
+
 // ————— menu discovery offers the retry it names —————
 
 test('the menu error state can ask the same loader again, one fetch at a time', () => {
