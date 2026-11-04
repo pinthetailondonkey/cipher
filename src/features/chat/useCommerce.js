@@ -748,9 +748,18 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
         return true;
       }
       if (action === 'report_issue') {
+        // Dispute intake is constrained: the buyer picks one of three fixed
+        // reasons so the vendor's card shows the same word, then may add one
+        // optional line of their own. The chip rides on the dispute event as
+        // disputeReason; the state machine paths themselves are untouched.
         useChatStore.getState().openDialog({
-          title: 'Report an Issue', hasInput: true, placeholder: 'e.g. Not shipped, wrong item, damaged',
-          type: 'danger', confirmText: 'Submit',
+          title: 'Report an Issue',
+          type: 'danger',
+          confirmText: 'Submit',
+          reasonChips: ['Wrong item', 'Never arrived', 'Wrong amount'],
+          hasInput: true,
+          inputRows: 2,
+          placeholder: 'Anything else? (optional)',
           onConfirm: async (reason) => {
             if (!reason || !reason.trim()) return;
             // Audit F4/S10: this device re-signs a stored receipt only when

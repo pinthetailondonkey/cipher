@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { motion } from 'framer-motion';
 import { AlertTriangle } from 'lucide-react';
 import Button from './Button';
+import Chip from './Chip';
 import { useModalA11y } from './modal';
 
 // The centered confirm surface — destructive and money moments. Escape and the
@@ -23,8 +24,12 @@ export default function Dialog({
   inputLocked = false,
   inputRows = 4,
   inputPlaceholder = '',
+  // Constrained intake, e.g. the dispute report: one chip must be tapped
+  // before Confirm lights up, the optional input line rides along with it.
+  reasonChips = null,
 }) {
   const [value, setValue] = useState(inputDefault);
+  const [chip, setChip] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const panelRef = useModalA11y(open, onClose);
@@ -32,6 +37,7 @@ export default function Dialog({
   useEffect(() => {
     if (!open) return;
     setValue(inputDefault);
+    setChip('');
     setError('');
     setBusy(false);
   }, [open, inputDefault]);
@@ -43,7 +49,7 @@ export default function Dialog({
     setBusy(true);
     setError('');
     try {
-      await onConfirm?.(hasInput ? value : undefined);
+      await onConfirm?.(hasInput ? (chip && value.trim() ? `${chip}\n${value.trim()}` : (chip || value)) : undefined);
       onClose?.();
     } catch (confirmError) {
       setError(confirmError?.message || 'Could not complete this action.');
@@ -103,6 +109,13 @@ export default function Dialog({
             </button>
           </div>
           {children}
+          {reasonChips?.length > 0 && (
+            <div role="radiogroup" aria-label={title || 'Choose one'} className="mt-3 flex flex-wrap gap-2">
+              {reasonChips.map((label) => (
+                <Chip key={label} selected={chip === label} onClick={() => setChip(chip === label ? '' : label)}>{label}</Chip>
+              ))}
+            </div>
+          )}
           {hasInput && (
             <textarea
               autoFocus={!inputLocked}
@@ -117,7 +130,7 @@ export default function Dialog({
           {error && <p role="alert" className="mt-3 text-sm text-danger">{error}</p>}
           <div className="mt-5 flex gap-3">
             <Button variant="ghost" onClick={onClose} disabled={busy} className="border border-line flex-1">{cancelText}</Button>
-            <Button type="submit" variant={danger ? 'danger' : 'primary'} disabled={busy} className="flex-1">
+            <Button type="submit" variant={danger ? 'danger' : 'primary'} disabled={busy || Boolean(reasonChips?.length > 0 && !chip)} className="flex-1">
               {busy ? 'Working…' : confirmText}
             </Button>
           </div>
