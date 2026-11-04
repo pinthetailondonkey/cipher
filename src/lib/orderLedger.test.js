@@ -287,6 +287,29 @@ test('the orders screen filters by its own view and reads each row\'s direction'
   assert.equal(/setIsVendor\(/.test(screen), false, 'choosing a ledger never touches vendor mode');
 });
 
+// The next-step line: the row answers "state AND who acts next" from the same
+// derivation the order card reads (nextStepOf in MessageBubble), so the ledger
+// never invents wording of its own and never overclaims — marked paid stays
+// unconfirmed, shipped stays undelivered, the words ride the source of truth.
+test('each orders-ledger row carries the card\'s human next-step line', () => {
+  const screen = read('../components/chat/MyOrders.jsx');
+  // The import goes through orderActions, where nextStepOf now lives beside
+  // the state it speaks about.
+  assert.match(screen, /import \{ orderState, orderHasVerifiedReceipt, nextStepOf \} from '\.\.\/\.\.\/lib\/orderActions'/);
+  // It is derived per row from that row's own state and direction.
+  assert.match(screen, /nextStep: nextStepOf\(order\.state, order\.isBuyer\)/);
+  // It renders as the second grey line inside the title block, before the
+  // peer name, truncated so a long line cannot stretch a compact row.
+  const titleBlock = screen.slice(
+    screen.indexOf("product.title || product.name || 'Order'"),
+    screen.indexOf("names[peerPubkey]?.displayName || names[peerPubkey]?.name || (isVendor ? 'Buyer' : 'Seller')"),
+  );
+  assert.ok(titleBlock.length > 0, 'the peer-name line is still there after the next-step line');
+  assert.match(titleBlock, /nextStep && \(/, 'the line only renders when there is one to say');
+  assert.match(titleBlock, /truncate/, 'a long next step truncates rather than stretching the row');
+  assert.match(titleBlock, /text-ink\/50/, 'it wears the grey secondary tone, not a status color');
+});
+
 test('the checkout failure branch cleans up, and a queued order never takes that path', () => {
   const menus = read('../Menus.jsx');
   assert.match(menus, /import \{ saveMessage, db \} from '\.\/db'/);

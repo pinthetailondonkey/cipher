@@ -167,6 +167,37 @@ export function orderState(messages, orderId, request, ownPubkey, peerPubkey) {
   };
 }
 
+// What happens next, said plainly, from the state the order already reached.
+// The line names who acts; it never claims a step the wire has not taken —
+// marked paid is not checked on chain, shipped is not delivered. It lives
+// here beside the state it speaks about, so the order card in the thread and
+// each orders-ledger row read one source of truth and never diverge.
+export function nextStepOf(state, isBuyer) {
+  const status = state.status;
+  const paymentState = state.paymentState;
+  const confirmed = paymentState === 'confirmed';
+  const seen = paymentState === 'seen' || confirmed;
+  if (state.resurrected) return 'This order was closed once and its status moved again. Check the chain before acting.';
+  if (status === S.PENDING) return isBuyer ? 'Waiting for the vendor to accept.' : 'Accept or decline this order.';
+  if (status === S.ACCEPTED) {
+    if (confirmed) return 'Payment confirmed. Waiting for the vendor to ship.';
+    if (seen) return 'Payment seen on chain. Waiting for the vendor to ship.';
+    if (state.paymentSeenBy === 'vendor') return 'The vendor marked this paid. Only the chain check confirms it.';
+    return isBuyer ? 'Pay the address above. The vendor checks the chain.' : 'Waiting for the buyer to pay.';
+  }
+  if (status === S.PAID) {
+    if (confirmed) return isBuyer ? 'Paid. Waiting for the vendor to ship.' : 'Payment confirmed. Mark it shipped.';
+    if (seen) return isBuyer ? 'Payment seen. Waiting for the vendor to ship.' : 'Payment seen. Mark it shipped.';
+    return isBuyer ? 'The vendor marked this paid. Your watcher has not confirmed it yet.' : 'You marked this paid. Run the chain check before shipping.';
+  }
+  if (status === S.SHIPPED) return isBuyer ? 'The vendor marked it shipped. Confirm when it arrives.' : 'Waiting for the buyer to confirm it arrived.';
+  if (status === S.COMPLETED) return 'The order is complete.';
+  if (status === S.CANCELLED) return 'This order was cancelled.';
+  if (status === S.REFUNDED) return 'The vendor marked this refunded.';
+  if (status === S.DISPUTED) return 'An issue was reported. The vendor can refund or reopen the order.';
+  return '';
+}
+
 // An incoming receipt binds only an order this device tracks that is accepted
 // or further along. A pending order never agreed to anything and a cancelled
 // or disputed one stays closed, so neither stores nor signs a receipt.

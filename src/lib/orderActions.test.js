@@ -18,7 +18,7 @@ const names = (actions) => actions.map((item) => item.action);
 // The pill word the card would render, read from the same source the browser
 // bundles. One function, one truth: the parity walk and the source pin share it.
 const orderLabelSrc = fs.readFileSync(new URL('../components/MessageBubble.jsx', import.meta.url), 'utf8');
-const labelFn = orderLabelSrc.slice(orderLabelSrc.indexOf('function orderLabel'), orderLabelSrc.indexOf('function nextStepOf'));
+const labelFn = orderLabelSrc.slice(orderLabelSrc.indexOf('function orderLabel'), orderLabelSrc.indexOf('function OrderReceipt'));
 const orderLabelOf = new Function('content', `${labelFn}; return orderLabel(content).text;`);
 const request = (isSender, data = {}) => ({ id: 'order-1', isSender, timestamp: 10, data: { type: 'order_request', status: 'pending', product: { title: 'Tee' }, ...data } });
 const update = (id, isSender, status, timestamp, extra = {}) => ({ id, isSender, timestamp, data: { type: 'order_update', orderId: 'order-1', status, ...extra } });
@@ -803,12 +803,17 @@ test('11b: every payment beat is reachable on both the buyer and the vendor card
 // condition breaking is the drift this pin exists to catch.
 test('11b pin: the beat words never branch on who is looking', () => {
   const src = fs.readFileSync(new URL('../components/MessageBubble.jsx', import.meta.url), 'utf8');
+  const lib = fs.readFileSync(new URL('./orderActions.js', import.meta.url), 'utf8');
   const start = src.indexOf('function orderLabel');
-  const end = src.indexOf('function OrderReceipt');
-  assert.ok(start !== -1 && end !== -1 && end > start, 'orderLabel and nextStepOf sit where the pin expects them');
-  const label = src.slice(start, src.indexOf('function nextStepOf'));
+  assert.ok(start !== -1, 'orderLabel sits where the pin expects it');
+  // nextStepOf moved to orderActions beside the state it speaks about; the
+  // walker slice reads there now.
+  const label = src.slice(start, src.indexOf('function OrderReceipt'));
   assert.doesNotMatch(label, /\bisSender\b|\bisBuyer\b/, 'orderLabel never asks who is looking');
-  const walker = src.slice(src.indexOf('function nextStepOf'), end);
+  const wStart = lib.indexOf('function nextStepOf');
+  assert.ok(wStart !== -1, 'nextStepOf lives in orderActions beside orderState');
+  const walkerEnd = lib.indexOf('\n}', wStart);
+  const walker = lib.slice(wStart, walkerEnd);
   // every isBuyer ternary in the walker names WHO acts; the assertion is that
   // the LADDER branches (confirmed/seen/address_issued states) are decided
   // before any isBuyer is consulted. A line that both tests a beat state AND

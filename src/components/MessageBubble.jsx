@@ -14,7 +14,7 @@ import Picture from './ui/Picture';
 import { MediaImage, ProductImage } from './ui/PrivateMedia';
 import { attachmentsFor } from '../lib/mediaCrypto';
 import { allowsLinkPreviews } from '../lib/privacy';
-import { orderActionsFor, orderState } from '../lib/orderActions';
+import { orderActionsFor, orderState, nextStepOf } from '../lib/orderActions';
 import { reviewOfferForOrder } from '../lib/vendorReviews';
 import ReviewPrompt from './chat/ReviewPrompt';
 import { nameColorOf } from '../lib/nameColor';
@@ -104,35 +104,6 @@ function orderLabel(content) {
   const outline = 'border border-accentText bg-transparent uppercase tracking-[0.08em] text-accentText';
   if (content.status === 'accepted' || content.paymentState === 'address_issued') return { text: 'Address sent', className: outline };
   return { text: 'Awaiting payment', className: 'bg-accentSoft text-accentText' };
-}
-
-// What happens next, said plainly, from the state the order already reached.
-// The line names who acts; it never claims a step the wire has not taken —
-// marked paid is not checked on chain, shipped is not delivered.
-function nextStepOf(state, isBuyer) {
-  const status = state.status;
-  const paymentState = state.paymentState;
-  const confirmed = paymentState === 'confirmed';
-  const seen = paymentState === 'seen' || confirmed;
-  if (state.resurrected) return 'This order was closed once and its status moved again. Check the chain before acting.';
-  if (status === 'pending') return isBuyer ? 'Waiting for the vendor to accept.' : 'Accept or decline this order.';
-  if (status === 'accepted') {
-    if (confirmed) return 'Payment confirmed. Waiting for the vendor to ship.';
-    if (seen) return 'Payment seen on chain. Waiting for the vendor to ship.';
-    if (state.paymentSeenBy === 'vendor') return 'The vendor marked this paid. Only the chain check confirms it.';
-    return isBuyer ? 'Pay the address above. The vendor checks the chain.' : 'Waiting for the buyer to pay.';
-  }
-  if (status === 'paid') {
-    if (confirmed) return isBuyer ? 'Paid. Waiting for the vendor to ship.' : 'Payment confirmed. Mark it shipped.';
-    if (seen) return isBuyer ? 'Payment seen. Waiting for the vendor to ship.' : 'Payment seen. Mark it shipped.';
-    return isBuyer ? 'The vendor marked this paid. Your watcher has not confirmed it yet.' : 'You marked this paid. Run the chain check before shipping.';
-  }
-  if (status === 'shipped') return isBuyer ? 'The vendor marked it shipped. Confirm when it arrives.' : 'Waiting for the buyer to confirm it arrived.';
-  if (status === 'completed') return 'The order is complete.';
-  if (status === 'cancelled') return 'This order was cancelled.';
-  if (status === 'refunded') return 'The vendor marked this refunded.';
-  if (status === 'disputed') return 'An issue was reported. The vendor can refund or reopen the order.';
-  return '';
 }
 
 function OrderReceipt({ content, isBuyer = false, disputeReason = '', deviceMark = null }) {

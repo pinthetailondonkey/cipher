@@ -5,7 +5,7 @@ import { ProductImage } from '../ui/PrivateMedia';
 import ReceiptInspect from './ReceiptInspect';
 import { scopedGet } from '../../lib/storage';
 import { haptic } from '../../lib/haptics';
-import { orderState, orderHasVerifiedReceipt } from '../../lib/orderActions';
+import { orderState, orderHasVerifiedReceipt, nextStepOf } from '../../lib/orderActions';
 import { useChatStore } from '../../store/chatStore';
 import { defaultLedgerSide, orderRows, peerRole } from '../../lib/orderLedger';
 
@@ -45,6 +45,12 @@ export default function MyOrders({ dms = null, profiles = null, onBack, onOpenCh
     orderId,
     state: orderState(rows[peerPubkey], orderId, message, ownPubkey, peerPubkey),
     countersigned: orderHasVerifiedReceipt(rows[peerPubkey], orderId, message, ownPubkey, peerPubkey),
+  })).map((order) => ({
+    ...order,
+    // The same human line the order card in the thread reads (nextStepOf):
+    // who acts next and what they are waiting for, so the row answers it
+    // without being opened. The word rules are the card's, not new ones.
+    nextStep: nextStepOf(order.state, order.isBuyer),
   }));
   const incoming = side === 'incoming';
 
@@ -82,7 +88,7 @@ export default function MyOrders({ dms = null, profiles = null, onBack, onOpenCh
       ) : (
         <div className="p-4">
           <div className="overflow-hidden">
-            {orders.map(({ message, peerPubkey, isBuyer, orderId, state, countersigned }) => {
+            {orders.map(({ message, peerPubkey, isBuyer, orderId, state, countersigned, nextStep }) => {
               const product = message.data.product || message.data;
               return (
                 <div key={orderId} className="last:border-b-0 border-b border-line">
@@ -93,6 +99,13 @@ export default function MyOrders({ dms = null, profiles = null, onBack, onOpenCh
                     <span className="flex min-w-0 flex-1 items-center gap-2">
                       <span className="min-w-0 flex-1">
                         <span className="block truncate text-[16px] font-semibold text-ink">{product.title || product.name || 'Order'}</span>
+                        {/* The next-step line reads from the same derivation the
+                            card does: who acts next, nothing claimed that has
+                            not happened. Truncated so a long line cannot stretch
+                            the row; the full words are one open away. */}
+                        {nextStep && (
+                          <span className="mt-0.5 block truncate text-[13px] text-ink/50">{nextStep}</span>
+                        )}
                         <span className="mt-0.5 block truncate text-[14px] text-inkMuted">{names[peerPubkey]?.displayName || names[peerPubkey]?.name || (isVendor ? 'Buyer' : 'Seller')}</span>
                       </span>
                       <span className="flex shrink-0 flex-col items-end gap-1">
