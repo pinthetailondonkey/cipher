@@ -31,3 +31,8 @@ test('an order with no coin amount still shows the address, and nothing shows be
   assert.deepEqual(paymentRowsFor(accepted({ status: 'pending' })), []);
   assert.deepEqual(paymentRowsFor({ type: 'order_request', status: 'accepted', paymentMethods: { btc: 'bc1q' } }), []);
 });
+
+test('with no coin priced, Monero is offered before Bitcoin because it leaves no public chain trail', () => {
+  const both = paymentRowsFor(accepted({ paymentMethods: { btc: 'bc1qorder', xmr: '8sub' }, coinAmount: undefined, coinCurrency: undefined }));
+  assert.deepEqual(both.map((row) => row.currency), ['XMR', 'BTC']);
+});

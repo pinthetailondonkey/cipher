@@ -154,7 +154,7 @@ async function withSettingsLock(pubkey, callback) {
   }
 }
 
-export async function getOrderPaymentMethods(identity, orderId, mainAddresses, paymentPreference = 'btc') {
+export async function getOrderPaymentMethods(identity, orderId, mainAddresses, paymentPreference = 'xmr') {
   if (!identity?.pk || !identity?.sk || !orderId) {
     throw new Error('An unlocked vendor account and order ID are required.');
   }

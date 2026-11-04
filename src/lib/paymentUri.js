@@ -22,7 +22,9 @@ export function paymentRowsFor(content) {
   if (content?.type !== 'order_update' || content.status !== 'accepted') return [];
   const methods = content.paymentMethods || {};
   const coin = String(content.coinCurrency || '').toUpperCase();
-  const offered = [['BTC', methods.btc], ['XMR', methods.xmr]].filter(([, address]) => address);
+  // Monero leads: an XMR payment does not write a public chain trail the way
+  // Bitcoin does. Bitcoin stays fully available right behind it.
+  const offered = [['XMR', methods.xmr], ['BTC', methods.btc]].filter(([, address]) => address);
   const rows = offered.some(([currency]) => currency === coin)
     ? offered.filter(([currency]) => currency === coin)
     : offered;

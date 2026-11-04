@@ -180,6 +180,14 @@ export default function OneTapCheckout({ product, open = true, onConfirmOrder, o
             phone. Cipher checks its shape, not the address — that part is between you
             and the mail.
           </p>
+          {/* Monero leads: XMR does not write a public chain trail the way
+              Bitcoin does. Bitcoin stays fully available behind it, and an
+              Advanced Settings preference still overrides this default. */}
+          <p className="text-[12px] leading-snug text-inkSubtle">
+            Payment asks for Monero first — XMR leaves no public chain trail
+            like Bitcoin does. Bitcoin stays available, and your choice under
+            Profile → Order settings always wins.
+          </p>
           {DELIVERY_FIELDS.map((spec) => (
             <DeliveryField
               key={spec.field}

@@ -106,7 +106,7 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
       return;
     }
 
-    const paymentMethod = scopedGet('preferred_payment_method', 'btc');
+    const paymentMethod = scopedGet('preferred_payment_method', 'xmr');
     const payload = { type: 'cipher_order', status: ORDER_STATUS.PENDING, paymentState: 'created', paymentMethod, product: orderProduct(order), delivery: order.delivery };
     const tempId = `temp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const optimisticMessage = stampArrival({
@@ -321,7 +321,7 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
                 // (security re-attack)
                 msg.id,
                 { btc: baseBtc, xmr: baseXmr },
-                msg.data.paymentMethod || 'btc',
+                msg.data.paymentMethod || 'xmr',
               );
             } catch (error) {
               console.error('[orders] Could not prepare private payment addresses:', error);
@@ -388,7 +388,9 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
           setToast(saved ? { type: 'success', message: acceptedText } : { type: 'error', message: `${acceptedText} ${NOT_SAVED}` });
           setSelectedMessage(null);
         };
-        const preference = msg.data.paymentMethod || 'btc';
+        // Monero leads on the accept sheet, for the same reason it leads at
+        // checkout: no public chain trail. Bitcoin stays right behind it.
+        const preference = msg.data.paymentMethod || 'xmr';
         const coinCurrency = preference === 'xmr' || preference === 'both' ? 'xmr' : 'btc';
         // A demanded amount starts from the menu this device published, never
         // from what the buyer wrote into the order. (security F5)

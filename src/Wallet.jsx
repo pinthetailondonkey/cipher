@@ -82,9 +82,9 @@ export default function Wallet({ identity, onOpenChat, startView = 'main' }) {
   }, [status]);
   // Order settings: the buyer-side defaults the engines already read.
   // preferred_payment_method seeds new order requests (useCommerce);
-  // confirmations overrides the watcher's paid threshold (paymentWatch);
+  // Monero leads at checkout, Bitcoin stays selectable.
+  const [preferredMethod, setPreferredMethod] = useState(() => scopedGet('preferred_payment_method', 'xmr'));
   // auto_vouch_on_delivery gates the vendor vouch after a delivery.
-  const [preferredMethod, setPreferredMethod] = useState(() => scopedGet('preferred_payment_method', 'btc'));
   const savedConf = scopedGet('confirmations', {}) || {};
   const [confBtc, setConfBtc] = useState(savedConf.btc != null ? String(savedConf.btc) : '');
   const [confXmr, setConfXmr] = useState(savedConf.xmr != null ? String(savedConf.xmr) : '');
@@ -329,9 +329,10 @@ export default function Wallet({ identity, onOpenChat, startView = 'main' }) {
               <p className="text-[15px] font-semibold text-ink">Preferred payment</p>
               <p className="mt-0.5 text-[13px] text-inkMuted">The coin a new order asks for first.</p>
               <div className="mt-3 grid grid-cols-2 rounded-xl border border-line p-1">
-                <button type="button" onClick={() => { setPreferredMethod('btc'); scopedSet('preferred_payment_method', 'btc'); }} className={`min-h-[40px] rounded-lg py-2 text-[13px] font-bold ${preferredMethod === 'btc' ? 'bg-accent text-accentInk' : 'text-inkMuted'}`}>Bitcoin</button>
                 <button type="button" onClick={() => { setPreferredMethod('xmr'); scopedSet('preferred_payment_method', 'xmr'); }} className={`min-h-[40px] rounded-lg py-2 text-[13px] font-bold ${preferredMethod === 'xmr' ? 'bg-accent text-accentInk' : 'text-inkMuted'}`}>Monero</button>
+                <button type="button" onClick={() => { setPreferredMethod('btc'); scopedSet('preferred_payment_method', 'btc'); }} className={`min-h-[40px] rounded-lg py-2 text-[13px] font-bold ${preferredMethod === 'btc' ? 'bg-accent text-accentInk' : 'text-inkMuted'}`}>Bitcoin</button>
               </div>
+              <p className="mt-2 text-[12px] leading-snug text-inkSubtle">Monero leads so a payment does not write a public chain trail the way Bitcoin does.</p>
             </div>
           </div>
           <form onSubmit={saveConfirmations} className="overflow-hidden rounded-2xl border border-line bg-panel">
