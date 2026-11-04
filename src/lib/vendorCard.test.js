@@ -34,10 +34,10 @@ function spyPool() {
 }
 
 test('the card target is the group relay and nothing else', () => {
-  assert.deepEqual(RELAY_SETS.vendorCard, ['group-relay'], 'the inventory row names one host');
+  assert.deepEqual(RELAY_SETS.vendorCard, ['group-relay', 'group-relay-2'], 'the inventory row names the group hosts');
   const targets = vendorCardRelays();
-  assert.equal(targets.length, 1, 'one target');
-  assert.deepEqual(targets, urlsFor('group-only'), 'the same host the groups themselves use');
+  assert.equal(targets.length, 2, 'both group hosts');
+  assert.deepEqual(targets, urlsFor('group-only'), 'the same hosts the groups themselves use');
   assert.ok(GROUP_RELAY);
 });
 

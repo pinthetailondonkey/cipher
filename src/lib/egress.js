@@ -7,6 +7,7 @@ const STORAGE_KEY = 'cipher_network';
 // the host before it ships.
 export const EGRESS = [
   { id: 'group-relay', role: 'Group relay', url: 'wss://groups.ciphertele.com', sees: 'Your IP, and every group you open. If you turn on selling, it also gets your public card: your name, picture and profile line, which anyone reading your menu can see. It can delete its data at any time, so a card there is a sign, not a record.', required: true },
+  { id: 'group-relay-2', role: 'Group relay', url: 'wss://groups2.ciphertele.com', sees: 'Your IP, and every group you open. The same relay at a second host, with the same relay key, so one box going down does not take the groups with it.', gate: 'founder' },
   { id: 'dm-relay', role: 'Message relay', url: 'wss://relay.primal.net', sees: 'Your IP, who you message, and whether each one is a message, an order, or a call. That label is on every message in plain text, so anyone who reads this relay sees it too. The push gateway needs it, because it cannot read the message. The text itself stays encrypted.', required: true },
   { id: 'profile-nos', role: 'Profile relay', url: 'wss://nos.lol', sees: 'Your IP when a name or profile is published' },
   { id: 'profile-damus', role: 'Profile relay', url: 'wss://relay.damus.io', sees: 'Your IP when a profile is saved' },
@@ -106,9 +107,9 @@ export const FOUNDER_ONION_DOORS = {
 
 export const RELAY_SETS = {
   general: ['dm-relay'],
-  group: ['group-relay'],
-  'group-only': ['group-relay'],
-  vendorCard: ['group-relay'],
+  group: ['group-relay', 'group-relay-2'],
+  'group-only': ['group-relay', 'group-relay-2'],
+  vendorCard: ['group-relay', 'group-relay-2'],
   search: ['dm-relay', 'search-vertex', 'search-noswhere'],
   profile: ['dm-relay', 'profile-nos'],
   profileEditor: ['dm-relay', 'profile-nos', 'profile-damus'],

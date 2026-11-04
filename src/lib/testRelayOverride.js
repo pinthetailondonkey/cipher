@@ -28,6 +28,7 @@ const HOST = 'http://127.0.0.1:9';
 
 export const TEST_RELAY_OVERRIDE = {
   'group-relay': RELAY,
+  'group-relay-2': RELAY,
   'dm-relay': RELAY,
   'profile-nos': RELAY,
   'profile-damus': RELAY,
