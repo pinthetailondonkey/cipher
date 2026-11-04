@@ -117,7 +117,7 @@ test('every outbound host is listed, and nowhere else', () => {
 // clearnet address, and a device's own paste outranks the door. The address
 // is asserted as a literal so a build that loses the door fails here rather
 // than quietly serving groups in the clear.
-import { FOUNDER_GROUP_ONION, FOUNDER_MEDIA_ONION, FOUNDER_ONION_DOORS } from './egress.js';
+import { FOUNDER_GROUP_ONION, FOUNDER_GROUP_ONION_2, FOUNDER_MEDIA_ONION, FOUNDER_ONION_DOORS } from './egress.js';
 
 const onion = (label, scheme = 'wss') => `${scheme}://${label}.onion`;
 
@@ -249,6 +249,38 @@ test('a lit media door serves all three rows from one address, and the rank orde
     assert.equal(row.active, mediaDoor);
   } finally {
     for (const id of MEDIA_ROWS) FOUNDER_ONION_DOORS[id] = '';
+  }
+});
+
+test('the second group relay ships a dark door on the web, and a lit one takes only its own row', () => {
+  // Dark half: the web answer — FOUNDER_GROUP_ONION_2 is empty behind no
+  // desktop define, so group-relay-2 keeps the shipped clear address and the
+  // pair still resolves exactly as reviewed.
+  assert.equal(FOUNDER_GROUP_ONION_2, '');
+  assert.equal(FOUNDER_ONION_DOORS['group-relay-2'], '');
+  assert.deepEqual(urlsFor('group-only', { overrides: {}, lists: {} }), ['wss://groups.ciphertele.com', 'wss://groups2.ciphertele.com']);
+
+  // Lit half: a desktop build carrying VITE_GROUP_ONION_2. The same rank
+  // order as every other door: paste wins, then the door, then off.
+  const door2 = onion('relay2doorrelay2door');
+  FOUNDER_ONION_DOORS['group-relay-2'] = door2;
+  try {
+    assert.deepEqual(urlsFor('group-only', { overrides: {}, lists: {} }), ['wss://groups.ciphertele.com', door2]);
+    assert.deepEqual(
+      urlsFor('group-only', { overrides: { 'group-relay-2': 'wss://mine.example' }, lists: {} }),
+      ['wss://groups.ciphertele.com', 'wss://mine.example'],
+      "a device's own paste outranks the door",
+    );
+    assert.deepEqual(
+      urlsFor('group-only', { overrides: { 'group-relay-2': 'off' }, lists: {} }),
+      ['wss://groups.ciphertele.com'],
+      '`off` still drops the host entirely',
+    );
+    const row = listEgress({ overrides: {}, lists: {} }).find((r) => r.id === 'group-relay-2');
+    assert.equal(row.transport, 'tor');
+    assert.equal(row.active, door2);
+  } finally {
+    FOUNDER_ONION_DOORS['group-relay-2'] = '';
   }
 });
 

@@ -71,7 +71,7 @@ export default defineConfig(({ command, mode }) => {
     // that; the test asserts on the produced bytes as well, because a rule in
     // a build and a rule in a test are two things that can each be edited.
     if (!desktopBuild) {
-      for (const key of ['VITE_GROUP_ONION', 'VITE_MEDIA_ONION']) {
+      for (const key of ['VITE_GROUP_ONION', 'VITE_GROUP_ONION_2', 'VITE_MEDIA_ONION']) {
         if (String(env[key] || '').trim()) {
           throw new Error(
             `vite refuses: ${key} is set and this is not a desktop build. A door belongs to the `
@@ -95,6 +95,17 @@ export default defineConfig(({ command, mode }) => {
         + 'The desktop groups would leave Tor and go to the clear address. '
         + 'Set it in .grok/app-env.json (untracked) or in the environment for this build.',
       )
+    }
+
+    if (desktopBuild) {
+      const groupDoor2 = String(env.VITE_GROUP_ONION_2 || '').trim()
+      if (groupDoor2 && !ONION_DOOR.test(groupDoor2)) {
+        throw new Error(
+          `vite refuses: VITE_GROUP_ONION_2 is set to "${groupDoor2}", which is not an onion address. `
+          + 'The second relay row would resolve to it and leave Tor for whatever host that names. '
+          + 'A door is wss://<onion>: set it in .grok/app-env.json (untracked) or in the environment.',
+        )
+      }
     }
 
     // The media door has its own shape. Media is fetched over http(s), so the

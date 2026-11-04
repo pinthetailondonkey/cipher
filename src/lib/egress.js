@@ -68,6 +68,7 @@ const DESKTOP_BUILD = typeof __CIPHER_DESKTOP_BUILD__ !== 'undefined' && __CIPHE
 const TEST_RELAYS = import.meta.env?.VITE_TEST_HOOKS === '1' ? TEST_RELAY_OVERRIDE : null;
 
 const buildGroupDoor = String(import.meta?.env?.VITE_GROUP_ONION || '').trim();
+const buildGroupDoor2 = String(import.meta?.env?.VITE_GROUP_ONION_2 || '').trim();
 const buildMediaDoor = String(import.meta?.env?.VITE_MEDIA_ONION || '').trim();
 
 // One door shape for every onion row, the group door's: the build supplies the
@@ -77,6 +78,7 @@ const buildMediaDoor = String(import.meta?.env?.VITE_MEDIA_ONION || '').trim();
 const doorOrEmpty = (value) => (DESKTOP_BUILD && value ? value : '');
 
 export const FOUNDER_GROUP_ONION = doorOrEmpty(buildGroupDoor);
+export const FOUNDER_GROUP_ONION_2 = doorOrEmpty(buildGroupDoor2);
 export const FOUNDER_MEDIA_ONION = doorOrEmpty(buildMediaDoor);
 
 // The doors still to come: one message relay, one search relay, one media
@@ -95,7 +97,10 @@ export const FOUNDER_MEDIA_ONION = doorOrEmpty(buildMediaDoor);
 // group door: a device's own paste wins, then the door, and `off` still drops
 // the host. One door serves every row of its kind: the search pair and the
 // media trio each resolve to the one address when their door is lit.
+// The second group relay carries its own door (VITE_GROUP_ONION_2): a group
+// mirror on a second host deserves the same Tor treatment as the first.
 export const FOUNDER_ONION_DOORS = {
+  'group-relay-2': FOUNDER_GROUP_ONION_2,
   'dm-relay': '',
   'search-vertex': '',
   'search-noswhere': '',
