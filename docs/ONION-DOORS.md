@@ -79,6 +79,7 @@ Doors today:
 | Door | Build value | State |
 | --- | --- | --- |
 | Group relay | `VITE_GROUP_ONION` | required — the desktop build will not finish without it |
+| Group relay 2 | `VITE_GROUP_ONION_2` | checked, and dark until a build carries the second relay's address |
 | Media (three rows) | `VITE_MEDIA_ONION` | checked, and dark until a media row ships the founder's host |
 | Message relay, search pair, burn note | — | a slot that ships dark; no address yet |
 
