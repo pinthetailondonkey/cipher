@@ -332,7 +332,7 @@ test("the guide is the founder's fifteen steps, verbatim", async (t) => {
       ],
       [
         'Buying',
-        'You ask in the chat and the vendor accepts. The vendor then issues a payment address that belongs to your order alone — never send to an address from a different order, and never to an address you were given somewhere else. The app watches the chain and moves the order along as the coins arrive.',
+        'Tap Buy on a menu item and the checkout asks for the delivery address once: it is sealed into a burn-once note that opens for that vendor only, and never rides in the chat itself. You ask in the chat and the vendor accepts. The vendor then issues a payment address that belongs to your order alone — never send to an address from a different order, and never to an address you were given somewhere else; the accepted order in the chat carries that address and its QR code, and it is what ties your payment to the chain check. The app watches the chain and moves the order along as the coins arrive.',
       ],
       [
         'When payment counts',

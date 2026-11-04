@@ -134,16 +134,20 @@ export default function OneTapCheckout({ product, open = true, onConfirmOrder, o
           <p className="text-[12px] text-inkSubtle">Amount due</p>
           <p className="font-mono text-[20px] font-bold text-ink">{amount}</p>
         </div>
-        {/* The delivery address. Words are Money Moves' spec verbatim: the
-            top breath is two lines, hints sit under their labels, the miss
-            lines are short and blame-free. Required before the order can be
-            placed, checked by shape only on this device; the address itself
-            travels sealed in a burn-once note, the order carries its URL. */}
+        {/* The one explanation wall the sheet keeps. Everything else about
+            paying — the accepted order, the issued address, the QR, the
+            chain check — lives in Profile → How to use, Buying; a second
+            panel here repeated it at the exact moment the buyer only wants
+            to fill fields and send. (security S2: the address travels
+            sealed in a burn-once note, the order carries its URL; no
+            payment address ever sits on a menu or in this sheet.) */}
         <div className="space-y-3 pt-1">
           <p className="text-[13px] leading-relaxed text-inkMuted">
             Your address goes to the vendor once, sealed — never into the chat,
             <br />
-            never off your phone any other way. The note will not open again on their phone.
+            never off your phone any other way. The note will not open again on their
+            phone. Cipher checks its shape, not the address — that part is between you
+            and the mail.
           </p>
           {DELIVERY_FIELDS.map((spec) => (
             <DeliveryField
@@ -165,13 +169,6 @@ export default function OneTapCheckout({ product, open = true, onConfirmOrder, o
             />
           ))}
         </div>
-        {/* The order is the only way to pay. No menu card shows a payment
-            address or QR here: paying one directly skips the accept, the
-            address issue, the chain check and the receipt, and the seller
-            ships against their own accepted order only. (security S2) */}
-        <p className="rounded-xl border border-line bg-panelStrong p-4 text-[13px] leading-relaxed text-inkMuted">
-          After the seller accepts, your payment address and QR code appear in the chat, on the accepted order. The order is the only way to pay — it is what ties the payment to a chain check.
-        </p>
         {orderError && <p role="alert" className="text-sm text-danger">{orderError}</p>}
       </div>
       <div className="px-0 pt-5">
@@ -183,9 +180,6 @@ export default function OneTapCheckout({ product, open = true, onConfirmOrder, o
         >
           {sending ? <><Loader2 size={17} className="animate-spin" /> Sealing…</> : confirmed ? <><Check size={17} /> Sealed. Only the vendor can open it.</> : 'Seal and send'}
         </button>
-        <p className="pt-2 text-center text-[12px] leading-relaxed text-inkSubtle">
-          Cipher checks the shape of it, not the address. That part is between you and the mail.
-        </p>
       </div>
     </Sheet>
   );
