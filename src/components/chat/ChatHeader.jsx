@@ -7,6 +7,9 @@ import { shortNpub } from '../../lib/npub';
 import Picture from '../ui/Picture';
 import Sheet from '../ui/Sheet';
 import Button from '../ui/Button';
+import { orderState } from '../../lib/orderActions';
+import { ORDER_STATUS } from '../../lib/paymentState';
+import { jumpToMessage } from './threadMotion';
 
 // Timed messages: what the sender stamps at send; receivers honor
 // expires_at on arrival and the local sweep drops them after.
@@ -33,6 +36,39 @@ function TimerPicker({ timer, onPick }) {
       ))}
     </div>
   );
+}
+
+// The header's Order pill: one open payable deal per chat is enough for a
+// short list of anchors — the pill names it and jumps; anything else stays
+// a ledger question, and MyOrders is the ledger.
+const PAYABLE_ANCHOR_STATES = new Set([
+  ORDER_STATUS.ACCEPTED,
+  ORDER_STATUS.PAID,
+]);
+
+// The latest address-bearing card for one chat's thread and order request:
+// the accepted update that carries an address for the coin it names. A
+// peer-typed coin name such as '__proto__' resolves on any object keyed
+// lookup would build, so the pair is checked with the table the rails
+// themselves define and the address string has to be non-empty. Null when
+// nothing has been issued yet or when the only issued pair carries no
+// address at all.
+export function payableOrderAnchorOf(messages) {
+  const list = Array.isArray(messages) ? messages : [];
+  const request = [...list].reverse()
+    .find((message) => message?.id && ['order_request', 'cipher_order'].includes(message.data?.type));
+  if (!request) return null;
+  const orderId = request.id;
+  if (!PAYABLE_ANCHOR_STATES.has(orderState(list, orderId, request, '', '').status)) return null;
+  const issue = [...list].reverse().find((message) => {
+    if (message?.data?.type !== 'order_update' || String(message.data.orderId) !== String(orderId)) return false;
+    const methods = message.data.paymentMethods;
+    if (!methods || typeof methods !== 'object') return false;
+    const coin = String(message.data.coinCurrency || '').trim().toLowerCase();
+    if (!coin || !Object.hasOwn(methods, coin)) return false;
+    return String(methods[coin] || '').trim() !== '';
+  });
+  return issue || null;
 }
 
 export default function ChatHeader({ mode }) {
@@ -93,6 +129,12 @@ export default function ChatHeader({ mode }) {
   const safety = mode === 'dm' && activeDm ? safetyNumberFor(activeDm) : null;
   const keyChanged = Boolean(safety?.changed);
   const subtitle = keyChanged ? 'key changed — re-verify' : (mode === 'dm' ? 'encrypted' : 'group');
+  // The Order pill reads the DM thread only. The latest address-bearing
+  // card for the newest open request is what a jump can anchor on; before
+  // an address exists, or after the deal closed, there is nothing to jump
+  // to and no pill — MyOrders already carries the whole ledger.
+  const dmThread = mode === 'dm' && activeDm ? useChatStore.getState().dms[activeDm] : null;
+  const orderAnchor = payableOrderAnchorOf(dmThread);
 
   // Header: 56px bar with back left, peer mark centred, kebab right. Timer
   // and group info ride in the kebab so the row never crowds.
@@ -173,6 +215,21 @@ export default function ChatHeader({ mode }) {
             fallback={<span className="flex h-8 w-8 items-center justify-center rounded-full bg-panelAlt text-[13px] font-semibold text-accentText">{initial}</span>}
           />
         </button>
+        {orderAnchor && (
+          // The Order pill: the payable deal has an anchor in the thread, so
+          // the header carries the one-tap door back to it. The jump is the
+          // reply-quote machinery — same scroll, same glow ring; when the
+          // card is virtualized away or deleted the honest fallback fires
+          // and nothing happens (threadMotion's own contract).
+          <button
+            type="button"
+            aria-label="Jump to the order payment card"
+            onClick={() => { haptic('light'); jumpToMessage(orderAnchor.id); }}
+            className="touch-target flex shrink-0 items-center rounded-full border border-accentText px-2.5 py-1 text-[11px] font-bold uppercase tracking-[0.08em] text-accentText active:bg-ink/10"
+          >
+            Order
+          </button>
+        )}
         <div className="flex shrink-0 items-center">
           <button
             type="button"
