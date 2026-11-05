@@ -1444,7 +1444,11 @@ export function useNIP29Group({ identity }) {
           }
           try {
             const myProfile = useChatStore.getState().profiles[identity.pk];
-            const myUsername = myProfile?.name || myProfile?.username;
+            // The published handle record is the fallback: my own profile only
+            // reaches the store once a group has carried a message of mine, so
+            // without this a mention in the first exchange is not seen. The
+            // record is read at boot (useChatBootstrap) for exactly this.
+            const myUsername = myProfile?.name || myProfile?.username || useChatStore.getState().myUsername;
             if (myUsername && parsed.message && parsed.message.includes('@' + myUsername)) isMentioned = true;
           } catch (e) {}
           // S11: the sender is the throttle key; only the OS notification is held back.

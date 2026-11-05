@@ -223,9 +223,15 @@ export function useChatBootstrap({
     if (!identity?.pk) return;
     const fetchMyUsername = async () => {
       try {
+        // Kind 10003, not 30078: the writer (useIdentity.js:259) is 10003 and
+        // both other readers agree (handleClaim.js:41, usePeopleSearch.js:106).
+        // 30078 is the group member baseline, a different record entirely, so
+        // this read never matched anything and my_username stayed empty. The
+        // d=username tag is what narrows it away from a NIP-51 bookmarks list
+        // on the same kind, which is why the filter was right all along.
         const pool = await getAuthenticatedPool(identity);
-        const evs = await queryWithTimeout(pool, generalRelays, {
-          kinds: [30078], authors: [identity.pk], '#d': ['username'],
+        const evs = await queryWithTimeout(pool, profileRelays, {
+          kinds: [10003], authors: [identity.pk], '#d': ['username'],
         });
         if (evs && evs.length > 0) {
           const username = evs[0].tags.find(t => t[0] === 'username')?.[1];
