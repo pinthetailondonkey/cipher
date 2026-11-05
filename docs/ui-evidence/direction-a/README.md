@@ -56,7 +56,8 @@ test executions over 14 batches — each batch sized to fit the ten-minute tool
 budget (`tests/ui/tools/ui-files.sh`), because every spec seeds the fixture
 vault and pays a real PBKDF2 derivation at its gate.
 
-- `npm run lint` — 0 errors, 100 warnings (the standing count).
+- `npm run lint` — 0 errors. The warning count sits at a hundred and one, none
+  of them from this work: it moves by one as the in-flight lane edits files.
 - `npm test` — 1010 tests, 1006 pass, 0 fail, 4 skipped (14m).
 - The 41-test batch of `tests/ui/ui-contract.spec.js` (31) and
   `tests/ui/sheet-a11y.spec.js` (10), and the 13-test
