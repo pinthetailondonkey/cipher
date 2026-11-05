@@ -52,6 +52,12 @@
   --success-rgb: 16 185 129;
   /* Presence dot. Same green as success, named for the thing it marks. */
   --online: #10b981;
+  /* Waiting on something that is not this device's move: a payment seen but
+     not yet confirmed, a shipment out for delivery. Green is done, red is
+     needs-you, amber is between the two — status only, never decoration
+     (DESIGN.md, founder ruling 2026-11-05). */
+  --warning: #f0b85a;
+  --warning-rgb: 240 184 90;
   --danger: #ef4444;
   --danger-rgb: 239 68 68;
   /* Neutralised, not deleted: seven screens outside this phase's lock draw

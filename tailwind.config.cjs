@@ -34,6 +34,7 @@ module.exports = {
         accentSoft: 'var(--accent-soft)',
         accentInk: 'var(--accent-ink)',
         success: 'rgb(var(--success-rgb) / <alpha-value>)',
+        warning: 'rgb(var(--warning-rgb) / <alpha-value>)',
         danger: 'rgb(var(--danger-rgb) / <alpha-value>)',
         scrim: 'rgb(var(--scrim-rgb) / <alpha-value>)',
         borderDark: 'var(--border-strong)',

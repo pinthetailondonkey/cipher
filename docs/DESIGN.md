@@ -30,6 +30,8 @@ two disagree, the stylesheet wins and this block is the bug.
 --bubble-out-a   #1358e8
 --bubble-out-b   #003a9e
 --online         #10b981
+--warning        #f0b85a
+--warning-rgb    240 184 90
 --row-active     rgba(0,93,253,0.14)
 --col            30rem
 --gutter         1rem
@@ -37,7 +39,9 @@ two disagree, the stylesheet wins and this block is the bug.
 
 Still defined and unchanged: `--bubble-in`, `--bubble-out`, `--success`,
 `--danger`, `--scrim-rgb`, `--hover-wash`, `--glow-a`, `--glow-b`, and the
-safe-area and layer tokens. `--glow-a` and `--glow-b` are `transparent` on
+safe-area and layer tokens. `--warning` is new (2026-11-05) and ships with
+this ruling: the status words use three reserved states, and amber had no
+token to stand on before it. `--glow-a` and `--glow-b` are `transparent` on
 purpose: screens outside this pass still draw inline gradients from them, and
 transparent makes those blobs vanish without editing those files.
 
@@ -92,12 +96,17 @@ only, meta inside bottom-right.
   `--accent` left bar.
 - **FolderRail** (2026-10-30) — 32px pills, radius 8, active `--accent-soft`
   ground with `--accent-text`. All chats, Direct, Groups, Orders. Filters
-  locally; nothing is persisted.
+  locally; nothing is persisted. **Superseded 2026-11-05** by the Threads
+  segments below: the list header's own row carries Chats / Groups / Menus,
+  and the Orders folder folds into You. The rail is history.
 - **EmptyState** (2026-10-30) — icon 28 at `--text-subtle`, title 15/600,
   body 13 `--text-muted`, at most one optional primary action, no card.
   Screens do not hand-roll an empty state.
 - **Segmented** (2026-10-30) — 32px segments, radius 8, track
-  `--panel-strong`, active `--accent`. No screen hand-rolls a tablist.
+  `--panel-strong`, active `--accent`. No screen hand-rolls a tablist. Two
+  consumers now: the Threads filter (founder ruling 2026-11-05) and the
+  payment-method row. `ChatList`'s own hand-rolled All / Menus / Vendors row
+  (2026-10-30 pass) is retired into it.
 - **Compose FAB** (2026-10-30) — 50px `--accent`,
   `calc(var(--bar-h) + 1.5rem)` from the bottom, `--gutter` from the right,
   hidden with the keyboard.
@@ -111,7 +120,8 @@ only, meta inside bottom-right.
   mic becomes an `--accent` send circle once there is input.
 - **Tab bar** — labels >= 12px, unread badge. Active state is 2.4 stroke at
   `--accent-text` (2026-10-30: this replaces "filled active icon" — a fill
-  collapses a thin glyph, so only MessageSquare and User may fill).
+  collapses a thin glyph, so only MessageSquare and User may fill). Two
+  destinations since 2026-11-05: Threads and You.
 
 ## FOUNDER RULING — centred dialogs (2026-10-29)
 
@@ -151,6 +161,37 @@ These are named so nobody re-opens them while the layout moves:
 These are verbatim reference strings for the single reference thread; the
 primary list title remains "Chats".
 
+## FOUNDER RULING — Threads is the home (2026-11-05, Direction A)
+
+Two primary destinations, Threads and You. Newest ruling; it supersedes the
+four-tab set in UI-SPEC.md (`Chats | Menus | Orders | You`) while leaving that
+doc's wording rules standing. The engineering key `explore` survives as the
+Menus segment value so palette, boot and tests keep a stable word.
+
+- **Threads** holds the conversation list with its own three segments —
+  **Chats / Groups / Menus** — in one `Segmented` row under the filter field.
+  Chats and Groups filter the same list by kind; Menus is the vendor browse
+  pane. The segment state is the shell's, so a drill-down from Menus returns
+to Menus and never strands the user.
+- **You** takes the Orders entry point: the tab carries the `needsAction`
+  badge, and Wallet's own My Orders row is the door (it already existed).
+  Orders is a view, never a fourth destination.
+- **Order cards are passive about progress.** The three-dot
+  Paid / Shipped / Received tracker is status, not a control, and there is no
+  Track / Track package / Track your order action or destination: the thread
+  is where progress is read. Payment state (address sent, seen, confirmed)
+  stays a separate lane on the card from shipping progress — the chain is not
+  a parcel.
+- **At most one contextual primary action per card**, the next valid step:
+  Pay, Mark shipped, Mark received, Leave review. Never a row of buttons, and
+  never a second solid accent button in view.
+- **Status colour language** (reserved, never decorative): green `--success`
+  for done/go, amber `--warning` for waiting, `--danger` for needs-you,
+  `--text-subtle` gray for settled or not-yet. A status that only exists in
+  colour also carries its word.
+- **No emoji in UI.** Interface glyphs come from the icon family; real
+  listing imagery leads wherever a product has one.
+
 ## Always
 
 Flat layered greys, hairlines, skeletons, press states, 44px targets,
@@ -162,7 +203,7 @@ backdrop-blur, glow blobs, `neon-*`, `glass-*`, `hybrid-*`, gradient
 backgrounds behind content, cards inside lists, "Tap to show" pills,
 more than one solid accent button in view, new hardcoded colours,
 radii, z-index values or font sizes, the logo anywhere except the
-Chats header.
+Chats header, emoji as an interface glyph (2026-11-05).
 
 Four of those carry a stated exception (2026-10-30):
 
