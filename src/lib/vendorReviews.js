@@ -145,8 +145,8 @@ export function boundReceipts() {
 }
 
 // Proven deals, in the Deal data layer's shape (vendorStats on main): an
-// object KEYED BY RAIL — { btc: { count, txids, phrasing: 'proven' }, xmr:
-// { count, txids, phrasing: 'recorded' } } — one key per rail with proven
+// object KEYED BY RAIL — { btc: { count, hashes, phrasing: 'proven' }, xmr:
+// { count, hashes, phrasing: 'recorded' } } — one key per rail with proven
 // deals, {} when nothing is proven. A rail key carries its banner phrasing
 // with it; the display reads the keys it is given and never sums rails
 // into one figure.
@@ -196,16 +196,16 @@ function provenMapsForVendor(vendorPubkey) {
 }
 
 // The proven-count seam, keyed by rail. 'proven' banners as "N deals
-// proven. One tap shows the txids."; 'recorded' banners as "N deals
-// recorded on chain." Provider swaps to the Deal lane's txid-bulletin
-// contract (see DATA-LAYER owner on main) replace this fallback's body
-// alone; no call site counts records itself.
+// proven. One tap shows the proofs."; 'recorded' banners as "N deals
+// recorded on chain." Provider swaps to the Deal lane's receipt-hash
+// bulletin contract (see DATA-LAYER owner on main) replace this fallback's
+// body alone; no call site counts records itself.
 //
 // Fallback derivation, device-local: a proven deal is a bound receipt this
 // device countersigned that a signed public view names. The fallback's
 // count is those distinct receipts, not a bulletin length — the bulletin
-// count-is-txids rule is the data layer's, and it owns the real source.
-// The txids ride along (the receipts carry them) so the banner's
+// count-is-hashes rule is the data layer's, and it owns the real source.
+// The hashes ride along (the receipts hash to them) so the banner's
 // tap-through has data. Rails without proven deals stay
 // absent keys, so the shape is exactly the data layer's.
 export function provenDealsForVendor(vendorPubkey) {
@@ -214,7 +214,11 @@ export function provenDealsForVendor(vendorPubkey) {
     keyed[rail] = {
       count: hashes.size,
       rail,
-      txids: [...new Set([...hashes.values()].filter(Boolean))],
+      // The tap-through list is the receipt hashes themselves (F8): the
+      // map's KEY is the receipt hash and its value was the raw txid,
+      // which never leaves this device — it lives inside the private
+      // receipt and is one explorer search away from amount and time.
+      hashes: [...hashes.keys()].filter(Boolean),
       phrasing: KNOWN_RAILS[rail],
     };
   }
@@ -245,7 +249,7 @@ export function provenBannerOf(entry) {
   if (!count || !entry) return '';
   const phrasing = String(entry.phrasing || '');
   if (phrasing === 'recorded') return `${count} ${count === 1 ? 'deal' : 'deals'} recorded on chain.`;
-  if (phrasing === 'proven') return `${count} ${count === 1 ? 'deal' : 'deals'} proven. One tap shows the txids.`;
+  if (phrasing === 'proven') return `${count} ${count === 1 ? 'deal' : 'deals'} proven. One tap shows the proofs.`;
   if (String(entry.rail || '')) return `${count} ${count === 1 ? 'deal' : 'deals'} · ${entry.rail}`;
   return '';
 }
@@ -255,7 +259,7 @@ export function provenBannerOf(entry) {
 // over (Deal publishes per-asset config; nothing here assumes exactly two
 // rails, and no line ever sums two rails together). The rows are the
 // banner's material: provenLinesOf speaks them, and the conductor's
-// tap-through reads the txids one entry carries.
+// tap-through reads the hashes one entry carries.
 export function provenEntriesOf(proven) {
   if (Array.isArray(proven)) return proven.filter((entry) => entry && typeof entry === 'object');
   if (!proven || typeof proven !== 'object') return [];

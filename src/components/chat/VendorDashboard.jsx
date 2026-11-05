@@ -85,10 +85,10 @@ export default function VendorDashboard({ identity, products = [], onBack, onCre
 
   const publish = async () => {
     if (publishing) return;
-    const txids = txidText.split(/\n+/).map((row) => row.trim()).filter(Boolean);
+    const hashes = txidText.split(/\n+/).map((row) => row.trim()).filter(Boolean);
     setPublishing(true);
     setError('');
-    const result = await publishBulletin(rail, txids);
+    const result = await publishBulletin(rail, hashes);
     if (result?.success) {
       pushToast({ type: 'success', message: result.queued ? 'Saved and will send.' : 'Published.' });
       haptic('light');
@@ -200,7 +200,7 @@ export default function VendorDashboard({ identity, products = [], onBack, onCre
           <div className="mt-3 rounded-2xl border border-line bg-panel p-4">
             <p className="text-[13px] text-inkMuted">Deals proven</p>
             <p className="mt-1 text-[12px] leading-relaxed text-inkSubtle">
-              Publish the txids so anyone can check one. No amounts go out — the count is the list. The newest bulletin you publish stands for that rail.
+              Publish the receipt hashes so anyone can check one. No amounts or txids go out — the count is the list. The newest bulletin you publish stands for that rail.
             </p>
             <Button
               size="md"
@@ -265,8 +265,8 @@ export default function VendorDashboard({ identity, products = [], onBack, onCre
       <Sheet
         open={composerOpen}
         onClose={() => setComposerOpen(false)}
-        heading="Publish the txids"
-        ariaLabel="Publish the txids"
+        heading="Publish deal proofs"
+        ariaLabel="Publish deal proofs"
       >
         <form
           onSubmit={(event) => { event.preventDefault(); publish(); }}
@@ -289,11 +289,11 @@ export default function VendorDashboard({ identity, products = [], onBack, onCre
               ))}
             </div>
           <p className="mt-2 text-[12px] text-inkSubtle">
-            One txid per line, copied from this vendor's own wallet or watcher. Anyone who wants to checks one on their own terms.
+            One receipt hash per line, copied from a completed order's proof. Anyone who wants to check one asks you or their own copy of the order.
           </p>
           <div className="mt-3">
             <Textarea
-              label="One txid per line"
+              label="One receipt hash per line"
               value={txidText}
               maxLength={4000}
               rows={5}

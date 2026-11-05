@@ -16,7 +16,7 @@ import {
 } from '../lib/vendorReviews';
 
 // The standing numbers a vendor's menu and identity page read: proven deals
-// keyed by rail ({ btc: { count, txids, phrasing }, ... }), months active,
+// keyed by rail ({ btc: { count, hashes, phrasing }, ... }), months active,
 // and the reviews of the vendor's LIVE thread — the wire rows fetched from
 // Deal's reader contract (fetchVendorThread over the account's
 // authenticated pool and the general relays), merged with the rows this
@@ -59,7 +59,7 @@ export function useVendorReviews({ vendorPubkey, identity = null, refreshKey = 0
             const pool = await getAuthenticatedPool(identity);
             const thread = await fetchVendorThread(pool, generalRelays, vendorPubkey);
             if (thread.bulletins.length && !dealsProvenOf) {
-              // The published count is the txids; this replaces, never sums.
+              // The published count is the receipt hashes; this replaces, never sums.
               proven = dealsProvenFor(vendorPubkey, thread.bulletins);
             }
             disputeEvents = thread.disputes;

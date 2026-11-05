@@ -284,7 +284,7 @@ test('the proven count is keyed by rail, nothing blended', () => {
   assert.deepEqual(Object.keys(keyed), ['btc', 'xmr']);
   assert.equal(keyed.btc.count, 1);
   assert.equal(keyed.btc.phrasing, 'proven');
-  assert.deepEqual(keyed.btc.txids, ['aa']);
+  assert.deepEqual(keyed.btc.hashes, [receipt.hash]);
   assert.equal(keyed.xmr.count, 1);
   assert.equal(keyed.xmr.phrasing, 'recorded');
   // The plain "how many" total counts across rails; the banner never sums.
@@ -294,8 +294,8 @@ test('the proven count is keyed by rail, nothing blended', () => {
 });
 
 test('the banner words are the contract\'s, one line per rail, never summed', () => {
-  assert.equal(provenBannerOf({ count: 1, phrasing: 'proven' }), '1 deal proven. One tap shows the txids.');
-  assert.equal(provenBannerOf({ count: 3, phrasing: 'proven' }), '3 deals proven. One tap shows the txids.');
+  assert.equal(provenBannerOf({ count: 1, phrasing: 'proven' }), '1 deal proven. One tap shows the proofs.');
+  assert.equal(provenBannerOf({ count: 3, phrasing: 'proven' }), '3 deals proven. One tap shows the proofs.');
   assert.equal(provenBannerOf({ count: 1, phrasing: 'recorded' }), '1 deal recorded on chain.');
   assert.equal(provenBannerOf({ count: 0, phrasing: 'proven' }), '');
   // Rail order is stable: btc first, xmr second, further rails after.
@@ -304,7 +304,7 @@ test('the banner words are the contract\'s, one line per rail, never summed', ()
       xmr: { count: 2, phrasing: 'recorded' },
       btc: { count: 1, phrasing: 'proven' },
     }),
-    ['1 deal proven. One tap shows the txids.', '2 deals recorded on chain.'],
+    ['1 deal proven. One tap shows the proofs.', '2 deals recorded on chain.'],
   );
   assert.deepEqual(provenLinesOf({}), []);
   // An unknown rail gets no invented wording — a neutral pass-through that
@@ -489,20 +489,21 @@ test('the rider compose gate: authorship first, one shot per word per pair, ledg
   assert.equal(riderComposeOf({ vendorPubkey: WIRE_VENDOR, receiptHash: WIRE_HASH }, { authorPubkey: WIRE_VENDOR, disputeEvents: [] }), null);
 });
 
-test('the tap-through reads the contract entries: the txids ride, rails stay apart', () => {
+test('the tap-through reads the contract entries: the hashes ride, rails stay apart', () => {
   // The entries the banner taps come out in the contract's own shape and
-  // order, one per rail, never summed.
+  // order, one per rail, never summed. (F8: the wire field is hashes —
+  // receipt hashes — never txids.)
   const entries = provenEntriesOf({
-    xmr: { count: 2, txids: ['cc'.repeat(32)], phrasing: 'recorded' },
-    btc: { count: 1, txids: ['aa'.repeat(32)], phrasing: 'proven' },
+    xmr: { count: 2, hashes: ['cc'.repeat(32)], phrasing: 'recorded' },
+    btc: { count: 1, hashes: ['aa'.repeat(32)], phrasing: 'proven' },
   });
   assert.deepEqual(entries, [
-    { count: 1, rail: 'btc', txids: ['aa'.repeat(32)], phrasing: 'proven' },
-    { count: 2, rail: 'xmr', txids: ['cc'.repeat(32)], phrasing: 'recorded' },
+    { count: 1, rail: 'btc', hashes: ['aa'.repeat(32)], phrasing: 'proven' },
+    { count: 2, rail: 'xmr', hashes: ['cc'.repeat(32)], phrasing: 'recorded' },
   ]);
   assert.deepEqual(provenEntriesOf({}), []);
   assert.deepEqual(provenEntriesOf(null), []);
   // The BTC banner words are still the founder's, unchanged by the tap.
-  assert.equal(provenBannerOf(entries[0]), '1 deal proven. One tap shows the txids.');
+  assert.equal(provenBannerOf(entries[0]), '1 deal proven. One tap shows the proofs.');
   assert.equal(provenBannerOf(entries[1]), '2 deals recorded on chain.');
 });

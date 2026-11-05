@@ -59,12 +59,15 @@ export function useVendorStats({ identity, targetPubkey = null }) {
     }
   }, [identity, targetPubkey]);
 
-  // The vendor publishes the txids themselves — the proven count is the list,
-  // never a number typed over it (src/lib/vendorStats.js is the law). The
-  // refusal runs before anything is signed, and the event is replaceable per
-  // rail: a re-publish for the same rail supersedes, nothing is deleted.
-  const publishBulletin = useCallback(async (rail, txids) => {
-    const refusal = bulletinRefusal(rail, txids);
+  // The vendor publishes the receipt hashes themselves — the proven count is
+  // the list, never a number typed over it (src/lib/vendorStats.js is the
+  // law), and the entries are receipt hashes (F8): a raw txid lets any
+  // explorer resolve amount and time on a transparent chain, and the
+  // bulletin never needs it. The refusal runs before anything is signed,
+  // and the event is replaceable per rail: a re-publish for the same rail
+  // supersedes, nothing is deleted.
+  const publishBulletin = useCallback(async (rail, hashes) => {
+    const refusal = bulletinRefusal(rail, hashes);
     if (refusal) return { success: false, error: refusal };
     try {
       const { finalizeEvent } = await import('nostr-tools');
@@ -72,7 +75,7 @@ export function useVendorStats({ identity, targetPubkey = null }) {
         kind: BULLETIN_KIND,
         created_at: Math.floor(Date.now() / 1000),
         tags: bulletinTags(rail),
-        content: bulletinContent(txids),
+        content: bulletinContent(hashes),
       }, identity.sk);
       const pool = await getAuthenticatedPool(identity);
       const results = await Promise.allSettled(pool.publish(generalRelays, event));
