@@ -72,7 +72,26 @@ quiet relay — the founder's group box, or a small deployment — the same mess
 is most of the traffic, and there the buckets and the gaps are the whole signal.
 Size risk is a function of the relay's population, not of the message.
 
-`[U]` what a 45-second sample cannot say: the week-long, two-variant capture that
+### Can an observer pick Cipher out of the crowd?
+
+`[V]` measured. The outer wrap is one `p` tag and nothing else, so the capture
+was split by tag shape: in 50 seconds, 2303 wraps, of which **518 (22%) were
+single-`p`** and the rest carried other tags. Of those 518, 360 (69%) sat on a
+length this client can actually produce, and 4 observed lengths (388, 944, 1466,
+1579) can be reached by no Cipher message at all — so at least one other client
+shares the single-`p` shape with a different payload structure.
+
+`[V]` the sharper number: brute-forcing every message length from 0 to 1200
+characters, this client can emit only **seven** distinct wrap lengths — 1284,
+1456, 1796, 2140, 2480, 2820, 3504. So an observer who filters to single-`p`
+wraps at one of those seven values turns 2303 wraps into about 360, a six-fold
+cut, and cannot do better: the shape plus the length narrows the crowd but does
+not name Cipher. Two costs, then, and they point opposite ways. Message length
+is *coarse* — seven classes for messages up to 1200 characters is good hiding.
+The tag shape is a *weak fingerprint* shared with a neighbour, which is the price
+of publishing no kind and no receipt type.
+
+`[U]` what a 50-second sample cannot say: the week-long, two-variant capture that
 would separate our own wraps from the crowd, and which is the only thing that can
 price A1 and A2 (section 13).
 
@@ -149,10 +168,10 @@ pubkey into the 39002 is handed the key by the next member who answers.
 **F5 `[V]` no forward secrecy.** NIP-44 uses a static ECDH conversation key
 behind a cache (`dmKeys.js:25-37`), so one `sk` capture opens every past DM.
 
-**F6 `[V]` a message is about 2.1 KB, and message length leaks in four buckets**
-— on a quiet relay, and nearly not at all on a busy one (see the baseline in
-section 1; the public relays carry about 80 wraps a second, so the buckets matter
-most where the founder's own boxes carry the traffic). Measured against
+**F6 `[V]` a message is about 2.1 KB, message length falls in seven classes, and
+both matter only on a quiet relay.** On a busy public relay the wraps arrive
+eighty a second and a single message is lost in volume (see the two captures in
+section 1); on a founder box it is most of the traffic. Measured against
 `nostr-tools` NIP-44 at this pin, with a realistic rumor:
 
 ```
@@ -166,8 +185,10 @@ So "yes" and "see you at eight" are distinguishable on the wire, and a terse
 confirmation is distinguishable from a real message. `calcPaddedLen`
 (`nostr-tools nip44.js:32-39`) quantizes to 32- or 64-byte buckets; the fixed
 padding costs about 480 bytes on a 2140-byte envelope, so roughly 22% for a
-near-total close of the channel. This corrects the worry that *deal size* leaks:
-it barely does, it is the message class that leaks.
+near-total close of the channel — and the target is the seven-class ladder in
+section 1, so a two-rung pad covers everything up to a long message and a short
+ladder covers the rest. This corrects the first pass twice: *deal size* barely
+leaks (it is the message class), and the class is *seven values*, not a range.
 
 **F7 `[V]` the local floor is 10^8, and the keypad caps it there.** A new PIN is
 exactly eight digits (`vaultLockout.js:5-18`, enforced at `useIdentity.js:352,
@@ -428,7 +449,7 @@ Plausible means reachable without a new primitive, not free.
 1. **A1 + A2.** Certain, cheap, and they close the two joins that hurt today. No
    new protocol. Do these whatever else is chosen.
 2. **F6's fixed-size rumor.** About 480 bytes a message to cut the length channel
-   from four buckets to one. Cheaper and more effective than cover traffic for
+   from seven classes to one. Cheaper and more effective than cover traffic for
    that channel, and it needs no server.
 3. **C1 private mailbox tags.** The unconventional one. Removes the `p` tag
    entirely, costs no server, and fits the existing "sent mail lives on the
