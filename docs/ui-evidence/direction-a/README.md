@@ -49,21 +49,28 @@ in `test-results/`, which is gitignored; this folder is the copy that travels.
 
 ## The checks that stood behind them
 
-Run on or after this tree, in this sitting. The browser suite is 175 tests in
-31 files; every one of those 31 files has a green run here, taken in batches
-sized to fit the ten-minute tool budget (`tests/ui/tools/ui-files.sh`), because
-every spec seeds the fixture vault and pays a real PBKDF2 derivation at its
-gate.
+Run around this tree, in this sitting. The browser suite is 175 tests in 30
+spec files (`--list` counts a 31st file, the run-context setup, which holds no
+test). All 30 of those files were run green after these shots were taken — 205
+test executions over 14 batches — each batch sized to fit the ten-minute tool
+budget (`tests/ui/tools/ui-files.sh`), because every spec seeds the fixture
+vault and pays a real PBKDF2 derivation at its gate.
 
-- `npm run lint` — 0 errors.
+- `npm run lint` — 0 errors, 100 warnings (the standing count).
 - `npm test` — 1010 tests, 1006 pass, 0 fail, 4 skipped (14m).
-- `tests/ui/ui-contract.spec.js` — 31 passed, and `tests/ui/sheet-a11y.spec.js`
-  — 10 passed, in one 41-test batch.
-- The rest of the suite, batched by hand: the boot, profile and account-switch
-  files re-run after the commits that touch the boot's kind-0 read, and the
-  `devicePrf` pair (`devicePrf.spec.js`, `account-switch.devicePrf.spec.js`)
-  run under `--project=chromium`, which the file slices do not select — they
-  default to the `iphone` project, whose `testIgnore` drops both.
+- The 41-test batch of `tests/ui/ui-contract.spec.js` (31) and
+  `tests/ui/sheet-a11y.spec.js` (10), and the 13-test
+  `tests/ui/screenshots.spec.js` run that produced this folder.
+- The `devicePrf` pair (`devicePrf.spec.js`, `account-switch.devicePrf.spec.js`)
+  run under `--project=chromium`: it is the only project whose `testMatch`
+  takes those two, and the `iphone` project's `testIgnore` drops both. A file
+  slice that names the pair without the project runs nothing at all.
+
+HEAD moved under the sitting — a reputation commit, a bulletin commit, two doc
+commits — so the batches ran across a few trees rather than one. Each run
+records the sha it built and whether the tree was dirty in
+`test-results/run-context.json`; the shots above are the one run that recorded
+`dirty=false`.
 
 The one naming wrinkle worth knowing: `--` in `npx playwright test -- <files>`
 swallows the file filter, so the batches pass the paths without a separator and
