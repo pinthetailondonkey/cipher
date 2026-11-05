@@ -9,13 +9,14 @@ import { getAuthenticatedPool } from '../../lib/pool';
 import { useChatStore } from '../../store/chatStore';
 import { scopedGet, scopedSet } from '../../lib/storage';
 import { shortNpub } from '../../lib/npub';
-import { getPrivacy, allowsTyping } from '../../lib/privacy';
+import { getPrivacy, allowsTyping, allowsNotifications } from '../../lib/privacy';
 import { decodeGroupEvent } from '../../lib/crypto/groupMessageCodec';
 import { resumeKeyRequestIds } from '../../lib/crypto/groupKeyRequest';
 import { useGroupKeyReconciler } from '../../hooks/useGroupKeyReconciler';
 import { flushSecuringGroupSends } from '../../hooks/useNIP29Group';
 import { bindMemberBaselinePublisher, sealMemberBaseline } from '../../lib/crypto/memberBaseline';
 import { sortMessages } from './media';
+import { makeSubscriptionGuard, setupChatSubscriptions } from './chatSubscriptions';
 import { rowExpired, timerSeconds, timerSweepKeepsRow } from '../../lib/disappearing';
 import { listingFromEvent, vendorListingFilter } from '../../lib/listing';
 import { activeUrl, entryById } from '../../lib/egress';
@@ -133,6 +134,11 @@ export function useChatBootstrap({
     let cancelled = false;
     let told = false;
     const run = () => {
+      // Registration asks the OS for permission on a browser, so it waits for
+      // the person's own opt-in rather than prompting on mount. A gateway
+      // pasted later still needs the Notifications switch, which is the same
+      // gesture that grants the permission.
+      if (!allowsNotifications()) return;
       const gateway = activeUrl(entryById('push'));
       if (!gateway) return;
       const shell = isNativeShell();
@@ -446,36 +452,27 @@ export function useChatBootstrap({
   };
   useEffect(() => {
     if (!identity.sk) return;
-    let cleanupDMs = null;
-    let cleanupGroups = null;
-    let cleanupGroupReactions = null;
-    const setup = async () => {
-      const since = Math.floor(Date.now() / 1000) - 604800;
-      await fetchChats(true);
-      cleanupDMs = subscribeToDMs(since);
-      // A join still waiting on the owner opens no group subscriptions: the
-      // relay refuses them for an account it has not admitted, and a stream
-      // of refusals is not a chat. They start when a proof says the account
-      // is inside.
-      const joinedIds = getMyGroups(identity.pk)
-        .filter((group) => group.membership !== 'pending')
-        .map((group) => group.id)
-        .filter(Boolean);
-      const groupIds = resumeKeyRequestIds({
-        pubkey: identity.pk,
-        joinedIds,
-      });
-      if (groupIds.length > 0) cleanupGroups = subscribeToGroups(groupIds, since);
-      if (typeof subscribeToGroupReactions === 'function' && joinedIds.length > 0) {
-        cleanupGroupReactions = subscribeToGroupReactions(joinedIds);
-      }
-    };
-    setup();
-    return () => {
-      if (cleanupDMs) cleanupDMs();
-      if (cleanupGroups) cleanupGroups();
-      if (cleanupGroupReactions) cleanupGroupReactions();
-    };
+    const guard = makeSubscriptionGuard();
+    const since = Math.floor(Date.now() / 1000) - 604800;
+    // The setup awaits the history fetch; the guard closes any subscription
+    // that lands after the effect was torn down, so none is left live.
+    setupChatSubscriptions({
+      guard,
+      fetchChats: () => fetchChats(true),
+      subscribeToDMs,
+      subscribeToGroups,
+      subscribeToGroupReactions,
+      since,
+      readTargets: () => {
+        const joinedIds = getMyGroups(identity.pk)
+          .filter((group) => group.membership !== 'pending')
+          .map((group) => group.id)
+          .filter(Boolean);
+        const groupIds = resumeKeyRequestIds({ pubkey: identity.pk, joinedIds });
+        return { joinedIds, groupIds };
+      },
+    });
+    return () => guard.cleanup();
   }, [identity.sk, identity.pk, groupSubscriptionKey]);
 
   useEffect(() => {
