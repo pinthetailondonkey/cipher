@@ -3,11 +3,13 @@ import { CheckCircle2, Package, ReceiptText, Store } from 'lucide-react';
 import ScreenHeader from '../ui/ScreenHeader';
 import { ProductImage } from '../ui/PrivateMedia';
 import ReceiptInspect from './ReceiptInspect';
+import ReviewPrompt from './ReviewPrompt';
 import { scopedGet } from '../../lib/storage';
 import { haptic } from '../../lib/haptics';
 import { orderState, orderHasVerifiedReceipt, nextStepOf } from '../../lib/orderActions';
 import { useChatStore } from '../../store/chatStore';
 import { defaultLedgerSide, orderRows, peerRole } from '../../lib/orderLedger';
+import { reviewOfferForOrder } from '../../lib/vendorReviews';
 
 // The orders ledger: one timeline, newest first, read by both sides of the
 // counter (15.1). A buyer sees the requests this device sent; a vendor sees
@@ -51,6 +53,19 @@ export default function MyOrders({ dms = null, profiles = null, onBack, onOpenCh
     // who acts next and what they are waiting for, so the row answers it
     // without being opened. The word rules are the card's, not new ones.
     nextStep: nextStepOf(order.state, order.isBuyer),
+  })).map((order) => ({
+    ...order,
+    // Review symmetry: the thread's card offers a review of a completed,
+    // receipt-bound deal; this ledger row does too. Same derivation
+    // (reviewOfferForOrder), same gate — a row that cannot offer reads null
+    // and draws nothing, exactly as the bubble does. The fuse inside the
+    // derivation keeps every door down while reviews are switched off.
+    reviewOffer: reviewOfferForOrder({
+      messages: rows[order.peerPubkey],
+      order: order.message,
+      buyerPubkey: ownPubkey,
+      vendorPubkey: order.peerPubkey,
+    }),
   }));
   const incoming = side === 'incoming';
 
@@ -88,7 +103,7 @@ export default function MyOrders({ dms = null, profiles = null, onBack, onOpenCh
       ) : (
         <div className="p-4">
           <div className="overflow-hidden">
-            {orders.map(({ message, peerPubkey, isBuyer, orderId, state, countersigned, nextStep }) => {
+            {orders.map(({ message, peerPubkey, isBuyer, orderId, state, countersigned, nextStep, reviewOffer }) => {
               const product = message.data.product || message.data;
               return (
                 <div key={orderId} className="last:border-b-0 border-b border-line">
@@ -149,6 +164,13 @@ export default function MyOrders({ dms = null, profiles = null, onBack, onOpenCh
                           <ReceiptText size={14} /> View receipt
                         </button>
                       )}
+                    </div>
+                  )}
+                  {reviewOffer && (
+                    // The ledger's review door: the same gated offer the
+                    // thread's card renders, one derivation, one gate.
+                    <div className="px-4 pb-2">
+                      <ReviewPrompt offer={reviewOffer} vendorProfile={names[peerPubkey] || {}} identity={identity} />
                     </div>
                   )}
                 </div>
