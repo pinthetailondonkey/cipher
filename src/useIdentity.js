@@ -9,6 +9,7 @@ import { confirmDraftAccount, isDraftEntry, pickUnlockAccount } from './lib/acco
 import { runPanicWipe } from './lib/panicWipe'
 import { mergeRestoredEntry } from './lib/vaultEntry'
 import { PASSKEY_WRONG_ACCOUNT, passkeyFailureCode } from './lib/passkeyMessages'
+import { clearSessionKey, getSessionKey, setSessionKey } from './lib/sessionKey'
 
 // Derive 32-byte secret key from BIP39 mnemonic
 export async function deriveSkFromMnemonic(mnemonic) {
@@ -320,47 +321,12 @@ export function useIdentity() {
 
   useEffect(() => {
     const init = async () => {
-      const sessionSk = sessionStorage.getItem('cipher_session_sk')
-      let restoredSession = false;
-      if (sessionSk) {
-        try {
-          const { getPublicKey, nip19 } = await import('nostr-tools')
-          const sk = Uint8Array.from(JSON.parse(sessionSk))
-          const pk = getPublicKey(sk)
-          // A stored session is one account's key, but the storage scope
-          // follows the device-wide active account, which a second tab can
-          // switch while this tab's credential is saved. A tab whose key and
-          // scope disagree would write its own receipts and orders into
-          // another account's drawers, so the session restores only when
-          // they match; a stale session is thrown out and the tab locks.
-          // An unset pointer claims the session's account.
-          // (security re-attack)
-          const pointer = getActivePubkey()
-          const entry = getVaults()[pk]
-          if (pointer && pointer !== 'guest' && pointer !== pk) {
-            sessionStorage.removeItem('cipher_session_sk')
-          } else if (entry && !isDeviceVault(entry.vault)) {
-            // A session saved before the device-lock law can outlive it: a
-            // tab carries its sessionStorage across the reload that swaps in
-            // this build, and the vault it sits on was never wrapped. That
-            // session is not let in — the wrap happens at the next unlock,
-            // which asks for the PIN. A vault already locked to this device
-            // is the one case that restores with no prompt at all. A session
-            // with no vault entry on this device is not this regression: it
-            // keeps the answer it has always had.
-            sessionStorage.removeItem('cipher_session_sk')
-          } else {
-            if (!pointer || pointer === 'guest') localStorage.setItem('cipher_active_pubkey', pk)
-            setKeys({ sk, pk, npub: nip19.npubEncode(pk) })
-            setHasVault(true)
-            restoredSession = true;
-          }
-        } catch (e) { sessionStorage.removeItem('cipher_session_sk') }
-      }
-
+      // The raw secret is in memory only (src/lib/sessionKey.js). A reload
+      // carries no key, so nothing is restored here and the account unlocks
+      // again; every vault on this device still offers its own door below.
       const vault = localStorage.getItem('cipher_vault')
       const vaults = getVaults();
-      if (!restoredSession && (vault || Object.keys(vaults).length > 0)) setHasVault(true)
+      if (vault || Object.keys(vaults).length > 0) setHasVault(true)
 
       const biometricPubkey = localStorage.getItem('cipher_biometric_pubkey') || getActivePubkey();
       const storageKey = biometricPubkey ? `cipher_passkey_${biometricPubkey}` : undefined;
@@ -506,7 +472,7 @@ export function useIdentity() {
       })
     } catch (e) { console.error('Profile seed failed:', e) }
 
-    sessionStorage.setItem('cipher_session_sk', JSON.stringify(Array.from(sk)))
+    setSessionKey(sk)
     setKeys({ sk, pk, npub })
     setHasVault(true)
   }
@@ -540,7 +506,7 @@ export function useIdentity() {
         failure = failUnlockAttempt(localStorage, failureAccount, e)
       } catch (wipeErr) { console.error('Lockout wipe failed:', wipeErr) }
       if (failure.lockedOut) {
-        sessionStorage.removeItem('cipher_session_sk')
+        clearSessionKey()
         await deleteLockedOutDatabase(failureAccount)
         window.location.reload()
       }
@@ -565,7 +531,7 @@ export function useIdentity() {
         }
       }
 
-      sessionStorage.setItem('cipher_session_sk', JSON.stringify(Array.from(sk)))
+      setSessionKey(sk)
       resetPinFailures(localStorage, pk)
       setKeys({ sk, pk, npub: nip19.npubEncode(pk) })
       return { success: true }
@@ -626,7 +592,7 @@ export function useIdentity() {
       if (!getActivePubkey()) setActivePubkey(pubkey)
       const { nip19 } = await import('nostr-tools')
       const sk = Uint8Array.from(secretKey)
-      sessionStorage.setItem('cipher_session_sk', JSON.stringify(Array.from(sk)))
+      setSessionKey(sk)
       resetPinFailures(localStorage, pubkey)
       setKeys({ sk, pk: pubkey, npub: nip19.npubEncode(pubkey) })
       setHasVault(true)
@@ -758,7 +724,7 @@ export function useIdentity() {
       try {
         // The session key rides first: a storage that refuses even it fails
         // before the account has touched anything.
-        sessionStorage.setItem('cipher_session_sk', JSON.stringify(Array.from(sk)))
+        setSessionKey(sk)
         commitWithRollback(localStorage, [
           { key: 'cipher_vaults', value: JSON.stringify(newVaults) },
           { key: 'cipher_active_pubkey', value: pk },
@@ -767,7 +733,7 @@ export function useIdentity() {
         ])
       } catch (storageError) {
         console.error('[identity] Could not save the restored account:', storageError)
-        try { sessionStorage.removeItem('cipher_session_sk') } catch { /* the words below still hold */ }
+        try { clearSessionKey() } catch { /* the words below still hold */ }
         return { success: false, error: COMMIT_FAILED_MESSAGE }
       }
       resetPinFailures(localStorage, pk);
@@ -825,7 +791,7 @@ export function useIdentity() {
       try {
         // The session key rides first: a storage that refuses even it fails
         // before the account has touched anything.
-        sessionStorage.setItem('cipher_session_sk', JSON.stringify(Array.from(sk)))
+        setSessionKey(sk)
         commitWithRollback(localStorage, [
           { key: 'cipher_vaults', value: JSON.stringify(vaults) },
           { key: 'cipher_active_pubkey', value: pk },
@@ -836,7 +802,7 @@ export function useIdentity() {
         // The session key went in first; it comes back out, so "nothing was
         // changed" is true of the whole store, not just the account slots.
         // (lockApp empties this slot too — a locked device holds no session.)
-        try { sessionStorage.removeItem('cipher_session_sk') } catch { /* the words below still hold */ }
+        try { clearSessionKey() } catch { /* the words below still hold */ }
         return { success: false, error: COMMIT_FAILED_MESSAGE }
       }
       resetPinFailures(localStorage, pk)
@@ -857,7 +823,7 @@ export function useIdentity() {
   // no new key material needed.
 
   const lockApp = async () => {
-    sessionStorage.removeItem('cipher_session_sk')
+    clearSessionKey()
     setKeys({ sk: null, pk: null, npub: null })
     try {
       const { clearPool } = await import('./lib/pool');
@@ -893,6 +859,10 @@ export function useIdentity() {
   const panicWipe = async () => {
     return runPanicWipe({
       stop: [
+        // The in-memory secret is not in any storage the wipe clears, so it
+        // is dropped here first. It is also the first step, so it runs even if
+        // a later one fails.
+        async () => { clearSessionKey() },
         async () => { const { clearPool } = await import('./lib/pool'); clearPool(); },
         async () => { const { closeGroupSessions } = await import('./hooks/useNIP29Group'); closeGroupSessions(); },
         async () => { const { closeDB } = await import('./db'); closeDB(); },
@@ -1000,7 +970,7 @@ export function useIdentity() {
 
       setActivePubkey(targetPk);
       resetPinFailures(localStorage, targetPk);
-      sessionStorage.setItem('cipher_session_sk', JSON.stringify(Array.from(sk)));
+      setSessionKey(sk);
       
       // Update legacy vault too
       localStorage.setItem('cipher_vault', JSON.stringify(targetVault));
@@ -1017,7 +987,7 @@ export function useIdentity() {
   const addNewAccount = () => {
     // Migrate current vault to cipher_vaults before switching, so it's not lost
     const legacyVault = localStorage.getItem('cipher_vault');
-    const sessionSk = sessionStorage.getItem('cipher_session_sk');
+    const sessionSk = getSessionKey();
     if (legacyVault && sessionSk && keys.pk) {
       try {
         const vaults = getVaults();
@@ -1032,7 +1002,7 @@ export function useIdentity() {
         }
       } catch (e) {}
     }
-    sessionStorage.removeItem('cipher_session_sk');
+    clearSessionKey();
     localStorage.removeItem('cipher_active_pubkey');
     window.location.reload();
   };

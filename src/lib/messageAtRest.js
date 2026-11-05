@@ -1,7 +1,8 @@
 // Message history at rest: every message row is sealed with AES-GCM under the
 // account's existing vault key before it reaches IndexedDB. The key is the
-// session copy of the vault key (sessionStorage 'cipher_session_sk'), set and
-// cleared by lock/unlock (src/useIdentity.js). No new key material exists.
+// in-memory unlocked-session secret (src/lib/sessionKey.js), set and cleared
+// by unlock/lock (src/useIdentity.js). No new key material exists, and the raw
+// secret is written to neither localStorage nor sessionStorage.
 //
 // The group envelope itself is untouched: group messages are already sealed by
 // their own rotating keys inside src/lib/crypto/groupCipher.js. This wrapper
@@ -17,6 +18,8 @@
 // disk, and are written the next time that account unlocks. Reads of sealed
 // rows return the row without its payload — well formed, so history still
 // renders without crashing.
+import { getSessionKey } from './sessionKey';
+
 const subtle = globalThis.crypto.subtle;
 const enc = new TextEncoder();
 const dec = new TextDecoder();
@@ -45,12 +48,7 @@ async function importKey(raw) {
   return subtle.importKey('raw', raw, { name: 'AES-GCM' }, false, ['encrypt', 'decrypt']);
 }
 
-let getSkBytes = () => {
-  try {
-    const raw = sessionStorage.getItem('cipher_session_sk');
-    return raw ? Uint8Array.from(JSON.parse(raw)) : null;
-  } catch { return null; }
-};
+let getSkBytes = () => getSessionKey();
 
 // The session secret, for other at-rest stores (src/lib/crypto/groupKeyAtRest.js)
 // that derive their own domain-separated key from it. Same provider, so lock,
