@@ -38,6 +38,23 @@ test('no screen renders a row\'s sees text', () => {
   assert.deepEqual(offenders, [], 'a component reads `sees`; the wall copy is internal and must stay off the screen');
 });
 
+test('the message relay row describes the wire the app actually sends', () => {
+  // F14: both of these rows described the bare kind-4 era. The label once sat
+  // on the public event in plain text, so the row said the relay read it, and
+  // the push row said the gateway relied on a plain-text label the relay could
+  // see too. Messages are wrapped now: one p tag, one expiration, ciphertext.
+  // A disclosure that overstates a leak is still wrong, here most of all.
+  const byId = Object.fromEntries(EGRESS.map((row) => [row.id, row]));
+  assert.match(byId['dm-relay'].sees, /sealed/, 'the relay row must say a message arrives sealed');
+  assert.match(byId['dm-relay'].sees, /not you/, 'the relay row must say the sender is not on it');
+  assert.equal(/plain text/.test(byId['dm-relay'].sees), false,
+    'the label is no longer in plain text on the relay');
+  assert.equal(/plain-text label/.test(byId.push.sees), false,
+    'the gateway label is no longer in plain text either');
+  assert.match(byId.push.sees, /not who sent it/,
+    'the gateway row must say the sender is hidden from the gateway too');
+});
+
 test('every row still carries its sees text, and listEgress passes it through', () => {
   for (const row of EGRESS) {
     assert.equal(typeof row.sees, 'string', `${row.id} lost its sees line`);
