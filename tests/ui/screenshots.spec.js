@@ -69,6 +69,13 @@ test.describe('Visual regression', () => {
 // layout checkpoint. Both use a synthetic peer and synthetic words: no real
 // key, no recovery phrase, nothing from an account.
 test.describe('Visual regression — conversation and settings', () => {
+  // These two screens are documents that scroll, unlike the fixed-height shell
+  // above: the full-page capture is a three-times-DPR bitmap of everything
+  // below the fold, and on a two-core box the capture alone can outlast a
+  // minute's test budget once the vault derivation has been paid. The wait is
+  // the capture, not a mis-wait (the shots land); give the receipt room.
+  test.describe.configure({ timeout: 120_000 });
+
   test.beforeEach(async ({ page }) => {
     await page.addInitScript(seedVault);
   });
@@ -120,5 +127,104 @@ test.describe('Visual regression — conversation and settings', () => {
     await privacy.click();
     await page.waitForTimeout(800);
     await page.screenshot({ path: 'test-results/settings.png', fullPage: true });
+  });
+});
+
+// The other half of DESIGN.md's checks: the same receipts at 1280x800, where
+// the shell is the rail beside one column instead of the bottom bar. Same
+// seeding, same waits; the context drops the phone flags so this is a real
+// desktop ring, not a phone-shaped one. Only the viewport and the file name
+// change.
+test.describe('Visual regression — desktop width', () => {
+  test.use({ viewport: { width: 1280, height: 800 }, isMobile: false, hasTouch: false, deviceScaleFactor: 1 });
+
+  test.beforeEach(async ({ page }) => {
+    await page.addInitScript(seedVault);
+  });
+
+  test('screenshot: home screen at 1280x800', async ({ page }) => {
+    await page.goto('/');
+    await unlock(page);
+    await expect(page.getByRole('heading', { name: 'Chats' })).toBeVisible({ timeout: 20000 });
+    await page.waitForTimeout(500);
+    await page.screenshot({ path: 'test-results/home-1280x800.png', fullPage: true });
+  });
+
+  test('screenshot: Menus browse at 1280x800', async ({ page }) => {
+    await page.goto('/');
+    await unlock(page);
+    await expect(page.getByRole('heading', { name: 'Chats' })).toBeVisible({ timeout: 20000 });
+    const menusDoor = page.getByRole('group', { name: 'Filter chats' }).getByRole('button', { name: 'Menus' });
+    await expect(menusDoor).toBeVisible({ timeout: 10000 });
+    await menusDoor.click();
+    await page.waitForTimeout(1000);
+    await page.screenshot({ path: 'test-results/explore-1280x800.png', fullPage: true });
+  });
+
+  test('screenshot: You pane at 1280x800', async ({ page }) => {
+    await page.goto('/');
+    await unlock(page);
+    await expect(page.getByRole('heading', { name: 'Chats' })).toBeVisible({ timeout: 20000 });
+    const profileDoor = page.getByRole('navigation', { name: 'Tabs' }).getByRole('button', { name: 'You' });
+    await expect(profileDoor).toBeVisible({ timeout: 10000 });
+    await profileDoor.click();
+    await page.waitForTimeout(1000);
+    await page.screenshot({ path: 'test-results/profile-1280x800.png', fullPage: true });
+  });
+
+  test('screenshot: onboarding at 1280x800', async ({ page }) => {
+    await page.addInitScript(() => {
+      try {
+        localStorage.clear();
+        sessionStorage.clear();
+      } catch { /* a browser without storage still shows the first screen */ }
+    });
+    await page.goto('/');
+    await unlock(page);
+    await expect(page.getByRole('heading', { name: 'No phone number. No account.' })).toBeVisible({ timeout: 20000 });
+    await page.waitForTimeout(500);
+    await page.screenshot({ path: 'test-results/onboarding-1280x800.png', fullPage: true });
+  });
+
+  test('screenshot: thread at 1280x800', async ({ page }) => {
+    const peerPk = 'f'.repeat(64);
+    await page.goto('/');
+    await unlock(page);
+    await expect(page.getByRole('heading', { name: 'Chats' })).toBeVisible({ timeout: 20000 });
+    await page.waitForTimeout(2000);
+    await page.evaluate(async (pk) => {
+      const store = window.__cipherStore;
+      if (!store) throw new Error('window.__cipherStore missing — UI-test seam did not load');
+      const now = Math.floor(Date.now() / 1000);
+      store.setState({
+        dms: {
+          [pk]: [
+            { id: 'shot-1', pubkey: pk, timestamp: now - 300, data: { message: 'Are we still on for Friday?', type: 'text' }, isSender: false },
+            { id: 'shot-2', pubkey: pk, timestamp: now - 240, data: { message: 'Yes, same place as last time.', type: 'text' }, isSender: true },
+          ],
+        },
+      });
+    }, peerPk);
+    const row = page.getByRole('button', { name: /^npub1/ });
+    await expect(row).toBeVisible({ timeout: 10000 });
+    await row.click();
+    await expect(page.getByRole('button', { name: 'Chat options' })).toBeVisible({ timeout: 10000 });
+    await expect(page.getByText('Are we still on for Friday?')).toBeVisible({ timeout: 10000 });
+    await page.waitForTimeout(600);
+    await page.screenshot({ path: 'test-results/conversation-1280x800.png', fullPage: true });
+  });
+
+  test('screenshot: settings at 1280x800', async ({ page }) => {
+    await page.goto('/');
+    await unlock(page);
+    await expect(page.getByRole('heading', { name: 'Chats' })).toBeVisible({ timeout: 20000 });
+    const profileDoor = page.getByRole('navigation', { name: 'Tabs' }).getByRole('button', { name: 'You' });
+    await expect(profileDoor).toBeVisible({ timeout: 10000 });
+    await profileDoor.click();
+    const privacy = page.getByRole('button', { name: /Privacy/i }).first();
+    await expect(privacy).toBeVisible({ timeout: 10000 });
+    await privacy.click();
+    await page.waitForTimeout(800);
+    await page.screenshot({ path: 'test-results/settings-1280x800.png', fullPage: true });
   });
 });
