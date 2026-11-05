@@ -268,7 +268,7 @@ the account by design, `pool.js:139-141`). Failure: a stale door after a box
 moves. Product impact: desktop only; a web page cannot set its own proxy
 (`README.md:52-54`). Established. Falsifier: an exit log still showing the
 clearnet hostname for the message path. **Today `dm-relay`, both search relays
-and `dead-drop` are dark** (`egress.js:105-113`).
+and `dead-drop` are dark** (`egress.js:103-111`).
 
 **D2 A mix step.** Hides burst structure and the typing-then-sending coupling.
 Reveals the recipient, and the delay distribution. Failure: retries reordering
@@ -497,7 +497,8 @@ Relay user counts / anonymity-set sizes. Socket-level attribution accuracy.
 Whether relays keep sub-second arrival time. Whether the ±2-day backdate survives
 a relay's own ingest indexing. Real FCM/APNs payload parity. Monero subaddress
 index collisions. Cover-traffic battery on the target phone. Argon2id cost —
-Argon2id is **not** adopted, the vault is PBKDF2-600k (`useIdentity.js:43-58`).
+Argon2id is **not** adopted, the vault is PBKDF2-600k (`useIdentity.js:47`, 600000
+iterations of PBKDF2-SHA-256).
 
 ## 16. Corrections this review carries
 
