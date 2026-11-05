@@ -238,3 +238,7 @@ Every phase must satisfy all of these, or it FAILS closed:
 `docs/ui-evidence/telegram-pass/` holds this pass's screenshots at 390x844 and
 1280x800. The anchor PNGs above predate the pass: they are history, not a
 target, and where they disagree with this file the file wins.
+
+`docs/ui-evidence/direction-a/` is the same thing for the 2026-11-05 ruling
+above: six screens at both widths, taken from `tests/ui/screenshots.spec.js`,
+whose desktop block is the other half of this check.
