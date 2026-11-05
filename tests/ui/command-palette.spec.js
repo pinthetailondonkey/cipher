@@ -28,12 +28,15 @@ test.describe('Command palette', () => {
     await expect(dialog.getByRole('textbox')).toBeFocused();
   });
 
-  test('the three shell tabs are listed without any input', async ({ page }) => {
+  test('the two shell destinations are listed without any input', async ({ page }) => {
     await page.keyboard.press('Control+k');
     const list = page.getByRole('listbox', { name: /Jump/i });
-    await expect(list.getByRole('option', { name: 'Chats' })).toBeVisible();
-    await expect(list.getByRole('option', { name: 'Menus' })).toBeVisible();
+    await expect(list.getByRole('option', { name: 'Threads' })).toBeVisible();
     await expect(list.getByRole('option', { name: 'You' })).toBeVisible();
+    // Menus and Orders are not destinations any more: Menus is a Threads
+    // segment and Orders lives behind You, so neither is a palette screen.
+    await expect(list.getByRole('option', { name: 'Menus' })).toHaveCount(0);
+    await expect(list.getByRole('option', { name: 'Orders' })).toHaveCount(0);
   });
 
   test('filtering narrows to the matching row', async ({ page }) => {
@@ -47,25 +50,25 @@ test.describe('Command palette', () => {
     await expect(page.getByText('Nothing matches that.')).toBeVisible();
   });
 
-  test('arrow keys walk and Enter activates the highlighted tab', async ({ page }) => {
-    // Stand on Menus first so the activation is observable.
-    await page.getByRole('navigation', { name: 'Tabs' }).getByRole('button', { name: 'Menus' }).click();
+  test('arrow keys walk and Enter activates the highlighted destination', async ({ page }) => {
+    // Stand on You first so the activation is observable.
+    await page.getByRole('navigation', { name: 'Tabs' }).getByRole('button', { name: 'You' }).click();
     await page.keyboard.press('Control+k');
     const list = page.getByRole('listbox', { name: /Jump/i });
-    const chats = list.getByRole('option', { name: 'Chats' });
-    const menus = list.getByRole('option', { name: 'Menus' });
+    const threads = list.getByRole('option', { name: 'Threads' });
+    const you = list.getByRole('option', { name: 'You' });
 
-    // The walk starts at the top: Chats highlighted.
-    await expect(chats).toHaveAttribute('aria-selected', 'true');
+    // The walk starts at the top: Threads highlighted.
+    await expect(threads).toHaveAttribute('aria-selected', 'true');
     await page.keyboard.press('ArrowDown');
-    await expect(menus).toHaveAttribute('aria-selected', 'true');
+    await expect(you).toHaveAttribute('aria-selected', 'true');
     await page.keyboard.press('ArrowUp');
-    await expect(chats).toHaveAttribute('aria-selected', 'true');
+    await expect(threads).toHaveAttribute('aria-selected', 'true');
 
     await page.keyboard.press('Enter');
     const dialog = page.getByRole('dialog', { name: 'Jump to' });
     await expect(dialog).toBeHidden({ timeout: 5000 });
-    await expect(page.getByRole('navigation', { name: 'Tabs' }).getByRole('button', { name: 'Chats' })).toHaveAttribute('aria-current', 'page');
+    await expect(page.getByRole('navigation', { name: 'Tabs' }).getByRole('button', { name: 'Threads' })).toHaveAttribute('aria-current', 'page');
   });
 
   test('Escape closes and focus is not lost', async ({ page }) => {

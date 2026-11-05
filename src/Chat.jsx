@@ -27,7 +27,14 @@ const screenFallback = (
   </div>
 );
 
-export default function Chat({ identity }) {
+export default function Chat({
+  identity,
+  segment,
+  onSegmentChange,
+  discoverOpen,
+  onDiscoverChange,
+  onGoToChat,
+}) {
   const { sendDM, subscribeToDMs, sendTypingIndicator, fetchDMs } = useNIP44DM({ identity });
   const {
     sendGroupMessage, subscribeToGroups, pinMessage, unpinMessage, fetchPinnedMessage,
@@ -126,19 +133,31 @@ export default function Chat({ identity }) {
   // Two panes from md up: the chat list stays on the left and the open
   // thread sits beside it. Below md only one pane ever shows, so the
   // phone keeps its full-screen swap driven by view alone.
-  const listShown = view === 'list';
+  //
+  // A browse — the Menus segment or the directory one door in — owns the
+  // whole surface at every width: a grid has nothing to say beside a pane it
+  // is not talking to, and the thread it covers is exactly where the user is
+  // not looking. Search still wins the screen, because the compose button in
+  // that header opens it from the browse too.
+  const browsing = (segment === 'explore' || discoverOpen) && view !== 'search';
+  const listShown = view === 'list' || browsing;
 
   return (
     <div className="flex h-full min-h-0 w-full">
-      <div className={`relative min-h-0 flex-1 flex-col overflow-hidden md:w-[340px] md:flex-none md:border-r md:border-line ${listShown ? 'flex' : 'hidden'} md:flex`}>
+      <div className={`relative min-h-0 flex-1 flex-col overflow-hidden ${listShown ? 'flex' : 'hidden'} ${browsing ? '' : 'md:w-[340px] md:flex-none md:border-r md:border-line'} md:flex`}>
         <ChatHome
           identity={identity}
           openChat={directory.openChat}
           createGroup={directory.createGroup}
           fetchChats={fetchChats}
+          segment={segment}
+          onSegmentChange={onSegmentChange}
+          discoverOpen={discoverOpen}
+          onDiscoverChange={onDiscoverChange}
+          onGoToChat={onGoToChat}
         />
       </div>
-      <div className={`relative min-h-0 min-w-0 flex-1 flex-col overflow-hidden ${listShown ? 'hidden' : 'flex'} md:flex`}>
+      <div className={`relative min-h-0 min-w-0 flex-1 flex-col overflow-hidden ${listShown ? 'hidden' : 'flex'} ${browsing ? '' : 'md:flex'}`}>
         {view === 'search' ? (
           <SearchView
             handleSearch={handleSearch}

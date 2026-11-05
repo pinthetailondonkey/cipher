@@ -270,6 +270,19 @@ const rowNames = (rows) => rows.map((row) => row.name);
 const vendorDm = 'f'.repeat(64);
 const plainDm = 'e'.repeat(64);
 
+// The segment value is the shell's (it owns the state so the bar's own rule
+// and the pane can never disagree), so the test stands in for the shell: one
+// tiny component holding the value ChatList is handed.
+function ThreadsHarness(props) {
+  const [segment, setSegment] = app.hooks.useState('chats');
+  return app.hooks.default.createElement(app.ChatList, {
+    onOpenDiscover: () => {},
+    ...props,
+    segment,
+    onSegmentChange: setSegment,
+  });
+}
+
 const seedStore = () => app.useChatStore.setState({
   dms: {
     [vendorDm]: [{ pubkey: vendorDm, timestamp: 30, data: { message: 'order please', type: 'order_request' } }],
@@ -293,34 +306,59 @@ const seedStore = () => app.useChatStore.setState({
   loading: false,
 });
 
-test('the segmented filter selects a real segment and filters the rows', () => {
+test('the segment row is the shared Segmented and filters the list by kind', () => {
   globalThis.window = globalThis.window || { setInterval: () => 0, clearInterval: () => {} };
   seedStore();
-  const tree = createTree(app.ChatList, { onOpenChat: () => {}, onRefresh: null });
+  const tree = createTree(ThreadsHarness, { onOpenChat: () => {}, onRefresh: null });
 
   let { hosts, rows } = tree.render();
   const selectionRow = hosts.find((host) => host.props.role === 'group' && host.props['aria-label'] === 'Filter chats');
-  assert.ok(selectionRow, 'All / Menus / Vendors is one labelled selection row');
-  assert.equal(String(selectionRow.props.className).includes('h-11'), true, 'the selection row is one compact 44px line, not a card');
-  assert.equal(labelledButton(hosts, 'All').props['aria-pressed'], true, 'All starts selected');
-  assert.equal(labelledButton(hosts, 'Menus').props['aria-pressed'], false, 'Menus is not selected yet');
-  assert.deepEqual(rowNames(rows).sort(), ['Green Room', 'Plain Pat', 'Times Square', 'Vendor Vic'], 'All shows every chat');
+  assert.ok(selectionRow, 'Chats / Groups / Menus is one labelled selection row');
+  const door = () => hosts.find(
+    (host) => host.tag === 'button' && textOf(host.props.children).startsWith('Discover groups'),
+  );
+  assert.equal(labelledButton(hosts, 'Chats').props['aria-pressed'], true, 'Chats starts selected');
+  assert.deepEqual(rowNames(rows).sort(), ['Plain Pat', 'Vendor Vic'], 'Chats is every direct chat');
+  assert.equal(door(), undefined, 'the directory door belongs to the Groups segment alone');
+
+  labelledButton(hosts, 'Groups').props.onClick({});
+  ({ hosts, rows } = tree.render());
+  assert.equal(labelledButton(hosts, 'Groups').props['aria-pressed'], true, 'the click selects Groups');
+  assert.equal(labelledButton(hosts, 'Chats').props['aria-pressed'], false, 'Chats lets go of the fill');
+  assert.deepEqual(rowNames(rows).sort(), ['Green Room', 'Times Square'], 'Groups is every group chat');
+  assert.ok(door(), 'the directory door rides the Groups segment');
+
+  labelledButton(hosts, 'Chats').props.onClick({});
+  ({ hosts, rows } = tree.render());
+  assert.equal(labelledButton(hosts, 'Chats').props['aria-pressed'], true, 'Chats takes the fill back');
+  assert.deepEqual(rowNames(rows).sort(), ['Plain Pat', 'Vendor Vic'], 'Chats still holds the directs alone');
+
+  // Menus hands the "no chats here yet" paragraph its own words: the empty
+  // copy is per segment, so a Groups segment with no groups cannot say
+  // "No chats match that filter".
+  app.useChatStore.setState({ groups: [] });
+  const groupsTree = createTree(ThreadsHarness, { onOpenChat: () => {}, onRefresh: null, segment: undefined });
+  const groupsRender = groupsTree.render();
+  labelledButton(groupsRender.hosts, 'Groups').props.onClick({});
+  const after = groupsTree.render();
+  assert.deepEqual(rowNames(after.rows), [], 'no groups, no rows');
+});
+
+test('a browse handed in as a node is what the Menus segment draws', () => {
+  globalThis.window = globalThis.window || { setInterval: () => 0, clearInterval: () => {} };
+  seedStore();
+  const browse = app.hooks.default.createElement('div', { 'data-browse': 'menus' });
+  const tree = createTree(ThreadsHarness, { onOpenChat: () => {}, onRefresh: null, browse });
+
+  let { hosts, rows } = tree.render();
+  assert.equal(hosts.some((host) => host.props['data-browse'] === 'menus'), false, 'Menus is not up yet');
+  assert.ok(rows.length > 0, 'the list draws while a list segment is up');
 
   labelledButton(hosts, 'Menus').props.onClick({});
-  ({ hosts, rows } = tree.render());
+  ({ hosts } = tree.render());
   assert.equal(labelledButton(hosts, 'Menus').props['aria-pressed'], true, 'the click selects Menus');
-  assert.equal(labelledButton(hosts, 'All').props['aria-pressed'], false, 'All lets go of the fill');
-  assert.deepEqual(rowNames(rows), ['Green Room'], 'Menus shows channels only');
-
-  labelledButton(hosts, 'Vendors').props.onClick({});
-  ({ hosts, rows } = tree.render());
-  assert.equal(labelledButton(hosts, 'Vendors').props['aria-pressed'], true, 'the click selects Vendors');
-  assert.deepEqual(rowNames(rows), ['Vendor Vic'], 'Vendors shows chats where commerce happened');
-
-  labelledButton(hosts, 'All').props.onClick({});
-  ({ hosts, rows } = tree.render());
-  assert.equal(labelledButton(hosts, 'All').props['aria-pressed'], true, 'All takes the fill back');
-  assert.deepEqual(rowNames(rows).sort(), ['Green Room', 'Plain Pat', 'Times Square', 'Vendor Vic'], 'All restores the whole list');
+  assert.ok(hosts.some((host) => host.props['data-browse'] === 'menus'), 'the browse node is what the body becomes');
+  assert.equal(labelledButton(hosts, 'Discover groups'), undefined, 'the directory door is for the list, not the browse');
 });
 
 test('one header line: the compose button starts a chat, the overflow keeps every other door', () => {
@@ -382,35 +420,35 @@ test('an order card in the list reads as an order, never as the word Message', (
 test('the filter field always sits under the title and narrows the list as it is typed', () => {
   globalThis.window = globalThis.window || { setInterval: () => 0, clearInterval: () => {} };
   seedStore();
-  const tree = createTree(app.ChatList, { onOpenChat: () => {}, onRefresh: null });
+  const tree = createTree(ThreadsHarness, { onOpenChat: () => {}, onRefresh: null });
 
   let { hosts, rows } = tree.render();
   const field = () => hosts.find((host) => host.tag === 'input' && host.props['aria-label'] === 'Filter chats');
   assert.ok(field(), 'the filter field is on the screen without a tap');
   assert.equal(labelledButton(hosts, 'Search chats'), undefined, 'no second search control competes with the field');
 
-  field().props.onChange({ target: { value: 'green' } });
+  field().props.onChange({ target: { value: 'pat' } });
   ({ hosts, rows } = tree.render());
-  assert.deepEqual(rowNames(rows), ['Green Room'], 'typing narrows the rows');
+  assert.deepEqual(rowNames(rows), ['Plain Pat'], 'typing narrows the rows');
 
   labelledButton(hosts, 'Clear filter').props.onClick({});
   ({ hosts, rows } = tree.render());
   assert.equal(field().props.value, '', 'the clear control empties the field');
-  assert.deepEqual(rowNames(rows).sort(), ['Green Room', 'Plain Pat', 'Times Square', 'Vendor Vic'], 'the whole list comes back');
+  assert.deepEqual(rowNames(rows).sort(), ['Plain Pat', 'Vendor Vic'], 'the segment keeps its own rows');
 });
 
 test('a row keeps its actions without a three-dot: a long press opens the menu', async () => {
   const { tree, pressTargets } = pressRow();
 
   let { rows } = tree.render();
-  assert.equal(rows.length, 4, 'every chat has a row');
+  assert.equal(rows.length, 2, 'every direct chat has a row');
   for (const row of rows) {
     assert.equal(row.trailing, undefined, 'no row carries a permanently visible options button');
     assert.equal(typeof row.onMenuOpen, 'function', 'the menu is still reachable from the row');
     assert.equal(typeof row.onReveal, 'function', 'the blurred preview has a reveal of its own');
   }
-  assert.deepEqual(rows.map((row) => row.divider), [true, true, true, false], 'the divider runs between rows, not past the last one');
-  assert.equal(pressTargets.length, 4, 'the row carries its own press, not a prop from the list');
+  assert.deepEqual(rows.map((row) => row.divider), [true, false], 'the divider runs between rows, not past the last one');
+  assert.equal(pressTargets.length, 2, 'the row carries its own press, not a prop from the list');
 
   pressTargets[0]({ button: 0, isPrimary: true, clientX: 10, clientY: 10 });
   await settle(520);
@@ -447,7 +485,7 @@ const pressRow = () => {
   app.useChatStore.setState({ pinnedChats: [], archivedChats: [] });
   const opened = [];
   const tree = createTree(
-    app.ChatList,
+    ThreadsHarness,
     { onOpenChat: (type, id) => opened.push(id), onRefresh: null },
     { instantiate: ['ChatRow'] },
   );
@@ -462,7 +500,7 @@ const settle = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 test('a long press opens the row menu and the click that follows does not also open the chat', async () => {
   const { tree, opened, rowButtons, pressTargets } = pressRow();
-  assert.equal(pressTargets.length, 4, 'every row binds the press itself');
+  assert.equal(pressTargets.length, 2, 'every row binds the press itself');
   const target = tree.render().rows[0].name;
   const pressed = rowButtons.findIndex((host) => textOf(host.props.children) === target);
   assert.ok(pressed >= 0, 'the pressed row has a title button');

@@ -3,6 +3,7 @@ import {
   Bell,
   Bookmark,
   ChevronDown,
+  ChevronRight,
   ChevronUp,
   Flame,
   MessageSquare,
@@ -16,32 +17,38 @@ import {
   X,
 } from 'lucide-react';
 import { notifTotalOf, useChatStore } from '../../store/chatStore';
+import { THREAD_SEGMENTS } from '../../lib/tabs.js';
 import { boundReceipts } from '../../lib/vendorReviews';
 import { haptic } from '../../lib/haptics';
 import { noHexName } from '../../lib/npub';
 import IconButton from '../ui/IconButton';
+import Segmented from '../ui/Segmented';
 import Logo from '../Logo';
 import EmptyState from '../ui/EmptyState';
 import { SkeletonList } from '../ui/Skeleton';
 import ChatRow, { MenuItem } from './ChatRow';
 
-// The segmented filter: All / Menus / Vendors. A client-side filter over the
-// same list — a menu is a channel-type space; a vendor is a chat where
-// commerce happened (an order crossed it, or the peer sent a product). The
-// store carries no per-peer vendor flag.
-const SEGMENTS = [
-  { value: 'all', label: 'All' },
-  { value: 'menus', label: 'Menus' },
-  { value: 'vendors', label: 'Vendors' },
-];
-
-// The chat list, Telegram anatomy with the cipher skin: one 56px header
-// (overflow left, "Chats" middle, compose right), the filter over the chats
-// already here, the All / Menus / Vendors row, PINNED section, rows,
-// archived section. The floating plus is gone: the header's compose button
-// opens the same New chat screen, and the overflow carries every other door
-// the old icon row and the phone drawer used to hold.
-export default function ChatList({ onOpenChat, onRefresh }) {
+// The Threads list: one screen wearing three segments (founder ruling
+// 2026-11-05). Chats and Groups are the same list filtered by kind; Menus
+// hands the body to the `browse` node the screen passes in, so this file
+// never has to know what a menu pane is. The segment row is the shared
+// Segmented — this header used to hand-roll an All / Menus / Vendors row and
+// was the last tablist in the tree that did.
+//
+// The list itself stays Telegram anatomy with the cipher skin: one 56px
+// header (overflow left, "Chats" middle, compose right), the filter over the
+// chats already here, the segment row, PINNED section, rows, archived
+// section. The floating plus is gone: the header's compose button opens the
+// same New chat screen, and the overflow carries every other door the old
+// icon row and the phone drawer used to hold.
+export default function ChatList({
+  onOpenChat,
+  onRefresh,
+  segment = 'chats',
+  onSegmentChange,
+  onOpenDiscover,
+  browse = null,
+}) {
   const dms = useChatStore((s) => s.dms);
   const groups = useChatStore((s) => s.groups);
   const groupMessages = useChatStore((s) => s.groupMessages);
@@ -65,7 +72,6 @@ export default function ChatList({ onOpenChat, onRefresh }) {
   const setShowQRScanner = useChatStore((s) => s.setShowQRScanner);
   const notifTotal = useChatStore(notifTotalOf);
 
-  const [segment, setSegment] = useState('all');
   const [query, setQuery] = useState('');
   const [revealed, setRevealed] = useState(() => new Set());
   const [menuFor, setMenuFor] = useState(null);
@@ -203,17 +209,18 @@ export default function ChatList({ onOpenChat, onRefresh }) {
   const needle = query.trim().toLowerCase();
   const active = allChats.filter(c => !archivedChats.includes(c.id));
   const archived = allChats.filter(c => archivedChats.includes(c.id));
-  const shownChats = active.filter((chat) => {
-    if (segment === 'menus') return chat.type === 'group' && chat.menu === true;
-    if (segment === 'vendors') return chat.vendor === true;
-    return true;
-  }).filter((chat) => {
+  // The segment is the kind filter. While the Menus segment is up the body is
+  // the browse instead, so this predicate only has to keep the list honest
+  // for the two list segments; an unknown value keeps everything.
+  const kindOf = (chat) => (segment === 'groups' ? chat.type === 'group' : chat.type === 'dm');
+  const matchesKind = (chat) => (segment === 'explore' ? true : kindOf(chat));
+  const shownChats = active.filter(matchesKind).filter((chat) => {
     if (!needle) return true;
     const name = nameOf(chat).toLowerCase();
     const preview = (previewOf(chat) || '').toLowerCase();
     return name.includes(needle) || preview.includes(needle);
   });
-  const shownArchived = archived.filter((chat) => {
+  const shownArchived = archived.filter(matchesKind).filter((chat) => {
     if (!needle) return true;
     return nameOf(chat).toLowerCase().includes(needle) || (previewOf(chat) || '').toLowerCase().includes(needle);
   });
@@ -344,6 +351,16 @@ export default function ChatList({ onOpenChat, onRefresh }) {
         />
       </div>
       <div className="pb-2">
+        <Segmented
+          ariaLabel="Filter chats"
+          className="mb-2"
+          options={THREAD_SEGMENTS}
+          value={segment}
+          onChange={onSegmentChange}
+        />
+        {/* The browse brings its own search (the menu pane's own field), so
+            this one steps aside rather than stacking a second box above it. */}
+        {segment !== 'explore' && (
         <div className="flex h-11 items-center gap-2 rounded-xl border border-line bg-panel px-3">
           <Search size={16} className="shrink-0 text-inkSubtle" aria-hidden="true" />
           <input
@@ -363,6 +380,7 @@ export default function ChatList({ onOpenChat, onRefresh }) {
             />
           )}
         </div>
+        )}
       </div>
     </div>
   );
@@ -382,78 +400,88 @@ export default function ChatList({ onOpenChat, onRefresh }) {
     );
   }
 
-  if (allChats.length === 0) {
-    return (
-      <div className="px-4 pb-4">
-        {listHeader}
-        {/* The compose button sits on this screen too, so the empty state
-            adds no second door of its own. */}
-        <EmptyState
-          icon={<MessageSquare size={24} />}
-          title="No chats yet — your first message starts the cipher"
-        />
-      </div>
-    );
-  }
+  // A brand new account has no chats at all: the list's own empty state stands
+  // in for the rows, under the same header — whose compose button is the door
+  // — and the Menus segment still draws its browse, because a browse does not
+  // need the account to have a chat yet.
+  const nothingAtAll = allChats.length === 0;
 
   return (
     <div className="px-4 pb-4">
       {listHeader}
 
-      {/* The founder's selection row: one 44px line, the chosen one wearing
-          the accent. It replaces the card-height pill row; the value/label
-          contract is the same one Segmented reads, so the filter is the
-          same filter. */}
-      <div role="group" aria-label="Filter chats" className="mb-2 flex h-11 items-center gap-1">
-        {SEGMENTS.map((option) => {
-          const active = option.value === segment;
-          return (
+      {segment === 'explore' ? (
+        /* The browse keeps the header (the segment row has to stay reachable)
+           and takes the body the list would have had; its own sections carry
+           their own gutter, so this wrapper cancels the one above it. */
+        <div className="-mx-4">{browse}</div>
+      ) : (
+        <>
+          {segment === 'groups' && onOpenDiscover && (
+            /* Groups is where finding a group belongs, so the directory's one
+               door stands at the top of that segment and nowhere else. */
             <button
-              key={option.value}
               type="button"
-              aria-pressed={active}
-              onClick={() => { haptic('light'); setSegment(option.value); }}
-              className={`h-9 flex-1 rounded-xl px-3 text-[13px] font-semibold transition-colors ${active ? 'bg-accent text-accentInk' : 'text-inkMuted hover:text-ink'}`}
+              onClick={() => { haptic('light'); onOpenDiscover(); }}
+              className="mb-1 flex min-h-[56px] w-full items-center gap-3 border-b border-line px-1 text-left active:bg-ink/5"
             >
-              {option.label}
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-line bg-panelAlt text-accentText" aria-hidden="true">
+                <Users size={18} />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block text-[15px] font-semibold text-ink">Discover groups</span>
+                <span className="block text-[13px] text-inkMuted">Groups and menus on the network to join</span>
+              </span>
+              <ChevronRight size={18} className="shrink-0 text-inkSubtle" aria-hidden="true" />
             </button>
-          );
-        })}
-      </div>
+          )}
 
-      {pinnedRows.length > 0 && (
-        <>
-          <p className="px-1 pb-1 pt-3 text-[11px] font-semibold uppercase tracking-wider text-inkSubtle">Pinned</p>
-          {/* No overflow clip here: a row's menu opens inside the row and
-              must not be cut off by the section that holds it. */}
-          <div>{pinnedRows.map((chat, i) => renderRow(chat, { pinned: true, divider: i < pinnedRows.length - 1 }))}</div>
-        </>
-      )}
+          {nothingAtAll ? (
+            /* The compose button sits in the header on this screen too, so the
+               empty state adds no second door of its own. */
+            <EmptyState
+              icon={<MessageSquare size={24} />}
+              title="No chats yet — your first message starts the cipher"
+            />
+          ) : (
+            <>
+              {pinnedRows.length > 0 && (
+                <>
+                  <p className="px-1 pb-1 pt-3 text-[11px] font-semibold uppercase tracking-wider text-inkSubtle">Pinned</p>
+                  {/* No overflow clip here: a row's menu opens inside the row and
+                      must not be cut off by the section that holds it. */}
+                  <div>{pinnedRows.map((chat, i) => renderRow(chat, { pinned: true, divider: i < pinnedRows.length - 1 }))}</div>
+                </>
+              )}
 
-      {regularRows.length > 0 && (
-        <div className={pinnedRows.length > 0 ? 'pt-2' : 'pt-3'}>{regularRows.map((chat, i) => renderRow(chat, { divider: i < regularRows.length - 1 }))}</div>
-      )}
+              {regularRows.length > 0 && (
+                <div className={pinnedRows.length > 0 ? 'pt-2' : 'pt-3'}>{regularRows.map((chat, i) => renderRow(chat, { divider: i < regularRows.length - 1 }))}</div>
+              )}
 
-      {shownChats.length === 0 && (
-        <p className="px-4 py-10 text-center text-[13px] text-inkMuted">
-          {needle
-            ? 'No chats match that filter.'
-            : segment === 'menus' ? 'No menus here yet.' : 'No vendor chats yet.'}
-        </p>
-      )}
+              {shownChats.length === 0 && (
+                <p className="px-4 py-10 text-center text-[13px] text-inkMuted">
+                  {needle
+                    ? 'No chats match that filter.'
+                    : segment === 'groups' ? 'No groups here yet.' : 'No chats here yet.'}
+                </p>
+              )}
 
-      {shownArchived.length > 0 && (
-        <>
-          <button
-            type="button"
-            aria-expanded={archivedOpen}
-            onClick={() => setArchivedOpen(!archivedOpen)}
-            className="mt-3 flex min-h-[44px] w-full items-center gap-1 px-1 text-[11px] font-semibold uppercase tracking-wider text-inkSubtle hover:text-inkMuted"
-          >
-            {archivedOpen ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
-            Archived
-          </button>
-          {archivedOpen && <div>{shownArchived.map((chat, i) => renderRow(chat, { divider: i < shownArchived.length - 1 }))}</div>}
+              {shownArchived.length > 0 && (
+                <>
+                  <button
+                    type="button"
+                    aria-expanded={archivedOpen}
+                    onClick={() => setArchivedOpen(!archivedOpen)}
+                    className="mt-3 flex min-h-[44px] w-full items-center gap-1 px-1 text-[11px] font-semibold uppercase tracking-wider text-inkSubtle hover:text-inkMuted"
+                  >
+                    {archivedOpen ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                    Archived
+                  </button>
+                  {archivedOpen && <div>{shownArchived.map((chat, i) => renderRow(chat, { divider: i < shownArchived.length - 1 }))}</div>}
+                </>
+              )}
+            </>
+          )}
         </>
       )}
     </div>

@@ -24,9 +24,9 @@ test.describe('Visual regression', () => {
   test('screenshot: explore tab', async ({ page }) => {
     await page.goto('/');
     await expect(page.getByRole('heading', { name: 'Chats' })).toBeVisible({ timeout: 20000 });
-    // Phone project: the md+ rail is display-none here — the bottom bar is
-    // the nav (15.1), so tap the Menus tab straight off it.
-    const menusDoor = page.getByRole('navigation', { name: 'Tabs' }).getByRole('button', { name: 'Menus' });
+    // The Menus browse is a Threads segment now, not a destination: one tap in
+    // the header's own selection row, straight through the row the user uses.
+    const menusDoor = page.getByRole('group', { name: 'Filter chats' }).getByRole('button', { name: 'Menus' });
     await expect(menusDoor).toBeVisible({ timeout: 10000 });
     await menusDoor.click();
     await page.waitForTimeout(1000);

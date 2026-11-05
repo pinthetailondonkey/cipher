@@ -1,27 +1,46 @@
 import { test, expect } from '@playwright/test';
 import { seedVault } from './fixtures.js';
 
-// Every tab the bottom bar can reach, with the label on its nav button
-// (15.1: Chats | Menus | Orders | You, fixed order). The clipped-down
-// assertion set must visit each tab the same way so the run is identical no
-// matter which tab is home.
-const TABS = [
-  { key: 'chat', label: 'Chats' },
-  { key: 'explore', label: 'Menus' },
-  { key: 'orders', label: 'Orders' },
+// Every destination the bottom bar can reach, with the label on its nav button
+// (founder ruling 2026-11-05: Threads | You, fixed order), plus the Threads
+// segments, which are not destinations — they are buttons inside the list
+// header's own selection row, so they are reached the way a thumb reaches
+// them. The clipped-down assertion set must visit each screen the same way so
+// the run is identical no matter which destination is home.
+const DESTINATIONS = [
+  { key: 'chat', label: 'Threads' },
   { key: 'profile', label: 'You' },
+];
+
+// The two list segments and the browse. `Menus` is the one that pulls listings
+// from relays, so it gets the longer settle below.
+const SEGMENTS = [
+  { key: 'groups', label: 'Groups' },
+  { key: 'explore', label: 'Menus' },
+];
+
+const SCREENS = [
+  ...DESTINATIONS.map((screen) => ({ ...screen, kind: 'destination' })),
+  ...SEGMENTS.map((screen) => ({ ...screen, kind: 'segment' })),
 ];
 
 async function openTab(page, tab) {
   await page.goto('/');
   await page.waitForTimeout(1000);
-  // The phone shell's primary destinations ride the bottom bar: four
-  // labelled buttons, the same set the md+ rail maps. One tap each, straight
-  // through the bar the user actually uses.
-  await page.getByRole('navigation', { name: 'Tabs' }).getByRole('button', { name: tab.label }).click();
+  if (tab.kind === 'destination') {
+    // The phone shell's primary destinations ride the bottom bar: two
+    // labelled buttons, the same set the md+ rail maps. One tap each, straight
+    // through the bar the user actually uses.
+    await page.getByRole('navigation', { name: 'Tabs' }).getByRole('button', { name: tab.label }).click();
+  } else {
+    // A segment is one tap inside the Threads header, in the row that filters
+    // the list. Reached by its own label within that labelled row.
+    await page.getByRole('group', { name: 'Filter chats' }).getByRole('button', { name: tab.label }).click();
+  }
   await page.waitForTimeout(600);
-  // Explore pulls listings from relays with its own 4s timeout; let the fetch
-  // settle so the measured screen is the loaded one, not the spinner.
+  // The Menus browse pulls listings from relays with its own 4s timeout; let
+  // the fetch settle so the measured screen is the loaded one, not the
+  // spinner.
   if (tab.key === 'explore') {
     await page.waitForTimeout(4500);
   }
@@ -59,7 +78,7 @@ test.describe('Safe area and viewport', () => {
   //   - everything else poking past the viewport bottom is clipped dead.
   // A scroll container that itself pokes past the viewport bottom is always a
   // failure: its lower content can be scrolled to nowhere.
-  for (const tab of TABS) {
+  for (const tab of SCREENS) {
     test(`no unreachable element bottom exceeds viewport on ${tab.key}`, async ({ page }) => {
       await openTab(page, tab);
 
@@ -148,17 +167,17 @@ test.describe('Safe area and viewport', () => {
     await page.goto('/');
     await page.waitForTimeout(1000);
 
-    // The bottom bar is back on phone (15.1): the four destinations are its
-    // own buttons again, so the taps land on the bar itself.
+    // The bottom bar is back on phone: the two destinations are its own
+    // buttons, so the taps land on the bar itself.
     const bar = page.getByRole('navigation', { name: 'Tabs' });
     await expect(bar).toBeVisible();
     const box = await bar.boundingBox();
 
     expect(box).toBeTruthy();
 
-    // Walk all four tabs by tapping each button's centre in order.
-    for (let index = 0; index < TABS.length; index += 1) {
-      await page.touchscreen.tap(box.x + (box.width / TABS.length) * (index + 0.5), box.y + box.height / 2);
+    // Walk every destination by tapping each button's centre in order.
+    for (let index = 0; index < DESTINATIONS.length; index += 1) {
+      await page.touchscreen.tap(box.x + (box.width / DESTINATIONS.length) * (index + 0.5), box.y + box.height / 2);
       await page.waitForTimeout(300);
     }
 

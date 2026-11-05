@@ -54,7 +54,7 @@ for (const size of PHONE_SIZES) {
       const nav = page.getByRole('navigation', { name: 'Tabs' });
       await expect(nav).toBeVisible();
       const navSelect = await nav.evaluate((el) => getComputedStyle(el).userSelect);
-      const btnSelect = await nav.getByRole('button', { name: 'Chats' }).evaluate((el) => getComputedStyle(el).userSelect);
+      const btnSelect = await nav.getByRole('button', { name: 'Threads' }).evaluate((el) => getComputedStyle(el).userSelect);
       expect(navSelect).toBe('auto');
       expect(btnSelect).toBe('auto');
     });
@@ -70,7 +70,7 @@ for (const size of PHONE_SIZES) {
 
       const navSelect = await nav.evaluate((el) => getComputedStyle(el).userSelect);
       expect(navSelect).toBe('none');
-      const btnSelect = await nav.getByRole('button', { name: 'Chats' }).evaluate((el) => getComputedStyle(el).userSelect);
+      const btnSelect = await nav.getByRole('button', { name: 'Threads' }).evaluate((el) => getComputedStyle(el).userSelect);
       expect(btnSelect).toBe('none');
       // Item 2: the shipped CSS turns the iOS long-press link callout off on
       // chrome. Blink parses -webkit-touch-callout but keeps it out of the

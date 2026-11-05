@@ -6,33 +6,42 @@ import GlobalDialog from './components/GlobalDialog';
 import CallOverlay from './components/chat/CallOverlay';
 import DeadDropModal from './components/chat/DeadDropModal';
 import Toast from './components/ui/Toast';
-import Segmented from './components/ui/Segmented';
 import CommandPalette from './components/ui/CommandPalette';
 import { requestNotificationPermission } from './lib/notifications';
 import { TABS } from './lib/tabs.js';
 import { barUnreadTotalOf, ordersNeedActionOf, useChatStore } from './store/chatStore';
 
-const Menus = lazy(() => import('./Menus'));
-const Discover = lazy(() => import('./Discover'));
 const Chat = lazy(() => import('./Chat'));
 const Wallet = lazy(() => import('./Wallet'));
-const MyOrders = lazy(() => import('./components/chat/MyOrders'));
 
 export default function AuthenticatedApp({ identity }) {
   const [activeTab, setActiveTab] = useState('chat');
+  // The Threads segment lives here because the bar's own rule reads it (a
+  // thread hides the bar, a browse does not) and the pane that draws it is
+  // three levels down. One owner, so the two can never disagree. The railway
+  // directory's open/closed state rides along for the same reason.
+  const [threadSegment, setThreadSegment] = useState('chats');
+  const [discoverOpen, setDiscoverOpen] = useState(false);
+  // Every door that opens a conversation goes through here: the tab and the
+  // segment that shows it move together, so a tap from the palette, a profile
+  // row or a menu never lands on a browse with the thread hidden behind it.
+  const goToChat = useCallback(() => {
+    setDiscoverOpen(false);
+    setThreadSegment('chats');
+    setActiveTab('chat');
+  }, []);
   // The rail's badge reads the bar's selector: one mute-and-archive-aware
   // number, so the two navs that show it can never disagree.
   const unreadTotal = useChatStore(barUnreadTotalOf);
   const needsAction = useChatStore(ordersNeedActionOf);
-  const [exploreMode, setExploreMode] = useState('shop');
   const openChatFromProfile = useCallback((pubkey) => {
     useChatStore.getState().openChat('dm', pubkey);
-    setActiveTab('chat');
-  }, []);
+    goToChat();
+  }, [goToChat]);
   const openChatFromPalette = useCallback((type, id, group) => {
     useChatStore.getState().openChat(type, id, group || null);
-    setActiveTab('chat');
-  }, []);
+    goToChat();
+  }, [goToChat]);
   // ⌘K opens the command palette at md+ (master §2): the same command key a
   // desktop keyboard expects, and no phone surface changes.
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -47,45 +56,40 @@ export default function AuthenticatedApp({ identity }) {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, []);
   const showTutorial = useChatStore((state) => state.showTutorial);
-  // The vendor menu lives over the chat surface (it is the chat tab's own
-  // pane on wide screens), so opening one — from Discover, the chat list,
-  // or the Menus browse — lands on the chat tab first, menu on top. Where
-  // the drill-down came from is remembered once, so closing the menu puts
-  // the user back where they were — the Menus browse, say — instead of
-  // stranding them in a tab they never chose.
+  // The vendor's menu home is a sheet over the chat surface (ChatOverlays
+  // draws it inside the Threads pane), so a storefront opened from anywhere —
+  // the Menus browse, a chat row, Discover — brings the Threads tab back with
+  // it. Nothing else has to move: the sheet sits over the browse if that is
+  // where the tap came from, and over the list if it did not, and closing it
+  // lands wherever the user already was.
   const vendorMenuPubkey = useChatStore((state) => state.vendorStorefrontPubkey);
-  const vendorMenuTabRef = React.useRef('');
   React.useEffect(() => {
-    if (vendorMenuPubkey) {
-      if (!vendorMenuTabRef.current) vendorMenuTabRef.current = activeTab;
-      if (activeTab !== 'chat') setActiveTab('chat');
-    } else if (vendorMenuTabRef.current) {
-      if (vendorMenuTabRef.current !== 'chat') setActiveTab(vendorMenuTabRef.current);
-      vendorMenuTabRef.current = '';
-    }
-  }, [vendorMenuPubkey, activeTab]);
+    if (vendorMenuPubkey) setActiveTab('chat');
+  }, [vendorMenuPubkey]);
   // A saved product link (?product=&vendor=) resolves on boot and opens its
-  // checkout over the Menus pane (the explore tab's own shop section — the
-  // value name is the engineering key; the label the user reads is Menus).
-  // The checkout renders inside Menus, so this shell follows the checkout
-  // product the link sets. The move rides the store subscription: a Buy tap
-  // opens the checkout on a tab that already shows the menu, and closing
-  // one never moves the shell.
+  // checkout over the browse — the Menus segment is where a menu is. Closing
+  // it leaves the seller's thread in view when one is open (its own sheet
+  // lands there), because a person who just closed an order wants the chat,
+  // not the shelf.
   useEffect(() => {
     return useChatStore.subscribe((state, previous) => {
       const id = state.checkoutProduct?.id || null;
-      if (id && id !== (previous?.checkoutProduct?.id || null)) {
-        setExploreMode('shop');
-        setActiveTab('explore');
+      const was = previous?.checkoutProduct?.id || null;
+      if (id && id !== was) {
+        setThreadSegment('explore');
+        setActiveTab('chat');
       }
+      if (!id && was && useChatStore.getState().view !== 'list') setThreadSegment('chats');
     });
   }, [setActiveTab]);
   useEffect(() => {
-    // New accounts get the walkthrough once, and land on the Menus tab —
+    // New accounts get the walkthrough once, and land on the Menus browse —
     // browsing the network's vendors is the front door. Presentation only:
-    // the tab state is this component's own, no store selector changes.
+    // the tab and segment state are this component's own, no store selector
+    // changes.
     if (identity?.pk && localStorage.getItem('cipher_new_account') === 'true') {
-      setActiveTab('explore');
+      setThreadSegment('explore');
+      setActiveTab('chat');
       useChatStore.getState().setShowTutorial(true);
     }
   }, [identity?.pk]);
@@ -97,7 +101,7 @@ export default function AuthenticatedApp({ identity }) {
   // the gate has to name the chat tab, not just the view (UI-SPEC: the bar
   // hides inside a conversation, nowhere else).
   const chatView = useChatStore((state) => state.view);
-  const barHidden = activeTab === 'chat' && chatView !== 'list';
+  const barHidden = activeTab === 'chat' && chatView !== 'list' && threadSegment !== 'explore' && !discoverOpen;
   // The md+ rail and the below-md bar read the same set — tabs.js — so the
   // two navs can never disagree about what exists or in what order. ⌘1–⌘4
   // ride the items' positions in the Rail. Badge keys resolve to counts
@@ -170,45 +174,31 @@ export default function AuthenticatedApp({ identity }) {
               anything else (trap 8). */}
           <div className="row-start-1">{tabHeader}</div>
           <div className="relative row-start-2 min-h-0 overflow-hidden">
+            {/* Threads stays mounted on every tab: its subscriptions are the
+                DMs, and re-mounting them on a tab switch would re-ask the
+                relays for a list that has not changed. It steps aside with
+                `invisible`, never by unmounting. */}
             <div className={`absolute inset-0 ${activeTab === 'chat' ? '' : 'invisible pointer-events-none'}`}>
               <Suspense fallback={tabFallback}>
-                <Chat identity={identity} />
+                <Chat
+                  identity={identity}
+                  segment={threadSegment}
+                  onSegmentChange={setThreadSegment}
+                  discoverOpen={discoverOpen}
+                  onDiscoverChange={setDiscoverOpen}
+                  onGoToChat={goToChat}
+                />
               </Suspense>
             </div>
-            {activeTab !== 'chat' && (
+            {activeTab === 'profile' && (
               <div className="absolute inset-0">
                 <Suspense fallback={tabFallback}>
-                  {activeTab === 'explore' && (
-                    <div className="relative flex h-full w-full flex-col md:border-x md:border-line">
-                      <div className="relative z-fab flex items-center px-4 pb-1 pt-[calc(0.75rem+var(--sat))]">
-                        <Segmented
-                          ariaLabel="Discover sections"
-                          className="flex-1"
-                          value={exploreMode}
-                          onChange={setExploreMode}
-                          options={[{ value: 'shop', label: 'Menus' }, { value: 'groups', label: 'Groups' }]}
-                        />
-                      </div>
-                      <div className="relative z-fab min-h-0 flex-1">
-                        {exploreMode === 'shop'
-                          ? <Menus identity={identity} setActiveTab={setActiveTab} />
-                          : <Discover identity={identity} onJoined={() => setActiveTab('chat')} />}
-                      </div>
-                    </div>
-                  )}
-                  {activeTab === 'orders' && (
-                    <div className="h-full w-full md:border-x md:border-line">
-                      {/* The Orders tab is MyOrders directly: role-aware inside
-                          (buyer rows are the requests this device sent, vendor
-                          rows the ones it received). */}
-                      <MyOrders identity={identity} onOpenChat={openChatFromProfile} />
-                    </div>
-                  )}
-                  {activeTab === 'profile' && (
-                    <div className="h-full w-full md:border-x md:border-line">
-                      <Wallet identity={identity} onOpenChat={openChatFromProfile} />
-                    </div>
-                  )}
+                  {/* You is Wallet: identity, wallet, privacy, and the orders
+                      ledger's own door (its My Orders row) — the path the
+                      Orders tab used to own. */}
+                  <div className="h-full w-full md:border-x md:border-line">
+                    <Wallet identity={identity} onOpenChat={openChatFromProfile} />
+                  </div>
                 </Suspense>
               </div>
             )}
