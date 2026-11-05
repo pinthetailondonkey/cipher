@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import test from 'node:test';
-import { averageRating, clampRating, receiptBindingOf, vouchCoversTrade, vouchTradeOf } from './reputation.js';
+import { averageRating, clampRating, profileAgeDays, receiptBindingOf, vouchCoversTrade, vouchTradeOf } from './reputation.js';
 
 test('a vouch counts only when it names a receipt hash', () => {
   assert.equal(receiptBindingOf({ tags: [['p', 'ab'], ['vouch', 'true'], ['receipt', 'f'.repeat(64)]] }), 'f'.repeat(64));
@@ -63,4 +64,25 @@ test('a vouch counts only when its named trade holds both the target and the aut
   assert.equal(vouchCoversTrade({ pubkey: author, tags: [['p', target], ['vouch', 'true'], ['receipt', 'd'.repeat(64)]] }, target), false);
   // A trade naming the same key as both sides is a fabricated trade.
   assert.equal(vouchTradeOf({ pubkey: author, tags: [['trade_vendor', target], ['trade_buyer', target]] }), null);
+});
+
+// fix 6: a kind-0 created_at is written by its publisher, is rewritten on
+// every profile edit, and is not proof of account age. It no longer qualifies
+// a vouch into the trusted count; the apparent age is a label, and a future
+// stamp reads as zero so it can never look older than it is.
+test('a profile timestamp is a label, never verified age, and a future stamp cannot age an account', () => {
+  const now = 1_700_000_000;
+  assert.equal(profileAgeDays(now - 8 * 86400, now), 8);
+  assert.equal(profileAgeDays(now, now), 0);
+  assert.equal(profileAgeDays(0, now), 0, 'a missing stamp is zero');
+  assert.equal(profileAgeDays(undefined, now), 0);
+  assert.equal(profileAgeDays('nonsense', now), 0);
+  assert.equal(profileAgeDays(now + 5 * 86400, now), 0, 'a future stamp reads zero, never negative');
+});
+
+test('the vouch count no longer gates on the publisher timestamp', () => {
+  const hook = fs.readFileSync(new URL('../hooks/useReputation.js', import.meta.url), 'utf8');
+  assert.doesNotMatch(hook, /MIN_VOUCHER_AGE_DAYS/, 'the age constant is gone');
+  assert.match(hook, /vouchCount: vouchInfos\.length/, 'the count is every eligible vouch');
+  assert.match(hook, /ageVerified: false/, 'and the age is marked unverified');
 });

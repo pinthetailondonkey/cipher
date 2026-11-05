@@ -7,11 +7,10 @@ import { shortNpub } from '../lib/npub';
 // Defense layer cache — profile timestamps keyed by pubkey
 // Prevents re-fetching the same profile on every modal open
 import { scopedGet, scopedSet } from '../lib/storage';
-import { averageRating, clampRating, receiptBindingOf, vouchCoversTrade } from '../lib/reputation';
+import { averageRating, clampRating, profileAgeDays, receiptBindingOf, vouchCoversTrade } from '../lib/reputation';
 import { DISPUTE_KIND, markOwnRider, riderRefusal } from '../lib/disputes';
 const PROFILE_CACHE_KEY = 'rep_profile_cache';
 const PROFILE_CACHE_TTL = 24 * 60 * 60 * 1000; // 24h
-const MIN_VOUCHER_AGE_DAYS = 7;
 
 function loadProfileCache() {
   try { return scopedGet(PROFILE_CACHE_KEY, {}); } catch { return {}; }
@@ -95,29 +94,25 @@ export function useReputation({ identity }) {
       }
       saveProfileCache(cache);
 
-      // 4. Filter vouches by age + build voucher display objects
-      const minAgeSec = MIN_VOUCHER_AGE_DAYS * 24 * 60 * 60;
+      // 4. Build voucher display objects. Defense Layer 3 used to drop a
+      // vouch whose author's profile was younger than a week, reading the
+      // kind-0 `created_at` as account age. That stamp is the publisher's own
+      // claim and is rewritten on every profile edit, so it is not proof of
+      // age; the count no longer depends on it. Every receipt-bound, non-self,
+      // deduped vouch counts; the apparent age rides along as a label only.
       const nowSec = Math.floor(now / 1000);
-      const validVouchers = [];
-      const filteredVouchers = [];
-
-      for (const ev of vouchesAfterSelf) {
+      const vouchInfos = vouchesAfterSelf.map((ev) => {
         const profile = cache[ev.pubkey];
-        const ageSec = profile ? (nowSec - profile.createdAt) : 0;
-        const valid = profile && ageSec >= minAgeSec;
-
-        const info = {
+        return {
           pubkey: ev.pubkey,
           name: profile?.name || shortNpub(ev.pubkey),
           picture: profile?.picture || null,
-          ageDays: Math.floor(ageSec / 86400),
-          valid,
-          reason: !profile ? 'no-profile' : (ageSec < minAgeSec ? 'too-new' : null),
+          // Not verified: see profileAgeDays. Nothing independently proves it.
+          ageDays: profileAgeDays(profile?.createdAt, nowSec),
+          ageVerified: false,
+          reason: null,
         };
-
-        if (valid) validVouchers.push(info);
-        else filteredVouchers.push(info);
-      }
+      });
 
       // 5. Reviews (also self-review protected)
       // S8: a review is only a rating about a trade, and an average cannot
@@ -130,12 +125,12 @@ export function useReputation({ identity }) {
       const hasVouched = vouchesAfterSelf.some((ev) => ev.pubkey === identity.pk);
 
       setReputation({
-        // Trusted count only includes age-validated vouchers
-        vouchCount: validVouchers.length,
+        // Every receipt-bound vouch counts: no publisher timestamp gate.
+        vouchCount: vouchInfos.length,
         rawVouchCount: rawVouches.length,
-        filteredCount: filteredVouchers.length,
-        vouchList: validVouchers,
-        filteredList: filteredVouchers,
+        filteredCount: 0,
+        vouchList: vouchInfos,
+        filteredList: [],
         reviewCount: validReviews.length,
         avgRating,
         hasVouched,

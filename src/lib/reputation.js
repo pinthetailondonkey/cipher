@@ -57,3 +57,17 @@ export function averageRating(values) {
   const sum = rows.reduce((acc, value) => acc + value, 0);
   return Math.max(0, sum / rows.length).toFixed(1);
 }
+
+// The age a profile event's `created_at` appears to claim, in whole days, and
+// nothing stronger. A kind-0 timestamp is written by its publisher: it is when
+// that copy of the profile was last edited, not when the key or the account
+// came into being, and nothing signs it but its own author. A missing or
+// future stamp reads as zero — a future timestamp must not read as an old
+// account. The count no longer gates on this value (see useReputation), so
+// these are the honest numbers for a label, not a trust signal.
+export function profileAgeDays(createdAt, nowSec) {
+  const created = Number(createdAt);
+  const now = Number(nowSec);
+  if (!Number.isFinite(created) || created <= 0 || !Number.isFinite(now)) return 0;
+  return Math.max(0, Math.floor((now - created) / 86400));
+}
