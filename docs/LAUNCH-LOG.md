@@ -269,3 +269,18 @@ Two commits after the passing deploy — `fc0458e` (the app host row names www) 
 The Hobby plan allows 100 deployments a day, and this repo spends them on previews: every branch push deploys one, and there are more than twenty branch worktrees on this machine. So the live page still serves `index-B_8vez9N.js` (the `6ca5f27` build) while `main` is `c1ae37e` and builds `index-DX5sbwlP.js`. `npm run verify:live` exits 1 and says exactly that, which is the check doing its job.
 
 Nothing is wrong with the site; it is two small commits behind. What needs a decision is the budget: turn off preview deployments for branches that are not `main`, or move the project to a plan whose limit is not 100 a day. Until one of those happens, a merge cannot be followed by a deploy on the same day.
+
+### Sent mail now lives with the sender (NIP-59, gift-wrap branch)
+
+Direct messages leave the device as a sealed letter inside a gift wrap
+signed by a fresh anonymous key each time. The relay sees no sender and
+no label; only the recipient opens it.
+
+The tradeoff is deliberate privacy, not a gap: the relay can no longer
+serve a person's sent kind-4 history at all, because the wire events do
+not name the author. A DM exists on the devices that took part in it.
+A person reinstalling recovers what they received (fetched by wrap and
+opened locally) but nothing they sent, unless that device was the sender
+and kept it. Receipts are untouched: commerce papers are stored by both
+sides as events in their own right, so an order trail survives any
+reinstall through the vendor's copy alone.
