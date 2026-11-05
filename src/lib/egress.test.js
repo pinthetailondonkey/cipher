@@ -80,6 +80,57 @@ test('a dynamic row carries no address of its own', () => {
   }
 });
 
+// Two boxes under one owner are one trust domain, so a row list that pairs two
+// rows of one operator on the same path is a privacy fact rather than a detail:
+// the operator can join what the two roles see. This is the independence law
+// with teeth. It reads the registrable domain, so the message relay and the
+// first media host count as one, and a new pairing — or one that quietly goes
+// away — fails here and has to be acknowledged on purpose. primal.net is the
+// one that matters: the default message relay and the default media host are
+// the same company, so that company holds your IP next to both.
+const SHARED_OPERATOR = new Map([
+  ['ciphermessenger.org', ['app-host', 'dead-drop']],
+  ['ciphertele.com', ['group-relay', 'group-relay-2']],
+  ['primal.net', ['dm-relay', 'blossom-primal']],
+]);
+
+// Last two labels, with IPv4 passed through: enough for every row here, and a
+// wrong longer suffix would fail loudly rather than pair nothing.
+function registrableDomain(url) {
+  let host = '';
+  try { host = new URL(url).hostname.replace(/^www\./, ''); } catch { return ''; }
+  if (/^\d+\.\d+\.\d+\.\d+$/.test(host)) return host;
+  const parts = host.split('.').filter(Boolean);
+  return parts.length > 2 ? parts.slice(-2).join('.') : host;
+}
+
+test('a host that serves two rows is a named trust domain', () => {
+  const byDomain = new Map();
+  for (const entry of EGRESS) {
+    if (entry.called === false) continue;
+    const url = String(entry.url || '').trim();
+    if (!url || entry.dynamic || isOnionUrl(url)) continue;
+    const domain = registrableDomain(url);
+    if (!domain) continue;
+    byDomain.set(domain, [...(byDomain.get(domain) || []), entry.id]);
+  }
+  const shared = [...byDomain.entries()].filter(([, ids]) => ids.length > 1);
+  const actual = new Map(shared.map(([domain, ids]) => [domain, [...ids].sort()]));
+
+  assert.deepEqual([...actual.keys()].sort(), [...SHARED_OPERATOR.keys()].sort(),
+    'the set of domains serving more than one row changed, so a trust domain was added or removed');
+  for (const [domain, ids] of SHARED_OPERATOR) {
+    assert.deepEqual(actual.get(domain), [...ids].sort(),
+      `${domain} no longer pairs exactly ${ids.join(' + ')}`);
+  }
+
+  // The pairing worth naming out loud: one company on the message path and the
+  // media path at once. If a future default leaves this list, the finding in
+  // docs/PRIVACY-REVIEW.md section 2 goes stale and this test is where it shows.
+  assert.ok(actual.get('primal.net').includes('dm-relay') && actual.get('primal.net').includes('blossom-primal'),
+    'the message relay and the first media host are no longer the same operator');
+});
+
 test('every outbound host is listed, and nowhere else', () => {
   const hostOf = (url) => {
     if (/^stuns?:/i.test(url)) return url.replace(/^stuns?:/i, '').split(':')[0];
