@@ -20,6 +20,10 @@ says where the rest of the truth is, so an agent does not have to guess.
 7. [docs/DESIGN.md](docs/DESIGN.md) — the visual system of record. Before any
    UI change, read DESIGN.md. On conflict, follow DESIGN.md and flag the
    conflict in your report.
+8. [docs/PRIVACY-REVIEW.md](docs/PRIVACY-REVIEW.md) — what every surface already
+   reveals and to whom, the trust domains the defaults collapse, and what would
+   close each gap. Read before proposing a privacy change, so you argue against
+   the recorded evidence instead of re-deriving it.
 
 ## Hard lines
 
