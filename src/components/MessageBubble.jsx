@@ -31,6 +31,7 @@ import EscrowDormantRow from './chat/EscrowDormantRow';
 import { noHexName } from '../lib/npub';
 import { scopedGet } from '../lib/storage';
 import ReceiptInspect from './chat/ReceiptInspect';
+import { verifyReceipt } from '../lib/proofOfTrade';
 import { forwardableContent } from './chat/useThreadActions';
 import { orderPriceLabel } from '../lib/listing';
 import VoiceNote from './chat/VoiceNote';
@@ -169,9 +170,44 @@ function OrderReceipt({ content, isBuyer = false, disputeReason = '', deviceMark
         {content.paymentSeenBy === 'vendor' && content.paymentState !== 'confirmed' && (
           <p className="mt-1 text-[13px] text-ink/50">Not checked on-chain.</p>
         )}
+        <ReceiptGlance orderId={content.orderId} />
         {address && <p className="mt-1 text-[13px] text-ink/40">Ship to {address}</p>}
       </div>
     </div>
+  );
+}
+
+// The receipt glance: one verified fact on the completed card, before any
+// door opens. The receipt is data both sides signed, so the card earns a
+// line for it the way it earns the payment pills — but only after THIS
+// device has run both signatures to the ground and checked that this
+// device bound that exact hash as its own record. The id the receipt is
+// filed under is the order's own event id, exactly as ReceiptDoor reads
+// it: an order_update carries it inline in the payload, and OrderReceipt
+// renders over content already merged with orderState, which carries the
+// id forward. Nothing unverified draws the band.
+function ReceiptGlance({ orderId }) {
+  const [open, setOpen] = useState(false);
+  if (!orderId) return null;
+  const receipt = scopedGet(`receipt_${orderId}`, null);
+  const boundHash = scopedGet(`bound_receipt_${orderId}`, '');
+  if (!receipt?.body || !boundHash || receipt.hash !== boundHash) return null;
+  if (!verifyReceipt(receipt)) return null;
+  return (
+    <>
+      <button
+        type="button"
+        onClick={(event) => { event.stopPropagation(); haptic('light'); setOpen(true); }}
+        className="mt-1 flex w-full items-center justify-between gap-2 rounded-xl border border-line bg-panelStrong px-2.5 py-2 text-left"
+      >
+        <span>
+          <span className="block text-[11px] font-bold uppercase tracking-wide text-success">Receipt signed by both</span>
+          <span className="mono mt-0.5 block truncate text-[12px] text-ink/75">{receipt.body.amount} {String(receipt.body.currency || '').toUpperCase()} · {new Date(receipt.body.at * 1000).toLocaleDateString([], { month: 'short', day: 'numeric' })}</span>
+        </span>
+        <CheckCheck size={16} aria-hidden="true" className="shrink-0 text-success" />
+      </button>
+      <ReceiptInspect receipt={receipt} open={open} onClose={() => setOpen(false)} />
+    </>
   );
 }
 
