@@ -168,15 +168,17 @@ new PIN minimum to 8, and `docs/PIN-LENGTH-EVIDENCE.md` documents the 6 → 8 ri
 at `1c7aba4` with `git show` proof. Fixed in the same sitting; only a pre-`1c7aba4`
 account has the 6 floor.
 
-**F11 `[V]` the boot reads a username record nothing writes.**
+**F11 `[V]` the boot reads a username record that no client has ever written.**
 `useChatBootstrap.js:226-235` reads `{kinds: [30078], '#d': ['username']}`, but
 the only writer of a `d=username` record is `useIdentity.js:259-262`, and it uses
 **kind 10003**. The other two handle readers agree with the writer
-(`handleClaim.js:41`, `usePeopleSearch.js:106`, both 10003), so the 30078 read
-matches no writer in this tree. Effect: `lockedUsername`, `my_username` and
-`chatStore.myUsername` are never populated from the relay, and `myUsername` has
-no reader at all (`chatStore.js:445`). `[U]` whether an older client published
-30078, which would make the read deliberate back-compat.
+(`handleClaim.js:41`, `usePeopleSearch.js:106`, both 10003). This is not
+back-compat: at the initial commit `6d83b48` the reader was already
+`Chat.jsx:239` reading 30078 while the writer was already 10003, and
+`git log --all -S'30078'` lists no file that has ever published it (only the
+reader, the group baseline, and a test). Effect: `lockedUsername`, `my_username`
+and `chatStore.myUsername` are never populated from the relay, and `myUsername`
+has no reader at all (`chatStore.js:445`).
 
 ## 5. The catalogue
 
