@@ -30,7 +30,7 @@ with a frozen grandfathered set. Everything below is the code behind each row.
 | DM | `relay.primal.net` | wrap 1059, seal 13, rumor inside | **recipient** (plain `p`), an `expiration`, arrival time, length; not sender, not the label, not the inner kind | `useNIP44DM.js:102-165`, `giftWrap.js:45-59` |
 | DM typing | same | wrap 1059, same two layers as a message | recipient and arrival time only; the sender is off the wire and the tick is not labelled | `useNIP44DM.js:167-201` |
 | DM read | same | `'#p':[me]` and `authors:[me]` | which pubkey is online and reading | `useNIP44DM.js:200-203` |
-| Contact list | the `profileRead` class, not the group boxes | `{kinds:[0], authors:[every peer]}` | the address book, in one REQ, per profile-read relay (A2) | `useChatBootstrap.js:243-261` |
+| Contact list | the `profileRead` class first, the message relay only for misses | `{kinds:[0], authors:[every peer]}` then a straggler filter | the address book on the profile readers; on the message relay only names nobody else had (A2/F2) | `useChatBootstrap.js:243-273` |
 | Profile | `nos.lol`, `relay.damus.io` | kind 0, 10003 handle, 10002 relays | pubkey ↔ handle ↔ face ↔ blurb | `useIdentity.js:236-273` |
 | Search | `relay.vertexlab.io`, `relay.noswhere.com` | NIP-50 text; a 200-group directory blast | the query, and the asker's IP | `usePeopleSearch.js:220-228` |
 | Groups | `groups.ciphertele.com`, `groups2.ciphertele.com` | kind-9 signed by the author, `h`, `ep`, AES-GCM body; 9021/9022/9000/9001/9002/7/9005 | the whole social graph: author, group, epoch, second, size | `useNIP29Group.js:811-851`, `groupCipher.js:10-16` |
@@ -170,8 +170,12 @@ that also asserts the receiver still reads the rumor's clock: the wrap's
 `created_at` is backdated up to two days, so the ten-second freshness window
 would drop every tick if it read the outer event.
 
-**F2 `[V]` the address book is broadcast.** `authors: missing` where `missing` is
-every counterparty (`useChatBootstrap.js:250-254`).
+**F2 `[V]` the address book was broadcast — now narrowed (A2).** It was
+`authors: missing` where `missing` is every counterparty
+(`useChatBootstrap.js:250-254` before the change). `[V]` it goes to the
+profile-read class first and only the unanswered names reach the message relay
+(`useChatBootstrap.js:259-273`), so the relay that carries the traffic rarely
+sees the list. The residual is in A2.
 
 **F3 `[V]` the group relay is a confidentiality anchor.** The roster is
 relay-signed (`groupMembership.js:222-229`) and a responder trusts it
@@ -252,17 +256,31 @@ new PIN minimum to 8, and `docs/PIN-LENGTH-EVIDENCE.md` documents the 6 → 8 ri
 at `1c7aba4` with `git show` proof. Fixed in the same sitting; only a pre-`1c7aba4`
 account has the 6 floor.
 
-**F11 `[V]` the boot reads a username record that no client has ever written.**
-`useChatBootstrap.js:226-235` reads `{kinds: [30078], '#d': ['username']}`, but
-the only writer of a `d=username` record is `useIdentity.js:259-262`, and it uses
-**kind 10003**. The other two handle readers agree with the writer
-(`handleClaim.js:41`, `usePeopleSearch.js:106`, both 10003). This is not
-back-compat: at the initial commit `6d83b48` the reader was already
-`Chat.jsx:239` reading 30078 while the writer was already 10003, and
-`git log --all -S'30078'` lists no file that has ever published it (only the
-reader, the group baseline, and a test). Effect: `lockedUsername`, `my_username`
-and `chatStore.myUsername` are never populated from the relay, and `myUsername`
-has no reader at all (`chatStore.js:445`).
+**F11 `[V]` the boot reads a username record that no client has ever written.
+Fixed.** `useChatBootstrap.js:227-235` read
+`{kinds: [30078], '#d': ['username']}`, but the only writer of a `d=username`
+record is `useIdentity.js:257-268`, and it uses **kind 10003**. The other two
+readers agreed with the writer (`handleClaim.js:41`, `usePeopleSearch.js:106`,
+both 10003), which makes this a wrong kind rather than a design difference. It
+is not back-compat either: at the initial commit `6d83b48` the reader was
+already `Chat.jsx:239` reading 30078 while the writer was already 10003, and
+`git log --all -S'30078'` lists no file that has ever published it.
+
+`[V]` the reason it stayed invisible for the life of the repo is that 30078 is a
+*real record in this tree*: the sealed group member baseline
+(`memberBaseline.js:7`). So the read was aimed at a kind that exists, and
+resolved against something rather than against nothing. That trap is what
+`usernameRecord.test.js` pins: it derives the kind from the writer and holds all
+three readers to it, and it asserts the handle record and the baseline never
+share a kind. Reverting the kind turns two assertions red.
+
+`[V]` the `d=username` filter and the `username` tag were right all along, and
+the tag is what keeps this apart from a NIP-51 bookmarks list on the same kind.
+The effect today: `my_username`, `lockedUsername` and `chatStore.myUsername`
+were never populated from a relay. They are now, and `myUsername` has its first
+reader as a fallback in the group mention matcher (`useNIP29Group.js:1446-1452`),
+which previously missed a mention of you in a group's first exchange because
+your own profile only reaches the store after one of your messages does.
 
 **F12 `[V]` a group key grant was a signed list of the member set. Fixed.**
 `distributeGroupKey` published one bare kind-4 per recipient, signed by the
@@ -345,25 +363,30 @@ clock against a ten-second freshness window, and a payload that must be
 encrypted before it enters the rumor because the receiver decrypts
 the rumor's content.
 
-**A2 Stop the address-book broadcast.** Applied, in part. Hides which peers share
-an account from the group boxes. `fetchProfilesForPubkeys` asked kind 0 for every
-missing peer on `[...generalRelays, ...groupRelays]`, so the roster authority was
-also handed the message address book, for no coverage: this client publishes
-kind 0 to `profileRelays`, which is not the group box, and there is a
-`profileRead` relay class (`egress.js:121`) whose whole purpose is "your IP when
-profiles are loaded". The read now goes there (`useChatBootstrap.js:260-261`),
-which is a superset of the old set minus the boxes and plus `purplepag.es`, an
-index of kind 0 — so names should resolve *better*, not worse.
+**A2 Stop the address-book broadcast.** Applied. Hides which peers share an
+account from the group boxes and, for any peer on this app, from the message
+relay too. `fetchProfilesForPubkeys` asked kind 0 for every missing peer on
+`[...generalRelays, ...groupRelays]`, so the roster authority was handed the
+message address book for no coverage at all: this client publishes kind 0 to
+`profileRelays`, which is not a group box, and there is a `profileRead` relay
+class (`egress.js:121`) whose whole purpose is "your IP when profiles are
+loaded".
 
-`[V]` the ceiling is unchanged, and the reason is worth stating: the read class
-still contains the message relay, so that one host still learns the whole set in
-one REQ. It sees most of it anyway from the `p` tag on every wrap, so what the
-REQ adds is a *snapshot* with a login timestamp, not new membership. `[U]`
-whether to move the message relay out of the read class is the remaining sliver;
-it is a coverage question (a peer published only to that relay), and the honest
-answer needs the week-long capture rather than a reading. Established.
-Falsifier: a relay operator trivially recovering the list from REQs anyway.
-Experiment: count distinct `authors` filters per login, per relay.
+`[V]` it is now two phases (`useChatBootstrap.js:259-273`): the profile-read
+class first, then the message relay only for names that came back unanswered. A
+peer on this app publishes to that class, so in the normal case the message
+relay sees no profile filter at all, and what is left of the old snapshot is a
+straggler list. Cost is bounded to two timeouts once per name, and every name is
+cached as it lands, so it is a first-sight cost rather than a per-boot one. If
+the read class is configured empty the fallback is unconditional, which keeps the
+old behaviour.
+
+`[A]` the ceiling is still not zero: an unknown peer published only to the
+message relay will still be named there, one at a time. `[U]` closing that fully
+needs a cache of which relay answered for which peer, or publishing every
+profile to the read class and nowhere else; the first is a feature, the second
+is already true for this client. Falsifier: a relay operator recovering the
+list from REQs. Experiment: count distinct `authors` filters per relay per login.
 
 **A3 Per-context identity from one root.** Hides the link between contexts, from
 relays and listing readers. Reveals a stable per-context key, and the root stays
@@ -526,8 +549,8 @@ against a party that cannot be asked to cooperate.
 `restoreFromRelays` (`useIdentity.js:639`) searches local `cipher_vaults` then the
 legacy `cipher_vault` key, and on a miss answers "Account not found on this
 device. Use your 12-word recovery phrase if you are on a new device." No relay is
-queried. Nothing publishes a vault: the only `30078` uses are the group baseline
-and the dead username read (F11), so a relay never sees a vault blob.
+queried. Nothing publishes a vault: the only `30078` use is the group baseline
+(the username record is 10003, F11), so a relay never sees a vault blob.
 
 `[V]` **the phrase is the account, with no rotation.**
 `deriveSkFromMnemonic` takes `mnemonicToSeedSync(mnemonic).slice(0, 32)`
@@ -561,10 +584,11 @@ Plausible means reachable without a new primitive, not free.
 
 ## 9. Most promising options, including the unconventional
 
-1. **A1 + A2.** Done, and A2 only in part: the group boxes no longer see the
-   address book, the message relay still does. No new protocol. The next step is
-   F13, which A2's residual collides with: naming the sender on the wrap would
-   make sent history recoverable *and* hand the relay both ends in the clear.
+1. **A1 + A2.** Done. A2 names the peer set to the profile relays first and to
+   the message relay only for the names they missed, so the host that carries the
+   traffic rarely learns the list. The next open one is F13, which A2's residual
+   touches: naming the sender on the wrap would make sent history recoverable
+   *and* hand the relay both ends in the clear.
 2. **F6's fixed-size rumor.** About 480 bytes a message to cut the length channel
    from seven classes to one. Cheaper and more effective than cover traffic for
    that channel, and it needs no server.
@@ -678,9 +702,14 @@ iterations of PBKDF2-SHA-256).
 - `restoreFromRelays` restores from local storage, not relays (section 7).
 - Three fixes landed while writing this, so their findings read in the past
   tense: F1 and F12 (the two signed senders, typing and group key grants), F9
-  (the expiration stamp), F14 (both disclosure rows and the README push section)
-  and F10 (the README PIN floor), plus A1 and A2 (the address book, in part). The
-  rest are open.
+  (the expiration stamp), F11 (the wrong handle kind), F14 (both disclosure rows
+  and the README push section) and F10 (the README PIN floor), plus A1 and A2.
+  The rest are open.
+- The F11 fix was pushed referencing a relay set it had not imported, and oxlint
+  flagged it as a **warning** while still printing "0 errors", so the build stayed
+  green over a read that would have thrown into its own catch. An undefined
+  identifier is not a failing condition in this repo. Fixed in the next commit
+  rather than amended.
 - F13 was found by chasing F9's TTL, not by looking for it: the question "how
   long may a relay keep this?" does not answer itself until you notice that the
   history fetch has no lower bound and that the stamp, not the window, is
