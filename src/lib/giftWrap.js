@@ -10,12 +10,53 @@
 // around a rumor whose tags keep the p/e/client tags the thread expects, and
 // the buzz label moves into the sealed payload as `t`, so the receiver reads
 // it back at unwrap before anything is dispatched.
+//
+// The outer wrap is the one event built by hand, and only because it has to
+// carry a second tag: an `expiration` (see WRAP_TTL_SECONDS) that asks the relay
+// to drop the only server-side copy of a message. nip59.createWrap hardcodes
+// ['p', recipient], so this file reimplements its four lines around the same
+// nip44 encryption.
 
-import { nip59 } from 'nostr-tools';
+import { nip44, nip59 } from 'nostr-tools';
+import { finalizeEvent, generateSecretKey } from 'nostr-tools/pure';
 import { buzzTagFor } from './pushGateway.js';
 
 export const GIFT_WRAP_KIND = 1059;
 export const SEAL_KIND = 13;
+
+// How long a relay may keep the only server-side copy of a message. Long
+// enough that a month away from the app still recovers history: the live
+// subscription only asks for the last 7 days, but the history fetch has no
+// lower bound, so this is the real horizon. Short enough that the relay is
+// not the permanent archive an address book is.
+export const WRAP_TTL_SECONDS = 30 * 24 * 60 * 60;
+
+// nostr-tools backdates a wrap by up to two days so the send time cannot be
+// read off the wire. Mirrored here because createWrap takes no extra tags and
+// the expiration has to sit inside the signed event. It is measured from that
+// backdated clock on purpose: a `now()`-based stamp would hand the relay back
+// the exact true second the backdate was hiding.
+const TWO_DAYS = 2 * 24 * 60 * 60;
+const randomNow = () => Math.round(Date.now() / 1000 - Math.random() * TWO_DAYS);
+
+// The outer wrap a relay sees: one p tag and one expiration, never a sender.
+// Built by hand (rather than via nip59.createWrap) only to carry that second
+// tag; the encryption is nip59's own.
+function buildWrap(seal, recipientPubkey, createdAt = randomNow()) {
+  const randomKey = generateSecretKey();
+  return finalizeEvent({
+    kind: GIFT_WRAP_KIND,
+    created_at: createdAt,
+    tags: [
+      ['p', recipientPubkey],
+      ['expiration', String(createdAt + WRAP_TTL_SECONDS)],
+    ],
+    content: nip44.v2.encrypt(
+      JSON.stringify(seal),
+      nip44.v2.utils.getConversationKey(randomKey, recipientPubkey),
+    ),
+  }, randomKey);
+}
 
 // The rumor carries the tags a chat thread reads on a bare kind-4: the p tag
 // naming the recipient, the client id and the reply marker. The sender's
@@ -37,7 +78,7 @@ export function rumorTags({ recipient, clientId = null, replyId = null, extra = 
 export function sealAndWrap(rumor, { senderSk, recipientPubkey } = {}) {
   if (!rumor?.pubkey || !rumor?.id) throw new Error('A rumor needs its pubkey and id before sealing.');
   const seal = nip59.createSeal(rumor, senderSk, recipientPubkey);
-  const wrap = nip59.createWrap(seal, recipientPubkey);
+  const wrap = buildWrap(seal, recipientPubkey);
   return { seal, wrap };
 }
 
@@ -78,5 +119,5 @@ export function wrapForGateway({ senderSk, recipientPubkey, gatewayPubkey, paylo
   // its layer carries the classification alone, one tag deep inside a wrap
   // addressed to an ephemeral key no relay attribute ties to anyone.
   const seal = nip59.createSeal(notice, senderSk, gatewayPubkey);
-  return nip59.createWrap(seal, gatewayPubkey);
+  return buildWrap(seal, gatewayPubkey);
 }

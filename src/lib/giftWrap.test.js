@@ -4,6 +4,7 @@ import { generateSecretKey, getPublicKey, nip44, nip59 } from 'nostr-tools';
 import {
   GIFT_WRAP_KIND,
   SEAL_KIND,
+  WRAP_TTL_SECONDS,
   rumorTags,
   sealAndWrap,
   withBuzzLabel,
@@ -79,7 +80,14 @@ test('a typing signal travels as a wrap and keeps its own clock', () => {
 
   assert.equal(wrap.kind, GIFT_WRAP_KIND);
   assert.notEqual(wrap.pubkey, senderPk, 'the sender is back on the wire');
-  assert.deepEqual(wrap.tags.map((tag) => tag[0]), ['p'], 'the outer event must carry the p tag alone');
+  assert.deepEqual(wrap.tags.map((tag) => tag[0]), ['p', 'expiration'], 'the outer event must carry the p tag and an expiration, nothing else');
+
+  // The stamp is an offer to the relay to drop the only server-side copy. It
+  // counts from the backdated clock, so it must land exactly a TTL after the
+  // wrap's own created_at and still sit well past the 7-day live window.
+  const stamped = Number(wrap.tags.find((tag) => tag[0] === 'expiration')?.[1]);
+  assert.equal(stamped, wrap.created_at + WRAP_TTL_SECONDS, 'the expiration is not tied to the wrap clock');
+  assert.ok(stamped - now > 7 * 24 * 60 * 60, 'a week away from the app would lose the message');
 
   // The wrap's created_at is backdated up to two days, so a ten-second freshness
   // check against it would drop every typing tick. The rumor's is the real one.
