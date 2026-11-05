@@ -13,11 +13,11 @@ const steps = [
   },
   {
     title: "Encrypted Chats",
-    desc: "Open Chats for private messages. Create or join a group when you want a room.",
+    desc: "Open a thread under Chats for private messages. Groups are the room next door, and Menus is the shelf beside them.",
   },
   {
     title: "Find the Menu",
-    desc: "Open Discover to find menus and groups to join, or Menus for the current listings.",
+    desc: "Menus lists what vendors are selling right now. Under Groups, Discover is the door to rooms and shops you are not in yet.",
   },
   {
     // The Selling step is a door, not prose. Its body would teach the paying
@@ -28,7 +28,7 @@ const steps = [
   },
   {
     title: "Your Keys",
-    desc: "Profile → Backup holds your secret key and 12-word recovery phrase. Only you have those words: save them somewhere safe and never share them.",
+    desc: "You → Backup holds your secret key and 12-word recovery phrase. Only you have those words: save them somewhere safe and never share them.",
   }
 ];
 

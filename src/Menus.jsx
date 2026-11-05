@@ -269,7 +269,7 @@ export default function Menus({ identity, setActiveTab }) {
             </EmptyState>
           ) : (
             <EmptyState icon={<ShoppingBag size={28} />} title="No menus yet">
-              Menus vendors publish show up here. Open Discover to find vendors.
+              Menus vendors publish show up here. Discover, under Groups, finds the vendors.
             </EmptyState>
           )
         )}
