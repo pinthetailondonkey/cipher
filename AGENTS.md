@@ -24,6 +24,10 @@ says where the rest of the truth is, so an agent does not have to guess.
    reveals and to whom, the trust domains the defaults collapse, and what would
    close each gap. Read before proposing a privacy change, so you argue against
    the recorded evidence instead of re-deriving it.
+9. [docs/MEMBERSHIP-DESIGN.md](docs/MEMBERSHIP-DESIGN.md) — the decision memo for
+   who may hold a group's rotating key: why the relay-signed roster is the wrong
+   normative source, the holes found getting there, and the step order. Read
+   before changing key hand-off, membership authority, or group key distribution.
 
 ## Hard lines
 
