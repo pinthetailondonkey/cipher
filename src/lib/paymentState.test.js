@@ -2,7 +2,9 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   acceptAmount,
+  acceptanceCoin,
   acceptanceDemand,
+  acceptanceDerivationPreference,
   amountCovers,
   applyWatcherReport,
   assetOf,
@@ -265,4 +267,40 @@ test('a threshold that is zero, negative, fractional or garbled never lowers the
   // Xmr keeps its own default of ten when the threshold is junk.
   const xmr = { state: 'address_issued', watcherUrl: 'http://w', currency: 'xmr', amount: '1', threshold: 0, report: { source: 'watcher', txid: 'ab', confirmations: 9, amount: '1' } };
   assert.equal(applyWatcherReport(xmr), 'seen');
+});
+
+// The BTC-only dead-end under the Monero default: the buyer names a coin, but
+// only a coin this device can mint an address for can be paid, and only a paid
+// coin can be checked on chain. The acceptance follows the item's own price
+// when this device has that rail, the buyer's coin when it can, and otherwise
+// the single coin it has.
+test('an acceptance issues the coin this device can actually pay, never a coin it cannot mint', () => {
+  const btcOnly = { btc: true, xmr: false };
+  const xmrOnly = { btc: false, xmr: true };
+  const both = { btc: true, xmr: true };
+  // The reported bug: a Bitcoin-only vendor and a Monero-default buyer.
+  assert.equal(acceptanceCoin({ product: { currency: 'xmr' }, buyerPreference: 'xmr', canIssue: btcOnly }), 'btc');
+  assert.equal(acceptanceCoin({ product: { currency: 'btc' }, buyerPreference: 'xmr', canIssue: btcOnly }), 'btc');
+  // A coin price wins when this device has that rail, whichever coin was named.
+  assert.equal(acceptanceCoin({ product: { currency: 'btc' }, buyerPreference: 'xmr', canIssue: both }), 'btc');
+  assert.equal(acceptanceCoin({ product: { currency: 'xmr' }, buyerPreference: 'btc', canIssue: both }), 'xmr');
+  // The named coin wins when the item is not priced in a coin this device can pay.
+  assert.equal(acceptanceCoin({ product: { currency: 'xmr' }, buyerPreference: 'btc', canIssue: xmrOnly }), 'xmr');
+  assert.equal(acceptanceCoin({ product: { currency: 'USD', priceUsd: '40' }, buyerPreference: 'btc', canIssue: both }), 'btc');
+  assert.equal(acceptanceCoin({ product: { currency: 'USD' }, buyerPreference: 'xmr', canIssue: both }), 'xmr');
+  // No rail at all still names a coin, so the vendor reads the derivation's refusal.
+  assert.equal(acceptanceCoin({ product: { currency: 'btc' }, buyerPreference: 'btc', canIssue: {} }), 'btc');
+  assert.equal(acceptanceCoin({ product: {}, buyerPreference: 'xmr', canIssue: {} }), 'xmr');
+  // Garbage in the preference or the product never reaches a coin the device lacks.
+  assert.equal(acceptanceCoin({ product: { currency: 'XMR' }, buyerPreference: 'zzz', canIssue: btcOnly }), 'btc');
+  assert.equal(acceptanceCoin({ canIssue: xmrOnly }), 'xmr');
+});
+
+test('the derivation is asked for both coins only when both are issuable and both were named', () => {
+  const both = { btc: true, xmr: true };
+  assert.equal(acceptanceDerivationPreference('both', both, 'xmr'), 'both');
+  assert.equal(acceptanceDerivationPreference('both', { btc: true, xmr: false }, 'btc'), 'btc');
+  assert.equal(acceptanceDerivationPreference('both', { btc: false, xmr: true }, 'xmr'), 'xmr');
+  assert.equal(acceptanceDerivationPreference('xmr', both, 'btc'), 'btc');
+  assert.equal(acceptanceDerivationPreference('btc', both, 'xmr'), 'xmr');
 });

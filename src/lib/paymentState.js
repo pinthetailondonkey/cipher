@@ -107,6 +107,38 @@ export function orderCoinAmount(product, currency) {
   return text;
 }
 
+// Which coin an acceptance may actually issue. A buyer names a preference,
+// but only a coin this device can mint an address for can be paid, and only a
+// paid coin can be checked on chain. A Bitcoin-only vendor handed a
+// Monero-default order would otherwise mint nothing and strand both cards.
+// The coin the item is priced in wins whenever this device has that rail (a
+// coin price is a coin price); the buyer's named coin wins when it is
+// issuable; otherwise the one coin this device has. With no rail at all a coin
+// is still named, so the vendor reads the derivation's refusal, not a coin
+// invented here.
+export function acceptanceCoin({ product, buyerPreference, canIssue } = {}) {
+  const issuable = { btc: !!(canIssue && canIssue.btc), xmr: !!(canIssue && canIssue.xmr) };
+  const price = String(product?.currency || '').toLowerCase();
+  const wish = String(buyerPreference ?? 'xmr').toLowerCase() === 'btc' ? 'btc' : 'xmr';
+  if ((price === 'btc' || price === 'xmr') && issuable[price]) return price;
+  if (issuable[wish]) return wish;
+  // Nothing matched the price or the wish: the one rail this device has is
+  // the only coin it can be paid in.
+  if (issuable.btc || issuable.xmr) return issuable.btc ? 'btc' : 'xmr';
+  // No rail at all: name the coin the buyer chose, so the vendor reads the
+  // derivation's refusal for the coin they meant.
+  return wish;
+}
+
+// What to ask the address derivation for. A buyer who asked for both coins
+// still gets both addresses when the device has both rails; every other path
+// issues exactly the coin about to be paid, so the derivation never mints an
+// address the acceptance does not name.
+export function acceptanceDerivationPreference(buyerPreference, canIssue, payCoin) {
+  const both = String(buyerPreference || '').toLowerCase() === 'both' && !!(canIssue && canIssue.btc) && !!(canIssue && canIssue.xmr);
+  return both ? 'both' : payCoin;
+}
+
 // The menu item an order names. The order's product carries the listing id
 // the buyer tapped, and the rows are this vendor's own published listings
 // cached on this device. Only an exact id match binds; no match invents

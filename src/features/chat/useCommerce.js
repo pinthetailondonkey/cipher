@@ -2,10 +2,10 @@ import { useRef } from 'react';
 import { useChatStore } from '../../store/chatStore';
 import { db, patchMessage, saveMessage } from '../../db';
 import { getActivePubkey, scopedGet, scopedSet } from '../../lib/storage';
-import { addressSpokenFor, getOrderPaymentMethods, markConsumed, readConsumedLedger, readPaymentAddresses, txidSpokenFor } from '../../lib/vendorPayments';
+import { addressSpokenFor, getOrderPaymentMethods, loadVendorPaymentConfig, markConsumed, readConsumedLedger, readPaymentAddresses, txidSpokenFor } from '../../lib/vendorPayments';
 import { getAuthenticatedPool } from '../../lib/pool';
 import { generalRelays } from '../../lib/relays';
-import { ORDER_STATUS, RECEIPT_OUTCOME, acceptAmount, acceptanceDemand, amountCovers, nextPaymentState, orderCoinAmount } from '../../lib/paymentState';
+import { ORDER_STATUS, RECEIPT_OUTCOME, acceptAmount, acceptanceCoin, acceptanceDemand, acceptanceDerivationPreference, amountCovers, nextPaymentState, orderCoinAmount } from '../../lib/paymentState';
 import { checkPayment } from '../../lib/paymentWatch';
 import { readCachedProducts, orderProduct } from '../../lib/listing';
 import { activeUrl, entryById } from '../../lib/egress';
@@ -297,13 +297,39 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
             console.error('[orders] Could not read the order history for the frozen pair:', error);
           }
         }
-        const sendAcceptance = async (rawAmount, coinCurrency) => {
+        // The buyer's named coin is a preference; only a coin this device can
+        // actually issue an address for can be paid, and only a coin that is
+        // paid can be checked on chain. A Bitcoin-only vendor handed the new
+        // Monero-default order would otherwise derive no address at all and
+        // refuse both cards forever, with the buyer never told why. The coin
+        // that gets issued is, in order: the coin the item is priced in when
+        // this device has a rail for it (a coin price is a coin price), the
+        // buyer's named coin when this device has it, and otherwise the one
+        // coin this device can issue. What is issuable is read from this
+        // device's own encrypted settings, never from the buyer's word.
+        const preference = msg.data.paymentMethod || 'xmr';
+        let canIssue;
+        if (frozen) {
+          canIssue = { btc: !!frozen.btc, xmr: !!frozen.xmr };
+        } else {
+          let config = null;
+          try {
+            config = await loadVendorPaymentConfig(identity);
+          } catch (error) {
+            console.error('[orders] Could not read the vendor payment settings:', error);
+          }
+          canIssue = { btc: !!(config && config.btcXpub), xmr: !!(config && config.xmrPrivateViewKey) };
+        }
+        const coinCurrency = acceptanceCoin({ product: msg.data.product, buyerPreference: preference, canIssue });
+        const derivationPreferenceFor = (coin) => acceptanceDerivationPreference(preference, canIssue, coin);
+
+        const sendAcceptance = async (rawAmount, payCoin) => {
           // An acceptance only locks in an amount the chain can express. A
           // string finer than the coin counts would sit 'short of the order'
           // forever, and rail the vendor onto their own wallet. (security S7)
           let coinAmount;
           try {
-            coinAmount = acceptAmount(rawAmount, coinCurrency);
+            coinAmount = acceptAmount(rawAmount, payCoin);
           } catch (error) {
             console.error('[orders] Acceptance amount rejected:', error);
             setToast({ type: 'error', message: error?.message || 'The amount could not be read as coins.' });
@@ -321,7 +347,7 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
                 // (security re-attack)
                 msg.id,
                 { btc: baseBtc, xmr: baseXmr },
-                msg.data.paymentMethod || 'xmr',
+                derivationPreferenceFor(payCoin),
               );
             } catch (error) {
               console.error('[orders] Could not prepare private payment addresses:', error);
@@ -344,11 +370,40 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
             setSelectedMessage(null);
             return;
           }
+          // The issued pair decides the coin, not the buyer's preference:
+          // only a coin this order actually carries an address for can be
+          // checked on chain. When the buyer's pick is missing from the pair
+          // (a Monero-default order to a vendor who set up Bitcoin only), the
+          // acceptance switches to the coin the vendor has instead of
+          // refusing — the order would otherwise sit unaccepted forever on
+          // both cards, and the buyer would never learn why.
           const currency = paymentMethods.xmr ? 'xmr' : 'btc';
-          if (currency !== coinCurrency) {
-            setToast({ type: 'error', message: `This order is paid in ${currency.toUpperCase()}. Enter that amount in coins.` });
+          if (currency !== payCoin) {
+            // The buyer's named coin is not the coin this order can pay in:
+            // derive it from this device's own listing when one exists, and
+            // otherwise ask for the amount like the accept sheet does. No
+            // figure is invented here (security F5).
+            const fallbackKnown = orderCoinAmount(msg.data.product, currency);
+            if (fallbackKnown) {
+              await sendAcceptance(fallbackKnown, currency);
+              return true;
+            }
+            useChatStore.getState().openDialog({
+              title: `How many ${currency.toUpperCase()}`,
+              hasInput: true,
+              placeholder: currency === 'btc' ? '0.001' : '0.1',
+              confirmText: 'Accept',
+              onConfirm: async (value) => {
+                const text = String(value || '').trim();
+                if (!/^\d+(\.\d+)?$/.test(text) || Number(text) <= 0) {
+                  setToast({ type: 'error', message: `Enter the amount in ${currency.toUpperCase()}, not dollars.` });
+                  return;
+                }
+                await sendAcceptance(text, currency);
+              },
+            });
             setSelectedMessage(null);
-            return;
+            return true;
           }
           // When this order's address was issued. The chain check holds every
           // transfer to it: one recorded earlier cannot pay this order, and
@@ -363,7 +418,7 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
             paymentState: nextPaymentState('created', 'issue'),
             paymentMethods,
             coinAmount,
-            coinCurrency,
+            coinCurrency: payCoin,
             // When this order's address was issued. It rides on the
             // acceptance so every side — the buyer's chain check, a vendor
             // on a second device — can refuse a transfer the chain dates
@@ -381,17 +436,13 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
             paymentState: payload.paymentState,
             paymentMethods: payload.paymentMethods,
             coinAmount,
-            coinCurrency,
+            coinCurrency: payCoin,
             issuedAt,
           });
           const acceptedText = result.queued ? 'Acceptance queued; it will send when connected.' : 'Order accepted';
           setToast(saved ? { type: 'success', message: acceptedText } : { type: 'error', message: `${acceptedText} ${NOT_SAVED}` });
           setSelectedMessage(null);
         };
-        // Monero leads on the accept sheet, for the same reason it leads at
-        // checkout: no public chain trail. Bitcoin stays right behind it.
-        const preference = msg.data.paymentMethod || 'xmr';
-        const coinCurrency = preference === 'xmr' || preference === 'both' ? 'xmr' : 'btc';
         // A demanded amount starts from the menu this device published, never
         // from what the buyer wrote into the order. (security F5)
         const demand = acceptanceDemand(msg.data.product, readOwnMenu(), coinCurrency);
@@ -401,9 +452,13 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
           return true;
         }
         if (demand.kind === 'unit') {
-          setToast({ type: 'error', message: `Your menu prices this item in ${demand.currency.toUpperCase()}. Accept it in ${demand.currency.toUpperCase()}, or price the menu in ${coinCurrency.toUpperCase()}.` });
-          setSelectedMessage(null);
-          return true;
+          // The menu prices the item in a coin this device does not issue.
+          // Accept the menu price when this device does have that rail;
+          // otherwise fall through and ask the amount in the coin it can.
+          if (canIssue[demand.currency]) {
+            await sendAcceptance(demand.amount, demand.currency);
+            return true;
+          }
         }
         if (demand.kind === 'listing') {
           const wrote = orderCoinAmount(msg.data.product, coinCurrency);
