@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { seedVault } from './fixtures.js';
+import { seedVault, unlock } from './fixtures.js';
 
 // The blank-profile bug: tapping a user's or vendor's profile showed
 // nothing at all. The lazy boundary that draws the profile card fell back
@@ -17,6 +17,7 @@ test.describe('opening a profile from the chat header', () => {
   test.beforeEach(async ({ page }) => {
     await page.addInitScript(seedVault);
     await page.goto('/');
+    await unlock(page);
     // The app boots past the lock screen into the shell; one reload guards
     // against a cold boot that paints nothing (session restore races).
     const shellButton = page.getByRole('button', { name: 'Chat list menu' }).first();

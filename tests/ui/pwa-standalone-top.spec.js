@@ -6,7 +6,7 @@
 // header. This is computed-style evidence in the standalone model (matchMedia
 // overridden), not a pixel probe: colour and geometry, asserted, every size.
 import { test, expect } from '@playwright/test';
-import { seedVault } from './fixtures.js';
+import { seedVault, unlock } from './fixtures.js';
 
 const PHONE_SIZES = [
   { name: 'iPhone SE', width: 375, height: 667 },
@@ -41,6 +41,7 @@ for (const size of PHONE_SIZES) {
         })()
       `);
       await page.goto('/');
+      await unlock(page);
       await page.waitForTimeout(1200);
     });
 

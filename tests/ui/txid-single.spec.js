@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { createHmac } from 'node:crypto';
 import { schnorr } from '@noble/curves/secp256k1.js';
-import { seedVault } from './fixtures.js';
+import { seedVault, unlock } from './fixtures.js';
 
 // Row 15 at the screen. A watcher answer must name ONE transaction, and the
 // refusal has to be read where it matters: on the order's stored state and on
@@ -92,6 +92,7 @@ async function openThread(page) {
     }));
   });
   await page.goto('/');
+  await unlock(page);
   await expect(page.getByRole('heading', { name: 'Chats' })).toBeVisible({ timeout: 20000 });
   await page.waitForTimeout(2000);
   const rows = vendorThread();

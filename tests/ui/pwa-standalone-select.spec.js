@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { seedVault } from './fixtures.js';
+import { seedVault, unlock } from './fixtures.js';
 
 // Item 1 of the native-feel brief: in the installed home-screen PWA
 // (display-mode: standalone) the app chrome must not grab a text-selection,
@@ -43,6 +43,7 @@ for (const size of PHONE_SIZES) {
     test.beforeEach(async ({ page }) => {
       await page.addInitScript(seedVault);
       await page.goto('/');
+      await unlock(page);
       // The chat list (and the filter box inside it) arrives on a lazy chunk,
       // so a fixed sleep raced it: one run failed here on the 16 Pro Max arm
       // with the textbox simply not in the DOM yet. Wait for the shell the
@@ -104,6 +105,7 @@ for (const size of PHONE_SIZES) {
 test('the live stylesheet keeps user-select:none inside the standalone media query only', async ({ page }) => {
   await page.addInitScript(seedVault);
   await page.goto('/');
+  await unlock(page);
   await page.waitForTimeout(1200);
   const leaked = await page.evaluate(() => {
     for (const sheet of Array.from(document.styleSheets)) {

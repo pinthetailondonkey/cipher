@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { seedVault } from './fixtures.js';
+import { seedVault, unlock } from './fixtures.js';
 
 // Every destination the bottom bar can reach, with the label on its nav button
 // (founder ruling 2026-11-05: Threads | You, fixed order), plus the Threads
@@ -26,6 +26,7 @@ const SCREENS = [
 
 async function openTab(page, tab) {
   await page.goto('/');
+  await unlock(page);
   await page.waitForTimeout(1000);
   if (tab.kind === 'destination') {
     // The phone shell's primary destinations ride the bottom bar: two
@@ -57,6 +58,7 @@ test.describe('Safe area and viewport', () => {
   // the phone window) without any bar's size.
   test('main spans the window and the panes scroll inside it', async ({ page }) => {
     await page.goto('/');
+    await unlock(page);
     await page.waitForTimeout(1000);
 
     const viewport = page.viewportSize();
@@ -165,6 +167,7 @@ test.describe('Safe area and viewport', () => {
 
   test('tab bar responds to touchscreen taps', async ({ page }) => {
     await page.goto('/');
+    await unlock(page);
     await page.waitForTimeout(1000);
 
     // The bottom bar is back on phone: the two destinations are its own

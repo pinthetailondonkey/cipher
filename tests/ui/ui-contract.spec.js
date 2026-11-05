@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { readFileSync } from 'node:fs';
-import { seedVault } from './fixtures.js';
+import { seedVault, unlock } from './fixtures.js';
 
 // The UI contract (DESIGN.md, docs/DESIGN.md). Every Phase-1 rebuilt surface
 // is held to the visual system of record here, in two halves:
@@ -172,6 +172,7 @@ test.describe('live: Chats header', () => {
   test.beforeEach(async ({ page }) => {
     await page.addInitScript(seedVault);
     await page.goto('/');
+    await unlock(page);
   });
 
   test('logo 28px + "Chats" at 20px, in a 56px header on the header ground', async ({ page }) => {
@@ -214,6 +215,7 @@ test.describe('live: the founder ruling — dialogs sit in the middle', () => {
   test.beforeEach(async ({ page }) => {
     await page.addInitScript(seedVault);
     await page.goto('/');
+    await unlock(page);
   });
 
   // The Burn-note sheet is a real Sheet-class surface reachable from Chats.
@@ -263,6 +265,7 @@ test.describe('live: the md+ rail holds its own 72px', () => {
   test.beforeEach(async ({ page }) => {
     await page.addInitScript(seedVault);
     await page.goto('/');
+    await unlock(page);
   });
 
   // Both navs answer to "Tabs"; only the rail carries the 72px width, and

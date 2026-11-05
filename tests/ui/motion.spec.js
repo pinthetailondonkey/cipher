@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { seedVault } from './fixtures.js';
+import { seedVault, unlock } from './fixtures.js';
 
 test.describe('Motion and accessibility', () => {
   // The icon rail is the mounted nav the checks sample, and it shows only at
@@ -14,6 +14,7 @@ test.describe('Motion and accessibility', () => {
   test('respects prefers-reduced-motion', async ({ page }) => {
     await page.emulateMedia({ reducedMotion: 'reduce' });
     await page.goto('/');
+    await unlock(page);
     // Wait for the tab nav: the app lazy-loads past the lock screen, so a
     // fixed timeout races the mount. The nav transform is stable immediately
     // once it exists, because reducedMotion="user" skips the spring. At this
@@ -33,6 +34,7 @@ test.describe('Motion and accessibility', () => {
 
   test('focusable elements show visible outline on tab', async ({ page }) => {
     await page.goto('/');
+    await unlock(page);
     // Wait for the tab nav so the app is mounted before tabbing; a fixed
     // timeout let this race the lazy load and flake under suite load.
     await page.getByRole('navigation', { name: 'Tabs' }).waitFor();

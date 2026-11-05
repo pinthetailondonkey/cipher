@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { seedVault } from './fixtures.js';
+import { seedVault, unlock } from './fixtures.js';
 
 // Profile → How to use opens a full screen with the founder's 15-step guide,
 // not the after-signup sheet. Written against roles and the guide's own
@@ -11,6 +11,7 @@ test('the How to use row opens a scrollable full-screen guide at 390px', async (
   await page.addInitScript(seedVault);
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/');
+  await unlock(page);
   // One reload guards against a cold boot that paints nothing (session
   // restore races), same as sheet-a11y.
   const youTab = page.getByRole('navigation', { name: 'Tabs' }).getByRole('button', { name: 'You' });

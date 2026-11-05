@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { seedVault } from './fixtures.js';
+import { seedVault, unlock } from './fixtures.js';
 
 // P0: the installed iOS PWA showed a black band under the bottom bar, in
 // standalone only.
@@ -90,6 +90,7 @@ for (const size of SIZES) {
       await page.addInitScript(seedVault);
       await page.addInitScript(harness(size.h, size.sat));
       await page.goto('/');
+      await unlock(page);
 
       const m = await bar(page);
       expect(m.strip).toBe(`${size.sat}px`);
@@ -115,6 +116,7 @@ for (const size of SIZES) {
       await page.addInitScript(seedVault);
       // no harness: not standalone, so screen.height is left honest.
       await page.goto('/');
+      await unlock(page);
 
       const m = await bar(page);
       expect(m.strip).toBe('0px');
@@ -131,6 +133,7 @@ test('the strip survives the software keyboard, because the screen does not move
   await page.addInitScript(seedVault);
   await page.addInitScript(harness(852, 59));
   await page.goto('/');
+  await unlock(page);
 
   expect((await bar(page)).strip).toBe('59px');
 
@@ -161,6 +164,7 @@ test('landscape falls back to the 34px floor instead of billing the viewport', a
   await page.addInitScript(seedVault);
   await page.addInitScript(harness(667, 59));
   await page.goto('/');
+  await unlock(page);
   expect((await bar(page)).strip).toBe('59px');
 
   // Rotate. screen.height here deliberately does NOT rotate (the device that
@@ -193,6 +197,7 @@ test('a window-sized delta keeps the floor, because it is not an inset', async (
   await page.addInitScript(seedVault);
   await page.addInitScript(harness(852, 250));
   await page.goto('/');
+  await unlock(page);
 
   const m = await bar(page);
   expect(m.strip).toBe('0px');
@@ -206,6 +211,7 @@ test('a standalone install with no strip keeps the 34px home-indicator floor', a
   await page.addInitScript(seedVault);
   await page.addInitScript(harness(852, 0));
   await page.goto('/');
+  await unlock(page);
 
   const m = await bar(page);
   expect(m.strip).toBe('0px');

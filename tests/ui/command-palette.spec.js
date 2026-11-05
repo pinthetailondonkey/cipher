@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { seedVault } from './fixtures.js';
+import { seedVault, unlock } from './fixtures.js';
 
 // Command palette a11y + behavior (master §2 → §14 PR3): ⌘K opens at md+,
 // the field filters as it types, arrow keys walk the matches, Enter
@@ -11,6 +11,7 @@ test.describe('Command palette', () => {
   test.beforeEach(async ({ page }) => {
     await page.addInitScript(seedVault);
     await page.goto('/');
+    await unlock(page);
     // The rail is the shell's md+ signature; its presence means the boot
     // got past the lock screen and the shortcuts are live.
     const rail = page.getByRole('navigation', { name: 'Tabs' });

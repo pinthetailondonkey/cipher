@@ -1,84 +1,79 @@
 import { test, expect } from '@playwright/test';
-import { getPublicKey } from 'nostr-tools';
+import { TEST_PIN, TEST_PK, TEST_SK, seedVault, unlock } from './fixtures.js';
 
-// What a saved session may and may not ride over at boot. Every account must
-// be locked to its device; a vault that was never wrapped gets wrapped at its
-// next unlock, and a session minted before that law can outlive it — a tab
-// carries its sessionStorage across the reload that swaps in this build. Boot
-// is the gate: a session over an unwrapped vault is thrown out (the unlock
-// that wraps it asks for the PIN), and a session over a device vault is the
-// one case that restores with no prompt at all, reload after reload.
-
-const SK = Array.from({ length: 32 }, (_, i) => (i * 7 + 3) & 0xff);
-const PK = getPublicKey(Uint8Array.from(SK));
-
-// The PIN vault the app itself writes (src/useIdentity.js encryptKey):
-// PBKDF2-SHA256 + AES-GCM, {iv, data, salt, iter}. Here unwrapped — a vault
-// from before every vault was born inside the device envelope.
-async function pinOnlyVault(pin) {
-  const enc = new TextEncoder();
-  const salt = crypto.getRandomValues(new Uint8Array(16));
-  const material = await crypto.subtle.importKey('raw', enc.encode(pin), { name: 'PBKDF2' }, false, ['deriveKey']);
-  const key = await crypto.subtle.deriveKey(
-    { name: 'PBKDF2', salt, iterations: 600000, hash: 'SHA-256' },
-    material, { name: 'AES-GCM', length: 256 }, false, ['encrypt'],
-  );
-  const iv = crypto.getRandomValues(new Uint8Array(12));
-  const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, enc.encode(JSON.stringify(SK)));
-  return {
-    iv: Array.from(iv), data: Array.from(new Uint8Array(ct)), salt: Array.from(salt), iter: 600000,
-  };
-}
-
-// A vault that answers the device-envelope shape (vault.v === 3). Boot never
-// opens it — the gate reads the shape — so the bytes are dummies; the session
-// holds the real key.
-const deviceShapedVault = () => ({ v: 3, dk: { k: 'prf', id: 'seeded' }, iv: [1, 2, 3], data: [4, 5, 6] });
-
-// Seeds a finished account with a live session. One-shot: the app may drop the
-// session on boot, and a replaying seed would hand it back and test the seed.
-async function seedSession(page, { vault }) {
-  await page.addInitScript(({ pk, vault, sk }) => {
-    if (sessionStorage.getItem('cipher_session_seeded')) return;
-    sessionStorage.setItem('cipher_session_seeded', '1');
-    sessionStorage.setItem('cipher_session_sk', JSON.stringify(sk));
-    localStorage.setItem('cipher_vaults', JSON.stringify({
-      [pk]: { vault, handle: 'alice', displayName: 'Alice', createdAt: 1700000000000, confirmed: true },
-    }));
-    localStorage.setItem('cipher_active_pubkey', pk);
-  }, { pk: PK, vault, sk: SK });
-}
+// What a boot carries, now that the raw secret lives in memory for the tab's
+// lifetime (src/lib/sessionKey.js): nothing at all.
+//
+// The old contract was a saved session riding over the reload, gated by which
+// envelope it sat on. With no copy of the key in storage there is nothing to
+// ride and nothing to gate: every load asks the vault's own door, and a vault
+// that is not locked to this device is wrapped at that unlock, so the next
+// load asks the door again over the wrapped vault.
+//
+// These specs pin that, so a restore block quietly creeping back into boot
+// fails here rather than passing as a convenience.
 
 const lockScreen = (page) => page.getByRole('heading', { name: 'Unlock Cipher' });
 const staffedTabs = (page) => page.getByRole('navigation', { name: 'Tabs' });
 
-test.describe('Boot gates a saved session by the device-lock migration', () => {
-  test('a legacy session over an unwrapped vault is thrown out: boot lands on the PIN gate', async ({ page }) => {
-    // The migration runs at the next unlock, so boot must not let the old
-    // session skip it. The account is still there — the 12 words and the PIN
-    // path are untouched — but the tab is locked until the wrap has happened.
-    await seedSession(page, { vault: await pinOnlyVault('87654321') });
+const vaultOf = (page) => page.evaluate(
+  (pk) => JSON.parse(localStorage.getItem('cipher_vaults') || '{}')?.[pk]?.vault,
+  TEST_PK,
+);
+
+test.describe('Boot carries no session: the vault is the only door', () => {
+  test('a planted session is not read, and is not cleaned either', async ({ page }) => {
+    // Exactly what the old fixture wrote: the raw key, in sessionStorage. A
+    // boot that still reads it would land in the app; this boot does not.
+    await page.addInitScript(({ sk }) => {
+      sessionStorage.setItem('cipher_session_sk', JSON.stringify(sk));
+    }, { sk: TEST_SK });
+    await page.addInitScript(seedVault);
     await page.goto('/');
+
     await expect(lockScreen(page)).toBeVisible({ timeout: 15000 });
     await expect(staffedTabs(page)).toBeHidden();
-    // And the stale session itself is gone, not merely ignored.
-    expect(await page.evaluate(() => sessionStorage.getItem('cipher_session_sk'))).toBeNull();
+    // Left where it was: nothing removes it, because nothing looked. A build
+    // that read it would have wiped it and sat in the app instead.
+    expect(await page.evaluate(() => sessionStorage.getItem('cipher_session_sk'))).not.toBeNull();
   });
 
-  test('a session over a device vault restores with no prompt, and keeps restoring on every reload', async ({ page }) => {
-    // An account that completed the migration is the one case that never asks:
-    // boot restores the session straight into the app, and a reload restores
-    // it again. No authentication prompt rides along.
-    await seedSession(page, { vault: deviceShapedVault() });
+  test('the PIN opens it and the unwrapped vault is locked to this device at that unlock', async ({ page }) => {
+    await page.addInitScript(seedVault);
     await page.goto('/');
+
+    const seeded = await vaultOf(page);
+    expect(seeded.v).toBeUndefined(); // the seed is a PIN envelope, not a device one
+    await expect(lockScreen(page)).toBeVisible({ timeout: 15000 });
+
+    await unlock(page);
     await expect(staffedTabs(page)).toBeVisible({ timeout: 20000 });
     await expect(lockScreen(page)).toBeHidden();
 
-    // The reload is not a prompt either, and it is not the seed answering:
-    // the one-shot flag means the second boot runs on whatever the app left
-    // in the session slot.
-    await page.reload();
+    // The wrap happened inside the unlock, in place: the same account, now
+    // behind the device layer.
+    expect((await vaultOf(page)).v).toBe(3);
+  });
+
+  test('a reload asks again, and the wrapped vault opens with the same PIN', async ({ page }) => {
+    // Two full boots, each one a PBKDF2 derivation and a WebAuthn round trip.
+    test.slow();
+    // One-shot seed: the reload must meet the vault the app itself wrote,
+    // not the fixture's copy of it.
+    await page.addInitScript(seedVault, { once: true });
+    await page.goto('/');
+    await unlock(page);
     await expect(staffedTabs(page)).toBeVisible({ timeout: 20000 });
-    await expect(lockScreen(page)).toBeHidden();
+    expect((await vaultOf(page)).v).toBe(3);
+
+    // In memory, not storage: the reload carries no key and the gate is back.
+    await page.reload();
+    await expect(lockScreen(page)).toBeVisible({ timeout: 15000 });
+    await expect(staffedTabs(page)).toBeHidden();
+    expect((await vaultOf(page)).v).toBe(3); // the seed did not replay over it
+
+    // The device-wrapped vault opens with the same PIN, device layer and all.
+    await unlock(page, TEST_PIN);
+    await expect(staffedTabs(page)).toBeVisible({ timeout: 20000 });
   });
 });

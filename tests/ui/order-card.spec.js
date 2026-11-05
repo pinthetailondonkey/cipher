@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { seedVault } from './fixtures.js';
+import { seedVault, unlock } from './fixtures.js';
 
 // An order card has to render. Nothing in the suite drew one before this file,
 // which is how every order card could crash the whole app while the node tests
@@ -31,6 +31,7 @@ const CARD = {
 async function openWithCard(page, content) {
   await page.addInitScript(seedVault);
   await page.goto('/');
+  await unlock(page);
   await expect(page.getByRole('heading', { name: 'Chats' })).toBeVisible({ timeout: 20000 });
   // The boot's history fetch is allowed to land first, so the seed written
   // after this point is not replaced by the relay's empty copy.

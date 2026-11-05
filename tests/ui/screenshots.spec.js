@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { seedVault } from './fixtures.js';
+import { seedVault, unlock } from './fixtures.js';
 
 // Test(-receipt) screenshots over the merged tree: the rebuild shell has
 // landed, so the parked captures run again (UI-NOTES #8). These are
@@ -14,6 +14,7 @@ test.describe('Visual regression', () => {
 
   test('screenshot: home screen', async ({ page }) => {
     await page.goto('/');
+    await unlock(page);
     // The chat list is the home screen's own content; the boot skeleton
     // has no heading, so this wait separates boot paint from screen.
     await expect(page.getByRole('heading', { name: 'Chats' })).toBeVisible({ timeout: 20000 });
@@ -23,6 +24,7 @@ test.describe('Visual regression', () => {
 
   test('screenshot: explore tab', async ({ page }) => {
     await page.goto('/');
+    await unlock(page);
     await expect(page.getByRole('heading', { name: 'Chats' })).toBeVisible({ timeout: 20000 });
     // The Menus browse is a Threads segment now, not a destination: one tap in
     // the header's own selection row, straight through the row the user uses.
@@ -35,6 +37,7 @@ test.describe('Visual regression', () => {
 
   test('screenshot: profile tab', async ({ page }) => {
     await page.goto('/');
+    await unlock(page);
     await expect(page.getByRole('heading', { name: 'Chats' })).toBeVisible({ timeout: 20000 });
     // Same phone nav: the bar's You tab opens the Wallet pane.
     const profileDoor = page.getByRole('navigation', { name: 'Tabs' }).getByRole('button', { name: 'You' });
@@ -54,6 +57,7 @@ test.describe('Visual regression', () => {
       } catch { /* a browser without storage still shows the first screen */ }
     });
     await page.goto('/');
+    await unlock(page);
     // The first screen's own heading; the boot paint has none.
     await expect(page.getByRole('heading', { name: 'No phone number. No account.' })).toBeVisible({ timeout: 20000 });
     await page.waitForTimeout(500);
@@ -72,6 +76,7 @@ test.describe('Visual regression — conversation and settings', () => {
   test('screenshot: conversation', async ({ page }) => {
     const peerPk = 'f'.repeat(64);
     await page.goto('/');
+    await unlock(page);
     await expect(page.getByRole('heading', { name: 'Chats' })).toBeVisible({ timeout: 20000 });
     // Let the boot's own history fetch settle first: a fetch that lands after
     // the seed would replace the store's copy with the relay's empty one.
@@ -105,6 +110,7 @@ test.describe('Visual regression — conversation and settings', () => {
 
   test('screenshot: settings', async ({ page }) => {
     await page.goto('/');
+    await unlock(page);
     await expect(page.getByRole('heading', { name: 'Chats' })).toBeVisible({ timeout: 20000 });
     const profileDoor = page.getByRole('navigation', { name: 'Tabs' }).getByRole('button', { name: 'You' });
     await expect(profileDoor).toBeVisible({ timeout: 10000 });

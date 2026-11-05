@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { seedVault } from './fixtures.js';
+import { seedVault, unlock } from './fixtures.js';
 
 // The after-signup tour's Selling step is a door, not prose: tapping it swaps
 // the tour sheet's body for the vendor panel, inside the SAME dialog. The
@@ -15,6 +15,7 @@ test.describe('After-signup tour: the Selling step', () => {
   test.beforeEach(async ({ page }) => {
     await page.addInitScript(seedVault);
     await page.goto('/');
+    await unlock(page);
     // One reload guards against a cold boot that paints nothing, same as
     // sheet-a11y.
     const shellButton = page.getByRole('button', { name: 'Chat list menu' }).first();

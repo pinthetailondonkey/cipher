@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { seedVault } from './fixtures.js';
+import { seedVault, unlock } from './fixtures.js';
 
 // Sheet/dialog a11y floor (MASTER-PROMPT §12 → §14 PR13): every Sheet-class
 // surface reachable on the boot flow carries role=dialog + aria-modal, closes
@@ -11,6 +11,7 @@ test.describe('Sheet-class a11y on the boot flow', () => {
   test.beforeEach(async ({ page }) => {
     await page.addInitScript(seedVault);
     await page.goto('/');
+    await unlock(page);
     // The app boots past the lock screen into the shell; one reload guards
     // against a cold boot that paints nothing (session restore races).
     const shellButton = page.getByRole('button', { name: 'Chat list menu' }).first();

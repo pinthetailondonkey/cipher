@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { createHmac } from 'node:crypto';
 import { schnorr } from '@noble/curves/secp256k1.js';
-import { seedVault } from './fixtures.js';
+import { seedVault, unlock } from './fixtures.js';
 
 // Row 6b at the screen: the shared-address refusal must read this device's
 // own rails and nothing else. The rails are a literal { btc, xmr }, so an
@@ -116,6 +116,7 @@ async function openThread(page, address, currency) {
     }));
   });
   await page.goto('/');
+  await unlock(page);
   await expect(page.getByRole('heading', { name: 'Chats' })).toBeVisible({ timeout: 20000 });
   // The seam arrives through a dynamic import after first paint, so wait for
   // it rather than for a fixed delay.

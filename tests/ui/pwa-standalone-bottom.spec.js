@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { seedVault } from './fixtures.js';
+import { seedVault, unlock } from './fixtures.js';
 
 // Issue 2: in the iPhone home-screen (standalone) app the bottom tab bar was
 // cut off at the bottom; in a browser tab it was fine. THE CAUSE, measured at
@@ -42,6 +42,7 @@ test.describe('PWA standalone bottom tab bar', () => {
   for (const size of SIZES) {
     test(`${size.name}: the tab bar clears the home-indicator zone in standalone`, async ({ page }) => {
       await page.goto('/');
+      await unlock(page);
       await page.waitForTimeout(1000);
       await page.setViewportSize({ width: size.w, height: size.h });
       await page.waitForTimeout(1500);
@@ -68,6 +69,7 @@ test.describe('PWA standalone bottom tab bar', () => {
 
     test(`${size.name}: browser mode is untouched by the standalone floor`, async ({ page }) => {
       await page.goto('/');
+      await unlock(page);
       await page.waitForTimeout(1000);
       await page.setViewportSize({ width: size.w, height: size.h });
       await page.waitForTimeout(1500);
