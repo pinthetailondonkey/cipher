@@ -50,7 +50,31 @@ Two facts about the DM envelope matter more than its row. NIP-59 sets
 `created_at = now − U(0, 2 days)` (`nostr-tools nip59.js:232-234`) `[V]`, and the
 `since` filter is −7 days (`useChatBootstrap.js:456`) `[V]`, so the backdate
 cannot fall off the window. And sent wraps are unqueryable, so a reinstall
-recovers only *received* DMs `[V]` (`useNIP44DM.js:404-407`).
+recovers only *received* DMs `[V]` (`useNIP44DM.js:404-407`). The outer wrap
+carries exactly one `p` tag and nothing else (`nostr-tools nip59.js:260-271`)
+`[V]`, so the reply id and the client id stay sealed with the rumor
+(`giftWrap.js:23-29` is the rumor, not the wrap).
+
+### A live baseline, 45 seconds
+
+`[V]` measured, not only read: a 45-second capture of `kinds: [1059]` on
+`relay.primal.net` and `nos.lol` took **3733 wraps, 34 distinct content lengths
+(388 to 21995 chars), a median gap between arrivals of 4 ms and a longest gap of
+361 ms**. `[A]` that sample is dominated by other clients, and the outer tag sets
+prove it: `["d","k","p"]`, `["ms","p","v"]`, `["e","p","receipt-type","v"]`,
+some with `expiration`. Those clients publish the inner kind (`k`) and the
+receipt type outward; Cipher's own wrap publishes neither. So Cipher leaks *less*
+than the NIP-17 convention, and the common shape is not ours.
+
+This is the point that qualifies F6 below. On a busy public relay a single
+message is one of eighty a second, so length and timing are nearly free. On a
+quiet relay — the founder's group box, or a small deployment — the same message
+is most of the traffic, and there the buckets and the gaps are the whole signal.
+Size risk is a function of the relay's population, not of the message.
+
+`[U]` what a 45-second sample cannot say: the week-long, two-variant capture that
+would separate our own wraps from the crowd, and which is the only thing that can
+price A1 and A2 (section 13).
 
 ## 2. Trust domains, and who can join whom
 
@@ -125,8 +149,11 @@ pubkey into the 39002 is handed the key by the next member who answers.
 **F5 `[V]` no forward secrecy.** NIP-44 uses a static ECDH conversation key
 behind a cache (`dmKeys.js:25-37`), so one `sk` capture opens every past DM.
 
-**F6 `[V]` every DM is about 2.1 KB, and message length leaks in four buckets.**
-Measured against `nostr-tools` NIP-44 at this pin, with a realistic rumor:
+**F6 `[V]` a message is about 2.1 KB, and message length leaks in four buckets**
+— on a quiet relay, and nearly not at all on a busy one (see the baseline in
+section 1; the public relays carry about 80 wraps a second, so the buckets matter
+most where the founder's own boxes carry the traffic). Measured against
+`nostr-tools` NIP-44 at this pin, with a realistic rumor:
 
 ```
 six message lengths (0, 5, 40, 120, 400, 900 chars)
