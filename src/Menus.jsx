@@ -9,7 +9,7 @@ import { haptic } from './lib/haptics';
 import { copyText } from './lib/copyText';
 import { generalRelays } from './lib/relays';
 import { entryById } from './lib/egress';
-import Picture from './components/ui/Picture';
+import { ProductImage } from './components/ui/PrivateMedia';
 import Avatar from './components/ui/Avatar';
 import EmptyState from './components/ui/EmptyState';
 import { pressable } from './components/ui/Button';
@@ -36,8 +36,11 @@ function MenuTile({ item, onBuy, onCopyLink }) {
       {/* One ratio for every card, so the grid reads as one shelf however
           tall the source pictures are. */}
       <div className="relative aspect-[4/3] w-full overflow-hidden rounded-xl bg-ink/5">
-        <Picture
-          src={item.image}
+        {/* N1: shape-picking draw. A private entry decrypts at render; a
+            plain URL draws as it always did. One gate, same as every other
+            listing surface. */}
+        <ProductImage
+          value={item.image}
           alt=""
           loading="lazy"
           className="h-full w-full object-cover"

@@ -15,6 +15,23 @@ export function listingFromEvent(event) {
   const priceTag = tag('price');
   const amount = String(priceTag?.[1] || '').trim();
   const currency = String(priceTag?.[2] || 'USD').toUpperCase();
+  // The image field is two shapes on one wire (the same two the DM render
+  // path already picks between): a plain URL string, or a serialized private
+  // entry `{ url, key, iv, mime }` whose plaintext bytes sit encrypted at
+  // `url`. A private entry means the media host holds ciphertext under a
+  // throwaway upload key and no event names a person; the buyer's device
+  // carries the key inside this listing and decrypts when it draws. A tag
+  // value that does not parse as an object with the three fields is kept as
+  // the string it is, so every older listing reads unchanged.
+  const imageRaw = String(tag('image')?.[1] || '');
+  let image = imageRaw;
+  try {
+    const parsed = JSON.parse(imageRaw);
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      && typeof parsed.url === 'string' && typeof parsed.key === 'string' && typeof parsed.iv === 'string') {
+      image = { url: parsed.url, key: parsed.key, iv: parsed.iv, ...(typeof parsed.mime === 'string' ? { mime: parsed.mime } : {}) };
+    }
+  } catch { /* not JSON — keep the string */ }
   // A listing's own `payment` tags are never read here. An address the buyer
   // scans straight off the menu skips the order — no accept, no issued
   // address, no chain check, no receipt — so nothing on a menu starts a
@@ -25,7 +42,7 @@ export function listingFromEvent(event) {
     price: amount,
     currency,
     ...(currency === 'USD' ? { priceUsd: amount } : {}),
-    image: tag('image')?.[1] || '',
+    image,
     vendorPubkey: event.pubkey,
   };
 }

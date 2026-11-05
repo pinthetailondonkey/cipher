@@ -10,7 +10,7 @@ import { useChatStore } from '../store/chatStore';
 import LinkPreview from './chat/LinkPreview';
 import { firstUrl } from '../lib/linkPreview';
 import Sheet from './ui/Sheet';
-import Picture from './ui/Picture';
+import Avatar from './ui/Avatar';
 import { MediaImage, ProductImage } from './ui/PrivateMedia';
 import { attachmentsFor } from '../lib/mediaCrypto';
 import { allowsLinkPreviews } from '../lib/privacy';
@@ -531,7 +531,7 @@ export default function MessageBubble({ message, data, onAction, senderName, ide
       )}
       {!isSender && showAvatar && !selectMode && (
         runEnd
-          ? <Picture src={avatarUrl} alt="" className="h-7 w-7 shrink-0 rounded-full object-cover" fallback={<span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-panelAlt text-[11px] font-semibold" style={{ color: senderTint }}>{avatarInitial}</span>} />
+          ? <Avatar src={avatarUrl} name={avatarInitial === '?' ? senderName : avatarInitial} pubkey={message?.pubkey || ''} size="sm" className="h-7 w-7 shrink-0 rounded-full object-cover !text-[11px]" />
           : <span className="h-7 w-7 shrink-0" aria-hidden="true" />
       )}
       <div

@@ -4,7 +4,6 @@ import {
   Lock, ArrowLeft, Copy, CreditCard, Camera,
   BarChart3, Package, KeyRound, Users, SlidersHorizontal, Shield, BookOpen, Globe
 } from 'lucide-react'
-import { uploadToBlossom } from '@nostr-wot/blossom'
 import { useProfiles, updateProfileCache } from './useProfiles'
 import { useChatStore } from './store/chatStore';
 import AccountSwitcher from './components/chat/AccountSwitcher';
@@ -12,13 +11,21 @@ import IdentityBackup from './components/chat/IdentityBackup';
 import MyOrders from './components/chat/MyOrders';
 import MessageRequests from './components/chat/MessageRequests';
 import { db } from './db';
-import { compressImage } from './lib/imageCompression';
+// N1: a listing photo and the account avatar upload under throwaway keys.
+// The identity-keyed Blossom auth this file used before let every media host
+// build an npub-to-IP-to-file-hash log of vendors who published a menu —
+// one subpoena's worth of linkage. The private-media door (uploadAttachment)
+// re-encodes first (EXIF and location dropped, VISION.md invariant 5), then
+// encrypts, then signs each server's auth with a key that exists for the
+// length of one PUT and is zeroed after (`mediaCrypto.js:58-104`). What
+// reaches the host: ciphertext bytes, their hash, an IP. No pubkey, ever.
+import { uploadAttachment, photoRefusalToast } from './lib/mediaCrypto';
 import { loadVendorPaymentConfig, readPaymentAddresses, saveVendorPaymentConfig, savePaymentAddresses } from './lib/vendorPayments';
 import PrivacySettings from './components/chat/PrivacySettings';
 import Connections from './components/chat/Connections';
 import HowToGuide from './components/chat/HowToGuide';
 import Avatar from './components/ui/Avatar';
-import Picture from './components/ui/Picture';
+import { ProductImage } from './components/ui/PrivateMedia';
 import ScreenHeader from './components/ui/ScreenHeader';
 import Sheet from './components/ui/Sheet';
 import Dialog from './components/ui/Dialog';
@@ -172,30 +179,22 @@ export default function Wallet({ identity, onOpenChat, startView = 'main' }) {
     if (!file) return
 
     setUploadingImage(true)
-    setStatus('Uploading via Blossom...')
+    setStatus('Uploading...')
 
     try {
-      const compressedFile = await compressImage(file, 800, 0.78);
-      const blob = await uploadToBlossom(compressedFile, {
-        servers: blossomServers(),
-        signer: {
-          getPublicKey: async () => identity.pk,
-          signEvent: async (event) => {
-            const { finalizeEvent } = await import('nostr-tools')
-            return finalizeEvent(event, identity.sk)
-          }
-        },
-      })
+      // N1: the private-media door. Compress inside the door (it re-encodes
+      // images anyway), encrypt, upload under a per-server throwaway key.
+      const entry = await uploadAttachment(file, blossomServers())
 
       if (type === 'profile') {
-        setPicture(blob.url)
-        if (view === 'main') await saveProfile(null, blob.url)
+        setPicture(entry)
+        if (view === 'main') await saveProfile(null, entry)
       }
-      if (type === 'product') setImage(blob.url)
+      if (type === 'product') setImage(entry)
       setStatus('Image uploaded!')
     } catch (err) {
       console.error(err)
-      useChatStore.getState().setToast({ type: 'info', message: `Upload failed: ${err.message}` });
+      useChatStore.getState().setToast({ type: 'info', message: photoRefusalToast(err.message) });
     } finally {
       setUploadingImage(false)
       setTimeout(() => setStatus(''), 3000)
@@ -248,10 +247,13 @@ export default function Wallet({ identity, onOpenChat, startView = 'main' }) {
       const { SimplePool, finalizeEvent } = await import('nostr-tools')
       pool = new SimplePool()
       const dTag = Date.now().toString()
-      
+      // N1: the image tag carries the upload's whole shape — a private entry
+      // serialized to JSON when one was uploaded, a plain URL string (or the
+      // app icon) otherwise. The reader picks by shape in listingFromEvent.
+      const imageTag = (image && typeof image === 'object') ? JSON.stringify(image) : (image || '/app-icon-512.png')
       const tags = [
         ['d', dTag], ['title', title], ['price', price, currency],
-        ['image', image || '/app-icon-512.png'], ['stock', '1'],
+        ['image', imageTag], ['stock', '1'],
         ['status', 'active'], ['published_at', Math.floor(Date.now() / 1000).toString()],
         ['t', 'cipher_marketplace']
       ]
@@ -260,7 +262,7 @@ export default function Wallet({ identity, onOpenChat, startView = 'main' }) {
       // lands. The only address a buyer sees arrives on the accepted order,
       // derived fresh for that order. (security S2)
       
-      const content = JSON.stringify({ name: title, description, price, currency, image })
+      const content = JSON.stringify({ name: title, description, price, currency, image: imageTag })
       const ev = finalizeEvent({ kind: 30402, created_at: Math.floor(Date.now() / 1000), tags, content }, identity.sk)
 
       // The outbox door, block 31–'s shape: wait for what the relays
@@ -453,7 +455,7 @@ export default function Wallet({ identity, onOpenChat, startView = 'main' }) {
           <textarea placeholder="Description" value={description} onChange={e => setDescription(e.target.value)} className="w-full border border-line bg-panelStrong shadow-lg rounded-2xl p-4 text-sm focus:border-accent outline-none resize-none h-24" />
           
           <div className="flex items-center gap-4 p-4 border border-line bg-panelStrong shadow-lg rounded-2xl">
-            <Picture src={image} alt="product" className="w-16 h-16 rounded-xl object-cover" fallback={<div className="flex h-16 w-16 items-center justify-center rounded-xl border border-ink/10 bg-ink/5"><Camera size={24} className="text-ink/20" /></div>} />
+            <ProductImage value={image && typeof image === 'object' ? image : String(image || '')} className="w-16 h-16 rounded-xl object-cover" fallback={<div className="flex h-16 w-16 items-center justify-center rounded-xl border border-ink/10 bg-ink/5"><Camera size={24} className="text-ink/20" /></div>} />
             <div className="flex-1">
               <input type="file" accept="image/*" onChange={(e) => handleImageUpload(e, 'product')} className="hidden" id="product-upload" />
               <label htmlFor="product-upload" className="py-2 px-4 bg-ink/10 rounded-xl text-sm font-semibold cursor-pointer hover:bg-ink/20 transition-colors inline-block">
@@ -490,7 +492,7 @@ export default function Wallet({ identity, onOpenChat, startView = 'main' }) {
         <div className="relative mb-4">
           <input type="file" accept="image/*" onChange={(e) => { setShowUploadSheet(false); handleImageUpload(e, 'profile'); }} className="hidden" id="main-avatar-upload" ref={avatarInput} />
           <button type="button" onClick={() => setShowUploadSheet(true)} aria-label="Change profile photo" className={`relative block rounded-full ${pressable}`}>
-            <Picture src={myProfile.picture} alt="" className="h-20 w-20 rounded-full border border-line object-cover" fallback={<Avatar name={myProfile.displayName || myProfile.name} className="!h-20 !w-20 text-2xl" />} />
+            <Avatar src={myProfile.picture} name={myProfile.displayName || myProfile.name} pubkey={identity?.pk} size="lg" className="!h-20 !w-20 border border-line object-cover !text-2xl" />
           </button>
         </div>
         <h2 className="text-2xl font-bold tracking-tight text-ink">{myProfile.displayName}</h2>

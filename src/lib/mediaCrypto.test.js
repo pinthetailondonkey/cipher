@@ -99,6 +99,30 @@ test('the shop picker uses the attachment door, so a menu photo is re-encoded', 
     'the raw upload is gone from this picker');
 });
 
+// N1 witness: no surface signs a Blossom auth with an identity key. The two
+// surfaces the fix covers — Wallet (listing photo and profile avatar) and
+// SetupProfile (the onboarding avatar) — carry no uploadToBlossom signer at
+// all; everything routes through uploadAttachment's throwaway-key door. Red
+// if either regrows an identity-signed upload: npub-to-IP-to-file-hash is
+// exactly what F8/N2 removed everywhere else.
+test('N1: no UI uploader signs a media host auth with an account key', () => {
+  for (const [name, rel] of [
+    ['Wallet', '../Wallet.jsx'],
+    ['SetupProfile', '../components/onboarding/SetupProfile.jsx'],
+  ]) {
+    const view = fs.readFileSync(new URL(rel, import.meta.url), 'utf8');
+    assert.equal((view.match(/uploadToBlossom/g) || []).length, 0, `${name} still reaches uploadToBlossom`);
+    assert.doesNotMatch(view, /getPublicKey[\s\S]{0,80}identity\.pk|getPublicKey[\s\S]{0,80}tempIdentity\.pk/,
+      `${name} still hands an identity key to a media host`);
+    assert.match(view, /uploadAttachment\(file, blossomServers\(\)\)/, `${name} uploads through the private door`);
+  }
+  // And the listing reader accepts both shapes, so an encrypted listing
+  // image parses back to the entry its buyer needs.
+  const listing = fs.readFileSync(new URL('./listing.js', import.meta.url), 'utf8');
+  assert.match(listing, /isPrivateMedia|typeof parsed\.url === 'string'/,
+    'listingFromEvent does not pick the private-entry shape');
+});
+
 test('an image attachment is re-encoded first, and the upload carries the encoder output', async () => {
   const original = new Blob([new Uint8Array([0xff, 0xd8, 0xff, 0xe1, 0x45, 0x78, 0x69, 0x66, 0, 0, 1, 2])], { type: 'image/jpeg' });
   const stripped = new Blob([new Uint8Array([0xff, 0xd8, 0xff, 0xdb, 3, 4])], { type: 'image/jpeg' });

@@ -7,7 +7,7 @@ import { listingFromEvent, priceLabel } from '../../lib/listing';
 import Button, { pressable } from '../ui/Button';
 import Chip from '../ui/Chip';
 import Avatar from '../ui/Avatar';
-import Picture from '../ui/Picture';
+import { ProductImage } from '../ui/PrivateMedia';
 import EmptyState from '../ui/EmptyState';
 import { SkeletonGrid } from '../ui/Skeleton';
 import { useModalA11y } from '../ui/modal';
@@ -177,8 +177,8 @@ export default function VendorMenuHome({ open, onClose, vendorPubkey, profiles =
             <div className="grid grid-cols-2 gap-3">
               {products.map((product) => (
                 <article key={product.id} className="overflow-hidden rounded-2xl border border-line bg-panelStrong">
-                  <Picture
-                    src={product.image}
+                  <ProductImage
+                    value={product.image}
                     alt=""
                     loading="lazy"
                     className="aspect-[4/5] w-full border-b border-line object-cover"

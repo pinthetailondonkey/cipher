@@ -4,7 +4,7 @@ import Picture from './Picture';
 
 // Loading rule set by the founder: every attachment opens when it renders —
 // no warning cards, no tap-through (load-all + VPN tip, docs/NO-IP-LEAKS.md).
-function usePrivateMediaUrl({ url, key, iv, mime } = {}) {
+export function usePrivateMediaUrl({ url, key, iv, mime } = {}) {
   const [state, setState] = useState({ src: '', failed: false });
   useEffect(() => {
     if (!url || !key || !iv) return undefined;

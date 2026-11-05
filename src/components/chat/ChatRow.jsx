@@ -16,6 +16,7 @@ import {
 import { haptic } from '../../lib/haptics';
 import useLongPress from '../../hooks/useLongPress';
 import Badge from '../ui/Badge';
+import Avatar from '../ui/Avatar';
 import { formatRelativeTime } from './relativeTime';
 
 // Mute durations for the swipe-left and kebab submenu, mapped onto the
@@ -151,22 +152,17 @@ export default function ChatRow({
   };
 
   const timeLabel = formatRelativeTime(chat.lastMsg?.timestamp);
-  // A picture that fails to load leaves initials, never an empty hole.
+  // A picture that fails to load leaves initials, never an empty hole. The
+  // shape gate is Avatar's (N1): an encrypted entry resolves and decrypts
+  // there; a plain URL draws as it always did.
   const picture = isDm ? chat.profile.picture : null;
-  const [pictureFailed, setPictureFailed] = useState(false);
-  const showPicture = Boolean(picture) && !pictureFailed;
   const initials = (
     <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-line bg-panelAlt text-[15px] font-semibold text-accentText">
       {initialsOf(name)}
     </span>
   );
-  const avatar = showPicture ? (
-    <img
-      src={picture}
-      alt=""
-      onError={() => setPictureFailed(true)}
-      className="h-12 w-12 shrink-0 rounded-full border border-line object-cover"
-    />
+  const avatar = picture ? (
+    <Avatar src={picture} name={name} pubkey={chat.id} size="row" />
   ) : initials;
 
   const preview = typing ? (

@@ -4,7 +4,7 @@ import { useChatStore } from '../../store/chatStore';
 import { haptic } from '../../lib/haptics';
 import { safetyNumberFor, verifySafetyNumber } from '../../lib/safetyNumber';
 import { shortNpub } from '../../lib/npub';
-import Picture from '../ui/Picture';
+import Avatar from '../ui/Avatar';
 import Sheet from '../ui/Sheet';
 import Button from '../ui/Button';
 import { orderState } from '../../lib/orderActions';
@@ -116,7 +116,6 @@ export default function ChatHeader({ mode }) {
     ? (profile?.displayName || profile?.name || shortNpub(activeDm) || 'Chat')
     : activeGroup?.name || 'Group';
   const picture = mode === 'dm' ? profile?.picture : activeGroup?.picture;
-  const initial = title.charAt(0) || '?';
   // One picker serves both kinds of chat: the send path already reads the
   // timer keyed by chat id (groups included) and stamps expires_at.
   const activeChatId = mode === 'dm' ? activeDm : activeGroup?.id;
@@ -213,11 +212,12 @@ export default function ChatHeader({ mode }) {
           }}
           className="touch-target flex shrink-0 items-center justify-center"
         >
-          <Picture
+          <Avatar
             src={picture}
-            alt=""
+            name={mode === 'dm' ? profile?.displayName : activeGroup?.name}
+            pubkey={mode === 'dm' ? activeDm : ''}
+            size="sm"
             className="h-8 w-8 rounded-full object-cover"
-            fallback={<span className="flex h-8 w-8 items-center justify-center rounded-full bg-panelAlt text-[13px] font-semibold text-accentText">{initial}</span>}
           />
         </button>
         {orderAnchor && (

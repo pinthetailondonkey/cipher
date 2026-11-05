@@ -1,7 +1,8 @@
 import React from 'react';
-import { Search, Users, User } from 'lucide-react';
+import { Search } from 'lucide-react';
 import ScreenHeader from '../ui/ScreenHeader';
-import Picture from '../ui/Picture';
+import Avatar from '../ui/Avatar';
+
 import { noHexName } from '../../lib/npub';
 import { useChatStore } from '../../store/chatStore';
 
@@ -72,12 +73,14 @@ export default function SearchView({ handleSearch, joinGroupById, openChat }) {
                   aria-label={result.type === 'group' ? `Join ${result.name}` : `Message ${result.name || noHexName(null, result.pubkey)}`}
                 >
                   <span className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full border border-line bg-panelStrong text-accentText">
-                    <Picture
+                    {/* N1: the shape gate lives in Avatar; a result row may carry
+                        an encrypted picture and it decrypts here like anywhere */}
+                    <Avatar
                       src={result.picture}
-                      alt=""
-                      loading="lazy"
+                      name={result.name || noHexName(null, result.pubkey)}
+                      pubkey={result.pubkey || ''}
+                      size="md"
                       className="h-full w-full object-cover"
-                      fallback={result.type === 'group' ? <Users size={20} /> : <User size={20} />}
                     />
                   </span>
                   <span className="min-w-0 flex-1">
