@@ -59,6 +59,38 @@ test('a wrapped DM hides the sender and carries no t-tag on the outer event', ()
   }
 });
 
+test('a typing signal travels as a wrap and keeps its own clock', () => {
+  // Typing used to be a bare kind-4 signed by the sender, so the one signal
+  // that fires on every keystroke put the sender's key on the relay while every
+  // real message stayed anonymous. It now shares the send path, and the two
+  // traps that makes are pinned here: the outer event must be sender-less with
+  // no t tag, and the freshness window the receiver applies must read the
+  // rumor's clock, never the wrap's backdated one.
+  const { senderSk, senderPk, recipientSk, recipientPk } = buildPair();
+  const now = Math.floor(Date.now() / 1000);
+  const encrypted = encryptFor(sharedKeyOf(senderSk, recipientPk), { type: 'typing' });
+  const rumor = nip59.createRumor({
+    kind: 4,
+    created_at: now,
+    tags: rumorTags({ recipient: recipientPk }),
+    content: encrypted,
+  }, senderSk);
+  const { wrap } = sealAndWrap(rumor, { senderSk, recipientPubkey: recipientPk });
+
+  assert.equal(wrap.kind, GIFT_WRAP_KIND);
+  assert.notEqual(wrap.pubkey, senderPk, 'the sender is back on the wire');
+  assert.deepEqual(wrap.tags.map((tag) => tag[0]), ['p'], 'the outer event must carry the p tag alone');
+
+  // The wrap's created_at is backdated up to two days, so a ten-second freshness
+  // check against it would drop every typing tick. The rumor's is the real one.
+  assert.ok(wrap.created_at <= now, 'the wrap clock is not backdated');
+  const opened = unwrapToRumor(wrap, recipientSk);
+  assert.ok(opened, 'the peer cannot open a wrapped typing tick');
+  assert.equal(opened.rumor.created_at, now, 'the freshness window would read a backdated clock');
+  assert.equal(opened.rumor.pubkey, senderPk, 'the sender is not recoverable from the seal');
+  assert.equal(nip44.v2.decrypt(opened.rumor.content, sharedKeyOf(recipientSk, senderPk)), '{"type":"typing"}');
+});
+
 test('the inner seal keeps what the relay must not see', () => {
   const { senderSk, senderPk, recipientSk, recipientPk } = buildPair();
   const stamped = withBuzzLabel({ type: 'order_request' });

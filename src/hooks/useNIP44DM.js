@@ -165,21 +165,37 @@ export function useNIP44DM({ identity }) {
   }, [identity]);
 
   // SEND TYPING INDICATOR
+  //
+  // Was a bare kind-4 signed by the sender, so the one signal that fires on
+  // every keystroke handed the message relay the sender's key and an exact
+  // timestamp while every actual message stayed anonymous behind a wrap. A
+  // relay could line the two up and attribute a thread from a single typing
+  // tick. It now travels as a wrap like everything else: no sender on the
+  // wire, and the outer created_at is backdated up to two days.
+  //
+  // The ingest already handles a wrapped event by unwrapping the rumor first,
+  // so `event.pubkey` and `event.created_at` downstream are the real ones and
+  // the ten-second freshness window below still means what it says.
   const sendTypingIndicator = useCallback(async (recipientPubkey) => {
     if (!recipientPubkey || !identity?.sk || !/^[0-9a-f]{64}$/i.test(recipientPubkey) || !allowsTyping()) return;
     try {
-      const { finalizeEvent, nip44 } = await import('nostr-tools');
+      const { nip44, nip59 } = await import('nostr-tools');
       const pool = await getAuthenticatedPool(identity);
       const targets = await relaysForPeer(identity, recipientPubkey);
-      const shared = conversationKey(identity.sk, recipientPubkey);
+      const targetDm = recipientPubkey.trim().toLowerCase();
+      // Same two layers sendDM uses: the payload is encrypted to the pair, and
+      // the rumor carries that ciphertext. Ingest decrypts event.content, so a
+      // plaintext body here would parse as a failed decrypt and be dropped.
+      const shared = conversationKey(identity.sk, targetDm);
       const encrypted = nip44.v2.encrypt(JSON.stringify({ type: 'typing' }), shared);
-      const ev = finalizeEvent({
+      const rumor = nip59.createRumor({
         kind: 4, // Use kind 4 so strict relays accept it
         created_at: Math.floor(Date.now() / 1000),
-        tags: [['p', recipientPubkey]],
-        content: encrypted
+        tags: rumorTags({ recipient: targetDm }),
+        content: encrypted,
       }, identity.sk);
-      const results = await Promise.allSettled(pool.publish(targets.length ? targets : generalRelays, ev));
+      const { wrap } = sealAndWrap(rumor, { senderSk: identity.sk, recipientPubkey: targetDm });
+      const results = await Promise.allSettled(pool.publish(targets.length ? targets : generalRelays, wrap));
       if (results.every((result) => result.status === 'rejected')) {
         console.warn('[DM] Typing indicator was rejected by all relays:', results);
       }
