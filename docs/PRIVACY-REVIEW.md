@@ -27,10 +27,10 @@ with a frozen grandfathered set. Everything below is the code behind each row.
 
 | Surface | Default host | Leaves the device | Host learns | Read |
 | --- | --- | --- | --- | --- |
-| DM | `relay.primal.net` | wrap 1059, seal 13, rumor inside | **recipient** (plain `p`), arrival time, length; not sender, not the label | `useNIP44DM.js:102-165`, `giftWrap.js:37-42` |
-| DM typing | same | **bare kind-4 signed by the real sender** | sender, recipient, exact second | `useNIP44DM.js:168-189` |
+| DM | `relay.primal.net` | wrap 1059, seal 13, rumor inside | **recipient** (plain `p`), an `expiration`, arrival time, length; not sender, not the label, not the inner kind | `useNIP44DM.js:102-165`, `giftWrap.js:45-59` |
+| DM typing | same | wrap 1059, same two layers as a message | recipient and arrival time only; the sender is off the wire and the tick is not labelled | `useNIP44DM.js:167-201` |
 | DM read | same | `'#p':[me]` and `authors:[me]` | which pubkey is online and reading | `useNIP44DM.js:200-203` |
-| Contact list | DM + group | `{kinds:[0], authors:[every peer]}` | the address book, in one REQ | `useChatBootstrap.js:250-254` |
+| Contact list | the `profileRead` class, not the group boxes | `{kinds:[0], authors:[every peer]}` | the address book, in one REQ, per profile-read relay (A2) | `useChatBootstrap.js:243-261` |
 | Profile | `nos.lol`, `relay.damus.io` | kind 0, 10003 handle, 10002 relays | pubkey ↔ handle ↔ face ↔ blurb | `useIdentity.js:236-273` |
 | Search | `relay.vertexlab.io`, `relay.noswhere.com` | NIP-50 text; a 200-group directory blast | the query, and the asker's IP | `usePeopleSearch.js:220-228` |
 | Groups | `groups.ciphertele.com`, `groups2.ciphertele.com` | kind-9 signed by the author, `h`, `ep`, AES-GCM body; 9021/9022/9000/9001/9002/7/9005 | the whole social graph: author, group, epoch, second, size | `useNIP29Group.js:811-851`, `groupCipher.js:10-16` |
@@ -49,11 +49,11 @@ with a frozen grandfathered set. Everything below is the code behind each row.
 Two facts about the DM envelope matter more than its row. NIP-59 sets
 `created_at = now − U(0, 2 days)` (`nostr-tools nip59.js:232-234`) `[V]`, and the
 `since` filter is −7 days (`useChatBootstrap.js:456`) `[V]`, so the backdate
-cannot fall off the window. And sent wraps are unqueryable, so a reinstall
-recovers only *received* DMs `[V]` (`useNIP44DM.js:404-407`). The outer wrap
-carries exactly one `p` tag and nothing else (`nostr-tools nip59.js:260-271`)
-`[V]`, so the reply id and the client id stay sealed with the rumor
-(`giftWrap.js:23-29` is the rumor, not the wrap).
+cannot fall off the window. And sent wraps match neither history query, so a
+reinstall recovers only *received* DMs `[V]` (`useNIP44DM.js:421-422`, finding
+F13). The outer wrap is one `p` tag and one `expiration`, built by hand for that
+second tag (`giftWrap.js:45-59`) `[V]`, so the reply id and the client id stay
+sealed with the rumor (`giftWrap.js:64-70` is the rumor, not the wrap).
 
 ### A live baseline, 45 seconds
 
@@ -63,7 +63,8 @@ carries exactly one `p` tag and nothing else (`nostr-tools nip59.js:260-271`)
 361 ms**. `[A]` that sample is dominated by other clients, and the outer tag sets
 prove it: `["d","k","p"]`, `["ms","p","v"]`, `["e","p","receipt-type","v"]`,
 some with `expiration`. Those clients publish the inner kind (`k`) and the
-receipt type outward; Cipher's own wrap publishes neither. So Cipher leaks *less*
+receipt type outward; Cipher's own wrap publishes neither, though since the F9
+fix it does carry an `expiration`. So Cipher leaks *less*
 than the NIP-17 convention, and the common shape is not ours.
 
 This is the point that qualifies F6 below. On a busy public relay a single
@@ -74,12 +75,22 @@ Size risk is a function of the relay's population, not of the message.
 
 ### Can an observer pick Cipher out of the crowd?
 
-`[V]` measured. The outer wrap is one `p` tag and nothing else, so the capture
+`[V]` measured. The outer wrap was one `p` tag and nothing else, so the capture
 was split by tag shape: in 50 seconds, 2303 wraps, of which **518 (22%) were
 single-`p`** and the rest carried other tags. Of those 518, 360 (69%) sat on a
 length this client can actually produce, and 4 observed lengths (388, 944, 1466,
 1579) can be reached by no Cipher message at all — so at least one other client
 shares the single-`p` shape with a different payload structure.
+
+`[A]` the F9 stamp moves that census. Our wrap is now `expiration,p`, so it
+leaves the 22% minority for the majority bucket, which is the intended effect:
+the shape was the weak fingerprint. `[U]` unmeasured in that direction — the
+bucket is larger, but a sibling that stamps is only indistinguishable until
+someone compares the arithmetic, and ours is exactly
+`expiration − created_at = 2592000`. A neighbour stamping `now + 30d` from a
+true clock leaves a delta that is uniform over two days where ours is constant,
+so a filter on the exact delta could still single us out. Whether any live client
+randomises that delta is not something a 50-second sample can answer.
 
 `[V]` the sharper number: brute-forcing every message length from 0 to 1200
 characters, this client can emit only **seven** distinct wrap lengths — 1284,
@@ -208,23 +219,32 @@ An explorer resolves amount and time, so a vendor voluntarily undoes the amount
 privacy that a per-order address (`vendorPayments.js:137-140`) and an
 address-free listing (`listing.js:1-4`) just bought.
 
-**F9 `[V]` deletion is a request, and a wrap never expires.** Tombstones are local
-(`db.js:39, 320-322, 378-394`); a relay that copied the ciphertext keeps it.
-Exactly-once notes are truly gone only on a self-run carrier, which deletes on
-read (`note-carrier.mjs:201-220`); the relay path's once is a device ledger
-(`deadDrop.js:98-142`). The outer wrap carries no `expiration` tag — the only
-`expiration` in the tree is on the Blossom upload auth (`mediaCrypto.js:73`),
-while 68% of live wraps on the two relays do carry one. So nothing ever tells a
-relay to drop a message's only server-side copy, and the recipient's `since`
-window is 7 days (`useChatBootstrap.js:456`), so retention is currently unbounded
-and deliberate expiry is not.
+**F9 `[V]` deletion is a request, and a wrap never expires. Now stamped.**
+Tombstones are local (`db.js:39, 320-322, 378-394`); a relay that copied the
+ciphertext keeps it. Exactly-once notes are truly gone only on a self-run
+carrier, which deletes on read (`note-carrier.mjs:201-220`); the relay path's
+once is a device ledger (`deadDrop.js:98-142`). The outer wrap carried no
+`expiration` tag, so nothing ever told a relay to drop a message's only
+server-side copy, while 68% of live wraps on the two relays do carry one.
 
-`[I]` that is one small change with two effects pointing the same way: stamping
-the standard `expiration` on the wrap joins the shape most neighbouring clients
-already publish, which improves blending, and gives the relay a reason to drop
-the copy, which turns a request into a bound. It also trades an unbounded
-history for a bounded one, so a long absence past the stamp would lose the relay
-copy.
+It now does. `buildWrap` (`giftWrap.js:45-59`) stamps
+`expiration = created_at + 30 days`, using this client's own backdated wrap clock
+rather than `now()`: a `now()`-based stamp would hand the relay back the exact
+true second that the backdating exists to hide. The stamp is measured from the
+backdated clock on purpose and the test pins that (`giftWrap.test.js:82-89`). It
+replaces `nip59.createWrap`, which takes no extra tags, so the outer event is
+built by hand; the encryption is still nip59's own. Both wrap sites go through
+it, including the push-gateway notice.
+
+`[V]` the TTL is 30 days because of an asymmetry found while writing this: the
+live subscription asks for 7 days (`useChatBootstrap.js:456`) but the history
+fetch has no lower bound, so the stamp — not the window — is the real recovery
+horizon (F13). Thirty days keeps a month away from the app harmless.
+
+`[A]` two effects point the same way: the shape joins the majority, and the
+relay gets a reason to forget. `[A]` the residual is that the tag is only an
+offer. A relay may ignore it, and three of the four things that keep a copy
+(F8's bulletin, a media host, a carrier) are untouched by it.
 
 **F10 `[V]` README contradicted a purpose-built evidence doc.**
 `README.md:151` said "The minimum PIN is 6 digits." `vaultLockout.js:5-7` sets a
@@ -255,6 +275,50 @@ tying the group to the message relay. It now rides the wrap path like a message;
 the receiver needed no change because ingest already unwraps before it reads,
 and takes the counterparty from the rumor.
 
+**F13 `[V]` after the wrap transition, your own sent DMs are no longer on any
+relay.** There are exactly two history queries (`useNIP44DM.js:421-422`):
+`{kinds: [4], authors: [me]}` and `{kinds: [4, 1059], '#p': [me]}`. A wrap is
+signed by a random key and tagged with the *recipient*, so it matches the first
+on neither field and the second on neither field. Both queries are correct for
+what they were written for; the transition to NIP-59 quietly removed the sent
+half from relay recovery while the comment that explains the merge
+(`useNIP44DM.js:293-295`, "the history fetch re-saves our messages as 'sent'")
+still describes the bare kind-4 era.
+
+`[V]` same-device reloads survive: the composer writes each sent message to
+Dexie (`useComposer.js:158, 196`), and outbox rows are deleted on first accept
+(`outbox.js:42, 155`) so they are not a second copy. So the loss is a reinstall,
+a new device, or cleared storage, and it is one-sided — received messages come
+back from `#p: [me]` fine, which is why a casual check looks healthy.
+
+`[A]` three ways out, none free: (a) add a second `p` tag naming the sender, so
+the relay learns both ends of every DM in the clear — recoverable, but it undoes
+part of the anonymity the wrap just bought; (b) publish a second copy of the
+wrap tagged `p = sender`, doubling what a relay stores and what the recipient
+dedupes, while leaving the sender invisible; (c) accept it and keep the local
+copy as the only one. `[U]` which is right is a product call, not a
+crypto one, and it is the largest open decision this review produced.
+
+**F14 `[V]` the two user-facing disclosure rows described the wire this app no
+longer sends.** `egress.js` is the app's account of what a host learns, and the
+Message relay row said the relay sees "whether each one is a message, an order,
+or a call. That label is on every message in plain text, so anyone who reads this
+relay sees it too", with the Push gateway row repeating it. That was true of a
+bare kind-4 and stopped being true when messages became wraps: the label moved
+into the seal, and the gateway opens its own layer, so neither the relay nor the
+gateway reads anything in plain text. `README.md:88, 90` had the same staleness
+and added one of its own, describing the gateway as watching for "a kind-4 event
+that is tagged `t=msg`" when it watches kind 1059 and reads the tag out of the
+sealed notice (`notify-gateway.mjs:262, 291-298`) — the code was updated in the
+transition and the prose was not.
+
+`[A]` the direction of the error matters: the row overstated a leak, so nobody
+was misled into a *worse* choice than they had, and the fix narrows a claim
+rather than widening one. `[V]` all three now describe the wrap, and
+`seesText.test.js` fails if either row mentions a plain-text label again or stops
+saying the sender is hidden. A disclosure is a claim like any other, so it gets
+a falsifier: revert the row and the test goes red.
+
 ## 5. The catalogue
 
 Each entry: what it hides from whom / what it still reveals / assumptions and
@@ -271,11 +335,25 @@ clock against a ten-second freshness window, and a payload that must be
 encrypted before it enters the rumor because the receiver decrypts
 the rumor's content.
 
-**A2 Stop the address-book broadcast.** Hides which peers share an account.
-Reveals the account's own pubkey, so a patient relay still learns the set;
-batching raises the cost, not the ceiling. Product impact: slightly slower name
-resolution. Established. Falsifier: a relay operator trivially recovering the
-list from REQs anyway. Experiment: count distinct `authors` filters per login.
+**A2 Stop the address-book broadcast.** Applied, in part. Hides which peers share
+an account from the group boxes. `fetchProfilesForPubkeys` asked kind 0 for every
+missing peer on `[...generalRelays, ...groupRelays]`, so the roster authority was
+also handed the message address book, for no coverage: this client publishes
+kind 0 to `profileRelays`, which is not the group box, and there is a
+`profileRead` relay class (`egress.js:121`) whose whole purpose is "your IP when
+profiles are loaded". The read now goes there (`useChatBootstrap.js:260-261`),
+which is a superset of the old set minus the boxes and plus `purplepag.es`, an
+index of kind 0 — so names should resolve *better*, not worse.
+
+`[V]` the ceiling is unchanged, and the reason is worth stating: the read class
+still contains the message relay, so that one host still learns the whole set in
+one REQ. It sees most of it anyway from the `p` tag on every wrap, so what the
+REQ adds is a *snapshot* with a login timestamp, not new membership. `[U]`
+whether to move the message relay out of the read class is the remaining sliver;
+it is a coverage question (a peer published only to that relay), and the honest
+answer needs the week-long capture rather than a reading. Established.
+Falsifier: a relay operator trivially recovering the list from REQs anyway.
+Experiment: count distinct `authors` filters per login, per relay.
 
 **A3 Per-context identity from one root.** Hides the link between contexts, from
 relays and listing readers. Reveals a stable per-context key, and the root stays
@@ -473,8 +551,10 @@ Plausible means reachable without a new primitive, not free.
 
 ## 9. Most promising options, including the unconventional
 
-1. **A1 + A2.** Certain, cheap, and they close the two joins that hurt today. No
-   new protocol. Do these whatever else is chosen.
+1. **A1 + A2.** Done, and A2 only in part: the group boxes no longer see the
+   address book, the message relay still does. No new protocol. The next step is
+   F13, which A2's residual collides with: naming the sender on the wrap would
+   make sent history recoverable *and* hand the relay both ends in the clear.
 2. **F6's fixed-size rumor.** About 480 bytes a message to cut the length channel
    from seven classes to one. Cheaper and more effective than cover traffic for
    that channel, and it needs no server.
@@ -489,10 +569,8 @@ Plausible means reachable without a new primitive, not free.
 6. **E1 to 10^8 and beyond.** Cheap and measurable, but note the keypad caps it
    (F7), so "beyond" needs a design, not a constant.
 7. **E3's bulletin decision.** Restores amount privacy with no crypto at all.
-8. **F9's expiration stamp.** One tag: joins the majority wire shape and gives
-the relay a reason to expire the only server-side copy. Product cost: a long
-absence past the stamp loses relay history, so the stamp must be well beyond the
-7-day window.
+8. **F9's expiration stamp.** Done: one tag, `created_at + 30 days`, and the
+residual is F13 rather than the stamp.
 
 ## 10. Strongest failure reason, per option
 
@@ -589,9 +667,15 @@ iterations of PBKDF2-SHA-256).
   clearnet host must not harvest a 22242 (`pool.js:139-141`).
 - `restoreFromRelays` restores from local storage, not relays (section 7).
 - Three fixes landed while writing this, so their findings read in the past
-  tense: F1 and F12 (the two signed senders, typing and group key grants) and
-  F10 (the README PIN floor). The rest are open, and every experiment below is
-  still proposed rather than run.
+  tense: F1 and F12 (the two signed senders, typing and group key grants), F9
+  (the expiration stamp), F14 (both disclosure rows and the README push section)
+  and F10 (the README PIN floor), plus A1 and A2 (the address book, in part). The
+  rest are open.
+- F13 was found by chasing F9's TTL, not by looking for it: the question "how
+  long may a relay keep this?" does not answer itself until you notice that the
+  history fetch has no lower bound and that the stamp, not the window, is
+  therefore the horizon. It is the largest open decision this review produced and
+  it was invisible in the first pass.
 
 ## 17. Common sense to carry
 
