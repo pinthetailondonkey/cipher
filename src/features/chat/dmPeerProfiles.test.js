@@ -36,18 +36,23 @@ test('the dm peer set is memoized and drives the same profile fetch the group se
   );
 });
 
-test('the profile fetch reads the profile relays, not the group boxes', () => {
+test('the profile fetch reads the profile relays first and the message relay last', () => {
   // The address book is one filter naming every peer. Sending it to the group
-  // boxes too told the group relay who this account talks to, for no coverage:
-  // kind 0 is published to profileRelays, and profileReadRelays already
-  // includes the message relay, so the read set is a superset of what was asked
-  // before minus the two boxes. A2, held to the source it changed.
+  // boxes told the group relay who this account talks to, for no coverage: kind
+  // 0 is published to profileRelays and profileReadRelays indexes it. The
+  // message relay is now the fallback for peers the profile relays did not have
+  // rather than a copy of every name, so a peer on this app usually never
+  // reaches it. A2, held to the source it changed.
   const fetch = SOURCE.slice(SOURCE.indexOf('const fetchProfilesForPubkeys'));
   const body = fetch.slice(0, fetch.indexOf('const fresh = {}'));
-  assert.match(body, /const profileRelays = \[\.\.\.new Set\(\[\.\.\.profileReadRelays, \.\.\.generalRelays\]\)\]/,
-    'A2: the kind 0 query must go to the profile read relays');
-  assert.match(body, /queryWithTimeout\(pool, profileRelays, \{ kinds: \[0\], authors: missing \}/,
-    'A2: the address book must ride the profile read set');
+  assert.match(body, /const readRelays = profileReadRelays\.filter\(\(url\) => !generalRelays\.includes\(url\)\)/,
+    'A2: the first phase must be the profile read class without the message relay');
+  assert.match(body, /let events = readRelays\.length > 0 \? await askFor\(missing, readRelays\) : \[\]/,
+    'A2: the whole missing set must go to the profile relays first');
+  assert.match(body, /const stragglers = missing\.filter\(\(pk\) => !answered\.has\(pk\)\)/,
+    'A2: only unanswered names may fall through');
+  assert.match(body, /if \(stragglers\.length > 0\) events = events\.concat\(await askFor\(stragglers, generalRelays\)\)/,
+    'A2: the message relay is a fallback, and only for stragglers');
   assert.equal(/generalRelays, \.\.\.groupRelays/.test(body), false,
     'A2: the group boxes must not see the address book');
 });
