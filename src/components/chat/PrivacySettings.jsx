@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { Eye, Image, Users, CheckCheck, Keyboard, Ban, Link2, AlertTriangle } from 'lucide-react';
+import { Eye, Image, Users, CheckCheck, Keyboard, Ban, Link2, AlertTriangle, Bell } from 'lucide-react';
 import ScreenHeader from '../ui/ScreenHeader';
 import { getPrivacy, setPrivacy } from '../../lib/privacy';
+import { requestNotificationPermission } from '../../lib/notifications';
 import { requestMotionAccess } from '../../lib/shakeDetector';
 import { useChatStore } from '../../store/chatStore';
 import { pressable } from '../ui/Button';
@@ -60,6 +61,27 @@ export default function PrivacySettings({ onBack }) {
   const panicWipeEnabled = useChatStore((state) => state.panicWipeEnabled);
   const setPanicWipeEnabled = useChatStore((state) => state.setPanicWipeEnabled);
   const [motionNote, setMotionNote] = useState('');
+  const [notifNote, setNotifNote] = useState('');
+  // Turning notifications on is the deliberate gesture that asks the OS. A
+  // refusal or an unsupported device leaves the switch off and says why, so it
+  // never claims a buzz the phone cannot give. Turning it off asks nothing.
+  const toggleNotifications = async (on) => {
+    setNotifNote('');
+    if (!on) {
+      update({ notifications: false });
+      return;
+    }
+    const granted = await requestNotificationPermission();
+    if (granted) {
+      update({ notifications: true });
+      return;
+    }
+    update({ notifications: false });
+    const supported = typeof window !== 'undefined' && 'Notification' in window;
+    setNotifNote(supported
+      ? 'Notifications were refused. Turn them back on for Cipher in your browser or system settings.'
+      : 'This device does not support notifications.');
+  };
   const togglePanicWipe = async (on) => {
     setMotionNote('');
     if (!on) {
@@ -89,6 +111,8 @@ export default function PrivacySettings({ onBack }) {
           <Toggle icon={AlertTriangle} label="Shake to wipe" hint="Three hard shakes within a second erase every account, message and key on this device. There is no undo." checked={panicWipeEnabled === true} onChange={togglePanicWipe} />
           {motionNote && <p role="status" className="px-4 pb-3 text-[13px] text-inkMuted">{motionNote}</p>}
           <Toggle icon={Link2} label="Link previews" hint="On sends every link in a chat you open to the preview host. Off keeps links plain." checked={privacy.linkPreviews === true} onChange={(linkPreviews) => update({ linkPreviews })} />
+          <Toggle icon={Bell} label="Notifications" hint="On asks the OS once and buzzes for a new message or order. Off keeps the app silent." checked={privacy.notifications === true} onChange={toggleNotifications} />
+          {notifNote && <p role="status" className="px-4 pb-3 text-[13px] text-inkMuted">{notifNote}</p>}
         </div>
         <div className="overflow-hidden rounded-2xl border border-line bg-panel">
           {(blocked || []).length === 0 ? (

@@ -9,6 +9,9 @@ export const DEFAULT_PRIVACY = {
   typing: true,
   // A preview sends the link to a third-party host, so it is opt-in.
   linkPreviews: false,
+  // A buzz asks the OS for permission, and the prompt is the person's to
+  // give: it is not fired on mount. Opt-in here; the OS grant is separate.
+  notifications: false,
 };
 
 let privacyKey = '';
@@ -53,6 +56,12 @@ export function allowsTyping() {
 
 export function allowsLinkPreviews() {
   return getPrivacy().linkPreviews === true;
+}
+
+// Whether the person asked for a buzz. Separate from the OS grant: this is the
+// intent, the OS permission is the ability, and a buzz needs both.
+export function allowsNotifications() {
+  return getPrivacy().notifications === true;
 }
 
 // The Groups setting owns the door: 'nobody' refuses every new join request.

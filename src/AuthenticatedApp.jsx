@@ -7,7 +7,6 @@ import CallOverlay from './components/chat/CallOverlay';
 import DeadDropModal from './components/chat/DeadDropModal';
 import Toast from './components/ui/Toast';
 import CommandPalette from './components/ui/CommandPalette';
-import { requestNotificationPermission } from './lib/notifications';
 import { TABS } from './lib/tabs.js';
 import { barUnreadTotalOf, ordersNeedActionOf, useChatStore } from './store/chatStore';
 
@@ -119,9 +118,9 @@ export default function AuthenticatedApp({ identity }) {
     onSelect: () => setActiveTab(tab.id),
   }));
 
-  React.useEffect(() => {
-    requestNotificationPermission();
-  }, []);
+  // The notification prompt is NOT fired here on mount: Privacy owns the
+  // opt-in and asks the OS from the person's own tap (fix 7), so mounting the
+  // authenticated app never pops a permission box by itself.
 
   // Leaving the chat tab closes the full-screen chat overlays so a rail
   // switch never strands the user behind a fixed scrim.

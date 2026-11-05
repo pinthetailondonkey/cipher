@@ -1,5 +1,6 @@
 import { Capacitor } from '@capacitor/core';
 import { NOTIFICATION_PER_PEER_MS, NOTIFICATION_QUIET_MS, notificationAllowed } from './notificationThrottle';
+import { allowsNotifications } from './privacy';
 import { haptic } from './haptics';
 
 // The gate every OS notification passes before it can fire. It remembers the
@@ -31,18 +32,22 @@ export function resetNotificationGate() {
   lastAny = 0;
 }
 
+// Ask the OS for permission — deliberately, from a user action, never on
+// mount. Unsaved work is not repeated: a grant short-circuits, a refusal
+// answers without prompting again on browsers that honour that.
 export const requestNotificationPermission = async () => {
   try {
     if (Capacitor.isNativePlatform()) {
       const { LocalNotifications } = await import('@capacitor/local-notifications');
+      const current = await LocalNotifications.checkPermissions?.();
+      if (current?.display === 'granted') return true;
       const permission = await LocalNotifications.requestPermissions();
       return permission.display === 'granted';
     }
     if (typeof window !== 'undefined' && 'Notification' in window) {
-      const permission = Notification.permission === 'granted'
-        ? 'granted'
-        : await Notification.requestPermission();
-      return permission === 'granted';
+      if (Notification.permission === 'granted') return true;
+      if (Notification.permission === 'denied') return false;
+      return (await Notification.requestPermission()) === 'granted';
     }
     return false;
   } catch (error) {
@@ -52,6 +57,10 @@ export const requestNotificationPermission = async () => {
 };
 
 export const showNotification = async (type = 'message', peer = '') => {
+  // The intent is the person's; the OS grant is the ability. Both are needed,
+  // and the intent is what the app can honestly promise — a missing OS grant
+  // just means nothing is shown even though the setting is on.
+  if (!allowsNotifications()) return;
   // The message has already landed, saved, and marked unread by the time
   // this is called; the throttle holds back only this OS notification.
   if (!gateNotification(peer)) return;
