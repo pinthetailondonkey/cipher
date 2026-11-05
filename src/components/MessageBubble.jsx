@@ -107,7 +107,7 @@ function orderLabel(content) {
   return { text: 'Awaiting payment', className: 'bg-accentSoft text-accentText' };
 }
 
-function OrderReceipt({ content, isBuyer = false, disputeReason = '', deviceMark = null }) {
+function OrderReceipt({ content, isBuyer = false, disputeReason = '', deviceMark = null, orderId = null }) {
   const product = content.product || {};
   const title = product.title || product.name || content.productName || 'Order';
   const price = orderPriceLabel(content);
@@ -170,7 +170,7 @@ function OrderReceipt({ content, isBuyer = false, disputeReason = '', deviceMark
         {content.paymentSeenBy === 'vendor' && content.paymentState !== 'confirmed' && (
           <p className="mt-1 text-[13px] text-ink/50">Not checked on-chain.</p>
         )}
-        <ReceiptGlance orderId={content.type === 'order_update' ? content.orderId : message.id} />
+        <ReceiptGlance orderId={orderId || (content.type === 'order_update' ? content.orderId : null)} />
         {address && <p className="mt-1 text-[13px] text-ink/40">Ship to {address}</p>}
       </div>
     </div>
@@ -550,7 +550,7 @@ export default function MessageBubble({ message, data, onAction, senderName, ide
           // F7: the badge reads derived payment facts, not what the update
           // itself claims — a received "confirmed" with no receipt behind it
           // reads back as its real state.
-          <OrderReceipt content={{ ...content, ...orderState(chatMessages, message?.id, message, '', activeDm) }} isBuyer={isSender} disputeReason={disputeReason} deviceMark={message?.deviceMark || null} />
+          <OrderReceipt content={{ ...content, ...orderState(chatMessages, message?.id, message, '', activeDm) }} isBuyer={isSender} disputeReason={disputeReason} deviceMark={message?.deviceMark || null} orderId={message?.id || content.orderId || null} />
         )}
         {(content.type === 'cipher_order' || content.type === 'order_update') && (
           <ReceiptDoor message={message} content={content} />
