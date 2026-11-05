@@ -36,6 +36,22 @@ test('the dm peer set is memoized and drives the same profile fetch the group se
   );
 });
 
+test('the profile fetch reads the profile relays, not the group boxes', () => {
+  // The address book is one filter naming every peer. Sending it to the group
+  // boxes too told the group relay who this account talks to, for no coverage:
+  // kind 0 is published to profileRelays, and profileReadRelays already
+  // includes the message relay, so the read set is a superset of what was asked
+  // before minus the two boxes. A2, held to the source it changed.
+  const fetch = SOURCE.slice(SOURCE.indexOf('const fetchProfilesForPubkeys'));
+  const body = fetch.slice(0, fetch.indexOf('const fresh = {}'));
+  assert.match(body, /const profileRelays = \[\.\.\.new Set\(\[\.\.\.profileReadRelays, \.\.\.generalRelays\]\)\]/,
+    'A2: the kind 0 query must go to the profile read relays');
+  assert.match(body, /queryWithTimeout\(pool, profileRelays, \{ kinds: \[0\], authors: missing \}/,
+    'A2: the address book must ride the profile read set');
+  assert.equal(/generalRelays, \.\.\.groupRelays/.test(body), false,
+    'A2: the group boxes must not see the address book');
+});
+
 test('the fix stays on the store: the chat header does not grow a second profile source', () => {
   const header = read('../../components/chat/ChatHeader.jsx');
   assert.equal(header.includes('useProfiles'), false,

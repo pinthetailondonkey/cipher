@@ -4,7 +4,7 @@ import { db, deletedMessageIds, saveMessage, openDBFor, sweepTempMessages } from
 import { getMyGroups } from '../../lib/myGroups';
 import { relayCopyOverRow } from '../../lib/groupJoin';
 import { mergeReactions, reactionFiltersFor, reactionFromEvent, withoutDeletedReactions } from '../../lib/reactions';
-import { generalRelays, groupRelays, queryAllPages, queryFirstAnswer, queryWithTimeout } from '../../lib/relays';
+import { generalRelays, groupRelays, profileReadRelays, queryAllPages, queryFirstAnswer, queryWithTimeout } from '../../lib/relays';
 import { getAuthenticatedPool } from '../../lib/pool';
 import { useChatStore } from '../../store/chatStore';
 import { scopedGet, scopedSet } from '../../lib/storage';
@@ -250,8 +250,15 @@ export function useChatBootstrap({
       const missing = pubkeys.filter(pk => !cachedMap[pk]);
       if (missing.length === 0) return;
       const pool = await getAuthenticatedPool(identity);
-      const allRelays = [...new Set([...generalRelays, ...groupRelays])];
-      const events = await queryWithTimeout(pool, allRelays, { kinds: [0], authors: missing }, 4000);
+      // Profiles are public and there is a relay class for reading them:
+      // purplepag.es indexes kind 0 and is published to by many clients. Asking
+      // for them on the message relay instead put a filter naming every peer
+      // next to our own traffic, so the message relay could read the address
+      // book off a login even though it never sees a profile written here
+      // (we publish kind 0 to profileRelays, not to the DM relay). The chat
+      // still falls back to the DM relay when the read relays are silent.
+      const profileRelays = [...new Set([...profileReadRelays, ...generalRelays])];
+      const events = await queryWithTimeout(pool, profileRelays, { kinds: [0], authors: missing }, 4000);
       const fresh = {};
       for (const ev of events) {
         try {
