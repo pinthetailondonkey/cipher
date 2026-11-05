@@ -3,6 +3,18 @@ import test from 'node:test';
 import { generateSecretKey, getPublicKey, nip44 } from 'nostr-tools';
 import { decryptGroupMessage, encryptGroupMessage, fromHex, generateGroupKey } from './groupCipher.js';
 import { REGRANT_WINDOW_SEC, distributeGroupKey, epochsToBackfill, epochsToSend, installFloorAllows, missingEpochs, parseGroupKeyBundle } from './groupKeyDistribution.js';
+import { unwrapToRumor } from '../giftUnwrap';
+
+// A grant now rides the same two layers as a message, so a harness that reads
+// the wire has to open the wrap the way ingest does: unwrap to the rumor first,
+// then read the sender and the body off the rumor. A bare kind-4 (any grant
+// still in flight, or a relay's backlog) passes through unchanged.
+function openGrant(event, recipientSk) {
+  if (event.kind !== 1059) return event;
+  const opened = unwrapToRumor(event, recipientSk);
+  assert.ok(opened, 'the recipient cannot open the grant wrap');
+  return opened.rumor;
+}
 
 test('a key request backfills every epoch the requester missed, not only the current one', () => {
   const current = { epoch: 3, bytes: new Uint8Array(32) };
@@ -56,10 +68,13 @@ test('a member offline across two rotations still receives every epoch and can d
     publish: async (event) => { published.push(event); },
   });
   assert.equal(published.length, 1);
-  assert.equal(published[0].kind, 4);
+  assert.equal(published[0].kind, 1059, 'the grant still names the sender on the wire');
 
+  const rumor = openGrant(published[0], recipientSk);
+  assert.notEqual(published[0].pubkey, senderPk, 'the wrap key is random, so the sender is hidden');
+  assert.equal(rumor.pubkey, senderPk, 'the seal no longer names the sender');
   const shared = nip44.v2.utils.getConversationKey(recipientSk, senderPk);
-  const payload = JSON.parse(nip44.v2.decrypt(published[0].content, shared));
+  const payload = JSON.parse(nip44.v2.decrypt(rumor.content, shared));
   const keys = new Map(payload.keys.map((item) => [item.ep, fromHex(item.k)]));
   assert.equal(keys.size, 2);
   assert.equal(await decryptGroupMessage({
@@ -136,7 +151,8 @@ test('approve-then-ask: the unsolicited key is refused by the member, and the re
   let asked = false;
   const receive = (event) => {
     if (!installFloorAllows({ hasKey: Boolean(memberKey), asked })) return false;
-    const payload = JSON.parse(nip44.v2.decrypt(event.content, nip44.v2.utils.getConversationKey(memberSk, event.pubkey)));
+    const rumor = openGrant(event, memberSk);
+    const payload = JSON.parse(nip44.v2.decrypt(rumor.content, nip44.v2.utils.getConversationKey(memberSk, rumor.pubkey)));
     memberKey = fromHex(parseGroupKeyBundle(payload)[0].hex);
     return true;
   };

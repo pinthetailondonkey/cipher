@@ -9,6 +9,7 @@ import {
 import { generateGroupKey, toHex, fromHex } from './groupCipher.js';
 import { rotateGroupEpoch, __setMembershipDbForTests } from './groupKeyRotation.js';
 import { parseGroupKeyBundle, distributeGroupKey } from './groupKeyDistribution.js';
+import { unwrapToRumor } from '../giftUnwrap';
 import { encodeGroupPayload, decodeGroupEvent } from './groupMessageCodec.js';
 
 // Written by the AUDITOR lane as an untracked probe, landed here by BOSS
@@ -102,10 +103,21 @@ test('a removed member cannot read a post-removal message; a remaining member ca
   assert.equal(published.some((e) => e.tags.some((t) => t[0] === 'p' && t[1] === cPk)), false, 'nothing addressed to the removed member');
 
   // C cannot open B's bundle even when handed the exact bytes.
+  //
+  // The bundle is a wrap now, so the bytes a stranger would hold are the outer
+  // envelope. B opens it with B's own key to reach the rumor; only then does
+  // the pair key apply. That is exactly what ingest does, so the removed
+  // member's refusal is asserted on the envelope and on the settled body.
+  assert.equal(dm.kind, 1059, 'the bundle is a wrap');
+  const opened = unwrapToRumor(dm, B);
+  assert.ok(opened, 'the remaining member cannot open the bundle');
+  assert.notEqual(dm.pubkey, aPk, 'the rotating admin is still named on the wire');
+  assert.equal(opened.rumor.pubkey, aPk, 'the seal no longer names the admin');
+
   const forB = nip44.v2.utils.getConversationKey(A, bPk);
   const asC = nip44.v2.utils.getConversationKey(A, cPk);
-  assert.throws(() => nip44.v2.decrypt(dm.content, asC), 'the removed member cannot decrypt the bundle');
-  const payload = JSON.parse(nip44.v2.decrypt(dm.content, forB));
+  assert.throws(() => nip44.v2.decrypt(opened.rumor.content, asC), 'the removed member cannot decrypt the bundle');
+  const payload = JSON.parse(nip44.v2.decrypt(opened.rumor.content, forB));
   assert.equal(payload.t, 'gkey');
   assert.equal(payload.by, aPk);
 

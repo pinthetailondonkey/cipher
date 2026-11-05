@@ -6,6 +6,8 @@ import { currentOwner } from '../../db';
 import { loadMemberSnapshot } from './groupKeyRotation';
 import { isJoinDenied } from '../groupJoinQueue';
 import { keyRequestRecord } from './groupKeyRequest';
+import { nip59 } from 'nostr-tools';
+import { rumorTags, sealAndWrap } from '../giftWrap';
 import { markSafetyChange } from '../safetyNumber.js';
 
 const KEY_HEX = /^[0-9a-f]{64}$/i;
@@ -334,7 +336,7 @@ export function epochsToSend({ records, epoch, extraEpochs = [], explicit = fals
 const grantLedger = { getGrantRecords, recordGrant };
 
 export async function distributeGroupKey({ senderPrivkey, senderPubkey, groupId, epoch, keyBytes, recipients, publish, extraEpochs = [], answerRequest = false, label = null, ledger = grantLedger }) {
-  const { nip44, finalizeEvent } = await import('nostr-tools');
+  const { nip44 } = await import('nostr-tools');
   const now = Math.floor(Date.now() / 1000);
   const results = await Promise.allSettled(recipients.map(async (recipientPubkey) => {
     const records = await ledger.getGrantRecords(groupId, recipientPubkey);
@@ -356,8 +358,23 @@ export async function distributeGroupKey({ senderPrivkey, senderPubkey, groupId,
     };
     const shared = nip44.v2.utils.getConversationKey(senderPrivkey, recipientPubkey);
     const wrapped = nip44.v2.encrypt(JSON.stringify(payload), shared);
-    const event = finalizeEvent({ kind: 4, created_at: now, tags: [['p', recipientPubkey]], content: wrapped }, senderPrivkey);
-    await publish(event);
+    // Was a bare kind-4 signed by the sender, so every grant put the sender's
+    // key on the message relay next to each recipient's, once per member, in
+    // one second. A rotation therefore handed the relay the member set of a
+    // group whose roster it never reads, and tied that group to the message
+    // relay. It now travels the same two layers as a message: the envelope
+    // carries no sender, and the seal names who granted what.
+    //
+    // The receiver needs no change: its ingest already unwraps a 1059 into the
+    // rumor before reading data, and takes the counterparty from the rumor.
+    const rumor = nip59.createRumor({
+      kind: 4,
+      created_at: now,
+      tags: rumorTags({ recipient: recipientPubkey }),
+      content: wrapped,
+    }, senderPrivkey);
+    const { wrap } = sealAndWrap(rumor, { senderSk: senderPrivkey, recipientPubkey });
+    await publish(wrap);
     for (const bundle of bundles) await ledger.recordGrant(groupId, recipientPubkey, bundle.ep, { answered: answerRequest });
   }));
   const failures = results.filter((result) => result.status === 'rejected');
