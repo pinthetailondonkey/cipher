@@ -4,7 +4,7 @@ import { db, deletedMessageIds, saveMessage, openDBFor, sweepTempMessages } from
 import { getMyGroups } from '../../lib/myGroups';
 import { relayCopyOverRow } from '../../lib/groupJoin';
 import { mergeReactions, reactionFiltersFor, reactionFromEvent, withoutDeletedReactions } from '../../lib/reactions';
-import { generalRelays, groupRelays, profileReadRelays, queryAllPages, queryFirstAnswer, queryWithTimeout } from '../../lib/relays';
+import { generalRelays, groupRelays, profileReadRelays, profileRelays, queryAllPages, queryFirstAnswer, queryWithTimeout } from '../../lib/relays';
 import { getAuthenticatedPool } from '../../lib/pool';
 import { useChatStore } from '../../store/chatStore';
 import { scopedGet, scopedSet } from '../../lib/storage';
@@ -256,15 +256,21 @@ export function useChatBootstrap({
       const missing = pubkeys.filter(pk => !cachedMap[pk]);
       if (missing.length === 0) return;
       const pool = await getAuthenticatedPool(identity);
-      // Profiles are public and there is a relay class for reading them:
-      // purplepag.es indexes kind 0 and is published to by many clients. Asking
-      // for them on the message relay instead put a filter naming every peer
-      // next to our own traffic, so the message relay could read the address
-      // book off a login even though it never sees a profile written here
-      // (we publish kind 0 to profileRelays, not to the DM relay). The chat
-      // still falls back to the DM relay when the read relays are silent.
-      const profileRelays = [...new Set([...profileReadRelays, ...generalRelays])];
-      const events = await queryWithTimeout(pool, profileRelays, { kinds: [0], authors: missing }, 4000);
+      // Two phases, so the message relay reads the address book only when it
+      // has to. Profiles are public and this client publishes kind 0 to
+      // profileRelays, not to the message relay; the profile-read class indexes
+      // them (purplepag.es) and does not include the group boxes. Asking with
+      // one wide filter on everything told the message relay who this account
+      // talks to, for no coverage. Now it is the fallback for the names the
+      // profile relays did not have, so for a peer on this app the message
+      // relay usually sees nothing at all (A2). Worst case is two timeouts
+      // once per name, and every name is cached after it lands.
+      const readRelays = profileReadRelays.filter((url) => !generalRelays.includes(url));
+      const askFor = (authors, relays) => queryWithTimeout(pool, relays, { kinds: [0], authors }, 4000);
+      let events = readRelays.length > 0 ? await askFor(missing, readRelays) : [];
+      const answered = new Set(events.map((ev) => ev.pubkey));
+      const stragglers = missing.filter((pk) => !answered.has(pk));
+      if (stragglers.length > 0) events = events.concat(await askFor(stragglers, generalRelays));
       const fresh = {};
       for (const ev of events) {
         try {
