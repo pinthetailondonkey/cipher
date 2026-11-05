@@ -139,6 +139,7 @@ export function useChatBootstrap({
       registerWithGateway({
         gatewayUrl: gateway,
         pubkey: identity.pk,
+        sk: identity.sk,
         subscribe: shell ? undefined : subscribeBrowser,
         native: shell ? subscribeNative : undefined,
       }).then((result) => {

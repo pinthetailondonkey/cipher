@@ -46,6 +46,7 @@ test('no gateway means no request, and a gateway that answers can register', asy
     gatewayUrl: 'https://push.example/ignored',
     pubkey: 'aa',
     fetchImpl: async (url, options) => {
+      if (String(url).endsWith('/gateway-pubkey.json')) return { ok: true, json: async () => ({ gatewayPubkey: 'cc'.repeat(32) }) };
       nativeBody = JSON.parse(options.body);
       return { ok: true, json: async () => ({ ok: true, buzzing: false, reason: 'no key' }) };
     },
@@ -58,7 +59,10 @@ test('no gateway means no request, and a gateway that answers can register', asy
   const ready = await registerWithGateway({
     gatewayUrl: 'https://push.example',
     pubkey: 'aa',
-    fetchImpl: async () => ({ ok: true, json: async () => ({ ok: true, buzzing: true, reason: 'key present' }) }),
+    fetchImpl: async (url) => {
+      if (String(url).endsWith('/gateway-pubkey.json')) return { ok: true, json: async () => ({ gatewayPubkey: 'bb'.repeat(32) }) };
+      return { ok: true, json: async () => ({ ok: true, buzzing: true, reason: 'key present' }) };
+    },
     native: async () => ({ platform: 'ios', token: 'apns-token' }),
   });
   assert.equal(ready.buzzing, true);
@@ -66,7 +70,10 @@ test('no gateway means no request, and a gateway that answers can register', asy
   const fudged = await registerWithGateway({
     gatewayUrl: 'https://push.example',
     pubkey: 'aa',
-    fetchImpl: async () => ({ ok: true, json: async () => ({ ok: true, buzzing: 'yes' }) }),
+    fetchImpl: async (url) => {
+      if (String(url).endsWith('/gateway-pubkey.json')) return { ok: true, json: async () => ({ gatewayPubkey: 'bb'.repeat(32) }) };
+      return { ok: true, json: async () => ({ ok: true, buzzing: 'yes' }) };
+    },
     native: async () => ({ platform: 'android', token: 'device-token' }),
   });
   assert.equal(fudged.buzzing, false);
@@ -76,6 +83,9 @@ test('no gateway means no request, and a gateway that answers can register', asy
     pubkey: 'aa'.repeat(32),
     fetchImpl: async (url, options) => {
       urls.push(String(url));
+      if (String(url).endsWith('/gateway-pubkey.json')) {
+        return { ok: true, json: async () => ({ gatewayPubkey: 'bb'.repeat(32) }) };
+      }
       if (String(url).endsWith('/cipher-push.json')) {
         return { ok: true, json: async () => ({ vapidPublicKey: 'abc' }) };
       }
@@ -88,5 +98,20 @@ test('no gateway means no request, and a gateway that answers can register', asy
     subscribe: async (key) => ({ endpoint: 'https://push.example/device', key }),
   });
   assert.equal(registered.buzzing, true);
-  assert.deepEqual(urls, ['https://push.example/cipher-push.json', 'https://push.example/subscribe']);
+  assert.deepEqual(urls, ['https://push.example/gateway-pubkey.json', 'https://push.example/cipher-push.json', 'https://push.example/subscribe']);
+});
+
+test('a gateway without a wrap key is refused, so wraps never go to an unknown box', async () => {
+  await assert.rejects(
+    () => registerWithGateway({
+      gatewayUrl: 'https://push.example',
+      pubkey: 'aa'.repeat(32),
+      fetchImpl: async (url) => {
+        if (String(url).endsWith('/gateway-pubkey.json')) return { ok: true, json: async () => ({}) };
+        throw new Error('should not be reached');
+      },
+      subscribe: async () => ({ endpoint: 'x' }),
+    }),
+    /wrap key/,
+  );
 });

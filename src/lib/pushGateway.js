@@ -1,6 +1,9 @@
 // A locked phone buzzes only after a gateway you run is pasted in Connections.
 // The notice says "New message": the app, not the banner, names what arrived.
-// Messages are tagged t=msg. Orders are tagged t=order. Calls are tagged t=call. Typing, receipts, and key bundles are not.
+// The t=msg|order|call tag moved inside the NIP-59 seal: the outer wrap carries
+// no tag to read. Typing, receipts, and key bundles still do not buzz.
+
+import { rememberGatewayPubkey } from './pushGatewayStore.js';
 
 export const BUZZ_TAG = 'msg';
 export const ORDER_TAG = 'order';
@@ -82,17 +85,33 @@ export async function subscribeNative() {
   return { platform, token };
 }
 
-export async function registerWithGateway({ gatewayUrl, pubkey, fetchImpl = globalThis.fetch, subscribe, native } = {}) {
-  const base = String(gatewayUrl || '').trim();
-  if (!base) return { buzzing: false, reason: 'No push gateway is set. A locked phone will not buzz.' };
+// The wrap key: the box holds an ephemeral Nostr key and offers its public
+// half here. Every DM this device sends wraps a copy to it so the box can
+// still learn that something arrived after the t-tag left the wire.
+async function fetchGatewayWrapKey(gatewayUrl, fetchImpl) {
   let origin;
   try {
-    const url = new URL(base);
+    const url = new URL(String(gatewayUrl || '').trim());
     if (url.protocol !== 'https:' && url.protocol !== 'http:') throw new Error('bad');
     origin = url.origin;
   } catch {
     throw new Error('The push gateway address is not a URL.');
   }
+  const offered = await fetchImpl(new URL('/gateway-pubkey.json', origin).href, { headers: { Accept: 'application/json' } });
+  if (!offered?.ok) throw new Error('The push gateway did not offer a wrap key.');
+  const body = await offered.json().catch(() => ({}));
+  const gatewayPubkey = String(body?.gatewayPubkey || '').trim();
+  if (!/^[0-9a-f]{64}$/.test(gatewayPubkey)) throw new Error('The push gateway did not offer a wrap key.');
+  return { gatewayPubkey, origin };
+}
+
+export async function registerWithGateway({ gatewayUrl, pubkey, sk, fetchImpl = globalThis.fetch, subscribe, native } = {}) {
+  const base = String(gatewayUrl || '').trim();
+  if (!base) return { buzzing: false, reason: 'No push gateway is set. A locked phone will not buzz.' };
+  // The wrap key: the box holds an ephemeral Nostr key and offers its public
+  // half here. Every DM this device sends wraps a copy to it so the box can
+  // still learn that something arrived after the t-tag left the wire.
+  const { gatewayPubkey, origin } = await fetchGatewayWrapKey(gatewayUrl, fetchImpl);
   if (typeof native === 'function') {
     const got = await native();
     if (!got?.token) {
@@ -107,6 +126,7 @@ export async function registerWithGateway({ gatewayUrl, pubkey, fetchImpl = glob
     });
     const body = await posted.json().catch(() => ({}));
     if (!posted?.ok) throw new Error(body?.error || 'The push gateway refused this phone.');
+    rememberGatewayPubkey(base, gatewayPubkey);
     // The gateway decides: true only when it stored the token and holds the key file.
     const buzzing = body?.buzzing === true;
     return {
@@ -133,6 +153,7 @@ export async function registerWithGateway({ gatewayUrl, pubkey, fetchImpl = glob
     body: JSON.stringify({ pubkey, subscription, transport: 'webpush' }),
   });
   if (!posted?.ok) throw new Error('The push gateway refused this phone.');
+  rememberGatewayPubkey(base, gatewayPubkey);
   return { buzzing: true };
 }
 

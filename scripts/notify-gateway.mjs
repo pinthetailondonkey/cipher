@@ -3,16 +3,22 @@
 //   node scripts/notify-gateway.mjs
 //
 // Paste the printed address into Connections → Push gateway.
-// The box stores a VAPID key and the phone subscriptions under ./data/push-gateway.
-// It watches CIPHER_RELAYS (default the message relay) for kind-4 events and
-// sends { "kind": "message" }. It does not decrypt them.
+// The box stores a VAPID key, an ephemeral Nostr wrap key, and the phone
+// subscriptions under ./data/push-gateway.
+// It watches CIPHER_RELAYS (default the message relay) for kind-1059 wraps
+// addressed to its wrap key, opens its own layer only, and reads the p and t
+// tags of the notice sealed inside. A legacy bare kind-4 event with a public
+// t-tag still wakes a phone during the transition. Either way it sends
+// { "kind": "message" }.
 // Registration is open: anyone with this box's URL can register any pubkey and learn when that key receives a message.
 
 import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
-import { SimplePool } from 'nostr-tools';
+import { SimplePool, generateSecretKey, getPublicKey } from 'nostr-tools';
 import { eventShouldBuzz, eventShouldOrder, eventShouldRing } from '../src/lib/pushGateway.js';
+import { GIFT_WRAP_KIND } from '../src/lib/giftWrap.js';
+import { isGiftWrap, unwrapToRumor } from '../src/lib/giftUnwrap.js';
 import { nativeRegistration, sendNative } from '../src/lib/nativePushSend.js';
 
 if (fs.existsSync('.env')) process.loadEnvFile('.env');
@@ -46,11 +52,29 @@ function save(state) {
   fs.writeFileSync(statePath, JSON.stringify(state, null, 2));
 }
 
-const state = load();
+// The gateway key: an ephemeral Nostr key the box holds so senders can wrap
+// a copy of each DM to it. The seal inside stays sealed to the real
+// recipient; the gateway only reads its own layer's payload and the buzz
+// label that rides in it. Persisted with the state file so an existing box
+// keeps one identity across restarts.
+if (!state.gatewaySk) {
+  state.gatewaySk = Array.from(generateSecretKey());
+  save(state);
+}
+const gatewayPk = getPublicKey(Uint8Array.from(state.gatewaySk));
 if (!Array.isArray(state.subs)) state.subs = [];
 if (!Array.isArray(state.native)) state.native = [];
-const recent = new Map();
+// Maps a rumor the gateway opened for a recipient to the kind that rows used
+// to read off the t-tag. Same mapping as before, same input (the payload's
+// own shape), different place on the wire.
+function labelKindFor(label) {
+  if (label === 'call') return 'call';
+  if (label === 'order') return 'order';
+  if (label === 'msg') return 'message';
+  return null;
+}
 const recipients = new Map();
+const recent = new Map();
 
 let webpush;
 try {
@@ -161,6 +185,11 @@ function roomFor(list, pubkey) {
 
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url || '/', 'http://127.0.0.1');
+  if (req.method === 'GET' && url.pathname === '/gateway-pubkey.json') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ gatewayPubkey }));
+    return;
+  }
   if (req.method === 'GET' && url.pathname === '/cipher-push.json') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ vapidPublicKey: state.publicKey }));
@@ -221,13 +250,31 @@ let closer = () => {};
 
 function watch() {
   try { closer(); } catch { /* the previous socket is already gone */ }
-  const authors = [...new Set([
+  if (!relays.length) return;
+  const recipients = [...new Set([
     ...state.subs.map((row) => row.pubkey),
     ...(state.native || []).map((row) => row.pubkey),
   ].filter(Boolean))];
-  if (!authors.length || !relays.length) return;
-  const sub = pool.subscribeMany(relays, { kinds: [4], '#p': authors, '#t': ['msg', 'order', 'call'] }, {
+  // Wrapped DMs: one filter on the gateway's own ephemeral key. Every sender
+  // wraps a copy to this key, so no per-recipient author list is needed and
+  // the relay sees nothing but wraps arriving at one anonymous inbox.
+  const wrapped = relays.length && GIFT_WRAP_KIND
+    ? [{ kinds: [GIFT_WRAP_KIND], '#p': [gatewayPk] }]
+    : [];
+  // Legacy bare kind-4 events stay subscribed during the transition so an
+  // un-upgraded sender's message still buzzes a phone.
+  const legacy = recipients.length
+    ? [{ kinds: [4], '#p': recipients, '#t': ['msg', 'order', 'call'] }]
+    : [];
+  const filters = [...wrapped, ...legacy];
+  if (!filters.length) return;
+  const sub = pool.subscribeMany(relays, filters, {
     onevent(event) {
+      if (isGiftWrap(event)) {
+        handleWrapped(event);
+        return;
+      }
+      // The legacy path reads the t-tag off the public event as before.
       const kind = eventShouldRing(event) ? 'call' : eventShouldOrder(event) ? 'order' : eventShouldBuzz(event) ? 'message' : null;
       if (!kind) return;
       const who = event.tags?.find((tag) => tag[0] === 'p')?.[1];
@@ -235,6 +282,22 @@ function watch() {
     },
   });
   closer = () => sub.close();
+}
+
+// A wrap addressed to the gateway key opens here. The seal inside names only
+// the recipient (the p tag) and the buzz label (the t tag); the message body
+// itself never reaches this box.
+function handleWrapped(wrapEvent) {
+  const opened = unwrapToRumor(wrapEvent, Uint8Array.from(state.gatewaySk));
+  if (!opened) return;
+  const { rumor } = opened;
+  const who = rumor.tags?.find((tag) => tag[0] === 'p')?.[1];
+  if (!who) return;
+  // The label rides on the notice's own t tag inside the sealed layer, so a
+  // public relay event is still the only place that ever lacks it.
+  const kind = labelKindFor(rumor.tags?.find((tag) => tag[0] === 't')?.[1]);
+  if (!kind) return;
+  notify(who, kind).catch((error) => console.error('[push]', error.message));
 }
 
 server.listen(port, pushHost, () => {

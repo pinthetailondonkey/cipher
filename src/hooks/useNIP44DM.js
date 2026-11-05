@@ -11,7 +11,9 @@ import { publishWriteAhead, startOutboxSync } from '../lib/outbox';
 import { allowsTyping } from '../lib/privacy';
 import { publishOwnRelayList, relaysForPeer } from '../lib/dmRelays';
 import { sortMessages, stampArrival } from '../features/chat/media';
-import { withBuzzTag } from '../lib/pushGateway';
+import { rumorTags, sealAndWrap, withBuzzLabel, wrapForGateway, buzzLabelFor, GIFT_WRAP_KIND } from '../lib/giftWrap';
+import { isGiftWrap, unwrapToRumor } from '../lib/giftUnwrap';
+import { storedGatewayPubkey as activeGatewayPubkey, rememberGatewayPubkey } from '../lib/pushGatewayStore';
 import { conversationKey } from '../lib/dmKeys';
 import { noteFirstSeen } from '../lib/safetyNumber';
 import { clampedExpiresAt } from '../lib/disappearing';
@@ -105,20 +107,20 @@ export function useNIP44DM({ identity }) {
     if (!/^[0-9a-f]{64}$/.test(targetDm)) return { success: false, error: 'That is not a valid public key.' };
 
     try {
-      const { finalizeEvent, nip44 } = await import('nostr-tools');
+      const { nip44, nip59 } = await import('nostr-tools');
+      // NIP-59: the label moves inside the sealed payload as `t`, so the
+      // relay-visible event carries no sender and no t-tag. Only the
+      // recipient's key opens the wrap and reads what kind of message it was.
+      const stamped = withBuzzLabel(payload);
       const shared = conversationKey(identity.sk, targetDm);
-      const encrypted = nip44.v2.encrypt(JSON.stringify(payload), shared);
-      const tags = withBuzzTag([
-        ['p', targetDm],
-        ...(clientId ? [['client', clientId]] : []),
-        ...(replyId ? [['e', replyId, '', 'reply']] : []),
-      ], payload);
-      const event = finalizeEvent({
+      const encrypted = nip44.v2.encrypt(JSON.stringify(stamped), shared);
+      const rumor = nip59.createRumor({
         kind: 4,
         created_at: Math.floor(Date.now() / 1000),
-        tags,
-        content: encrypted
+        tags: rumorTags({ recipient: targetDm, clientId, replyId }),
+        content: encrypted,
       }, identity.sk);
+      const { seal, wrap } = sealAndWrap(rumor, { senderSk: identity.sk, recipientPubkey: targetDm });
 
       let targets = generalRelays.slice();
       let pool = null;
@@ -133,13 +135,29 @@ export function useNIP44DM({ identity }) {
       // before any relay is tried, so a close between sign and publish cannot
       // lose it. Calls and read marks are ephemeral and keep the old order.
       const ephemeral = payload?.type === 'call' || payload?.type === 'read';
-      const sent = await publishWriteAhead(event, targets, () => {
+      const gatewayKey = activeGatewayPubkey();
+      // A buzzable DM also wraps a copy of its seal to the push gateway's
+      // key, so the box still learns something arrived without reading any
+      // tag off the wire. Silent signals wrap nothing. The box reads only its
+      // own layer; the recipient's seal inside stays sealed.
+      if (gatewayKey && pool && buzzLabelFor(payload)) {
+        const gatewayWrap = wrapForGateway({
+          senderSk: identity.sk,
+          recipientPubkey: targetDm,
+          gatewayPubkey: gatewayKey,
+          payload,
+        });
+        if (gatewayWrap) {
+          try { Promise.allSettled(pool.publish(targets, gatewayWrap)).catch(() => {}); } catch { /* push is best effort */ }
+        }
+      }
+      const sent = await publishWriteAhead(wrap, targets, () => {
         if (!pool) throw new Error('No relay connection yet.');
-        return pool.publish(targets, event);
+        return pool.publish(targets, wrap);
       }, { writeAhead: !ephemeral });
-      if (!sent.queued) return { success: true, event, results: sent.results, relayCount: sent.okCount };
+      if (!sent.queued) return { success: true, event: wrap, results: sent.results, relayCount: sent.okCount };
       console.warn('[DM] All relays rejected:', sent.results);
-      return { success: true, queued: true, event, results: sent.results, relayCount: 0 };
+      return { success: true, queued: true, event: wrap, results: sent.results, relayCount: 0 };
     } catch (err) {
       console.error('[useNIP44DM] Send failed:', err);
       return { success: false, error: err.message };
@@ -180,8 +198,8 @@ export function useNIP44DM({ identity }) {
       if (!mounted.current) return;
       publishOwnRelayList(identity).catch(() => {});
       const dmFilters = [
-        { kinds: [4], '#p': [identity.pk], since },
-        { kinds: [4], authors: [identity.pk], since }
+        { kinds: [4, GIFT_WRAP_KIND], '#p': [identity.pk], since },
+        { kinds: [4], authors: [identity.pk], since },
       ];
       for (const filter of dmFilters) {
         if (!mounted.current) break;
@@ -199,10 +217,20 @@ export function useNIP44DM({ identity }) {
             if (servingRelay.size > 500) servingRelay.clear();
             servingRelay.set(id, relay.url);
           },
-          onevent: async (event) => {
+          onevent: async (incoming) => {
             if (!mounted.current) return;
             try {
               const { nip44 } = await import('nostr-tools');
+              // NIP-59 transition: a wrapped DM (kind 1059) opens here before
+              // anything downstream reads it; a legacy bare kind-4 keeps its
+              // old shape and goes through unchanged.
+              let event = incoming;
+              let unwrappedSeal = null;
+              const opened = unwrapToRumor(incoming, identity.sk);
+              if (opened) {
+                event = opened.rumor;
+                unwrappedSeal = opened.seal;
+              } else if (isGiftWrap(incoming)) return;
               const isSender = event.pubkey === identity.pk;
               const counterparty = isSender ? event.tags.find(t => t[0] === 'p')?.[1] : event.pubkey;
               if (!counterparty) return;
@@ -375,9 +403,21 @@ export function useNIP44DM({ identity }) {
     const { nip44 } = await import('nostr-tools');
     const [sentDms, recvDms] = await Promise.all([
       queryAllPages(pool, generalRelays, { kinds: [4], authors: [identity.pk] }),
-      queryAllPages(pool, generalRelays, { kinds: [4], '#p': [identity.pk] })
+      queryAllPages(pool, generalRelays, { kinds: [4, GIFT_WRAP_KIND], '#p': [identity.pk] })
     ]);
-    const allDms = Array.from(new Map([...sentDms, ...recvDms].map(ev => [ev.id, ev])).values());
+    // NIP-59 transition: wraps open into their rumors before the merge, so
+    // every branch below reads one shape. A bare kind-4 passes through as its
+    // own envelope, so an old message still opens.
+    const openedInbox = [];
+    for (const incoming of [...sentDms, ...recvDms]) {
+      if (isGiftWrap(incoming)) {
+        const opened = unwrapToRumor(incoming, identity.sk);
+        if (opened) openedInbox.push({ ...opened.rumor, id: incoming.id });
+        continue;
+      }
+      openedInbox.push(incoming);
+    }
+    const allDms = Array.from(new Map(openedInbox.map(ev => [ev.id, ev])).values());
     const readUpTo = new Map();
     for (const ev of allDms) {
       try {
