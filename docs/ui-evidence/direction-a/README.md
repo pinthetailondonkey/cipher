@@ -1,10 +1,12 @@
-# Direction A receipts — tree at 1874260 (2026-11-05)
+# Direction A receipts — working tree at 3f4a854 (2026-11-05)
 
 The screenshots `docs/DESIGN.md` asks a phase to leave behind, at both widths:
 390x844 (phone ring) and 1280x800 (desktop ring). Taken from a local UI-test
-build of `1874260`, no relay reached, no real key anywhere. The commits after
-that one are documentation only, so far, so the app source these pictures show
-current one.
+build of a working tree at `3f4a854` — the phone ring one commit earlier
+(`0789d44`), the commits between them being a group-key change and a doc,
+neither of which draws these six screens. Both runs recorded `dirty=true`: a
+parallel lane had group-crypto edits in flight. No relay reached, no real key
+anywhere.
 
 Six screens, each at both widths:
 
