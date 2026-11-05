@@ -204,11 +204,23 @@ An explorer resolves amount and time, so a vendor voluntarily undoes the amount
 privacy that a per-order address (`vendorPayments.js:137-140`) and an
 address-free listing (`listing.js:1-4`) just bought.
 
-**F9 `[V]` deletion is a request.** Tombstones are local (`db.js:39, 320-322,
-378-394`); a relay that copied the ciphertext keeps it. Exactly-once notes are
-truly gone only on a self-run carrier, which deletes on read
-(`note-carrier.mjs:201-220`); the relay path's once is a device ledger
-(`deadDrop.js:98-142`).
+**F9 `[V]` deletion is a request, and a wrap never expires.** Tombstones are local
+(`db.js:39, 320-322, 378-394`); a relay that copied the ciphertext keeps it.
+Exactly-once notes are truly gone only on a self-run carrier, which deletes on
+read (`note-carrier.mjs:201-220`); the relay path's once is a device ledger
+(`deadDrop.js:98-142`). The outer wrap carries no `expiration` tag — the only
+`expiration` in the tree is on the Blossom upload auth (`mediaCrypto.js:73`),
+while 68% of live wraps on the two relays do carry one. So nothing ever tells a
+relay to drop a message's only server-side copy, and the recipient's `since`
+window is 7 days (`useChatBootstrap.js:456`), so retention is currently unbounded
+and deliberate expiry is not.
+
+`[I]` that is one small change with two effects pointing the same way: stamping
+the standard `expiration` on the wrap joins the shape most neighbouring clients
+already publish, which improves blending, and gives the relay a reason to drop
+the copy, which turns a request into a bound. It also trades an unbounded
+history for a bounded one, so a long absence past the stamp would lose the relay
+copy.
 
 **F10 `[V]` README contradicted a purpose-built evidence doc.**
 `README.md:151` said "The minimum PIN is 6 digits." `vaultLockout.js:5-7` sets a
@@ -462,6 +474,10 @@ Plausible means reachable without a new primitive, not free.
 6. **E1 to 10^8 and beyond.** Cheap and measurable, but note the keypad caps it
    (F7), so "beyond" needs a design, not a constant.
 7. **E3's bulletin decision.** Restores amount privacy with no crypto at all.
+8. **F9's expiration stamp.** One tag: joins the majority wire shape and gives
+the relay a reason to expire the only server-side copy. Product cost: a long
+absence past the stamp loses relay history, so the stamp must be well beyond the
+7-day window.
 
 ## 10. Strongest failure reason, per option
 
