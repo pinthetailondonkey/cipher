@@ -14,7 +14,7 @@ import Picture from './ui/Picture';
 import { MediaImage, ProductImage } from './ui/PrivateMedia';
 import { attachmentsFor } from '../lib/mediaCrypto';
 import { allowsLinkPreviews } from '../lib/privacy';
-import { orderActionsFor, orderState, nextStepOf } from '../lib/orderActions';
+import { orderActionsFor, orderCardFor, nextStepOf } from '../lib/orderActions';
 import { reviewOfferForOrder } from '../lib/vendorReviews';
 import ReviewPrompt from './chat/ReviewPrompt';
 import { nameColorOf } from '../lib/nameColor';
@@ -91,7 +91,10 @@ function urlTokens(text) {
 }
 
 function orderLabel(content) {
-  if (content.paymentState === 'confirmed') return { text: 'Confirmed', className: 'bg-accent text-accentInk' };
+  // Lifecycle first, then money. A shipped, disputed or finished deal keeps
+  // its own word even when this device has confirmed the payment: the payment
+  // is a fact beside the status, not a replacement for it. Within a live order
+  // the money beats stack in evidence order, confirmed over seen.
   if (content.status === 'shipped') return { text: 'Shipped', className: 'bg-accent text-accentInk' };
   if (content.status === 'completed') return { text: 'Delivered', className: 'bg-success text-accentInk' };
   if (content.status === 'cancelled') return { text: 'Cancelled', className: 'bg-ink/15 text-inkMuted' };
@@ -99,6 +102,7 @@ function orderLabel(content) {
   // Disputed wears the danger outline: the danger token is a plain var(),
   // so a /15 fill would never generate, and the outline reads anyway.
   if (content.status === 'disputed') return { text: 'Disputed', className: 'border border-danger bg-transparent text-danger' };
+  if (content.paymentState === 'confirmed') return { text: 'Confirmed', className: 'bg-accent text-accentInk' };
   if (content.paymentState === 'seen' && content.paymentSeenBy !== 'vendor') return { text: 'Seen on-chain', className: 'bg-accent text-accentInk' };
   if (content.status === 'paid' || content.paymentSeenBy === 'vendor') return { text: 'Marked paid', className: 'bg-accent text-accentInk' };
   // Money badges read as outline: accent-text ring and label, no fill.
@@ -107,12 +111,24 @@ function orderLabel(content) {
   return { text: 'Awaiting payment', className: 'bg-accentSoft text-accentText' };
 }
 
+// The payment fact beside a lifecycle word. When a shipped or disputed deal
+// hides the money under its own status, this keeps the earned payment visible
+// without letting it replace the status. (fix 2)
+const PAYMENT_HIDDEN_BY_STATUS = new Set(['shipped', 'completed', 'cancelled', 'refunded', 'disputed']);
+function paymentNote(content) {
+  if (!PAYMENT_HIDDEN_BY_STATUS.has(content.status)) return null;
+  if (content.paymentState === 'confirmed') return { text: 'Payment confirmed', className: 'text-success' };
+  if (content.paymentState === 'seen') return { text: 'Payment seen', className: 'text-accentText' };
+  return null;
+}
+
 function OrderReceipt({ content, isBuyer = false, disputeReason = '', deviceMark = null, orderId = null }) {
   const product = content.product || {};
   const title = product.title || product.name || content.productName || 'Order';
   const price = orderPriceLabel(content);
   const address = content.shippingAddress || content.address || content.shipTo || '';
   const pill = orderLabel(content);
+  const note = paymentNote(content);
   const nextStep = nextStepOf(content, isBuyer);
   // The quote the card is allowed to draw. It is re-derived on this device by
   // escrowForCard, never read off the peer's payload, and only when escrow is
@@ -129,6 +145,7 @@ function OrderReceipt({ content, isBuyer = false, disputeReason = '', deviceMark
           <p className="text-[15px] font-semibold text-ink">{title}</p>
           <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-bold ${pill.className}`}>{pill.text}</span>
         </div>
+        {note && <p className={`mt-0.5 text-[11px] font-semibold uppercase tracking-[0.08em] ${note.className}`}>{note.text}</p>}
         {price && <p className="mt-1 text-[15px] font-bold text-accentText">{price}</p>}
         {nextStep && <p className="mt-0.5 text-[12px] leading-snug text-ink/50">{nextStep}</p>}
         {deviceMark && (
@@ -378,6 +395,15 @@ export default function MessageBubble({ message, data, onAction, senderName, ide
       .sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
     return String(reported[reported.length - 1]?.data?.disputeReason || content.disputeReason || '');
   })();
+  // The order an order-shaped card stands for: the update's own message id is
+  // not an order id, so resolve the original request and derive from it and
+  // the thread. A missing request still fails safe — the update anchors, the
+  // inline orderId folds what history remains. (fix 1)
+  const orderCard = ['cipher_order', 'order_request', 'order_update'].includes(content.type)
+    ? orderCardFor(chatMessages, message, '', activeDm)
+    : null;
+  const orderActionMessage = orderCard?.request || message;
+  const orderActionContent = orderActionMessage === message ? content : (orderActionMessage.data || {});
   const qrSignature = `${message?.id || ''}:${paidRows.map((row) => row.currency).join(',')}`;
   const lastQrSignature = useRef('');
 
@@ -549,8 +575,10 @@ export default function MessageBubble({ message, data, onAction, senderName, ide
         {(content.type === 'cipher_order' || content.type === 'order_request' || content.type === 'order_update') && (
           // F7: the badge reads derived payment facts, not what the update
           // itself claims — a received "confirmed" with no receipt behind it
-          // reads back as its real state.
-          <OrderReceipt content={{ ...content, ...orderState(chatMessages, message?.id, message, '', activeDm) }} isBuyer={isSender} disputeReason={disputeReason} deviceMark={message?.deviceMark || null} orderId={message?.id || content.orderId || null} />
+          // reads back as its real state. The state is derived from the
+          // original order the update names, never from the update's message
+          // id. (fix 1)
+          <OrderReceipt content={{ ...(orderCard?.content || content), ...orderCard?.state }} isBuyer={orderCard?.isBuyer ?? isSender} disputeReason={disputeReason} deviceMark={orderCard?.request?.deviceMark || message?.deviceMark || null} orderId={orderCard?.orderId || null} />
         )}
         {(content.type === 'cipher_order' || content.type === 'order_update') && (
           <ReceiptDoor message={message} content={content} />
@@ -573,8 +601,8 @@ export default function MessageBubble({ message, data, onAction, senderName, ide
             toneByAction={{ open_delivery_note: 'text-accentText' }}
           />
         )}
-        {orderActionsFor({ ...message, data: content }, chatMessages, '', activeDm).map(({ action, label, target }) => (
-          <OrderActionButton key={`o-${action}`} action={action} label={label} target={target} message={message} content={content} activeDm={activeDm} onAction={onAction} />
+        {orderActionsFor({ ...orderActionMessage, data: orderActionContent }, chatMessages, '', activeDm).map(({ action, label, target }) => (
+          <OrderActionButton key={`o-${action}`} action={action} label={label} target={target} message={orderActionMessage} content={orderActionContent} activeDm={activeDm} onAction={onAction} />
         ))}
         {ESCROW_WIRING_LANDED && escrowActionsFor({ ...message, data: content }, chatMessages).map(({ action, label, target }) => (
           // The escrow door: same subject as the direct accept, its own tone

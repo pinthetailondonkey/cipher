@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
 import { schnorr } from '@noble/curves/secp256k1.js';
-import { ORDER_ACTIONS, allowedActionsFor, deviceWatchedOrderOf, frozenIssuedMethods, issuedPaymentMethods, newestOwnIssuedMethods, orderActionsFor, orderHasVerifiedReceipt, orderPaymentDetails, orderRecordForReceipt, orderState, reopenedStatus } from './orderActions.js';
+import { ORDER_ACTIONS, allowedActionsFor, deviceWatchedOrderOf, frozenIssuedMethods, issuedPaymentMethods, newestOwnIssuedMethods, orderActionsFor, orderCardFor, orderHasVerifiedReceipt, orderPaymentDetails, orderRecordForReceipt, orderState, reopenedStatus } from './orderActions.js';
 import { ORDER_STATUS, ORDER_STATUSES, RECEIPT_OUTCOMES } from './paymentState.js';
 import { signReceipt, verifyReceipt as verifyReceipt2 } from './proofOfTrade.js';
 
@@ -113,7 +113,7 @@ test('the action table and the handlers name the same actions, with nothing left
   const bubble = fs.readFileSync(new URL('../components/MessageBubble.jsx', import.meta.url), 'utf8');
   for (const action of ORDER_ACTIONS) assert.equal(bubble.includes(`onAction?.('${action}'`), false, `${action} is wired outside the table`);
   assert.equal(bubble.includes("['accept_order', BadgeCheck"), false);
-  assert.match(bubble, /orderActionsFor\(\{ \.\.\.message, data: content \}, chatMessages, '', activeDm\)/);
+  assert.match(bubble, /orderActionsFor\(\{ \.\.\.orderActionMessage, data: orderActionContent \}, chatMessages, '', activeDm\)/);
 });
 
 test('every message action has a way in from the UI, and every menu item has a handler', () => {
@@ -827,10 +827,69 @@ test('11b pin: the beat words never branch on who is looking', () => {
     }
   }
   // the receipt renders from one derivation, spread into the card, for both arms
-  assert.match(src, /OrderReceipt content=\{\{ \.\.\.content, \.\.\.orderState\(chatMessages, message\?\.id, message, /, 'the bubble passes the real message shape, so the buyer localPatch and isSender reach the derivation');
+  assert.match(src, /OrderReceipt content=\{\{ \.\.\.\(orderCard\?\.content \|\| content\), \.\.\.orderCard\?\.state \}\}/, 'the bubble spreads the resolved original order and its derived state');
+  assert.match(src, /orderCardFor\(chatMessages, message, '', activeDm\)/, 'the card resolves the original request before deriving');
   assert.doesNotMatch(src, /orderState\(chatMessages, message\?\.id, \{ data: content \}/, 'the wrapper shape that drops localPatch must not come back');
   assert.equal(src.match(/<OrderReceipt /g)?.length, 1, 'exactly one OrderReceipt call site — both sides share it');
 });
+
+// fix 2: an order's status and its payment are two facts. A confirmed payment
+// used to sit above the lifecycle word, so a shipped or disputed deal read
+// "Confirmed" and lost its own state. The lifecycle leads; the money fact
+// stays beside it (paymentNote) for the states that hide it.
+test('fix 2: a confirmed payment never buries the lifecycle word', () => {
+  const confirmed = (status) => orderLabelOf({ status, paymentState: 'confirmed', paymentSeenBy: 'watcher' });
+  assert.equal(confirmed('shipped'), 'Shipped', 'shipped keeps its word over a confirmed payment');
+  assert.equal(confirmed('disputed'), 'Disputed', 'a dispute keeps its word over a confirmed payment');
+  assert.equal(confirmed('completed'), 'Delivered', 'a completed deal reads delivered');
+  assert.equal(confirmed('cancelled'), 'Cancelled');
+  assert.equal(confirmed('refunded'), 'Refunded');
+  // A live order leads with the money fact it reached.
+  assert.equal(confirmed('accepted'), 'Confirmed');
+  assert.equal(confirmed('paid'), 'Confirmed');
+  assert.equal(orderLabelOf({ status: 'accepted', paymentState: 'seen', paymentSeenBy: 'watcher' }), 'Seen on-chain');
+  assert.equal(orderLabelOf({ status: 'completed', paymentState: 'seen' }), 'Delivered', 'a seen payment does not displace delivered either');
+});
+
+// fix 1: an order_update names its order in `content.orderId`; its own message
+// id is not an order id. The card must derive from the original request and
+// the thread, or a verified receipt on the update is lost and the direction
+// flips to whoever authored the update.
+test('fix 1: an order_update card derives from the order it names, never its message id', () => {
+  const buyerKey = schnorr.utils.randomSecretKey();
+  const vendorKey = schnorr.utils.randomSecretKey();
+  const buyer = hexOf(schnorr.getPublicKey(buyerKey));
+  const vendor = hexOf(schnorr.getPublicKey(vendorKey));
+  const body = { orderId: 'order-1', buyer, vendor, currency: 'btc', address: 'bc1q', amount: '0.01', txid: 'aa', at: 1_700_000_000, outcome: 'confirmed' };
+  const signed = signReceipt(vendorKey, body, signReceipt(buyerKey, body));
+  // The buyer's own request, then the vendor's receipt-bearing update.
+  const mine = { id: 'order-1', isSender: true, timestamp: 10, pubkey: vendor, data: { type: 'order_request', status: ORDER_STATUS.PAID, product: { title: 'Tee' } } };
+  const updateMsg = { id: 'update-9', isSender: false, timestamp: 12, pubkey: vendor, data: { type: 'order_update', orderId: 'order-1', status: ORDER_STATUS.PAID, receipt: signed } };
+  const card = orderCardFor([mine, updateMsg], updateMsg, buyer, vendor);
+  assert.equal(card.orderId, 'order-1', 'the card names the order, not the update message id');
+  assert.equal(card.request, mine, 'the card derives from the original request');
+  assert.equal(card.isBuyer, true, 'direction comes from the request, not the update author');
+  assert.equal(card.state.paymentState, 'confirmed', 'the verified receipt on the update is read');
+  assert.equal(orderHasVerifiedReceipt([mine, updateMsg], card.orderId, card.request, buyer, vendor), true, 'the receipt binds the order it names');
+  // The old bug, pinned: the update's own id as the order id loses the receipt.
+  const buggy = orderState([mine, updateMsg], updateMsg.id, updateMsg, buyer, vendor);
+  assert.equal(buggy.paymentState, 'created', 'the update id as order id drops the evidence');
+});
+
+test('fix 1: an update whose original order is missing or malformed fails safe', () => {
+  const vendor = 'c'.repeat(64);
+  const updateMsg = { id: 'update-9', isSender: false, timestamp: 12, pubkey: vendor, data: { type: 'order_update', orderId: 'order-1', status: ORDER_STATUS.SHIPPED } };
+  const orphan = orderCardFor([updateMsg], updateMsg, '', vendor);
+  assert.equal(orphan.orderId, 'order-1', 'the inline order id still names the order');
+  assert.equal(orphan.request, updateMsg, 'the update anchors when no request remains');
+  assert.equal(orphan.state.status, 'shipped', 'its own status is the honest fallback, not a fresh order');
+  assert.equal(orderActionsFor(updateMsg, [updateMsg], '', vendor).length, 0, 'no actions are invented without a request');
+  // A card with the right id but the wrong type is malformed, not a request.
+  const malformed = { id: 'order-1', isSender: true, timestamp: 5, data: { type: 'text' } };
+  const card = orderCardFor([malformed, updateMsg], updateMsg, '', vendor);
+  assert.equal(card.request, updateMsg, 'a malformed original is not treated as the request');
+});
+
 
 // Documented invariant (stallion's measure, watch-out c): paymentSeenBy is
 // FIRST-WRITER-WINS inside one derivation — adopt() takes the first source

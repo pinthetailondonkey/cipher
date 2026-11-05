@@ -167,6 +167,32 @@ export function orderState(messages, orderId, request, ownPubkey, peerPubkey) {
   };
 }
 
+// The order a card stands for, resolved before any state is drawn. An update
+// names its order inline in `content.orderId`; the original request IS the
+// message whose id matches it, and the update's own message id is never an
+// order id. The card is derived from that request and the whole thread. When
+// the request is gone (a history fetch that returned only the tail), the
+// update anchors the card, the correct order id still folds its updates, and
+// nothing is invented. Direction comes from the request — an update is
+// authored by whichever side acted last, not by the viewer — and falls back to
+// the update only when there is no request to ask. (fix 1)
+export function orderCardFor(messages, message, ownPubkey, peerPubkey) {
+  const data = message?.data || {};
+  const isUpdate = data.type === 'order_update';
+  const orderId = (isUpdate ? data.orderId : message?.id) || message?.id || null;
+  const request = isUpdate
+    ? (Array.isArray(messages) ? messages : []).find((item) => item?.id === orderId && isRequest(item.data)) || message
+    : message;
+  const content = request && request !== message ? { ...(request.data || {}), ...data } : data;
+  return {
+    orderId,
+    request,
+    isBuyer: request && request !== message ? !!request.isSender : !!message?.isSender,
+    content,
+    state: orderState(messages, orderId, request, ownPubkey, peerPubkey),
+  };
+}
+
 // What happens next, said plainly, from the state the order already reached.
 // The line names who acts; it never claims a step the wire has not taken —
 // marked paid is not checked on chain, shipped is not delivered. It lives
