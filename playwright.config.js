@@ -15,6 +15,16 @@ export default defineConfig({
   retries: process.env.CI ? 2 : 0,
   workers: process.env.CI ? 1 : undefined,
   reporter: 'html',
+  // Every spec now opens a real vault through the PIN gate: a 600k-iteration
+  // PBKDF2 derivation and a WebAuthn round trip to wrap it, and a spec that
+  // reloads pays both again. The stock 30s was a fit for a boot that restored
+  // a session key for free; a test that also types and waits a few times
+  // crosses it on a loaded machine.
+  timeout: 60_000,
+  // The stock 5s expect wait, twice over: a wrong PIN's alert lands after a
+  // 600k-iteration derivation, and the wrap another derivation later. A
+  // loaded two-core box crosses 5s often enough to look like a product bug.
+  expect: { timeout: 15_000 },
   use: {
     baseURL: ORIGIN,
     trace: 'on-first-retry',
