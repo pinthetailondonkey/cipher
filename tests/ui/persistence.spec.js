@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { seedVault, unlock } from './fixtures.js';
 
 // Opens the app's per-account database by name without a version, so this never
 // creates or upgrades anything. The app must have made the database and its
@@ -86,16 +87,17 @@ async function waitForAppDatabase(page, timeout = 10_000) {
 
 test.describe('Persistence', () => {
   test.beforeEach(async ({ page }) => {
-    // Session key in place: the app loads past the lock screen with the vault
-    // open. sessionStorage survives reloads within the tab, so the app is
-    // still unlocked after page.reload().
-    await page.addInitScript(() => {
-      sessionStorage.setItem('cipher_session_sk', JSON.stringify(Array(32).fill(170)));
-    });
+    // The account, and nothing else: no key is stored anywhere, so each test's
+    // own goto meets the gate and opens it (tests/ui/fixtures.js). A reload
+    // mid-test is a lock again, not a restore — which is what the lock/unlock
+    // steps below now say with the seam instead of a storage key.
+    await page.addInitScript(seedVault);
   });
 
   test('new rows are sealed at rest and reload beside a legacy plaintext row', async ({ page }) => {
+    test.slow(); // two boots: the landing and the reload that has to open the gate again
     await page.goto('/');
+    await unlock(page);
     const dbName = await waitForAppDatabase(page);
 
     // The app created this database, so the messages store must already exist.
@@ -178,9 +180,11 @@ test.describe('Persistence', () => {
     const seededOrder = await readStoredMessage(page, { dbName, msgId: orderMessage.id });
     expect(seededOrder.msg, 'order write through saveMessage landed in IndexedDB').toBeDefined();
 
-    // Reload page and wait for the app shell, then require the rows both in
-    // IndexedDB and in the app's read path.
+    // Reload page and open the gate again, then require the rows both in
+    // IndexedDB and in the app's read path. The reload carries no key, so the
+    // gate is what comes back — not a restored session.
     await page.reload();
+    await unlock(page);
     // The rail rides md+ now; at phone width the chat list's kebab is the
     // mounted landmark the reload reached past the lock.
     await page.getByRole('button', { name: 'Chat list menu' }).waitFor();
@@ -215,6 +219,7 @@ test.describe('Persistence', () => {
 
   test('a message written before openDBFor is stored sealed, not plaintext', async ({ page }) => {
     await page.goto('/');
+    await unlock(page);
     const dbName = await waitForAppDatabase(page);
 
     // Close the account's database, then write through the app seam: with no
@@ -261,6 +266,7 @@ test.describe('Persistence', () => {
 
   test('a queued write flushed against an existing sealed row keeps its own content', async ({ page }) => {
     await page.goto('/');
+    await unlock(page);
     const dbName = await waitForAppDatabase(page);
 
     // First version of the row, written through the app: sealed at rest.
@@ -286,11 +292,11 @@ test.describe('Persistence', () => {
     expect(stored.msg.sealed?.ct, 'the first version is sealed at rest').toBeTruthy();
     expect(JSON.stringify(stored.msg).includes('first note'), 'nothing plaintext beside the envelope').toBe(false);
 
-    // Lock the vault in place — the session copy of the key is gone while the
-    // database stays open — then save a later version of the same row: the
-    // write cannot be sealed, so it is held in the at-rest queue
-    // (src/lib/messageAtRest.js) and nothing reaches disk.
-    await page.evaluate(() => sessionStorage.removeItem('cipher_session_sk'));
+    // Lock the vault in place — the in-memory key is gone while the database
+    // stays open — then save a later version of the same row: the write cannot
+    // be sealed, so it is held in the at-rest queue (src/lib/messageAtRest.js)
+    // and nothing reaches disk.
+    await page.evaluate(() => window.__cipher.clearSessionKey());
     const secondVersion = { ...firstVersion, timestamp: now + 1, data: { message: 'second note', type: 'text' } };
     await page.evaluate(async ({ chat, msg }) => {
       await window.__cipher.saveMessage(chat, msg);
@@ -304,7 +310,7 @@ test.describe('Persistence', () => {
     // envelope still on disk must NOT be carried into that merge — its payload
     // is the row as of the first write, not this one.
     await page.evaluate(() => {
-      sessionStorage.setItem('cipher_session_sk', JSON.stringify(Array(32).fill(170)));
+      window.__cipher.setSessionKey(new Uint8Array(32).fill(170));
       window.__cipher.closeDB();
       window.__cipher.openDBFor(localStorage.getItem('cipher_db_owner'));
     });
@@ -323,20 +329,18 @@ test.describe('Persistence', () => {
 
 });
 
-// Outside the describe above on purpose: that describe seeds the session key
-// with addInitScript, which would re-seed this test's "locked" reload too.
+// Outside the describe above on purpose: that describe seeds the account, and
+// this test wants the gate it can lock and re-paint, not a replayed seed.
 test('with the vault locked the app renders without crashing', async ({ page }) => {
   const pageErrors = [];
   page.on('pageerror', (error) => pageErrors.push(String(error)));
 
-  // No seeded session key: the app shows the lock screen first. Unlocking
-  // here means putting the session key in place by hand, exactly what the
-  // unlock paths do (src/useIdentity.js).
+  // The gate is where every boot starts now; open it once so there is a
+  // database with a sealed row to come back to.
+  await page.addInitScript(seedVault);
   await page.goto('/');
-  await page.evaluate(() => {
-    sessionStorage.setItem('cipher_session_sk', JSON.stringify(Array(32).fill(170)));
-  });
-  await page.reload();
+  await expect(page.getByRole('heading', { name: 'Unlock Cipher' })).toBeVisible({ timeout: 15000 });
+  await unlock(page);
   // The rail rides md+ now; at phone width the chat list's kebab is the
   // mounted landmark.
   await page.getByRole('button', { name: 'Chat list menu' }).waitFor();
@@ -365,10 +369,10 @@ test('with the vault locked the app renders without crashing', async ({ page }) 
     });
   });
 
-  // Lock the app the way lockApp does: the session copy of the vault key
-  // goes away. On reload the vault is locked while the sealed rows sit in
-  // IndexedDB.
-  await page.evaluate(() => sessionStorage.removeItem('cipher_session_sk'));
+  // Lock the app the way lockApp does: the in-memory key goes away. On reload
+  // the gate is painted over the sealed rows sitting in IndexedDB.
+  test.slow(); // two boots, two derivations, and the reload between them
+  await page.evaluate(() => window.__cipher.clearSessionKey());
   await page.reload();
 
   // The lock screen renders and nothing threw.

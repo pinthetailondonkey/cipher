@@ -2,6 +2,7 @@
 import Dexie from 'dexie';
 import { mergeStoredMessage, patchStoredMessage, markReadThrough, replacedTempId, planTempSweep } from './lib/messageMerge';
 import { createWriteQueue } from './lib/writeQueue';
+import { clearSessionKey, setSessionKey } from './lib/sessionKey';
 import {
   trySealMessageRow, openMessageRow, isSealedRow,
   queueAtRestWrite, takeAtRestWrites, requeueAtRestWrites, dropAtRestWrites,
@@ -464,5 +465,12 @@ if (typeof window !== "undefined" && import.meta.env?.VITE_TEST_HOOKS === '1') {
     // queued while it was closed — the write queue and the at-rest queue —
     // are applied on the open.
     closeDB, openDBFor,
+    // Test seam: the in-memory session key, which no storage holds any more
+    // (src/lib/sessionKey.js). Clearing it is what removing the old
+    // sessionStorage copy used to mean — the tab is locked with the database
+    // still open — and setting it back is an unlock in place, no PIN and no
+    // reload. A spec that wants the locked branch can reach it without
+    // re-deriving the key it already has.
+    clearSessionKey, setSessionKey,
   };
 }

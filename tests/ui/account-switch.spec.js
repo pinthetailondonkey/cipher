@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { getPublicKey } from 'nostr-tools';
+import { unlock } from './fixtures.js';
 
 // switchAccount through its real door: the Accounts screen, typed PIN, the
 // Switch button. Unlock already refuses to treat a damaged copy as a wrong
@@ -10,6 +11,9 @@ const SK_A = Array.from({ length: 32 }, (_, i) => (i * 5 + 1) & 0xff);
 const PK_A = getPublicKey(Uint8Array.from(SK_A));
 const SK_B = Array.from({ length: 32 }, (_, i) => (i * 9 + 7) & 0xff);
 const PK_B = getPublicKey(Uint8Array.from(SK_B));
+// The active account's own PIN. Boot carries no key any more, so A is opened
+// through the gate like any account before this spec can switch away from it.
+const PIN_A = '11111111';
 
 // The PIN vault the app itself writes (src/useIdentity.js encryptKey), and the
 // no-salt shape from before per-vault salts. The switch path opens these for
@@ -29,27 +33,28 @@ async function pinVault(sk, pin, { legacy = false } = {}) {
   return legacy ? envelope : { ...envelope, salt: Array.from(salt), iter: iterations };
 }
 
-// A's vault only needs to satisfy boot's device-lock gate (v: 3); nothing in
-// this spec opens it.
-const deviceShapedVault = () => ({ v: 3, dk: { k: 'prf', id: 'seeded' }, iv: [1, 2, 3], data: [4, 5, 6] });
-
+// A's vault used to be a device-shaped shell no one opened, because the
+// session in storage carried A's key. Nothing carries it now, so A's vault is
+// real and the PIN opens it.
+//
 // One-shot seeding: a successful switch ends in its own reload, and a
 // replaying seed would hand the app back the very vault it just wrapped.
 async function seedTwoAccounts(page, { vaultB }) {
-  await page.addInitScript(({ pkA, pkB, skA, vaultA, vaultB }) => {
+  const vaultA = await pinVault(SK_A, PIN_A);
+  await page.addInitScript(({ pkA, pkB, vaultA, vaultB }) => {
     if (localStorage.getItem('cipher_switch_seeded')) return;
     localStorage.setItem('cipher_switch_seeded', '1');
-    sessionStorage.setItem('cipher_session_sk', JSON.stringify(skA));
     localStorage.setItem('cipher_vaults', JSON.stringify({
       [pkA]: { vault: vaultA, handle: 'active', displayName: 'Active Account', createdAt: 1700000000000, confirmed: true },
       [pkB]: { vault: vaultB, handle: 'target', displayName: 'Target Account', createdAt: 1700000001000, confirmed: true },
     }));
     localStorage.setItem('cipher_active_pubkey', pkA);
-  }, { pkA: PK_A, pkB: PK_B, skA: SK_A, vaultA: deviceShapedVault(), vaultB });
+  }, { pkA: PK_A, pkB: PK_B, vaultA, vaultB });
 }
 
 async function openSwitcher(page) {
   await page.goto('/');
+  await unlock(page, PIN_A);
   await expect(page.getByRole('navigation', { name: 'Tabs' })).toBeVisible({ timeout: 20000 });
   await page.getByRole('button', { name: 'You', exact: true }).click();
   await page.getByRole('button', { name: /Accounts/ }).click();
@@ -67,6 +72,7 @@ const targetVault = (page) => page.evaluate((pk) => JSON.parse(localStorage.getI
 
 test.describe('switchAccount answers damage as damage, never as a wrong PIN', () => {
   test('five damaged-copy attempts spend nothing and delete nothing', async ({ page }) => {
+    test.slow(); // one boot, then five typed attempts on the switch screen
     // Before the guard, each of these charged one of the five attempts, and
     // the fifth deleted the account outright. Damage no PIN could open must
     // answer on its own, all five times, and leave the entry exactly as it
@@ -121,22 +127,30 @@ test.describe('switchAccount answers damage as damage, never as a wrong PIN', ()
 });
 
 test.describe('switchAccount still switches a legitimate old account', () => {
-  // The wrap itself needs an authenticator, which the iphone project has
-  // none of: the full legacy switch, wrapped and reloaded, is proven in
-  // account-switch.devicePrf.spec.js under Chromium's virtual authenticator.
+  // The gate installs a virtual authenticator for any spec that seeds and
+  // unlocks (tests/ui/fixtures.js), so this arm has one too: a legitimate PIN
+  // on B's unwrapped vault is wrapped here as well, device layer and all.
+  // account-switch.devicePrf.spec.js proves the same wrap under its own.
   test('a correct PIN on a legacy vault is never told it is wrong, and spends nothing', async ({ page }) => {
+    test.slow();
     await seedTwoAccounts(page, { vaultB: await pinVault(SK_B, '123456', { legacy: true }) });
     await openSwitcher(page);
     await switchWithPin(page, '123456');
-    // Give the device-key prompt time to settle either way, then read the
-    // facts that do not depend on it: the PIN was right, so no attempt is
-    // spent, nothing says "Wrong PIN", and the vault is untouched.
-    await page.waitForTimeout(3000);
+    // The switch ends in a reload of its own, and the wrap underneath it is
+    // real work (a 600k-iteration encrypt, the authenticator, a full verify
+    // open), so both the pointer and the wrapped vault are polled rather than
+    // read off a fixed clock that suite load can outlast.
+    await expect.poll(() => page.evaluate(() => localStorage.getItem('cipher_active_pubkey')), { timeout: 60000 }).toBe(PK_B);
+    await expect.poll(async () => (await targetVault(page))?.v, { timeout: 60000 }).toBe(3);
+    // The facts that do not depend on that timing: the PIN was right, so no
+    // attempt is spent and nothing says "Wrong PIN".
     expect(await storedFailsB(page)).toBeNull();
     const said = await page.evaluate(() => document.querySelector('[role="alert"]')?.textContent || '');
     expect(said).not.toContain('Wrong PIN');
+    // Straight in: the vault left as a no-salt PIN envelope, and comes back
+    // behind the device layer.
     const vault = await targetVault(page);
-    expect(vault.v).toBeUndefined();
     expect(vault.salt).toBeUndefined();
+    expect(vault.dk.k).toBe('prf');
   });
 });

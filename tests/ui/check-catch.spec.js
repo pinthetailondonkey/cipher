@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { createHmac } from 'node:crypto';
-import { seedVault } from './fixtures.js';
+import { seedVault, unlock } from './fixtures.js';
 
 // The chain check's refusal branches, at the screen. A read that failed used
 // to lift the buyer's card to address_issued — a state no watcher earned — and
@@ -90,6 +90,7 @@ async function openThread(page, details) {
     }));
   });
   await page.goto('/');
+  await unlock(page);
   await expect(page.getByRole('heading', { name: 'Chats' })).toBeVisible({ timeout: 20000 });
   // The boot's own history fetch lands first, so the seed is not replaced by
   // an empty relay copy.
@@ -184,8 +185,10 @@ test.describe('the chain check refuses instead of pretending', () => {
     expect((await page.getByRole('status').innerText()).trim()).toBe('The check could not be done, so nothing changed.');
     await expect(page.getByText('could not read its payment record', { exact: false })).toHaveCount(0);
     expect(asked.length, 'the watcher was never asked after a failed read').toBe(0);
-    // Nothing was accepted, so the check is still the card's offer.
-    await expect(page.getByRole('button', { name: CHECK, exact: true })).toHaveCount(1);
+    // Nothing was accepted, so the check is still the card's offer — and the
+    // order draws a card on the request and on the acceptance, so both offers
+    // are counted here.
+    await expect(page.getByRole('button', { name: CHECK, exact: true })).toHaveCount(2);
     const after = await snapshot(page);
     expect(after, 'nothing about the order changed').toEqual(before);
   });
@@ -201,7 +204,7 @@ test.describe('the chain check refuses instead of pretending', () => {
     await expect(page.getByText('This order has no coin amount, so it cannot be checked.')).toHaveCount(0);
     expect((await page.getByRole('status').innerText()).trim()).toBe(NO_DETAILS);
     expect(asked.length, 'the watcher was never asked').toBe(0);
-    await expect(page.getByRole('button', { name: CHECK, exact: true })).toHaveCount(1);
+    await expect(page.getByRole('button', { name: CHECK, exact: true })).toHaveCount(2);
     const after = await snapshot(page);
     expect(after, 'nothing about the order changed').toEqual(before);
   });
