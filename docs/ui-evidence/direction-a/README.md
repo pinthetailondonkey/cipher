@@ -38,3 +38,15 @@ Not in these receipts: an order card in the thread (covered by
 installed-PWA geometry (covered by the `pwa-standalone-*` specs, which assert
 the safe-area maths rather than photograph it). The raw per-run captures stay
 in `test-results/`, which is gitignored; this folder is the copy that travels.
+
+## The checks that stood behind them
+
+Run on the same tree, in this sitting:
+
+- `npm run lint` — 0 errors.
+- `npm test` — 1004 tests, 1000 pass, 0 fail (4 skipped).
+- `tests/ui/ui-contract.spec.js` — 31 passed.
+- The browser suite — 174 tests, all green, run in batches sized to fit the
+  ten-minute tool budget (`tests/ui/tools/ui-files.sh`). Every spec seeds the
+  fixture vault and types the PIN at its gate, so a run costs a real PBKDF2
+  derivation per test.
