@@ -17,6 +17,7 @@ test.describe('Command palette', () => {
     const rail = page.getByRole('navigation', { name: 'Tabs' });
     await expect(rail).toBeVisible({ timeout: 15000 }).catch(async () => {
       await page.reload();
+      await unlock(page); // a reload carries no key: the gate is back
       await expect(rail).toBeVisible({ timeout: 15000 });
     });
   });

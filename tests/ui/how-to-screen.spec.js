@@ -17,6 +17,7 @@ test('the How to use row opens a scrollable full-screen guide at 390px', async (
   const youTab = page.getByRole('navigation', { name: 'Tabs' }).getByRole('button', { name: 'You' });
   await expect(youTab).toBeVisible({ timeout: 15000 }).catch(async () => {
     await page.reload();
+    await unlock(page); // a reload carries no key: the gate is back
     await expect(youTab).toBeVisible({ timeout: 15000 });
   });
 

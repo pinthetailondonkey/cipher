@@ -17,6 +17,7 @@ test.describe('Sheet-class a11y on the boot flow', () => {
     const shellButton = page.getByRole('button', { name: 'Chat list menu' }).first();
     await expect(shellButton).toBeVisible({ timeout: 15000 }).catch(async () => {
       await page.reload();
+      await unlock(page); // a reload carries no key: the gate is back
       await expect(shellButton).toBeVisible({ timeout: 15000 });
     });
   });
@@ -66,6 +67,7 @@ test.describe('Sheet-class a11y on the boot flow', () => {
         // does: the new-account flag raises the sheet on its own.
         await page.evaluate(() => localStorage.setItem('cipher_new_account', 'true'));
         await page.reload();
+        await unlock(page); // the flag raises the sheet on the boot after the gate
       },
       dialogLabel: 'How to use',
       closeFallback: async (page) => page.getByRole('button', { name: 'Close guide' }).click(),

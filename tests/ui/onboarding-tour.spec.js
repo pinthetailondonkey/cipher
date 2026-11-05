@@ -21,6 +21,7 @@ test.describe('After-signup tour: the Selling step', () => {
     const shellButton = page.getByRole('button', { name: 'Chat list menu' }).first();
     await expect(shellButton).toBeVisible({ timeout: 15000 }).catch(async () => {
       await page.reload();
+      await unlock(page); // a reload carries no key: the gate is back
       await expect(shellButton).toBeVisible({ timeout: 15000 });
     });
   });
@@ -29,6 +30,7 @@ test.describe('After-signup tour: the Selling step', () => {
   async function openTour(page) {
     await page.evaluate(() => localStorage.setItem('cipher_new_account', 'true'));
     await page.reload();
+    await unlock(page); // the tour is raised on the boot after the gate
     await expect(page.getByRole('dialog', { name: 'How to use' })).toBeVisible({ timeout: 20000 });
   }
 
