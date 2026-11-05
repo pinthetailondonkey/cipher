@@ -170,7 +170,7 @@ function OrderReceipt({ content, isBuyer = false, disputeReason = '', deviceMark
         {content.paymentSeenBy === 'vendor' && content.paymentState !== 'confirmed' && (
           <p className="mt-1 text-[13px] text-ink/50">Not checked on-chain.</p>
         )}
-        <ReceiptGlance orderId={content.orderId} />
+        <ReceiptGlance orderId={content.type === 'order_update' ? content.orderId : message.id} />
         {address && <p className="mt-1 text-[13px] text-ink/40">Ship to {address}</p>}
       </div>
     </div>
@@ -182,10 +182,11 @@ function OrderReceipt({ content, isBuyer = false, disputeReason = '', deviceMark
 // line for it the way it earns the payment pills — but only after THIS
 // device has run both signatures to the ground and checked that this
 // device bound that exact hash as its own record. The id the receipt is
-// filed under is the order's own event id, exactly as ReceiptDoor reads
-// it: an order_update carries it inline in the payload, and OrderReceipt
-// renders over content already merged with orderState, which carries the
-// id forward. Nothing unverified draws the band.
+// filed under follows ReceiptDoor's rule, not a payload guess: an
+// order_update carries its orderId inline, and the original order IS its
+// own event id — orderState merges status facts over the card, never the
+// id, so the caller supplies the right one per shape. Nothing unverified
+// draws the band.
 function ReceiptGlance({ orderId }) {
   const [open, setOpen] = useState(false);
   if (!orderId) return null;
