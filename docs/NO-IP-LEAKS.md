@@ -7,16 +7,17 @@ This page is the law. The tests hold it up where words alone would bend. Deliver
 ## The rules
 
 1. **Every host the app can reach sits on the egress wall** (`src/lib/egress.js`). Nowhere else. A test walks every source file and fails on an address set anywhere else.
-2. **A clearnet row on the wall needs `gate: 'founder'`.** Clearnet means an ordinary website address — not onion, not Tor. The old rows are frozen by name and address (`GRANDFATHERED_CLEARNET` in `src/lib/egress.test.js`); any other clearnet row fails the build unless the row itself says `gate: 'founder'`, and the founder named that host first. Changing the address behind a frozen row name counts as a new row.
-3. **No public block explorer is ever called.** Pasting one is refused. This stays true in every new path.
-4. **No telemetry, no counters, no web fonts, no version checks.** The app loads its own files and asks nothing about itself.
-5. **The plain-browser web build cannot promise Tor** — a browser tab cannot choose its own route. The installed desktop app promises it. Every claim about "the app" says which build it covers.
-6. **The Deal app phones home to nobody.** A test walks its source and fails on any network call at all.
-7. **If something must see an IP, say so in plain words** on the Connections screen before it happens — never after, never in jargon. (The founder's load-all ruling item aside: no warning cards sit between a person and their user content — the disclosure lives in Connections, the download page, and Settings, and the standing recommendation is a VPN.)
+2. **A host that serves two rows is a named trust domain, in the test and nowhere softer.** The operator of one box can join what its two roles see — the message relay operator reading its own media log is the free join no collusion buys (`src/lib/egress.test.js`, `SHARED_OPERATOR`). A pairing that appears, moves or disappears fails that test and has to be acknowledged in it: adding an operator row is adding a privacy fact about every user, which is the founder's call, not a refactor's side effect. Today's named pairings: ciphermessenger.org (note page is the app host), ciphertele.com (the group mirror), primal.net (the default message relay AND the default media host — F4).
+3. **A clearnet row on the wall needs `gate: 'founder'`.** Clearnet means an ordinary website address — not onion, not Tor. The old rows are frozen by name and address (`GRANDFATHERED_CLEARNET` in `src/lib/egress.test.js`); any other clearnet row fails the build unless the row itself says `gate: 'founder'`, and the founder named that host first. Changing the address behind a frozen row name counts as a new row.
+4. **No public block explorer is ever called.** Pasting one is refused. This stays true in every new path.
+5. **No telemetry, no counters, no web fonts, no version checks.** The app loads its own files and asks nothing about itself.
+6. **The plain-browser web build cannot promise Tor** — a browser tab cannot choose its own route. The installed desktop app promises it. Every claim about "the app" says which build it covers.
+7. **The Deal app phones home to nobody.** A test walks its source and fails on any network call at all.
+8. **If something must see an IP, say so in plain words** on the Connections screen before it happens — never after, never in jargon. (The founder's load-all ruling item aside: no warning cards sit between a person and their user content — the disclosure lives in Connections, the download page, and Settings, and the standing recommendation is a VPN.)
 
 ## The scope line under the load-all ruling (2026-10-27)
 
-Items 2 and 3 were reclassified by the founder on purpose, with the reasoning named above. **This is a ruling about user-content fetching only.** The app's own egress wall is untouched: rule 1 and rule 2 of this page (every host on the wall; new clearnet rows need the founder's name) still hold in full, the frozen row list is unchanged, and no new clearnet row ships because of this ruling. Do not read the ruling wider than it is written.
+Items 2 and 3 of the pre-2026-11-05 numbering (the name lookups and the pictures) were reclassified by the founder on purpose, with the reasoning named above. **This is a ruling about user-content fetching only.** The app's own egress wall is untouched: rule 1 and rule 3 of this page (every host on the wall; new clearnet rows need the founder's name) still hold in full, the frozen row list is unchanged, and no new clearnet row ships because of this ruling. Do not read the ruling wider than it is written.
 
 ## What the audit proved already safe
 
