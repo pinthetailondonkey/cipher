@@ -219,7 +219,7 @@ An explorer resolves amount and time, so a vendor voluntarily undoes the amount
 privacy that a per-order address (`vendorPayments.js:137-140`) and an
 address-free listing (`listing.js:1-4`) just bought.
 
-**F9 `[V]` deletion is a request, and a wrap never expires. Now stamped.**
+**F9 `[V]` deletion is a request, and a wrap never expired. Fixed.**
 Tombstones are local (`db.js:39, 320-322, 378-394`); a relay that copied the
 ciphertext keeps it. Exactly-once notes are truly gone only on a self-run
 carrier, which deletes on read (`note-carrier.mjs:201-220`); the relay path's
@@ -231,10 +231,10 @@ It now does. `buildWrap` (`giftWrap.js:45-59`) stamps
 `expiration = created_at + 30 days`, using this client's own backdated wrap clock
 rather than `now()`: a `now()`-based stamp would hand the relay back the exact
 true second that the backdating exists to hide. The stamp is measured from the
-backdated clock on purpose and the test pins that (`giftWrap.test.js:82-89`). It
-replaces `nip59.createWrap`, which takes no extra tags, so the outer event is
-built by hand; the encryption is still nip59's own. Both wrap sites go through
-it, including the push-gateway notice.
+backdated clock on purpose and the test pins that (`giftWrap.test.js:82-89`). The
+wrap is built by hand only because `nip59.createWrap` takes no extra tags; the
+encryption is still nip59's own. Both wrap sites go through it, including the
+push-gateway notice.
 
 `[V]` the TTL is 30 days because of an asymmetry found while writing this: the
 live subscription asks for 7 days (`useChatBootstrap.js:456`) but the history
@@ -243,8 +243,8 @@ horizon (F13). Thirty days keeps a month away from the app harmless.
 
 `[A]` two effects point the same way: the shape joins the majority, and the
 relay gets a reason to forget. `[A]` the residual is that the tag is only an
-offer. A relay may ignore it, and three of the four things that keep a copy
-(F8's bulletin, a media host, a carrier) are untouched by it.
+offer, and it only reaches the relay's copy: the bulletin (F8), a media host's
+copy and a carrier's copy are untouched by it.
 
 **F10 `[V]` README contradicted a purpose-built evidence doc.**
 `README.md:151` said "The minimum PIN is 6 digits." `vaultLockout.js:5-7` sets a
@@ -279,9 +279,10 @@ and takes the counterparty from the rumor.
 relay.** There are exactly two history queries (`useNIP44DM.js:421-422`):
 `{kinds: [4], authors: [me]}` and `{kinds: [4, 1059], '#p': [me]}`. A wrap is
 signed by a random key and tagged with the *recipient*, so it matches the first
-on neither field and the second on neither field. Both queries are correct for
-what they were written for; the transition to NIP-59 quietly removed the sent
-half from relay recovery while the comment that explains the merge
+query on neither field and the second on the kind alone, never on the `p` tag
+that query filters by. Both queries are correct for what they were written for;
+the transition to NIP-59 quietly removed the sent half from relay recovery
+while the comment that explains the merge
 (`useNIP44DM.js:293-295`, "the history fetch re-saves our messages as 'sent'")
 still describes the bare kind-4 era.
 
@@ -297,7 +298,16 @@ part of the anonymity the wrap just bought; (b) publish a second copy of the
 wrap tagged `p = sender`, doubling what a relay stores and what the recipient
 dedupes, while leaving the sender invisible; (c) accept it and keep the local
 copy as the only one. `[U]` which is right is a product call, not a
-crypto one, and it is the largest open decision this review produced.
+crypto one, and it is the largest open decision this review produced. Note that
+(a) as written still reaches the recipient, because an `#p` filter matches any
+`p` tag, so it is the sender becoming visible rather than the recipient moving.
+
+`[V]` one fact any of (a) or (b) has to answer first, and it is the reason this
+is not a one-line fix: a wrap is published only to the *recipient's* relays
+(`relaysForPeer`, `useNIP44DM.js:130`), while the history fetch reads the
+sender's own (`generalRelays`, `useNIP44DM.js:421`). Tagging the sender changes
+nothing unless the copy also lands where the sender reads, so the fix is a
+publish-path decision as much as a tag decision.
 
 **F14 `[V]` the two user-facing disclosure rows described the wire this app no
 longer sends.** `egress.js` is the app's account of what a host learns, and the
