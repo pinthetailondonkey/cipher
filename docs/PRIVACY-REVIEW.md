@@ -150,10 +150,14 @@ and a kicked member keeps every epoch they held.
 
 ## 4. Findings
 
-**F1 `[V]` typing re-anonymises the DM sender.** Messages are wrapped and
-sender-less; typing is a bare signed kind-4 on the same relays
-(`useNIP44DM.js:176-181`). A relay that sees `A → B, 12:00:03` beside an
-anonymous wrap to `B` at `12:00:04` attributes the thread. Cheapest real fix.
+**F1 `[V]` typing re-anonymised the DM sender. Fixed.** Messages are wrapped and
+sender-less; typing *was* a bare signed kind-4 on the same relays
+(`useNIP44DM.js:176-181` at the pin). A relay that saw `A → B, 12:00:03` beside
+an anonymous wrap to `B` at `12:00:04` attributed the thread. It now travels the
+wrap path, so the outer event carries one `p` tag and no sender. Pinned by a test
+that also asserts the receiver still reads the rumor's clock: the wrap's
+`created_at` is backdated up to two days, so the ten-second freshness window
+would drop every tick if it read the outer event.
 
 **F2 `[V]` the address book is broadcast.** `authors: missing` where `missing` is
 every counterparty (`useChatBootstrap.js:250-254`).
@@ -240,6 +244,17 @@ reader, the group baseline, and a test). Effect: `lockedUsername`, `my_username`
 and `chatStore.myUsername` are never populated from the relay, and `myUsername`
 has no reader at all (`chatStore.js:445`).
 
+**F12 `[V]` a group key grant was a signed list of the member set. Fixed.**
+`distributeGroupKey` published one bare kind-4 per recipient, signed by the
+granter, to each member's own DM relays (`groupKeyDistribution.js:336-361`
+before the change; the publish target is `relaysForPeer` in
+`useGroupKeyReconciler.js:142-147`). A rotation therefore put the granter's key
+next to every member's key, once each, inside one second, on the message relay —
+handing that relay the member set of a group whose roster it never reads, and
+tying the group to the message relay. It now rides the wrap path like a message;
+the receiver needed no change because ingest already unwraps before it reads,
+and takes the counterparty from the rumor.
+
 ## 5. The catalogue
 
 Each entry: what it hides from whom / what it still reveals / assumptions and
@@ -249,12 +264,12 @@ experiment. Maturity is `established`, `novel-but-plausible`, `speculative`, or
 
 ### A. Finish what is half-built
 
-**A1 Wrap the signing leftovers.** Hides the sender of typing (and any future
-bare kind-4) from the relay. Reveals recipient, arrival, length, connection. The
-code already filters typing on ingest (`useNIP44DM.js:265-271`). Product impact:
-none. Established. Falsifier: a signed kind-4 carrying `me` during a
-conversation. Experiment: assert the wire event for typing has no `authors` link
-to the sender.
+**A1 Wrap the signing leftovers.** *Landed.* Hides the sender of typing (and any
+future bare kind-4) from the relay. Reveals recipient, arrival, length,
+connection. Two traps were real and are now pinned by tests: the backdated wrap
+clock against a ten-second freshness window, and a payload that must be
+encrypted before it enters the rumor because the receiver decrypts
+the rumor's content.
 
 **A2 Stop the address-book broadcast.** Hides which peers share an account.
 Reveals the account's own pubkey, so a patient relay still learns the set;
@@ -573,6 +588,10 @@ iterations of PBKDF2-SHA-256).
 - NIP-42 group-relay-only auto-auth was **designed**, with a comment saying a
   clearnet host must not harvest a 22242 (`pool.js:139-141`).
 - `restoreFromRelays` restores from local storage, not relays (section 7).
+- Three fixes landed while writing this, so their findings read in the past
+  tense: F1 and F12 (the two signed senders, typing and group key grants) and
+  F10 (the README PIN floor). The rest are open, and every experiment below is
+  still proposed rather than run.
 
 ## 17. Common sense to carry
 
