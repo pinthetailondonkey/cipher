@@ -166,6 +166,42 @@ test('a legacy plaintext row is not handed out while locked', async () => {
   __setGroupKeyStoreForTests(null);
 });
 
+test('a legacy key can be read and migrated while unlocked', async () => {
+  setAtRestKeyProvider(() => SK);
+  const fake = fakeDb([plainRow()]);
+  __setGroupKeyStoreForTests(fake);
+  assert.deepEqual(await getGroupKey('g1', 2), KEY, 'the unlocked legacy row reads');
+  assert.deepEqual(await openGroupKeyRow(plainRow()), KEY, 'the reader itself reads it while unlocked');
+  assert.equal(raw(fake).includes(KEY_HEX), false, 'and the read migrated it to a sealed row');
+  assert.ok(isSealedKeyRow(fake.rows[0]));
+  __setGroupKeyStoreForTests(null);
+});
+
+// fix 5: a legacy row is plaintext on disk, but it still read while locked,
+// so a locked app handed out key material the at-rest seal never covered.
+test('a legacy key is not returned while locked, and stays distinct from unreadable', async () => {
+  setAtRestKeyProvider(() => null);
+  await assert.rejects(() => openGroupKeyRow(plainRow()), GroupKeyLockedError, 'locked is the error, not unreadable');
+  const fake = fakeDb([plainRow({ epoch: 1 })]);
+  __setGroupKeyStoreForTests(fake);
+  assert.equal(await getGroupKey('g1', 1), null);
+  assert.equal(await getCurrentGroupKey('g1'), null);
+  assert.deepEqual(await getAllGroupKeys('g1'), []);
+  __setGroupKeyStoreForTests(null);
+});
+
+test('a sealed key stays unreadable while locked, with the same locked error', async () => {
+  setAtRestKeyProvider(() => SK);
+  const stored = await sealGroupKeyRow(plainRow());
+  setAtRestKeyProvider(() => null);
+  await assert.rejects(() => openGroupKeyRow(stored), GroupKeyLockedError);
+});
+
+test('an unreadable legacy row is still unreadable while unlocked', async () => {
+  setAtRestKeyProvider(() => SK);
+  await assert.rejects(() => openGroupKeyRow({ groupId: 'g1', epoch: 2 }), GroupKeyUnreadableError);
+});
+
 test('an unreadable newest key throws, never reads as no-key or falls back to an older epoch', async () => {
   setAtRestKeyProvider(() => SK);
   const fake = fakeDb();

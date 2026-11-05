@@ -87,11 +87,17 @@ export async function sealGroupKeyRow(row) {
   return { ...rest, sealed: { v: AT_REST_VERSION, iv: b64(iv), ct: b64(new Uint8Array(ct)) } };
 }
 
-// Returns the key bytes of a stored row. Legacy plaintext rows read as stored.
-// A sealed row with no session secret throws GroupKeyLockedError; one that
-// fails the AES-GCM check (tampered, moved to another group or epoch, or the
-// wrong secret) throws GroupKeyUnreadableError. Neither returns key bytes.
+// Returns the key bytes of a stored row. A locked session returns nothing:
+// rows written before this change carry `keyHex` in the clear on disk though,
+// and handing those out while locked said the at-rest seal covered rows it
+// never touched. Locked is checked first, so legacy and sealed rows answer the
+// same way, and it stays distinct from unreadable — corrupt or tampered is an
+// unreadable row, never a lock. A sealed row with the session secret missing
+// (and a legacy row with it) throws GroupKeyLockedError; one that fails the
+// AES-GCM check (tampered, moved to another group or epoch, or the wrong
+// secret) throws GroupKeyUnreadableError. Neither returns key bytes.
 export async function openGroupKeyRow(row) {
+  if (!groupKeysUnlocked()) throw new GroupKeyLockedError();
   if (!isSealedKeyRow(row)) {
     if (row && typeof row.keyHex === 'string') return fromHex(row.keyHex);
     throw new GroupKeyUnreadableError('A stored group key row has no key.');
