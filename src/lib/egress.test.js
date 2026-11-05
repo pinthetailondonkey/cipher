@@ -204,6 +204,11 @@ test('defaults work with no config, and an onion replaces only that row', () => 
   assert.equal(groupRelayHttp({ overrides: { 'group-relay': pasted }, lists: {} }).startsWith('http://'), true);
   assert.deepEqual(urlsFor('general', { overrides: { 'group-relay': pasted }, lists: {} }), ['wss://relay.primal.net']);
   assert.deepEqual(urlsFor('group', { torOnly: true, overrides: {}, lists: {} }), ['wss://groups.ciphertele.com', 'wss://groups2.ciphertele.com']);
+  // N2: the reputation class is the group relays and never the message
+  // relay. Red if trade proofs (vouches, reviews, riders, bulletins) ever
+  // ride the DM relay again — that is the trade-graph defect itself.
+  assert.deepEqual(urlsFor('reputation', { overrides: {}, lists: {} }), ['wss://groups.ciphertele.com', 'wss://groups2.ciphertele.com']);
+  assert.ok(!urlsFor('reputation', { overrides: {}, lists: {} }).includes('wss://relay.primal.net'), 'trade proofs never ride the message relay');
   assert.deepEqual(urlsFor('general', {
     overrides: { 'dm-relay': 'off' },
     lists: { dm: ['wss://inbox.example'] },

@@ -1,7 +1,7 @@
 import { useCallback, useState } from 'react';
 import { db } from '../db';
 import { getAuthenticatedPool } from '../lib/pool';
-import { generalRelays } from '../lib/relays';
+import { reputationRelays } from '../lib/relays';
 import { enqueueNostrEvent } from '../lib/outbox';
 import { BULLETIN_KIND, bulletinContent, bulletinRefusal, bulletinTags } from '../lib/vendorStats';
 
@@ -78,7 +78,7 @@ export function useVendorStats({ identity, targetPubkey = null }) {
         content: bulletinContent(hashes),
       }, identity.sk);
       const pool = await getAuthenticatedPool(identity);
-      const results = await Promise.allSettled(pool.publish(generalRelays, event));
+      const results = await Promise.allSettled(pool.publish(reputationRelays, event));
       if (!results.some((result) => result.status === 'fulfilled')) {
         await enqueueNostrEvent(event);
         return { success: true, queued: true };

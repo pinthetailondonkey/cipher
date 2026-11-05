@@ -1,6 +1,6 @@
 import { useCallback, useState, useEffect } from 'react';
 import { getAuthenticatedPool } from '../lib/pool';
-import { generalRelays, queryWithTimeout } from '../lib/relays';
+import { queryWithTimeout, reputationRelays } from '../lib/relays';
 import { receiptBindingOf, vouchCoversTrade } from '../lib/reputation';
 
 export function useVouchCount({ identity, targetPubkey }) {
@@ -21,7 +21,7 @@ export function useVouchCount({ identity, targetPubkey }) {
       try {
         const pool = await getAuthenticatedPool(identity);
         // Kind 10004 = Cipher Vouch Event
-        const events = await queryWithTimeout(pool, generalRelays, {
+        const events = await queryWithTimeout(pool, reputationRelays, {
           kinds: [10004],
           '#p': [targetPubkey],
           limit: 200

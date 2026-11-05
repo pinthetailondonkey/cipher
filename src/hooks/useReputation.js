@@ -1,6 +1,6 @@
 import { useCallback, useState } from 'react';
 import { getAuthenticatedPool } from '../lib/pool';
-import { generalRelays, queryWithTimeout } from '../lib/relays';
+import { generalRelays, profileReadRelays, queryWithTimeout, reputationRelays } from '../lib/relays';
 import { enqueueNostrEvent } from '../lib/outbox';
 import { shortNpub } from '../lib/npub';
 
@@ -33,8 +33,8 @@ export function useReputation({ identity }) {
 
       // 1. Fetch raw vouches + reviews
       const [vouchEvents, reviews] = await Promise.all([
-        queryWithTimeout(pool, generalRelays, { kinds: [10004], '#p': [targetPubkey] }, 3000),
-        queryWithTimeout(pool, generalRelays, { kinds: [10005], '#p': [targetPubkey] }, 3000)
+        queryWithTimeout(pool, reputationRelays, { kinds: [10004], '#p': [targetPubkey] }, 3000),
+        queryWithTimeout(pool, reputationRelays, { kinds: [10005], '#p': [targetPubkey] }, 3000)
       ]);
       // S8: a vouch counts only when it names the receipt hash of a trade,
       // and the trade it names involves both the target and the author —
@@ -74,7 +74,7 @@ export function useReputation({ identity }) {
         try {
           freshProfiles = await queryWithTimeout(
             pool,
-            generalRelays,
+            profileReadRelays,
             { kinds: [0], authors: toFetch },
             3000
           );
@@ -187,7 +187,11 @@ export function useReputation({ identity }) {
       }, identity.sk);
 
       const pool = await getAuthenticatedPool(identity);
-      const results = await Promise.allSettled(pool.publish(generalRelays, event));
+      // N2: a vouch is a public trade event — the two pubkeys and the
+      // receipt hash. It rides the reputation relays (the storefront's
+      // group relays), never the message relay, so the DM relay's operator
+      // cannot join trade events to message flow.
+      const results = await Promise.allSettled(pool.publish(reputationRelays, event));
       if (!results.some((result) => result.status === 'fulfilled')) {
         await enqueueNostrEvent(event);
         return { success: true, queued: true };
@@ -230,8 +234,9 @@ export function useReputation({ identity }) {
       // The review rides the same queue as a vouch or a rider: a publish
       // hiccup must not lose the event. It is signed, so the outbox
       // re-attempts it; a locally-saved-only review that nobody re-sends
-      // is a review that never lands.
-      const results = await Promise.allSettled(pool.publish(generalRelays, ev));
+      // is a review that never lands. N2: the review rides the reputation
+      // relays, never the message relay.
+      const results = await Promise.allSettled(pool.publish(reputationRelays, ev));
       if (!results.some((result) => result.status === 'fulfilled')) {
         await enqueueNostrEvent(ev);
         await fetchReputation(targetPubkey);
@@ -264,7 +269,9 @@ export function useReputation({ identity }) {
       }, identity.sk);
       markOwnRider(vendor, binding, review, rider, event.id);
       const pool = await getAuthenticatedPool(identity);
-      const results = await Promise.allSettled(pool.publish(generalRelays, event));
+      // N2: a rider is a public dispute event. Reputation relays, never
+      // the message relay.
+      const results = await Promise.allSettled(pool.publish(reputationRelays, event));
       if (!results.some((result) => result.status === 'fulfilled')) {
         await enqueueNostrEvent(event);
         return { success: true, queued: true };

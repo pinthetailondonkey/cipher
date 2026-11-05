@@ -6,8 +6,8 @@ const STORAGE_KEY = 'cipher_network';
 // must carry gate: 'founder' on the row, or the build fails. The founder names
 // the host before it ships.
 export const EGRESS = [
-  { id: 'group-relay', role: 'Group relay', url: 'wss://groups.ciphertele.com', sees: 'Your IP, and every group you open. If you turn on selling, it also gets your public card: your name, picture and profile line, which anyone reading your menu can see. It can delete its data at any time, so a card there is a sign, not a record.', required: true },
-  { id: 'group-relay-2', role: 'Group relay', url: 'wss://groups2.ciphertele.com', sees: 'Your IP, and every group you open. The same relay at a second host, with the same relay key, so one box going down does not take the groups with it.', gate: 'founder' },
+  { id: 'group-relay', role: 'Group relay', url: 'wss://groups.ciphertele.com', sees: 'Your IP, every group you open, and — if vouching is on — your vouches, reviews and proven-deal receipts (receipt hashes, never amounts or txids). If you turn on selling, it also gets your public card: your name, picture and profile line, which anyone reading your menu can see. It can delete its data at any time, so a card there is a sign, not a record.', required: true },
+  { id: 'group-relay-2', role: 'Group relay', url: 'wss://groups2.ciphertele.com', sees: 'Your IP, every group you open, and the same trade proofs as the first group relay when vouching is on. The same relay at a second host, with the same relay key, so one box going down does not take the groups with it.', gate: 'founder' },
   { id: 'dm-relay', role: 'Message relay', url: 'wss://relay.primal.net', sees: 'Your IP, and who you message. Each message arrives sealed, with one address on it: the person it is for, not you. The relay delivers it and is asked to forget it after 30 days. The text stays encrypted.', required: true },
   { id: 'profile-nos', role: 'Profile relay', url: 'wss://nos.lol', sees: 'Your IP when a name or profile is published' },
   { id: 'profile-damus', role: 'Profile relay', url: 'wss://relay.damus.io', sees: 'Your IP when a profile is saved' },
@@ -121,6 +121,12 @@ export const RELAY_SETS = {
   profileRead: ['profile-purple', 'profile-nos', 'dm-relay'],
   username: ['dm-relay', 'profile-nos'],
   product: ['dm-relay'],
+  // Trade proofs — vouches, reviews, dispute riders, the proven bulletin —
+  // ride the group relays and never the message relay: the storefront's
+  // relay is where a trade proof belongs, and keeping them off the DM relay
+  // means the operator who carries message flow cannot join trade events to
+  // it (the joins law: one host serving two roles is one trust domain).
+  reputation: ['group-relay', 'group-relay-2'],
   blossom: ['blossom-primal', 'blossom-nostr-build', 'blossom-band'],
   preview: ['link-preview'],
 };

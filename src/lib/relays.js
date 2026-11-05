@@ -15,6 +15,9 @@ export const profileEditorRelays = [];
 export const profileReadRelays = [];
 export const usernameRelays = [];
 export const productRelays = [];
+// Trade proofs (vouches, reviews, riders, the proven bulletin) ride the
+// group relays: see RELAY_SETS.reputation in egress.js.
+export const reputationRelays = [];
 
 export function refreshRelays() {
   fill(generalRelays, urlsFor('general'));
@@ -26,6 +29,7 @@ export function refreshRelays() {
   fill(profileReadRelays, urlsFor('profileRead'));
   fill(usernameRelays, urlsFor('username'));
   fill(productRelays, urlsFor('product'));
+  fill(reputationRelays, urlsFor('reputation'));
 }
 
 bindRelayRefresh(refreshRelays);

@@ -84,11 +84,15 @@ export default function Wallet({ identity, onOpenChat, startView = 'main' }) {
   // preferred_payment_method seeds new order requests (useCommerce);
   // Monero leads at checkout, Bitcoin stays selectable.
   const [preferredMethod, setPreferredMethod] = useState(() => scopedGet('preferred_payment_method', 'xmr'));
-  // auto_vouch_on_delivery gates the vendor vouch after a delivery.
+  // auto_vouch_on_delivery gates the vendor vouch after a delivery. It
+  // defaults OFF (N2): publishing a vouch is a public trade event — the
+  // vendor and buyer pubkeys and the receipt hash, on the reputation
+  // relays — and a default that publishes is a default that tells the
+  // world a trade happened. A person who wants the vouch turns it on.
   const savedConf = scopedGet('confirmations', {}) || {};
   const [confBtc, setConfBtc] = useState(savedConf.btc != null ? String(savedConf.btc) : '');
   const [confXmr, setConfXmr] = useState(savedConf.xmr != null ? String(savedConf.xmr) : '');
-  const [autoVouch, setAutoVouch] = useState(() => scopedGet('auto_vouch_on_delivery', true) !== false);
+  const [autoVouch, setAutoVouch] = useState(() => scopedGet('auto_vouch_on_delivery', false) !== false);
 
   const saveConfirmations = (event) => {
     event.preventDefault();
@@ -355,7 +359,7 @@ export default function Wallet({ identity, onOpenChat, startView = 'main' }) {
           <div className="overflow-hidden rounded-2xl border border-line bg-panel">
             <div className="flex w-full items-center gap-3 p-4 text-left">
               <Shield size={24} className="shrink-0 text-inkSubtle" />
-              <span className="min-w-0 flex-1"><span className="block text-[15px] font-semibold text-ink">Auto-vouch on delivery</span><span className="block text-[13px] text-inkMuted">After you deliver, vouch the trade automatically.</span></span>
+              <span className="min-w-0 flex-1"><span className="block text-[15px] font-semibold text-ink">Vouch trades on delivery</span><span className="block text-[13px] text-inkMuted">After you deliver, publish a vouch — the two pubkeys and the receipt hash, publicly. Off keeps your trades off the wire.</span></span>
               <Switch checked={autoVouch} onChange={toggleAutoVouch} ariaLabel="Auto-vouch on delivery" />
             </div>
           </div>

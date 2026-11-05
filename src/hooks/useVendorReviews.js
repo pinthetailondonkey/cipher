@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { averageRating } from '../lib/reputation';
 import { getAuthenticatedPool } from '../lib/pool';
-import { generalRelays } from '../lib/relays';
+import { reputationRelays } from '../lib/relays';
 import { fetchVendorThread } from '../lib/vendorShopReaders';
 import { dealsProvenFor } from '../lib/vendorStats';
 import {
@@ -57,7 +57,7 @@ export function useVendorReviews({ vendorPubkey, identity = null, refreshKey = 0
         if (REVIEW_WIRING_LANDED && identity?.pk) {
           try {
             const pool = await getAuthenticatedPool(identity);
-            const thread = await fetchVendorThread(pool, generalRelays, vendorPubkey);
+            const thread = await fetchVendorThread(pool, reputationRelays, vendorPubkey);
             if (thread.bulletins.length && !dealsProvenOf) {
               // The published count is the receipt hashes; this replaces, never sums.
               proven = dealsProvenFor(vendorPubkey, thread.bulletins);
