@@ -70,6 +70,12 @@ const storedFailsB = (page) => page.evaluate((pk) => localStorage.getItem(`ciphe
 const targetRow = (page) => page.getByText('Target Account');
 const targetVault = (page) => page.evaluate((pk) => JSON.parse(localStorage.getItem('cipher_vaults'))[pk]?.vault, PK_B);
 
+// A read that survives the switch's own reload: an evaluate that is in flight
+// when the page navigates rejects with "Execution context was destroyed", and
+// the poll's next tick reads the fresh context. Without this the assertion is
+// decided by whether the read happened to land during the reload.
+const acrossReload = (page, fn, arg) => page.evaluate(fn, arg).catch(() => undefined);
+
 test.describe('switchAccount answers damage as damage, never as a wrong PIN', () => {
   test('five damaged-copy attempts spend nothing and delete nothing', async ({ page }) => {
     test.slow(); // one boot, then five typed attempts on the switch screen
@@ -140,8 +146,8 @@ test.describe('switchAccount still switches a legitimate old account', () => {
     // real work (a 600k-iteration encrypt, the authenticator, a full verify
     // open), so both the pointer and the wrapped vault are polled rather than
     // read off a fixed clock that suite load can outlast.
-    await expect.poll(() => page.evaluate(() => localStorage.getItem('cipher_active_pubkey')), { timeout: 60000 }).toBe(PK_B);
-    await expect.poll(async () => (await targetVault(page))?.v, { timeout: 60000 }).toBe(3);
+    await expect.poll(() => acrossReload(page, () => localStorage.getItem('cipher_active_pubkey')), { timeout: 60000 }).toBe(PK_B);
+    await expect.poll(() => acrossReload(page, (pk) => JSON.parse(localStorage.getItem('cipher_vaults'))?.[pk]?.vault?.v, PK_B), { timeout: 60000 }).toBe(3);
     // The facts that do not depend on that timing: the PIN was right, so no
     // attempt is spent and nothing says "Wrong PIN".
     expect(await storedFailsB(page)).toBeNull();

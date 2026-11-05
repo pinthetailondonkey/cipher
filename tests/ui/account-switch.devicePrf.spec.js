@@ -61,8 +61,11 @@ test('a legacy no-salt PIN vault switches with the right PIN and comes back wrap
 
   // The switch ends in its own reload, but the wrap takes real work first
   // (a 600k-iteration encrypt, the authenticator, a full verify open), so
-  // the outcome is polled, not assumed the moment the button goes quiet.
-  await expect.poll(() => page.evaluate(() => localStorage.getItem('cipher_active_pubkey')), { timeout: 60000 }).toBe(PK_B);
+  // the outcome is polled, not assumed the moment the button goes quiet. The
+  // reads tolerate the reload: an evaluate in flight when the page navigates
+  // rejects, and the next tick reads the fresh context.
+  const acrossReload = (fn, arg) => page.evaluate(fn, arg).catch(() => undefined);
+  await expect.poll(() => acrossReload(() => localStorage.getItem('cipher_active_pubkey')), { timeout: 60000 }).toBe(PK_B);
   await page.waitForTimeout(1500);
   // The reload carries no key, so the gate is back — over B's vault, which the
   // same PIN that always opened it opens again, device layer and all.
