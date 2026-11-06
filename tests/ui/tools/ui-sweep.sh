@@ -45,7 +45,10 @@ run() {
 
 echo "JCODE_PROGRESS {\"message\":\"sweep start $(git rev-parse --short HEAD)\"}"
 
-run sweep-shots     tests/ui/screenshots.spec.js
+# The shots batch goes last on purpose: it writes the twelve receipts into the
+# tree, so run first every later batch would stamp a tree dirtied by the sweep
+# itself. Last, every other batch is built from a tree with no uncommitted
+# change of the sweep's own.
 run sweep-contract  tests/ui/ui-contract.spec.js tests/ui/sheet-a11y.spec.js
 run sweep-shells    tests/ui/check-catch.spec.js tests/ui/command-palette.spec.js tests/ui/how-to-screen.spec.js tests/ui/keypad.spec.js tests/ui/modal-typing.spec.js tests/ui/motion.spec.js tests/ui/txid-single.spec.js
 run sweep-gate      tests/ui/pin-unlock.spec.js tests/ui/passkey-recovery-commit.spec.js
@@ -56,6 +59,7 @@ run sweep-install   tests/ui/pwa-standalone-bottom.spec.js tests/ui/session-boot
 run sweep-strip     tests/ui/pwa-standalone-strip.spec.js
 run sweep-select    tests/ui/pwa-standalone-select.spec.js
 run sweep-prf       --project=chromium tests/ui/devicePrf.spec.js tests/ui/account-switch.devicePrf.spec.js
+run sweep-shots     tests/ui/screenshots.spec.js
 
 echo "JCODE_PROGRESS {\"message\":\"sweep done\"}"
 cat "$SUM"
