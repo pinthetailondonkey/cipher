@@ -283,7 +283,11 @@ test('the orders screen filters by its own view and reads each row\'s direction'
   assert.match(screen, /\{isBuyer && \(/, 'the menu door follows the row\'s direction');
   assert.equal(/!isVendor && /.test(screen), false, 'the mode no longer decides which rows show a menu');
   assert.equal(/isVendor \? !message\.isSender : message\.isSender/.test(screen), false, 'the old mode filter is gone');
-  assert.equal(/onClick=\{\(\) => \{ haptic\('light'\); setSide\(view\.id\); \}\}/.test(screen), true);
+  // The row is the shared Segmented now, handed its own side setter: the
+  // component calls onChange with the chosen `value` and haptics it, so the
+  // screen keeps no per-button onClick and no tablist of its own.
+  assert.equal(/onChange=\{setSide\}/.test(screen), true);
+  assert.equal(/ariaLabel="Orders ledger"/.test(screen), true);
   assert.equal(/setIsVendor\(/.test(screen), false, 'choosing a ledger never touches vendor mode');
 });
 

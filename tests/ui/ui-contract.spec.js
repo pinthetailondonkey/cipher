@@ -289,6 +289,47 @@ test.describe('live: the empty thread pane holds its card whole', () => {
   });
 });
 
+test.describe('live: the orders ledger row is the shared Segmented', () => {
+  // The last hand-rolled tablist in the tree. Nothing live ever opened the
+  // ledger, so a source assertion was the only thing holding it; this walks
+  // You > My Orders the way a thumb does and checks the row is the shared
+  // component, keeps its 44px target, and actually switches the side.
+  test.beforeEach(async ({ page }) => {
+    await page.addInitScript(seedVault);
+    await page.goto('/');
+    await unlock(page);
+    await page.getByRole('navigation', { name: 'Tabs' }).getByRole('button', { name: 'You' }).click();
+    await page.getByRole('button', { name: /My Orders|Incoming Orders/ }).first().click();
+    await expect(page.getByRole('group', { name: 'Orders ledger' })).toBeVisible({ timeout: 20000 });
+  });
+
+  test('one row, two segments, every target 44px', async ({ page }) => {
+    const row = page.getByRole('group', { name: 'Orders ledger' });
+    const buttons = row.getByRole('button');
+    await expect(buttons).toHaveCount(2);
+
+    // Segmented is role="group" with aria-pressed: a tablist here would mean
+    // the screen hand-rolled its own again.
+    expect(await row.getAttribute('role')).toBe('group');
+    await expect(page.getByRole('tablist')).toHaveCount(0);
+    await expect(buttons.first()).toHaveAttribute('aria-pressed', /true|false/);
+
+    const heights = await buttons.evaluateAll((els) => els.map((el) => Math.round(el.getBoundingClientRect().height)));
+    expect(Math.min(...heights)).toBeGreaterThanOrEqual(44);
+  });
+
+  test('tapping the other side moves the ledger', async ({ page }) => {
+    // The screen's own tell: the header names the side you are on. Which one
+    // it opens on depends on vendor mode, so the test reads it rather than
+    // assuming, then asks for the other.
+    const heading = page.getByRole('heading', { level: 1 });
+    const before = (await heading.textContent())?.trim();
+    const other = before === 'Incoming Orders' ? 'Purchases' : 'Incoming';
+    await page.getByRole('group', { name: 'Orders ledger' }).getByRole('button', { name: other }).click();
+    await expect(heading).toHaveText(other === 'Incoming' ? 'Incoming Orders' : 'My Orders');
+  });
+});
+
 test.describe('live: the md+ rail holds its own 72px', () => {
   // No node test can see where anything lands in the flex row. The panes used
   // to carry `md:left-[72px]`, compensation for a rail that was `fixed` and so

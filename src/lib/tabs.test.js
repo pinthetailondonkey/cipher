@@ -10,6 +10,7 @@ const bar = readFileSync(new URL('../components/ui/BottomBar.jsx', import.meta.u
 const shell = readFileSync(new URL('../AuthenticatedApp.jsx', import.meta.url), 'utf8');
 const list = readFileSync(new URL('../components/chat/ChatList.jsx', import.meta.url), 'utf8');
 const home = readFileSync(new URL('../features/chat/ChatHome.jsx', import.meta.url), 'utf8');
+const orders = readFileSync(new URL('../components/chat/MyOrders.jsx', import.meta.url), 'utf8');
 
 test('tabs are exactly Threads and You, with the badges the two destinations own', () => {
   assert.deepEqual(TAB_IDS, ['chat', 'profile']);
@@ -59,6 +60,24 @@ test('the segment row is the shared Segmented, and no screen hand-rolls a tablis
   // own SEGMENTS const; both are gone.
   assert.doesNotMatch(list, /role="group" aria-label="Filter chats"/);
   assert.doesNotMatch(list, /const SEGMENTS =/);
+});
+
+test('the orders ledger row is Segmented too: no screen hand-rolls a tablist', () => {
+  // DESIGN.md has said "no screen hand-rolls a tablist" since the Segmented
+  // row landed, and Segmented.jsx's own comment promised MyOrders would drop
+  // its copy. It had not: the ledger row was a grid with role="tablist" and
+  // bare `role="tab"` buttons, so the rule was false and the row missed the
+  // component's 44px hit target. Nothing in the tree may carry role="tablist"
+  // now — Segmented is role="group" with aria-pressed.
+  assert.match(orders, /import Segmented from '\.\.\/ui\/Segmented'/);
+  assert.match(orders, /ariaLabel="Orders ledger"/);
+  assert.match(orders, /onChange=\{setSide\}/);
+  assert.doesNotMatch(orders, /role="tablist"/);
+  assert.doesNotMatch(orders, /role="tab"/);
+  assert.doesNotMatch(orders, /aria-selected=/);
+  // The options are Segmented-shaped, and the two sides are the ledger's own.
+  assert.match(orders, /\{ value: 'incoming', label: 'Incoming' \}/);
+  assert.match(orders, /\{ value: 'purchases', label: 'Purchases' \}/);
 });
 
 test('the list pane never has to know what a menu pane is: the browse arrives as a node', () => {

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { CheckCircle2, Package, ReceiptText, Store } from 'lucide-react';
 import ScreenHeader from '../ui/ScreenHeader';
+import Segmented from '../ui/Segmented';
 import { ProductImage } from '../ui/PrivateMedia';
 import ReceiptInspect from './ReceiptInspect';
 import ReviewPrompt from './ReviewPrompt';
@@ -23,10 +24,11 @@ import { reviewOfferForOrder } from '../../lib/vendorReviews';
 // The view is this screen's own choice: a vendor opens on the orders received
 // and can still read the orders they placed. A vendor who buys keeps both
 // ledgers, and switching between them touches neither vendor mode nor the
-// payment settings behind it.
+// payment settings behind it. Shaped for Segmented (`value`/`label`): this row
+// was the last hand-rolled tablist in the tree, against DESIGN.md's own rule.
 const LEDGER_VIEWS = [
-  { id: 'incoming', label: 'Incoming' },
-  { id: 'purchases', label: 'Purchases' },
+  { value: 'incoming', label: 'Incoming' },
+  { value: 'purchases', label: 'Purchases' },
 ];
 
 export default function MyOrders({ dms = null, profiles = null, onBack, onOpenChat, identity }) {
@@ -79,20 +81,12 @@ export default function MyOrders({ dms = null, profiles = null, onBack, onOpenCh
     <div className="h-full overflow-y-auto bg-transparent">
       <ScreenHeader title={incoming ? 'Incoming Orders' : 'My Orders'} onBack={onBack} />
       <div className="px-4 pt-3">
-        <div className="grid grid-cols-2 rounded-xl border border-line p-1" role="tablist" aria-label="Orders ledger">
-          {LEDGER_VIEWS.map((view) => (
-            <button
-              key={view.id}
-              type="button"
-              role="tab"
-              aria-selected={side === view.id}
-              onClick={() => { haptic('light'); setSide(view.id); }}
-              className={`min-h-[44px] rounded-lg py-2 text-[13px] font-bold ${side === view.id ? 'bg-accent text-accentInk' : 'text-inkMuted'}`}
-            >
-              {view.label}
-            </button>
-          ))}
-        </div>
+        <Segmented
+          ariaLabel="Orders ledger"
+          options={LEDGER_VIEWS}
+          value={side}
+          onChange={setSide}
+        />
       </div>
       {orders.length === 0 ? (
         <div className="px-6 py-16 text-center">
