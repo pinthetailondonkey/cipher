@@ -10,7 +10,7 @@ import { shortNpub } from '../lib/npub';
 import { getMyGroups, setMyGroups } from '../lib/myGroups';
 import { encodeGroupPayload, decodeGroupEvent } from '../lib/crypto/groupMessageCodec';
 import { getAllGroupKeys, getCurrentGroupKey, putGroupKey } from '../lib/crypto/groupKeyStore';
-import { authorizeGroupControl, authorizeGroupPin, authorizeMemberSnapshot, groupFrameAccepted, groupRelayPubkey, groupTimelinePlans, isRestrictedRelayClose, pickMemberSnapshot, pinnedMessageOf, resolveControlSender, trustedGroupCreator } from '../lib/crypto/groupMembership';
+import { authorizeGroupControl, authorizeGroupPin, authorizeMemberSnapshot, groupFrameAccepted, groupRelayPubkey, groupTimelinePlans, isRestrictedRelayClose, pickMemberSnapshot, pinnedMessageOf, resolveControlSender, resolveKeyRequestRequester, trustedGroupCreator } from '../lib/crypto/groupMembership';
 import { grantKeyRequest, loadMemberSnapshot, loadMemberSnapshotRecord, memberKey, patchMemberSnapshot, rememberMembers, rotateGroupEpoch } from '../lib/crypto/groupKeyRotation';
 import { generateGroupKey } from '../lib/crypto/groupCipher';
 import { generateDocKey } from '../lib/crypto/groupDocKey';
@@ -1568,13 +1568,21 @@ export function useNIP29Group({ identity }) {
         const parsedQuick = JSON.parse(event.content);
         if (parsedQuick.type === 'gkey_req') {
           isGkeyReq = true;
-          // The request is answered to the ACCOUNT key the sealed body names:
-          // a key bundle is a DM that only that account's devices can open,
-          // and the actor pin on the wire cannot read one.
-          const requesterAccount = actBy !== event.pubkey ? actBy : '';
-          if ((requesterAccount || event.pubkey) !== identity.pk) {
-            const requester = requesterAccount || event.pubkey;
-            const record = await loadMemberSnapshotRecord(groupId);
+          // SEC-2: the requester is resolved through the SAME verified bindings
+          // control acts use — wire actor pin (or account key) matched against
+          // roster rows. The sealed body's `by` is a claim by the actor key
+          // holder, not a binding, so it only stands in when the wire actor is
+          // unbound AND the claim names a member of record. The resolved
+          // requester is the account the bundle is addressed to: only that
+          // account's devices can open a key DM.
+          const record = await loadMemberSnapshotRecord(groupId);
+          const requesterMembers = (await loadMemberSnapshot(groupId)) || record?.members || null;
+          const requester = resolveKeyRequestRequester({
+            wirePubkey: event.pubkey,
+            bodyBy: actBy,
+            members: requesterMembers,
+          });
+          if (requester && requester !== identity.pk) {
             const current = await getCurrentGroupKey(groupId);
             const { creator } = await controlContext(groupId, identity.pk);
             const decision = await grantKeyRequest({
@@ -1584,7 +1592,9 @@ export function useNIP29Group({ identity }) {
               // F3: the device's own creation record is the one self-attested
               // standing; even a relay outage cannot take the owner's grant.
               selfCreated: useChatStore.getState().groups.some((it) => it.id === groupId && it.creator === identity.pk),
-              snapshot: record?.members || null,
+              // The verified standing (doc-first) when held, relay record
+              // otherwise; the SEC-3 pass makes this list authoritative.
+              snapshot: requesterMembers || record?.members || null,
               updatedAt: record?.updatedAt,
               keyObtainedAt: current?.obtainedAt,
               fetchMembers: () => fetchRelayMemberSnapshot(identity, groupId),

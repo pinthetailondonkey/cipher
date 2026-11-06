@@ -154,3 +154,26 @@ test('the pinned-slot read stops naming the account once its alias pin is held',
   assert.match(block, /readAuthorityPin\(identity\.pk, groupId\)/,
     'the creator device answers from its own out-of-band pin before falling back to the account arm');
 });
+
+test('SEC-2: the gkey arm resolves the requester through verified bindings, not the body claim', () => {
+  // The arm used to answer `requesterAccount = actBy !== event.pubkey ? actBy : ''`
+  // straight off the sealed body's `by` — a claim by the actor key holder, not
+  // a binding. It now resolves the wire actor against roster rows exactly as
+  // control acts do, and only falls back to a member-naming claim when the
+  // actor is unbound. Reverting this drops the resolver call.
+  const idx = SOURCE.search(/type === 'gkey_req'/);
+  assert.ok(idx !== -1, 'the gkey arm exists');
+  const block = SOURCE.slice(idx, idx + 2600);
+  assert.match(block, /resolveKeyRequestRequester\(\{/,
+    'the arm resolves through the binding helper');
+  assert.match(block, /wirePubkey: event\.pubkey/,
+    'the wire signer is the resolution input');
+  assert.match(block, /bodyBy: actBy/,
+    'the body claim is still available, but only as the helper\'s fallback');
+  assert.doesNotMatch(block, /const requesterAccount = actBy !== event\.pubkey/,
+    'the raw-claim derivation is gone');
+  assert.match(block, /loadMemberSnapshot\(groupId\)/,
+    'the verified standing (doc-first) feeds the resolution');
+  assert.match(block, /recipients: \[requester\]/,
+    'the bundle is addressed to the resolved account, not the actor pin');
+});

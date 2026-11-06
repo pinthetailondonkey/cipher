@@ -177,15 +177,50 @@ function pinXonly(value) {
 export function resolveControlSender({ wirePubkey, members }) {
   const signer = String(wirePubkey || '').toLowerCase();
   if (!signer || !Array.isArray(members)) return '';
+  // SEC-2 hardening: the wire normally carries the actor's 32-byte x-only
+  // pubkey, but a caller may hold the compressed pin (02/03||x). Normalizing
+  // both sides means either shape resolves; before this, only x-only did.
+  const signerX = pinXonly(signer);
   for (const member of members) {
     const row = typeof member === 'object' && member ? member : { pubkey: String(member || '') };
     const account = String(row.pubkey || '').toLowerCase();
     if (!account) continue;
     if (account === signer) return account;
     const actor = pinXonly(row.actor);
-    if (actor && actor === signer) return account;
+    if (actor && (actor === signer || (signerX && actor === signerX))) return account;
   }
   return '';
+}
+
+// SEC-2: the requester a key request names.
+//
+// A key request is an actor-signed group act whose sealed body carries a `by`
+// (the account). Roster rows name ACCOUNTS; a wire actor is a per-group PIN.
+// Resolution order:
+//   1. the wire signer against verified roster bindings, exactly as control
+//      acts resolve (resolveControlSender): an actor pin bound to a row, or a
+//      pre-Step-2 account key signed directly;
+//   2. the body's claimed account, but ONLY when the wire actor is unbound and
+//      the claim names a member of record — the sealed body is authentic to
+//      the actor key, not to the account it names, so a stranger can claim a
+//      member's name and must not be able to claim a non-member's;
+//   3. the wire signer as-is (a stranger, for the caller's own denial path).
+// Empty only when there is no wire signer at all.
+export function resolveKeyRequestRequester({ wirePubkey, bodyBy = '', members }) {
+  const signer = String(wirePubkey || '').toLowerCase();
+  if (!signer) return '';
+  const bound = resolveControlSender({ wirePubkey: signer, members });
+  if (bound) return bound;
+  const claim = String(bodyBy || '').toLowerCase();
+  if (claim && claim !== signer && Array.isArray(members)
+    && members.some((member) => String(memberKeyOf(member)).toLowerCase() === claim)) {
+    return claim;
+  }
+  return signer;
+}
+
+function memberKeyOf(member) {
+  return typeof member === 'string' ? member : (member && member.pubkey) || '';
 }
 
 export function authorizeGroupControl({ kind, sender, subject, members, creator }) {

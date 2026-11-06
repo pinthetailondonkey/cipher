@@ -26,6 +26,7 @@ import {
   resetGroupRelayPubkeyCache,
   resetMemberRereadCache,
   resolveControlSender,
+  resolveKeyRequestRequester,
   trustedGroupCreator,
 } from './groupMembership.js';
 import { GRANT_DECISION_TABLE, grantKeyRequest, keyRequestDecision, requesterMayReceiveKey, resolveKeyRequest } from './groupKeyRotation.js';
@@ -842,4 +843,39 @@ test('a resolved actor sender then authorizes exactly as that account would', as
   // A locked tab refuses rather than improvising an account-key fallback.
   sessionKeyMod.clearSessionKey();
   assert.equal(await buildControlAct({ identity, groupId: GID, kind: 9002, tags: [['h', GID]] }), null);
+});
+
+// ── SEC-2: the requester a key request names ───────────────────────────────
+//
+// The attack: a key request is actor-signed, and the sealed body's `by` is a
+// CLAIM (authentic to the actor key, not to the account it names). The old
+// arm answered whoever the body named, resolving through no binding at all.
+// These cases fix the resolution order: verified binding first, the claim only
+// when the wire actor is unbound and the claim names a member of record.
+test('SEC-2: a bound actor pin resolves to its account, never to a body claim', () => {
+  const actorPin = '02' + 'f'.repeat(64); // a per-group signer, bound to `member`
+  const rows = [...members, { pubkey: member, role: 'member', actor: actorPin }];
+  // The actor is bound: the account it belongs to is the requester.
+  assert.equal(resolveKeyRequestRequester({ wirePubkey: actorPin, bodyBy: member, members: rows }), member);
+  // A forged body claim to a DIFFERENT member cannot move the answer: the
+  // binding is verified, the claim is not.
+  assert.equal(resolveKeyRequestRequester({ wirePubkey: actorPin, bodyBy: admin, members: rows }), member);
+  // No body at all still resolves (the bootstrap-first-key false-deny).
+  assert.equal(resolveKeyRequestRequester({ wirePubkey: actorPin, bodyBy: '', members: rows }), member);
+});
+
+test('SEC-2: an unbound wire actor falls back to a member claim, else stands alone', () => {
+  // Pre-Step-2 / account-signed request: the wire signer IS the account.
+  assert.equal(resolveKeyRequestRequester({ wirePubkey: member, bodyBy: member, members }), member);
+  // An unbound actor claiming a member account is answered at that account
+  // (this is what makes an actor-signed request work before its pin is bound).
+  const freeActor = 'ab'.repeat(32);
+  assert.equal(resolveKeyRequestRequester({ wirePubkey: freeActor, bodyBy: member, members }), member);
+  // ...but a claim naming a NON-member does not buy standing: the wire
+  // signer stands alone, and the decision denies it against the roster.
+  assert.equal(resolveKeyRequestRequester({ wirePubkey: freeActor, bodyBy: stranger, members }), freeActor);
+  // Case-insensitivity holds on both paths.
+  assert.equal(resolveKeyRequestRequester({ wirePubkey: freeActor.toUpperCase(), bodyBy: member.toUpperCase(), members }), member);
+  // No wire signer at all: empty, never an invented account.
+  assert.equal(resolveKeyRequestRequester({ wirePubkey: '', bodyBy: member, members }), '');
 });
