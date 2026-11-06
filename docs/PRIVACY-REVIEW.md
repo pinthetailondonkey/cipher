@@ -33,7 +33,7 @@ with a frozen grandfathered set. Everything below is the code behind each row.
 | Contact list | the `profileRead` class first, the message relay only for misses | `{kinds:[0], authors:[every peer]}` then a straggler filter | the address book on the profile readers; on the message relay only names nobody else had (A2/F2) | `useChatBootstrap.js:243-273` |
 | Profile | `nos.lol`, `relay.damus.io` | kind 0, 10003 handle, 10002 relays | pubkey ↔ handle ↔ face ↔ blurb | `useIdentity.js:236-273` |
 | Search | `relay.vertexlab.io`, `relay.noswhere.com` | NIP-50 text; a 200-group directory blast | the query, and the asker's IP | `usePeopleSearch.js:220-228` |
-| Groups | `groups.ciphertele.com`, `groups2.ciphertele.com` | kind-9 signed by a per-group **actor key** (`author` tag names its pin), `h`, `ep`, AES-GCM body with the sender's account key folded inside the ciphertext; control kinds and two pool-level AUTH answers still name the account | kind-9: per-group pseudonym plus group, epoch, second, size; controls: account + group + epoch + second + size | `useNIP29Group.js` Step 2 arms, `gmIdentityWire.js`, `groupCipher.js:10-16`; the pre-Step-2 statement stands for kinds 9000/9001/9002/9021/9022/9005 and the two pool auto-auth installs (`pool.js:138-141`, `relayDirectoryRead.js:58-65`) until slice 2 |
+| Groups | `groups.ciphertele.com`, `groups2.ciphertele.com` | every event (kind-9 bodies AND control kinds) signed by a per-group **actor key** with an `author` pin tag; NIP-42 proofs likewise; AES-GCM body carries the sender's account key only inside the ciphertext | per-(account, group) pseudonym plus group, epoch, second, size — no account-level wire fact anywhere on these hosts until two accounts are correlated by timing or by the doc publisher's own view | `useNIP29Group.js`, `gmIdentityWire.js`, `groupMembership.resolveControlSender`, `pool.js`, `relayDirectoryRead.js` |
 | Roster | same | 39002 **signed by the relay's own key**, read over NIP-11 HTTPS | membership, by the relay | `groupMembership.js:35-68, 222-229` |
 | Group keys | DMs | NIP-44 to each member with the raw epoch key | the relay never sees a key | `groupKeyDistribution.js:336-361` |
 | Private group name | 9002 + sealed envelope | fixed `Private group` placeholder on the relay | nothing about a rename | `groupCreate.js:41-47` |
@@ -449,12 +449,12 @@ A/B a 30s cover wrap over 8h, then add a 2s batch window.
 
 **D1 Light every door, not just the group and media ones.** Hides the hostnames
 of each service from the resolver and the exit. Reveals Tor use, volume, timing;
-Tor does not hide an identity asserted in-protocol. The raw group socket's
-NIP-42 answer now signs with a per-group actor key (Step 2 slice 1,
-`gmIdentityWire.signActProof`), so a captured 22242 there no longer names the
-account; two pool-level auto-auth answers still do (`pool.js:138-141`,
-`relayDirectoryRead.js:58-65`, cut over in slice 2). Failure: a stale door after
-a box moves. Product impact: desktop only; a web page cannot set its own proxy
+Tor does not hide an identity asserted in-protocol, but after Step 2 slices
+1-2 nothing on a group box asserts one: kind-9 bodies, all control kinds and
+every NIP-42 proof (both the raw socket via `signActProof` and both pool
+auto-auth installs) are actor-signed. A captured 22242 names a pseudonym that
+recomputes from one account secret but shares nothing visible with it.
+Failure: a stale door after a box moves. Product impact: desktop only; a web page cannot set its own proxy
 (`README.md:52-54`). Established. Falsifier: an exit log still showing the
 clearnet hostname for the message path. **Today `dm-relay`, both search relays
 and `dead-drop` are dark** (`egress.js:103-111`).

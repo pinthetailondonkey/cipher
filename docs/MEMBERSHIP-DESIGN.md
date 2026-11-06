@@ -403,17 +403,27 @@ Nothing else needs deciding here.
   secret, x-only/compressed pin matching on receive, the full round trip under
   a receiver whose session secret differs, pre-Step-2 bodies without `by`
   still opening, and the AUTH proof shape.
-  **Open (slice 2):** control kinds 9000/9001/9002/9021/9022/9005 still sign
-  with the account key, so N3 closes fully only when they cut over; receive
-  paths deliberately trust no mixed shape mid-slice. Two pool-level AUTH
-  answers also still name the account: the group-host auto-auth installed on
-  `getAuthenticatedPool` (`pool.js:138-141`) and the directory reader's own
-  pool (`relayDirectoryRead.js:26-29, 58-65`), both of which finalize a
-  challenge kind-22242 with `identity.sk` when a group host asks. The hook's
-  raw socket path is actor-signed; these two are the remaining senders to cut
-  over in slice 2. **Slice 3:** the roster/doc naming actor pins beside
-  members (the member-set doc today names account pubkeys, so doc-carrying
-  surfaces remain an observer's join until then).
+  **Landed (slice 2).** All twelve control-kind send sites sign with the same
+  derived actor key via `buildControlAct`; both pool-level AUTH answers
+  (`pool.js getAuthenticatedPool`, `relayDirectoryRead defaultPool`) resolve
+  their signer at challenge time — active group first, newest known otherwise —
+  and append the compressed pin as an `author` tag, matching every other act's
+  wire shape. No group-host event this app publishes names the account key.
+  Receivers resolve an actor-shaped sender back to its account through
+  `resolveControlSender` against standing rows' `actor` field; legacy
+  account-key events match directly and anything else answers '', which
+  authorizeGroupControl refuses.
+  **Landed (slice 3 core).** The member-set doc (DOC_V 2) carries each
+  member's actor pin beside their account: creator stamped at genesis,
+  members stamped from VERIFIED observations — a decoded kind-9 binds
+  event.pubkey (= their pin) to the sealed body's `by` (= their account), and
+  publishDocOp folds captured pairs into its next admit. Members receive docs
+  through `ingestMemberDocEvent` (relay author checked against the held pin's
+  x-only form before any AES work) at join and on every roster read; H4's
+  null path stands while nothing verifies.
+  **Open: B5** stays deliberate; pin rotation rides account-key rotation (H5
+  residual). The kick-wall's own add-back receipt now travels actor-signed and
+  resolves identically.
 - **Step 3 — gated.** The log, only if B4 or attribution starts to bind, or if
   equal-generation conflicts show up often enough to justify causality per
   *operation* rather than per *document*.
