@@ -17,6 +17,18 @@ run() {
   npm run preview:stop >/dev/null 2>&1
   WORKERS=${WORKERS:-2} CIPHER_DESKTOP_BUILD=1 npx playwright test --workers=${WORKERS:-2} --reporter=line "$@" > "$OUT/$label.log" 2>&1
   local status=$?
+  # A parallel lane mid-edit can leave the tree unbuildable for a minute (an
+  # apostrophe inside a single-quoted string did). That is a build failure, not
+  # a red batch: wait once and retry rather than recording it as one.
+  if [ "$status" -ne 0 ] && grep -q 'was not able to start' "$OUT/$label.log"; then
+    echo "JCODE_PROGRESS {\"message\":\"$label build refused, retrying in 60s\"}"
+    sleep 60
+    sha=$(git rev-parse --short HEAD)
+    dirty=$(git status --porcelain | wc -l | tr -d ' ')
+    npm run preview:stop >/dev/null 2>&1
+    WORKERS=${WORKERS:-2} CIPHER_DESKTOP_BUILD=1 npx playwright test --workers=${WORKERS:-2} --reporter=line "$@" > "$OUT/$label.log" 2>&1
+    status=$?
+  fi
   local line
   line=$(grep -E "^ +[0-9]+ (passed|failed)" "$OUT/$label.log" | tail -1 | sed 's/^ *//')
   printf '%s\t%s\tdirty=%s\texit=%s\t%s\n' "$label" "$sha" "$dirty" "$status" "$line" | tee -a "$SUM"
