@@ -117,3 +117,22 @@ test('the auth flush sends the same REQ frame the first subscribe sends', () => 
     `the auth flush frame (useNIP29Group.js:${flush.line}) must carry the stored filters spread, not nested`,
   );
 });
+
+test('a live member-doc event reaches the ingest door and only that arm', () => {
+  // Step 2 slice 3 live arm: docs have no h tag, so onFrame must strip their
+  // prefixed d-tag into a bare gid BEFORE any subscriber gating, then route
+  // kind 30079 alone into refreshMemberDocs (which verifies-then-stores);
+  // returning there keeps a doc from falling into control/message arms that
+  // would read it as something else.
+  const groupIdMatch = SOURCE.match(/let groupId = event\.tags\.find\(\(tag\) => tag\[0\] === 'h'\)/);
+  assert.ok(groupIdMatch, 'onFrame derives the gid tolerating the h-less doc shape');
+  const after = SOURCE.slice(groupIdMatch.index, groupIdMatch.index + 1200);
+  assert.match(after, /MEMBER_DOC_D_PREFIX/, 'the doc d-tag prefix is stripped to the bare gid');
+  const routeIdx = after.search(new RegExp(`if \\(event\\.kind === MEMBER_DOC_KIND\\)`));
+  assert.ok(routeIdx !== -1, 'kind 30079 has its own routing arm');
+  const arm = after.slice(routeIdx, routeIdx + 220);
+  assert.match(arm, /refreshMemberDocs\(identity, groupId\)/, 'the arm ingests through the verify-then-store door');
+  const snapshotIdx = after.indexOf('event.kind === 39002');
+  assert.ok(snapshotIdx !== -1 && snapshotIdx > routeIdx,
+    'the doc arm returns before the roster-snapshot arm can see a doc event');
+});

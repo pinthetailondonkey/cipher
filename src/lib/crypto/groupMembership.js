@@ -1,5 +1,13 @@
 import { verifyEvent } from 'nostr-tools';
 import { groupRelayHttp } from '../egress';
+// Step 2 slice 3, live arm: the member-set doc's kind + d-tag shape comes
+// straight from its publisher (groupDocWire), so no constant can drift.
+// No cycle: groupDocWire's import graph never reaches back here.
+import { MEMBER_DOC_KIND, memberDocTag } from './groupDocWire';
+// Re-exported because this module's plans are the wire-facing consumers:
+// tests pin the filter shape against the same constant the builder uses,
+// not a second literal.
+export { MEMBER_DOC_KIND, memberDocTag };
 
 const HEX_PUBKEY = /^[0-9a-f]{64}$/;
 
@@ -75,6 +83,11 @@ export function groupRelayFilters(groupIds, since) {
     if (Number.isFinite(since)) timeline.since = since;
     filters.push(timeline);
     filters.push({ kinds: [39002], '#d': [id] });
+    // Step 2 slice 3, live arm: the member-set doc travels as its own kind
+    // with a d-tag no other event carries (the sealed body hides the roster,
+    // so doc events name NO h tag), so the roster's gen bumps reach a member
+    // without waiting for their next roster read to refresh it.
+    filters.push({ kinds: [MEMBER_DOC_KIND], '#d': [memberDocTag(id)] });
   }
   return filters;
 }

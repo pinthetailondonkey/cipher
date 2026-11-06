@@ -13,6 +13,10 @@ import { getAllGroupKeys, getCurrentGroupKey, putGroupKey } from '../lib/crypto/
 import { authorizeGroupControl, authorizeGroupPin, authorizeMemberSnapshot, groupFrameAccepted, groupRelayPubkey, groupTimelinePlans, isRestrictedRelayClose, pickMemberSnapshot, pinnedMessageOf, resolveControlSender, trustedGroupCreator } from '../lib/crypto/groupMembership';
 import { grantKeyRequest, loadMemberSnapshot, loadMemberSnapshotRecord, memberKey, patchMemberSnapshot, rememberMembers, rotateGroupEpoch } from '../lib/crypto/groupKeyRotation';
 import { generateGroupKey } from '../lib/crypto/groupCipher';
+// Step 2 slice 3, live arm: onFrame routes kind 30079 by its constants and
+// strips the doc d-tag prefix; both come from the publisher so neither can
+// drift from the wire shape.
+import { MEMBER_DOC_KIND, MEMBER_DOC_D_PREFIX } from '../lib/crypto/groupDocWire';
 import { heldGroupRow } from '../lib/groupJoin';
 import { ACCESS_PRIVATE, ACCESS_PUBLIC, JOIN_APPROVAL, groupCreateTags, relayFacingLabel } from '../lib/groupCreate';
 import { distributeGroupKey, epochsToBackfill } from '../lib/crypto/groupKeyDistribution';
@@ -1305,8 +1309,19 @@ export function useNIP29Group({ identity }) {
       if (msg[0] !== 'EVENT' || !subIds.has(msg[1])) return;
       const event = msg[2];
       if (!event?.tags) return;
-      const groupId = event.tags.find((tag) => tag[0] === 'h')?.[1] || event.tags.find((tag) => tag[0] === 'd')?.[1];
+      // The doc's d-tag names the group with a prefix (its h-less shape is
+      // why it needs this arm at all): strip it so every later check below
+      // sees the bare gid. A bare d-tag stays untouched.
+      let groupId = event.tags.find((tag) => tag[0] === 'h')?.[1] || event.tags.find((tag) => tag[0] === 'd')?.[1] || '';
+      if (groupId.startsWith(MEMBER_DOC_D_PREFIX + ':')) groupId = groupId.slice(MEMBER_DOC_D_PREFIX.length + 1);
       if (!groupId || !groupIds.includes(groupId)) return;
+      // Step 2 slice 3, live arm: an ingested doc re-folds its (account ->
+      // pin) rows into every future control authorization and key-DM
+      // send-off; verify-then-store is inside ingestMemberDocEvent.
+      if (event.kind === MEMBER_DOC_KIND) {
+        refreshMemberDocs(identity, groupId).catch(() => {});
+        return;
+      }
       if (event.kind === 39002) {
         const relayPubkey = await groupRelayPubkey();
         if (!authorizeMemberSnapshot({ event, relayPubkey })) {

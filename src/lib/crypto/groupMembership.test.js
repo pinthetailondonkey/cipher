@@ -3,6 +3,9 @@ import test from 'node:test';
 import { finalizeEvent, generateSecretKey, getPublicKey } from 'nostr-tools';
 import {
   GROUP_RELAY_PUBKEY,
+  // Step 2 slice 3 live arm: the doc filter's kind is asserted against the
+  // publisher's own constant, so no literal can drift from the wire shape.
+  MEMBER_DOC_KIND,
   MEMBER_OMISSION_TTL_MS,
   MEMBER_REREAD_NEGATIVE_TTL_MS,
   NIP11_NEGATIVE_TTL_MS,
@@ -108,6 +111,11 @@ test('the group socket subscribes per group, so one restricted id cannot close t
     assert.deepEqual(snapshot, { kinds: [39002], '#d': [plan.groupId] });
     assert.equal('since' in snapshot, false);
     assert.equal(timeline['#h'].length, 1);
+    // Step 2 slice 3 live arm: the member-set doc rides every group plan on
+    // its own kind + prefixed d-tag (doc events carry NO h tag), so a gen
+    // bump reaches members without waiting for their next roster read.
+    const [,, docFilter] = plan.filters;
+    assert.deepEqual(docFilter, { kinds: [MEMBER_DOC_KIND], '#d': [`cipher-gmemdoc:${plan.groupId}`] });
   }
   assert.equal(isRestrictedRelayClose('restricted: Access denied to private group'), true);
   assert.equal(isRestrictedRelayClose(''), false);
@@ -128,6 +136,7 @@ test('the group socket subscribes per group, so one restricted id cannot close t
   assert.equal(req[2].kinds.includes(7), false);
   assert.deepEqual(req[2]['#h'], ['g1']);
   assert.deepEqual(req[3], { kinds: [39002], '#d': ['g1'] });
+  assert.deepEqual(req[4], { kinds: [MEMBER_DOC_KIND], '#d': ['cipher-gmemdoc:g1'] });
 });
 
 // A real signing key stands in for the relay: the snapshot gate now checks
