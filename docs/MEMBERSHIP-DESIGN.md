@@ -98,7 +98,7 @@ Why a state document and not the log:
 - `[P]` rollback protection without a log: a stale doc loses to a higher
   generation, so `gen` is the replay defence that ancestry was doing.
 
-The DAG is kept as v2 (section 7, step 3), gated on per-device revocation or
+The DAG is kept as v2 (section 8, step 3), gated on per-device revocation or
 attribution actually mattering, and on equal-gen conflicts proving frequent.
 
 ## 3. What this closes, and what it does not
@@ -258,7 +258,13 @@ one availability point. Worth revisiting if conflicts are frequent, because it
 trades the merge machinery for an operational constraint rather than for
 linkage.
 
-## 5. The minimum spec
+## 5. Why there is no section 5
+
+`[I]` Section 4's alternative-not-taken note (single-writer rule) is where a
+group-keying-by-relay proposal would have gone; the reframing in section 0 made
+it moot before it was written. Numbered gap kept so cross-references stay stable.
+
+## 6. The minimum spec
 
 `[P]` Document, published to both boxes under a parameterized replaceable kind,
 `d` derived from the gid:
@@ -301,7 +307,41 @@ over regardless are the **time-free validity principle** (validity is a property
 of the referenced set, never of `now`) and the **narrowed equivocation
 definition** (same signer, same references, different content).
 
-## 6. Deferred questions
+### Provenance of the Step-0 decision (added at `917793e`+)
+
+`[A]` The signer question had two live answers and one dead one. Dead: the relay
+as signer is what the whole design removes, so it cannot be trusted to produce
+the artifact that removes its own authority. Live candidates:
+
+1. **The account key signs directly** (`[I]` simplest). Defeated in H5: it puts
+   the account pubkey on the group box on every governance artifact, which
+   Step 2's pseudonymity plan then cannot unwind without re-pinning out of band
+   per member.
+2. **A per-group authority key derived from the account key** (H5's fix), pinned
+   at group creation, carried in the invite link so every member learns it out
+   of band rather than from a relay row. Members verify doc signatures against
+   a pin they learned when they joined, never against something fetched fresh.
+
+**Decision: answer 2, taken.** `[P]` it is one decision for two artifacts: this
+authority key is *also* the per-group GM signing key for AUTH and kind-9 messages
+(Step 2). One derivation, one pin, one re-learn cost if ever rotated. B5 (per-
+account vs per-device pseudonym) stays open because it changes the derivation,
+and any change to the derivation after members have pinned invalidates every
+existing pin - the reason this page precedes all code.
+
+`[I]` Residuals accepted by taking answer 2, restated as the contract Steps 1-2
+must honor: (a) an authority key cannot be revoked while the account key is not
+rotated - compromise means rotating both; (b) the pin travels only through the
+invite link or another out-of-band path, never from a fetchable source; (c)
+per-device derivation is deferred with B5 and changes nothing until decided.
+
+`[I]` Generation rule carried to Step 1 unchanged from sections 4 and 6: `gen`
+strictly increases, is stamped monotonically into `created_at` on publish (H2),
+authoritative over `created_at` everywhere including at rest; higher `gen` wins;
+equal-`gen` distinct docs heal by H9's parents-as-frontier union-and-bump.
+Nothing else needs deciding here.
+
+## 7. Deferred questions
 
 - **B1 `[O]`** the derivation and the signature scheme have no external review;
   canonical encodings and test vectors are owed.
@@ -324,11 +364,13 @@ definition** (same signer, same references, different content).
   read, because no relay was contacted in these rounds (H2). Confirm before
   relying on `gen` over the wire rather than only at rest.
 
-## 7. Sequence
+## 8. Sequence
 
-- **Step 0 — decide, one page.** The signer (derived authority key, pinned at
-  creation) and the generation rule. Nothing ships before this, because a
-  re-pin later is an out-of-band re-learn per member, not a code change.
+- **Step 0 — decide, one page.** Done. The signer is a per-group authority key
+  derived from the account key, pinned at creation, carried in the invite link
+  (decision recorded after section 6). Nothing ships before this was decided,
+  because a re-pin later is an out-of-band re-learn per member, not a code
+  change.
 - **Step 1 — the doc.** Dual-published, cross-box compared, sealed per
   generation at rest. Acceptance criteria: H1(b) tombstones, H2 monotonic
   `created_at` plus gen-authoritative reads, H3 doc/epoch binding in grants, H4
@@ -336,7 +378,11 @@ definition** (same signer, same references, different content).
   has-seen-more healing, H7 deferral disclosed. `[I]` this is the only step that
   touches the boundary, and it needs no relay support.
 - **Step 2 — pseudonymous identity for AUTH and messages.** Independent of
-  Step 1 in mechanism, dependent on Step 0 for the signer choice.
+  Step 1 in mechanism, dependent on Step 0 for the signer choice. The per-group
+  GM key and the doc authority key are one key (H5): same derivation, pinned at
+  creation, learned out of band through the invite link. Step 2 closes N3's
+  passive-observer graph the moment both cut over, because after it the identity
+  key signs nothing on a group box.
 - **Step 3 — gated.** The log, only if B4 or attribution starts to bind, or if
   equal-generation conflicts show up often enough to justify causality per
   *operation* rather than per *document*.
@@ -348,7 +394,7 @@ back; a tombstone survives a concurrent admit; a grant naming a doc the recipien
 does not hold is deferred, not installed; an unknown gid does not resolve against
 a plausible-looking doc.
 
-## 8. Claims
+## 9. Claims
 
 Safe: "a client can check who the owner says may hold the current key, so a
 relay-written roster entry no longer buys the key by itself"; "the doc rides the
@@ -370,13 +416,15 @@ Avoid:
 - "member-governed" — the authority is the owner, not the members.
 - "production-ready crypto" — no external review (B1).
 
-## 9. Provenance
+## 10. Provenance
 
 Three rounds, two sessions, all read-only. Round one: whole-surface privacy
 review against `d607a27`, then a DAG protocol draft, then R1-R10 after the claim
 was narrowed. Round two: adversarial review of R1-R10 (five critical findings),
 then a revision to five decisions. Round three: the VISION.md reframing that
-killed the DAG at v1, and H1-H9 against the doc.
+killed the DAG at v1, and H1-H9 against the doc. Step 0 decided after `917793e`
+in a fourth pass, committed with it: signer = per-group authority key derived
+from the account key, doubled as the Step-2 GM key; residuals (a)-(c) above.
 
 Revision drift across the writing: `d607a27` → `0789d44` → `9a9734b` → `3f4a854`
 → `645a878` → `5fbb8ab` → **`78e0245`**. The first rounds' `[V]` findings were
