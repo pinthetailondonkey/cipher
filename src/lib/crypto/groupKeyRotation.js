@@ -209,7 +209,9 @@ async function loadDocFirstSnapshotRecord(groupId) {
   try {
     const { loadDocStanding } = await import('./memberDocStanding.js');
     const standing = await loadDocStanding(groupId);
-    if (!Array.isArray(standing) || !standing.length) return null;
+    // null is "no verified doc held"; an EMPTY array is still a held doc
+    // (everyone removed), and the doc branch must own that answer.
+    if (!Array.isArray(standing)) return null;
     return { members: standing, updatedAt: Math.floor(Date.now() / 1000), source: 'doc' };
   } catch {
     return null;
@@ -238,6 +240,10 @@ export function requesterMayReceiveKey(snapshot, requester) {
 }
 
 /**
+ * Rows 1/2 (successful re-read) and rows 3-5 apply when NO verified doc is
+ * held. When this device holds one, its membership decides the `named`
+ * column for every row — a relay can confirm but not widen (SEC-3).
+ *
  * | Re-read  | Cached list vs key age | Names peer? | Result |
  * | -------- | ---------------------- | ----------- | ------ |
  * | succeeds | —                      | yes         | allow  |
@@ -269,6 +275,7 @@ export function keyRequestDecision({
   refetched,
   keyObtainedAt,
   selfCreated = false,
+  verifiedMembers = null,
 }) {
   if (!requester) return 'deny';
   // F3: a self-claimed creator buys nothing. The shortcut fires only when the
@@ -277,7 +284,16 @@ export function keyRequestDecision({
   // requester is that vetted name.
   const vetted = trustedGroupCreator({ creator, selfCreated, snapshot });
   if (vetted && requester === vetted) return 'allow';
-  const named = requesterMayReceiveKey(snapshot, requester);
+  // SEC-3: when this device holds a pin-verified member-set document, its
+  // membership IS the answer. A relay roster is a list the relay writes about
+  // anyone, so "add an account to my own roster" used to be enough to mint a
+  // key recipient — worse, a successful re-read decided on the relay list
+  // ALONE (rows 1/2), so the doc's stricter truth was never consulted. The
+  // doc names the requester or it does not; the relay can only confirm.
+  const holdsVerified = Array.isArray(verifiedMembers);
+  const named = holdsVerified
+    ? requesterMayReceiveKey(verifiedMembers, requester)
+    : requesterMayReceiveKey(snapshot, requester);
   const age = Number.isFinite(updatedAt) ? nowSec - updatedAt : Infinity;
   const clockOk = age >= -MEMBER_SNAPSHOT_FUTURE_SKEW_SEC;
   const fresh = clockOk
@@ -296,9 +312,15 @@ export function keyRequestDecision({
     if (fresh && snapshotCoversKey) return 'allow';
     return 'refetch';
   }
-  // Successful re-read. The cached list's age is not consulted.
-  if (Array.isArray(refetched)) return requesterMayReceiveKey(refetched, requester) ? 'allow' : 'deny';
-  // Failed re-read. Rows 3 and 4 of GRANT_DECISION_TABLE.
+  // Successful re-read. A held verified doc is the source of truth; without
+  // one the fresh relay list is the answer, exactly as before.
+  if (Array.isArray(refetched)) {
+    if (holdsVerified) return named ? 'allow' : 'deny';
+    return requesterMayReceiveKey(refetched, requester) ? 'allow' : 'deny';
+  }
+  // Failed re-read, but a verified doc is held: the doc already answered.
+  if (holdsVerified) return named ? 'allow' : 'deny';
+  // Failed re-read and no doc. Rows 3 and 4 of GRANT_DECISION_TABLE.
   return snapshotCoversKey ? 'allow' : 'deny';
 }
 
@@ -310,10 +332,11 @@ export async function resolveKeyRequest({
   keyObtainedAt,
   nowSec,
   selfCreated = false,
+  verifiedMembers = null,
   refetch,
 }) {
   let decision = keyRequestDecision({
-    requester, creator, snapshot, updatedAt, keyObtainedAt, nowSec, selfCreated,
+    requester, creator, snapshot, updatedAt, keyObtainedAt, nowSec, selfCreated, verifiedMembers,
   });
   if (decision !== 'refetch') return decision;
   let refetched = null;
@@ -324,7 +347,7 @@ export async function resolveKeyRequest({
     refetched = null;
   }
   return keyRequestDecision({
-    requester, creator, snapshot, updatedAt, keyObtainedAt, nowSec, selfCreated, refetched,
+    requester, creator, snapshot, updatedAt, keyObtainedAt, nowSec, selfCreated, refetched, verifiedMembers,
   });
 }
 
@@ -343,6 +366,18 @@ export async function grantKeyRequest({
   selfCreated = false,
   fetchMembers,
 }) {
+  // SEC-3: the pin-verified member-set document, when this device holds one,
+  // is the membership source of truth for this decision. The relay roster is
+  // whatever the relay says about its own list — true enough to start, but a
+  // relay that adds an account to its own roster must not be able to mint a
+  // key recipient once the group has a signed roster of its own.
+  let verifiedMembers = null;
+  try {
+    const docRecord = await loadDocFirstSnapshotRecord(groupId);
+    // An empty standing is still a held doc (everyone was removed), so the
+    // test is `is an array`, not `is a non-empty array`.
+    if (Array.isArray(docRecord?.members)) verifiedMembers = docRecord.members;
+  } catch { /* no doc held: the relay roster stays the source, as before */ }
   // H1 fix (round-three re-hack): the deny outvotes the relay on the GRANT
   // path too, not only on the 9021 replay arm. The cached-snapshot fast
   // path and a relay-widened re-read both used to grant a key to a peer
@@ -360,6 +395,7 @@ export async function grantKeyRequest({
     updatedAt,
     keyObtainedAt,
     selfCreated,
+    verifiedMembers,
     nowSec: Math.floor(now / 1000),
     refetch: async () => {
       const cached = await refetchMembersCached({

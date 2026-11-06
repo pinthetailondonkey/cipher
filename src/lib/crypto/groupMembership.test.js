@@ -727,6 +727,125 @@ test('a denied peer is refused the key even when the roster still names them', a
   }
 });
 
+// SEC-3 (full-remediation audit): insecure membership fallback. A relay roster
+// is a list the relay writes about anyone, and the successful-re-read rows of
+// GRANT_DECISION_TABLE used to decide on that list alone — so a relay could
+// add an account to its own roster and mint a key recipient for a group whose
+// signed document never admitted them. With a pin-verified doc held, the doc
+// decides `named` on every row: the relay can confirm a member, never mint one.
+test('a held verified doc outvotes a relay that widens its own roster', () => {
+  const now = 1_000_000;
+  const doc = [member]; // the signed roster: member is in, stranger is not
+  const widened = [member, stranger]; // what the relay says
+  // The exact hole: a fresh roster naming the stranger, and a re-read that
+  // agrees with it. Pre-doc rows 1/2 allowed on this alone.
+  assert.equal(keyRequestDecision({
+    requester: stranger, creator: '', snapshot: widened, updatedAt: now - 10,
+    nowSec: now, keyObtainedAt: now - 5, refetched: widened, verifiedMembers: doc,
+  }), 'deny', 'a relay-minted row is refused when the doc does not name it');
+  // The same inputs without a doc keep the old answer, so the doc is what
+  // decided the row above and not something else in the wiring.
+  assert.equal(keyRequestDecision({
+    requester: stranger, creator: '', snapshot: widened, updatedAt: now - 10,
+    nowSec: now, keyObtainedAt: now - 5, refetched: widened,
+  }), 'allow');
+  // A real member on the same widened list is still granted.
+  assert.equal(keyRequestDecision({
+    requester: member, creator: '', snapshot: widened, updatedAt: now - 10,
+    nowSec: now, keyObtainedAt: now - 5, refetched: widened, verifiedMembers: doc,
+  }), 'allow');
+  // A failed re-read no longer denies a member the doc names: the doc already
+  // answered, and a relay outage is not evidence against a signed roster.
+  assert.equal(keyRequestDecision({
+    requester: member, creator: '', snapshot: [], updatedAt: 1, nowSec: now,
+    keyObtainedAt: now - 5, refetched: null, verifiedMembers: doc,
+  }), 'allow', 'the doc answers a failed re-read by itself');
+  // ...and it does not grant one the doc omits, however loudly the last
+  // cached list named them.
+  assert.equal(keyRequestDecision({
+    requester: stranger, creator: '', snapshot: widened, updatedAt: now - 10,
+    nowSec: now, keyObtainedAt: now - 5, refetched: null, verifiedMembers: doc,
+  }), 'deny');
+  // The kick case: the roster row for a removed account is strictly newer
+  // than the key and would cover it, but the doc already tombstoned them.
+  assert.equal(keyRequestDecision({
+    requester: stranger, creator: '', snapshot: widened, updatedAt: now - 10,
+    nowSec: now, keyObtainedAt: now - 40, refetched: null, verifiedMembers: doc,
+  }), 'deny', 'a doc tombstone beats a newer relay row');
+  // A held doc with an empty standing still counts as held: everyone was
+  // removed, so nobody gets a key off the relay's word alone.
+  assert.equal(keyRequestDecision({
+    requester: member, creator: '', snapshot: [member], updatedAt: now - 10,
+    nowSec: now, keyObtainedAt: now - 5, refetched: [member], verifiedMembers: [],
+  }), 'deny');
+});
+
+// The same rule through the live grant door: the doc load inside
+// grantKeyRequest is what has to reach the decision. Two groupIds, identical
+// inputs, one with a stored verified doc and one without.
+test('grantKeyRequest reads the held doc and a relay cannot mint a recipient', async () => {
+  const wire = await import('./groupDocWire.js');
+  const standing = await import('./memberDocStanding.js');
+  const { groupAuthorityKey } = await import('./groupAuthority.js');
+  const { genesisDocBody, signDocEvent } = await import('./groupDoc.js');
+
+  const GID_DOC = 'sec3-doc'.padEnd(64, '0');
+  const GID_PLAIN = 'sec3-plain'.padEnd(64, '0');
+  // The doc body validates pubkeys as hex, so these rows cannot be letter
+  // placeholders the way the pure-decision fixtures above can.
+  const docMember = 'ab'.repeat(32);
+  const relayMinted = 'cd'.repeat(32);
+  const accountSk = new Uint8Array(32).fill(9);
+  const { privateKeyBytes, pin } = await groupAuthorityKey(accountSk, GID_DOC);
+
+  const rows = new Map();
+  const table = {
+    async get(key) { return rows.get(String(key)); },
+    async put(row) { rows.set(`${row.groupId}|${row.gen}`, { ...row }); },
+    where(field) {
+      return {
+        equals: (value) => ({
+          toArray: async () => [...rows.values()].filter((row) => row[field] === value),
+        }),
+      };
+    },
+  };
+
+  const hadDocs = true;
+  wire.__setDocsDbForTests({ groupMemberDocs: table });  const unbind = standing.bindMemberDocPins(async () => pin);
+  try {
+    const body = await genesisDocBody({ gid: GID_DOC, epoch: 1, members: [docMember] });
+    const signed = await signDocEvent(body, privateKeyBytes);
+    assert.ok((await wire.rememberVerifiedDoc({ groupId: GID_DOC, pin, signed }))?.stored,
+      'the sealed doc stores verified at rest');
+
+    const now = 1_700_000_000_000;
+    const nowSec = now / 1000;
+    const base = {
+      requester: relayMinted,
+      creator,
+      snapshot: [docMember, relayMinted],   // the relay wrote the stranger a row
+      updatedAt: nowSec - 10,
+      keyObtainedAt: nowSec - 5,
+      now,
+      fetchMembers: async () => [docMember, relayMinted],
+    };
+    // Doc held: the relay list agrees with itself and still loses.
+    assert.equal(await grantKeyRequest({ ...base, groupId: GID_DOC }), 'deny',
+      'the held doc reaches the decision and refuses the relay-minted row');
+    // No doc: the old relay-trust answer, unchanged.
+    assert.equal(await grantKeyRequest({ ...base, groupId: GID_PLAIN }), 'allow');
+    // The doc also carries the honest member past a relay outage.
+    assert.equal(await grantKeyRequest({
+      ...base, groupId: GID_DOC, requester: docMember,
+      snapshot: [], updatedAt: 1, fetchMembers: async () => { throw new Error('relay down'); },
+    }), 'allow');
+  } finally {
+    unbind();
+    if (hadDocs) wire.__setDocsDbForTests(null);
+  }
+});
+
 // H2 fix (round-three re-hack): a relay-asserted admin row is one roster row
 // the relay can write about anyone, and it used to authorize control AGAINST
 // the creator. A relay row cannot dethrone the identity that created the
