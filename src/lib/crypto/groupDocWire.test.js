@@ -8,6 +8,7 @@ import {
   openSealedDocBody,
   rememberVerifiedDoc,
   loadMemberDocHeads,
+  ingestMemberDocEvent,
   __setDocsDbForTests,
 } from './groupDocWire.js';
 import { signDocEvent, genesisDocBody, applyDocOps, authorityPinOf } from './groupDoc.js';
@@ -127,4 +128,47 @@ test('at rest: next generation stores alongside; conflict pair keeps both ids', 
   assert.ok(atGen1.some((h) => h.id === next.id));
   assert.ok(atGen1.some((h) => h.id === divergent.id));
   __setDocsDbForTests(null);
+});
+
+// ── Step 1 receive: a relayed doc event becomes an at-rest verified row ────
+
+test('ingestMemberDocEvent stores a genuine publish and refuses every forged shape', async () => {
+  // The creator's own derived key pair: the event must be authored by the
+  // x-only form of the pin, sealed under pin+gid, and verify against pin.
+  const body = await genesisDocBody({ gid: GID, epoch: 1, members: ['aa'.padStart(64, '0')] });
+  const signed = await signDocEvent(body, SK);
+  const published = await buildMemberDocEvent({
+    signedDoc: signed, authoritySk: SK, pin: PIN, groupId: GID, createdAt: 1000,
+  });
+
+  __setDocsDbForTests({ groupMemberDocs: fakeDocsTable() });
+  try {
+    const stored = await ingestMemberDocEvent(published, { pin: PIN, groupId: GID });
+    assert.equal(stored?.stored, true, 'a genuine publish ingests');
+    const heads = await loadMemberDocHeads(GID);
+    assert.equal(heads.length, 1);
+    assert.equal(heads[0].id, signed.id);
+
+    // A relay-invented author (wrong key) never reaches the seal.
+    const wrongAuthor = { ...published, pubkey: 'ee'.repeat(32) };
+    assert.equal(await ingestMemberDocEvent(wrongAuthor, { pin: PIN, groupId: GID }), null);
+
+    // Wrong d tag / wrong kind / junk content: quiet refusals, no rows.
+    const badD = { ...published, tags: [['d', 'cipher-gmemdoc:' + 'other'.padEnd(64, '0')]] };
+    assert.equal(await ingestMemberDocEvent(badD, { pin: PIN, groupId: GID }), null);
+    assert.equal(await ingestMemberDocEvent({ ...published, kind: 30078 }, { pin: PIN, groupId: GID }), null);
+    const tamperedContent = JSON.stringify({ v: 1, iv: 'AAAA', ct: 'AAAA' });
+    assert.equal(await ingestMemberDocEvent(
+      { ...published, content: tamperedContent }, { pin: PIN, groupId: GID },
+    ), null);
+
+    // No pin held: nothing can verify, refuse before any read.
+    assert.equal(await ingestMemberDocEvent(published, { pin: '', groupId: GID }), null);
+    // Idempotent re-ingest is not a conflict.
+    const again = await ingestMemberDocEvent(published, { pin: PIN, groupId: GID });
+    assert.equal(again?.stored, true);
+    assert.equal((await loadMemberDocHeads(GID)).length, 1);
+  } finally {
+    __setDocsDbForTests(null);
+  }
 });

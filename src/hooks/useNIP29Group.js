@@ -306,6 +306,45 @@ function bodyByOf(event) {
   }
 }
 
+// Step 1 receive (the door Step 1c left open on purpose): fetch the group's
+// member-set doc events from both relay sets and verify each against the pin
+// this device holds out of band. The relay's author field is checked first so
+// a stranger's event never reaches AES work; the seal is opened with the
+// invite-learned pin; rememberVerifiedDoc gates every at-rest write. Member
+// devices hold ZERO docs today without this — publishDocOp refuses ('No
+// member-set doc held') and standing falls back to the relay roster, which H4
+// was written to end.
+export async function refreshMemberDocs(identity, groupId) {
+  if (!identity?.pk || !groupId) return null;
+  const { readAuthorityPin } = await import('../lib/crypto/authorityPins.js');
+  const { ingestMemberDocEvent } = await import('../lib/crypto/groupDocWire.js');
+  const pin = readAuthorityPin(identity.pk, groupId);
+  if (!pin) return null; // no pin held: nothing can verify; refuse quietly
+  try {
+    const pool = await getAuthenticatedPool(identity);
+    // Both boxes: the group relay's copy and the cross-operator general-relay
+    // mirror are equal candidates for verification — higher gen wins at rest,
+    // so order does not matter and duplicates are idempotent rows.
+    const targets = [...new Set([...groupRelays, ...generalRelays])].filter(Boolean);
+    if (!targets.length) return null;
+    const events = await queryWithTimeout(
+      pool,
+      targets,
+      { kinds: [30079], '#d': [`cipher-gmemdoc:${groupId}`], limit: 50 },
+      4000,
+    ).catch(() => []);
+    let stored = 0;
+    for (const event of events) {
+      const result = await ingestMemberDocEvent(event, { pin, groupId });
+      if (result?.stored) stored += 1;
+    }
+    return { stored };
+  } catch (error) {
+    console.warn('[group] Member-set doc refresh failed:', error?.message || error);
+    return null;
+  }
+}
+
 export async function loadGroupProfile(identity, rawId, passedName = null) {
   const parsed = parseGroupReference(rawId);
   const groupId = parsed.id;
@@ -870,6 +909,11 @@ export function useNIP29Group({ identity }) {
     ]);
     const active = useChatStore.getState().activeGroup;
     if (active?.id === newGroup.id) useChatStore.getState().setActiveGroup(heldGroupRow(active, newGroup));
+    // Step 1 receive: the join is when this device first holds a pin (invite
+    // link stamped at bootstrap, or owner derivation at create). Fetch and
+    // verify the group's member-set doc now so standing reads doc-backed from
+    // the first membership decision instead of falling back to the roster.
+    refreshMemberDocs(identity, groupId).catch(() => {});
     return newGroup;
   }, [identity, setGroups]);
 
@@ -1757,6 +1801,7 @@ export function useNIP29Group({ identity }) {
     pinMessage,
     unpinMessage,
     fetchPinnedMessage,
+    refreshMemberDocs,
   };
 }
 

@@ -167,3 +167,31 @@ export async function loadMemberDocHeads(groupId, { limit = 5 } = {}) {
     return [];
   }
 }
+
+// ── Receive: a relayed doc event becomes an at-rest verified row ──────────
+// The door the publish side has been missing on purpose (Step 1c landed wire
+// and store; this is the third piece). The event's OWN author is not believed:
+// the signature verifies against the OUT-OF-BAND pin this device holds (H5),
+// so a relay inventing events or a stranger publishing under any key reads
+// nothing. Content is sealed under pin+gid, which doubles as the gid binding.
+
+// One wire event → {stored, opened} or null. Every refusal is quiet-by-design:
+// a wrong-pin or foreign-key doc is relay noise, not an error to surface, and
+// the caller answers from whatever heads it already holds (H4's null path).
+export async function ingestMemberDocEvent(event, { pin, groupId }) {
+  if (!event || event.kind !== MEMBER_DOC_KIND) return null;
+  if (!pin || !groupId) return null;
+  const dTag = (event.tags || []).find((tag) => tag[0] === 'd')?.[1] || '';
+  if (dTag !== memberDocTag(groupId)) return null;
+  // The pin itself names this group's authority key only when the event was
+  // authored by its x-only form: the publish side signs with that same key,
+  // so a mismatching author fails verification below anyway — but checking
+  // first keeps a random stranger's event from even reaching AES work.
+  const xonly = String(pin).toLowerCase();
+  const compact = /^[0-9a-f]{66}$/.test(xonly) ? xonly.slice(2) : xonly;
+  if (String(event.pubkey || '').toLowerCase() !== compact) return null;
+  const signed = await openSealedDocBody(event.content, pin, groupId);
+  if (!signed) return null;
+  return rememberVerifiedDoc({ groupId, pin, signed });
+}
+
