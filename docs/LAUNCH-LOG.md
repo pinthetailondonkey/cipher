@@ -320,3 +320,39 @@ account anywhere in this app's group traffic.
 
 B5 (per-account vs per-device pseudonym) is a design decision, not code debt;
 pin rotation rides account-key rotation until someone argues otherwise (H5).
+
+### The wire itself was read (packet capture, 2026-11-06)
+
+No tcpdump exists on the dev box and no root; TLS would render a raw capture
+useless anyway. So the capture ran where privacy lives and dies: CDP recorded
+every WebSocket frame headless Chromium put on the wire while the real app
+(production build, real PIN gate, seeded vault) created a group and messaged
+against two local stand-in relays pointed at through cipher_network's paste
+channel. Every frame landed verbatim in JSONL; the analyzer greps them for
+the account key.
+
+Results across runs 5-7, at `841a83b`:
+
+- [V] every published group-box EVENT signs with an alias pin: kind-9007
+  create, both 9002 settings, the 9021 join, the 30079 doc, the kind-9
+  messages. Zero account-key signers.
+- [A] the analyzer named one live finding before it closed: the kind-9005
+  pinned-slot reads shipped `authors:[account]` REQ frames even after
+  capture held the creator's alias (four per session). Fixed at `2feac4c`
+  (alias replaces account once held) and `841a83b` (creator's own device
+  answers from its out-of-band pin when the snapshot has no row yet); each
+  witnessed red when reverted.
+- [I] exactly one account-key appearance remains in ~88 outgoing group-box
+  frames: the kind-9007 create event names the creator-account as admin in a
+  plaintext `p` tag. Recorded, not patched: an open group must let anyone
+  reading it learn who governs without holding a doc, which is what that tag
+  is for.
+- [U] general-box traffic was intentionally excluded from the claim: DM,
+  profile and search relays legitimately see the account key by design
+  (author-filtered fetches, NIP-65 relay list). The launch log says "no
+  group-box event"; the capture proves precisely that scope.
+
+The capture harness (`scripts/wire-capture.mjs` shape, kept in scratch)
+reproduces the run: local dist server, capture relay answering AUTH/OK/EOSE
+per NIP-01/NIP-42, CDP Network frame recording, incremental JSONL writes.
+Rerun whenever the send path changes.
