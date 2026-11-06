@@ -1854,13 +1854,21 @@ export function useNIP29Group({ identity }) {
       // key's x-only form once captured, so the dedicated filter asks for BOTH
       // author shapes; a creator with no row pin yet matches by account only.
       const ownerAuthorFilter = standing.creator
-        ? (() => {
+        ? await (async () => {
           const row = (standing.members || []).find((m) => (typeof m === 'object' && m?.pubkey) === String(standing.creator).toLowerCase());
-          const actor = row && typeof row === 'object' && /^[0-9a-f]{66}$/.test(row.actor || '') ? row.actor.slice(2) : null;
-          // Wire-capture finding (LAUNCH-LOG Phase 11): once the creator's pin
-          // IS held, the account-key arm is dead weight that still names the
-          // account on the group box, so it ships only while nothing better
-          // exists. With a pin, the alias form answers alone.
+          let actor = row && typeof row === 'object' && /^[0-9a-f]{66}$/.test(row.actor || '') ? row.actor.slice(2) : null;
+          if (!actor && String(standing.creator).toLowerCase() === identity.pk.toLowerCase()) {
+            // Wire-capture finding, second leg: on this creator's own device
+            // the pin is known by construction (creation stamped it), but a
+            // fresh snapshot can still hold plain string rows, which left
+            // the account arm shipping four REQ frames that named the
+            // account on the group box. The held out-of-band pin answers.
+            const { readAuthorityPin } = await import('../lib/crypto/authorityPins.js');
+            const held = readAuthorityPin(identity.pk, groupId);
+            if (/^[0-9a-f]{66}$/.test(held || '')) actor = held.slice(2);
+          }
+          // Once any alias form is held the account arm is dead weight that
+          // still names the account; it ships only while nothing better does.
           return { kinds: [9005], '#h': [groupId], authors: [...new Set([...(actor ? [actor] : [standing.creator])])], limit: 10 };
         })()
         : null;
