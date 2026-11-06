@@ -15,6 +15,8 @@ import { resumeKeyRequestIds } from '../../lib/crypto/groupKeyRequest';
 import { useGroupKeyReconciler } from '../../hooks/useGroupKeyReconciler';
 import { flushSecuringGroupSends } from '../../hooks/useNIP29Group';
 import { bindMemberBaselinePublisher, sealMemberBaseline } from '../../lib/crypto/memberBaseline';
+import { bindMemberDocPins } from '../../lib/crypto/memberDocStanding';
+import { authorityPinGetterFor } from '../../lib/crypto/authorityPins';
 import { sortMessages } from './media';
 import { makeSubscriptionGuard, setupChatSubscriptions } from './chatSubscriptions';
 import { rowExpired, timerSeconds, timerSweepKeepsRow } from '../../lib/disappearing';
@@ -169,7 +171,11 @@ export function useChatBootstrap({
 
   useEffect(() => {
     if (!identity?.sk || !identity?.pk) return undefined;
-    return bindMemberBaselinePublisher(async (groupId, members) => {
+    // Step 1d wiring: the doc standing reader asks this for each group's
+    // out-of-band authority pin. The pins are written by group creation and
+    // invite-link joins only (authorityPins.js); nothing fetches them.
+    const unbindPins = bindMemberDocPins(authorityPinGetterFor(identity.pk));
+    const unbindBaseline = bindMemberBaselinePublisher(async (groupId, members) => {
       const pool = await getAuthenticatedPool(identity);
       const event = await sealMemberBaseline({
         senderPrivkey: identity.sk,
@@ -184,6 +190,10 @@ export function useChatBootstrap({
         throw new Error('Relays rejected the membership baseline.');
       }
     });
+    return () => {
+      unbindBaseline();
+      unbindPins();
+    };
   }, [identity?.pk, identity?.sk]);
 
   useEffect(() => {

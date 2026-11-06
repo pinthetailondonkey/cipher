@@ -118,14 +118,14 @@ const docsTable = () => (docsDb || db).groupMemberDocs;
 // with a DIFFERENT id is an H9 conflict pair: both are stored (the reconciler
 // heals), neither overwrites the other.
 export async function rememberVerifiedDoc({ groupId, pin, signed }) {
-  const opened = await verifyAgainstPin({ groupId, pin, signed });
+  const opened = await verifyAgainstPin({ pin, signed });
   if (!opened) return null;
   // `opened` is the verified body carrying its recomputed id; pass it under
   // the wrapper shape storeVerifiedDocRow expects.
   return storeVerifiedDocRow({ groupId, signed: { id: opened.id, sig: signed?.sig || '', body: opened } });
 }
 
-export async function verifyAgainstPin({ groupId, pin, signed }) {
+export async function verifyAgainstPin({ pin, signed }) {
   const { verifySignedDoc } = await import('./groupDoc.js');
   return verifySignedDoc({ signed, pin });
 }

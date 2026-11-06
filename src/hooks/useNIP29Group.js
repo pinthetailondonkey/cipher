@@ -735,6 +735,34 @@ export function useNIP29Group({ identity }) {
       }
     } catch (e) { console.warn('[createGroup] key bootstrap deferred', e); }
 
+    // Step 1 issuance (MEMBERSHIP-DESIGN.md): derive this group's authority
+    // key from the account secret, stamp its pin for every later invite link,
+    // sign the genesis member-set doc naming only this account, and publish
+    // it to both relay sets. Failure defers: the doc publishes on the next
+    // membership change's publish hook instead of blocking creation.
+    try {
+      const { groupAuthorityKey } = await import('../lib/crypto/groupAuthority.js');
+      const { genesisDocBody, signDocEvent } = await import('../lib/crypto/groupDoc.js');
+      const { buildMemberDocEvent, rememberVerifiedDoc } = await import('../lib/crypto/groupDocWire.js');
+      const { rememberAuthorityPin } = await import('../lib/crypto/authorityPins.js');
+      const skBytes = identity.sk instanceof Uint8Array ? identity.sk : Uint8Array.from(identity.sk);
+      const { privateKeyBytes, pin } = await groupAuthorityKey(skBytes, groupId);
+      rememberAuthorityPin(identity.pk, groupId, pin);
+      const body = await genesisDocBody({ gid: groupId, epoch: 1, members: [identity.pk.toLowerCase()] });
+      const signed = await signDocEvent(body, privateKeyBytes);
+      const nowSec = Math.floor(Date.now() / 1000);
+      await rememberVerifiedDoc({ groupId, pin, signed });
+      const docEv = await buildMemberDocEvent({
+        signedDoc: signed, authoritySk: privateKeyBytes, pin, groupId, createdAt: nowSec,
+      });
+      if (docEv) {
+        const targets = [...new Set([...groupRelays, ...generalRelays])];
+        await Promise.allSettled(pool.publish(targets, docEv));
+      }
+    } catch (e) {
+      console.warn('[createGroup] member-set doc deferred; it publishes on the next membership change', e);
+    }
+
     appendSystemMessage(groupId, 'You created the group');
     // metaAt marks the bootstrap 9002 as the applied metadata: a replayed
     // older or equal metadata event must not announce a fake rename.

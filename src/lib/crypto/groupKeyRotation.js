@@ -89,8 +89,24 @@ export async function rememberMembers(groupId, members, { strict = false } = {})
 }
 
 export async function loadMemberSnapshot(groupId) {
+  // Doc first (Step 1d): a group with a verified member-set document and its
+  // pin answers from the doc; the relay roster is display fallback. Groups
+  // without either keep the pre-doc behaviour unchanged.
+  const docRecord = await loadDocFirstSnapshotRecord(groupId);
+  if (docRecord) return docRecord.members;
   const record = await loadMemberSnapshotRecord(groupId);
   return record ? record.members : null;
+}
+
+async function loadDocFirstSnapshotRecord(groupId) {
+  try {
+    const { loadDocStanding } = await import('./memberDocStanding.js');
+    const standing = await loadDocStanding(groupId);
+    if (!Array.isArray(standing) || !standing.length) return null;
+    return { members: standing, updatedAt: Math.floor(Date.now() / 1000), source: 'doc' };
+  } catch {
+    return null;
+  }
 }
 
 export async function loadMemberSnapshotRecord(groupId) {
