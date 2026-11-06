@@ -1,5 +1,5 @@
 import { useCallback, useEffect } from 'react';
-import { finalizeEvent, nip19 } from 'nostr-tools';
+import { nip19 } from 'nostr-tools';
 import { db, saveMessage, markChatRead } from '../db';
 import { showNotification } from '../lib/notifications';
 import { useChatStore } from '../store/chatStore';
