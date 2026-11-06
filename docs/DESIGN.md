@@ -102,11 +102,14 @@ only, meta inside bottom-right.
 - **EmptyState** (2026-10-30) — icon 28 at `--text-subtle`, title 15/600,
   body 13 `--text-muted`, at most one optional primary action, no card.
   Screens do not hand-roll an empty state.
-- **Segmented** (2026-10-30) — 32px segments, radius 8, track
-  `--panel-strong`, active `--accent`. No screen hand-rolls a tablist. Two
-  consumers now: the Threads filter (founder ruling 2026-11-05) and the
-  payment-method row. `ChatList`'s own hand-rolled All / Menus / Vendors row
-  (2026-10-30 pass) is retired into it.
+- **Segmented** (2026-10-30, consumers restated 2026-11-06) — 32px segments,
+  radius 8, track `--panel-strong`, active `--accent`, the 44px hit target
+  under the pill. No screen hand-rolls a tablist. Two consumers: the Threads
+  filter (founder ruling 2026-11-05) and the orders ledger's Incoming /
+  Purchases row. `ChatList`'s own hand-rolled All / Menus / Vendors row
+  (2026-10-30 pass) was retired into it, and `MyOrders`' `role="tablist"` grid
+  followed on 2026-11-06 — for a while this line named a "payment-method row"
+  that no screen had built.
 - **Compose FAB** (2026-10-30) — 50px `--accent`,
   `calc(var(--bar-h) + 1.5rem)` from the bottom, `--gutter` from the right,
   hidden with the keyboard.
@@ -169,9 +172,12 @@ doc's wording rules standing. The engineering key `explore` survives as the
 Menus segment value so palette, boot and tests keep a stable word.
 
 - **Threads** holds the conversation list with its own three segments —
-  **Chats / Groups / Menus** — in one `Segmented` row under the filter field.
-  Chats and Groups filter the same list by kind; Menus is the vendor browse
-  pane. The segment state is the shell's, so a drill-down from Menus returns
+  **Chats / Groups / Menus** — in one `Segmented` row directly under the 56px
+  header, the way the anchor list drop has it ("a full-radius segmented filter
+  directly under the header"). The filter field sits under that row and steps
+  aside on Menus, whose browse pane brings its own. Chats and Groups filter the
+  same list by kind; Menus is the vendor browse pane. The segment state is the
+  shell's, so a drill-down from Menus returns
 to Menus and never strands the user.
 - **You** takes the Orders entry point: the tab carries the `needsAction`
   badge, and Wallet's own My Orders row is the door (it already existed).
@@ -235,7 +241,7 @@ Every phase must satisfy all of these, or it FAILS closed:
 `docs/mockup/anchor-list.png` — the founder's list-screen layout drop.
 `docs/mockup/README.md` — the palette block in full and what each image governs.
 
-`docs/ui-evidence/telegram-pass/` holds this pass's screenshots at 390x844 and
+`docs/ui-evidence/phase-1/` holds this pass's screenshots at 390x844 and
 1280x800. The anchor PNGs above predate the pass: they are history, not a
 target, and where they disagree with this file the file wins.
 
