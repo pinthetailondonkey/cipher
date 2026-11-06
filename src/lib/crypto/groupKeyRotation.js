@@ -80,7 +80,17 @@ export async function rememberMembers(groupId, members, { strict = false } = {})
       roles,
       updatedAt: Math.floor(Date.now() / 1000),
     });
-    if (signature !== previousSignature) queueMemberBaseline(groupId, pubkeys);
+    if (signature !== previousSignature) {
+      queueMemberBaseline(groupId, pubkeys);
+      // Step 1 refinement: the same membership change rolls the doc forward.
+      // One write, two artifacts — the stored roster and the signed doc cannot
+      // drift apart because both fold from this call. Fire-and-forget: the
+      // roster write is the gate; a deferred doc publish retries on the next
+      // membership change.
+      publishDocOp(groupId, pubkeys).catch((docError) => {
+        console.warn('[group-key] Member-set doc update deferred:', docError?.message || docError);
+      });
+    }
   } catch (error) {
     if (strict) throw error;
     console.warn('[group-key] Could not store the membership snapshot:', error);
@@ -96,6 +106,86 @@ export async function loadMemberSnapshot(groupId) {
   if (docRecord) return docRecord.members;
   const record = await loadMemberSnapshotRecord(groupId);
   return record ? record.members : null;
+}
+
+// The doc publisher behind rememberMembers. Reads this device's held head,
+// diffs its membership against the stored roster, folds admit/remove ops onto
+// gen+1, signs with the per-group authority key derived from the UNLOCKED
+// account secret (sessionKey), stores it verified, publishes to both relay
+// sets. Refuses rather than fabricates when pin, head or derivation parity is
+// missing: a device that cannot name its signer never signs governance.
+// Test seams: owner + pool come from here so the node suite runs the whole
+// path without Dexie or sockets.
+let docOpEnv = null;
+export function __setDocOpEnvForTests(next) { docOpEnv = next || null; }
+function docOwner() {
+  if (docOpEnv?.owner) return docOpEnv.owner;
+  return currentOwner();
+}
+async function docPool(identity) {
+  if (docOpEnv?.publish) return { publish: docOpEnv.publish };
+  return getAuthenticatedPool(identity);
+}
+async function publishDocOp(groupId, pubkeys) {
+  const owner = docOwner();
+  if (!owner) throw new Error('No account open.');
+  const { readAuthorityPin } = await import('./authorityPins.js');
+  const { groupAuthorityKey } = await import('./groupAuthority.js');
+  const { applyDocOps, signDocEvent, canonicalBody, resolveMembership } = await import('./groupDoc.js');
+  const { buildMemberDocEvent, rememberVerifiedDoc, loadMemberDocHeads } = await import('./groupDocWire.js');
+  const { getSessionKey } = await import('../sessionKey.js');
+  const relays = await import('../relays');
+
+  const pin = readAuthorityPin(owner, groupId);
+  if (!pin) throw new Error('No authority pin held for this group.');
+  const heads = await loadMemberDocHeads(groupId);
+  const head = heads[0];
+  if (!head) throw new Error('No member-set doc held for this group.');
+  const accountSk = getSessionKey();
+  if (!accountSk || accountSk.length !== 32) throw new Error('Account locked; the doc update waits for unlock.');
+  const { privateKeyBytes, pin: derivedPin } = await groupAuthorityKey(accountSk, groupId);
+  // Derivation parity: the key this device derives must be the one the pin
+  // names. A member device that joined by invite has no signing side here.
+  if (derivedPin !== String(pin).toLowerCase()) {
+    throw new Error('This device does not hold the signing side of this group authority.');
+  }
+
+  const before = new Set(resolveMembership(head).map((row) => row.pubkey));
+  const after = new Set((pubkeys || []).map((pubkey) => String(pubkey).toLowerCase()).filter(Boolean));
+  const admit = [...after].filter((pubkey) => !before.has(pubkey));
+  const remove = [...before].filter((pubkey) => !after.has(pubkey));
+  if (!admit.length && !remove.length) return null; // roles-only changes ride later work
+
+  const nextGen = canonicalBody(head).gen + 1;
+  const body = applyDocOps(head, { admit, remove, gen: nextGen });
+  if (!body) throw new Error('Could not fold membership ops onto the held head.');
+  const signed = await signDocEvent(body, privateKeyBytes);
+  const stored = await rememberVerifiedDoc({ groupId, pin, signed });
+  if (!stored?.stored) throw new Error('The doc update did not store.');
+  // H2 stamp: created_at at least now; gen stays the ordering truth.
+  const nowSec = Math.floor(Date.now() / 1000);
+  const event = await buildMemberDocEvent({
+    signedDoc: signed, authoritySk: privateKeyBytes, pin, groupId, createdAt: nowSec,
+  });
+  if (!event) throw new Error('Could not build the doc event.');
+  const pool = await docPool(identityLike(owner, accountSk));
+  const targets = [...new Set([...relays.groupRelays, ...relays.generalRelays])].filter(Boolean);
+  if (!targets.length) throw new Error('No relay accepted the member-set doc update window.');
+  // SimplePool.publish returns per-relay promises; the seam may hand back a
+  // single promise instead, which normalizes to the same gate here.
+  const published = pool.publish(targets, event);
+  const results = await Promise.allSettled(
+    Array.isArray(published) ? published : [Promise.resolve(published)],
+  );
+  if (!results.some((result) => result.status === 'fulfilled')) {
+    // Stored locally already; the publish retries on the next change.
+    throw new Error('Relays rejected the member-set doc update.');
+  }
+  return signed.id;
+}
+
+function identityLike(pkHex, skBytes) {
+  return { pk: pkHex, sk: toHex(skBytes) };
 }
 
 async function loadDocFirstSnapshotRecord(groupId) {

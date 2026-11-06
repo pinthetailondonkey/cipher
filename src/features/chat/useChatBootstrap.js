@@ -638,6 +638,11 @@ export function useChatBootstrap({
     const pathGroup = path.match(/^\/([0-9a-f]{64})\/?$/)?.[1] || null;
     const pathNote = path === '/note' || path === '/note/' ? window.location.hash.slice(1) : null;
     const directId = urlParams.get('g') || urlParams.get('group') || urlParams.get('join') || pathGroup;
+    // The authority pin rides the same link as `a=` (groupAuthority.js). It
+    // is learned HERE, out of band, before any relay read: an invite-holder
+    // can verify the group's member-set doc from first contact, and nothing
+    // else ever writes this value (H5).
+    const inviteAuthorityPin = urlParams.get('a');
     const naddr = urlParams.get('naddr');
     const noteFragment = pathNote;
     const productParam = urlParams.get('product');
@@ -705,6 +710,14 @@ export function useChatBootstrap({
         }
       }
       if (!joinId || cancelled) return;
+      if (inviteAuthorityPin) {
+        try {
+          const { rememberAuthorityPin } = await import('../../lib/crypto/authorityPins.js');
+          rememberAuthorityPin(identity.pk, joinId, inviteAuthorityPin);
+        } catch (pinError) {
+          console.warn('[join] Could not stamp the invite\'s authority pin:', pinError);
+        }
+      }
       // The link must point at a group the relays know, and it carries no
       // name: a forged address used to organize a group row this device
       // never chose and name it out of the link's URL (drill residual).

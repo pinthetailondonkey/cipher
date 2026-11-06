@@ -221,7 +221,17 @@ export default function GroupInfoSidebar({
     haptic('light');
     setError('');
     try {
-      const link = `${window.location.origin}${window.location.pathname}?g=${encodeURIComponent(group.id)}`;
+      // The pin rides the link when this device holds it (it does for the
+      // owner and any member who joined by an earlier pin-carrying invite).
+      // No pin, no a= parameter: the old link shape, unchanged.
+      let link = `${window.location.origin}${window.location.pathname}?g=${encodeURIComponent(group.id)}`;
+      try {
+        const { readAuthorityPin } = await import('../../lib/crypto/authorityPins.js');
+        const pin = readAuthorityPin(identity?.pk, group.id);
+        if (pin) link += `&a=${encodeURIComponent(pin)}`;
+      } catch (pinError) {
+        console.warn('[GroupInfoSidebar] Invite went out without the authority pin:', pinError);
+      }
       const ok = await copyText(link);
       if (!ok) return;
       setCopied(true);
