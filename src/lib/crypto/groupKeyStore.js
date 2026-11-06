@@ -167,3 +167,15 @@ export async function getDocKey(groupId) {
     return null;
   }
 }
+export async function removeDocKey(groupId) {
+  if (!ready()) return false;
+  try {
+    await store.db.transaction('rw', store.db.groupDocKeys, async () => {
+      await store.db.groupDocKeys.delete(groupId);
+    });
+    return true;
+  } catch (error) {
+    console.warn('[group-key] Could not restore the prior governance-doc key state:', error?.name || error);
+    return false;
+  }
+}

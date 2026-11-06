@@ -54,9 +54,10 @@ test('doc event builds with the right kind/tag and seals its content', async () 
   const body = await genesisDocBody({ gid: GID, epoch: 1, members: ['aa'.padStart(64, '0')] });
   const signed = await signDocEvent(body, SK);
   const event = await buildMemberDocEvent({
-    signedDoc: signed, authoritySk: SK, pin: PIN, groupId: GID, createdAt: 1000,
+    signedDoc: signed, authoritySk: SK, pin: PIN, groupId: GID, createdAt: 1000, docKey: DOC_KEY,
   });
   assert.ok(event);
+  assert.equal(JSON.parse(event.content).v, 2, 'every newly built event uses v2');
   assert.equal(event.kind, MEMBER_DOC_KIND);
   assert.equal(event.created_at, 1000);
   assert.deepEqual(event.tags.find((t) => t[0] === 'd'), ['d', memberDocTag(GID)]);
@@ -64,11 +65,26 @@ test('doc event builds with the right kind/tag and seals its content', async () 
   assert.ok(!event.content.includes('"members"'));
 });
 
+test('new governance-document publication refuses a missing or malformed secret', async () => {
+  const signed = await signDocEvent(
+    await genesisDocBody({ gid: GID, epoch: 1, members: ['aa'.padStart(64, '0')] }),
+    SK,
+  );
+  await assert.rejects(
+    buildMemberDocEvent({ signedDoc: signed, authoritySk: SK, pin: PIN, groupId: GID, createdAt: 1000 }),
+    /governance-doc key/i,
+  );
+  await assert.rejects(
+    sealDocBody(signed, PIN, GID, new Uint8Array(31)),
+    /governance-doc key/i,
+  );
+});
+
 test('wrong pin or gid reads nothing; seal/open round-trips through the real one', async () => {
   const body = await genesisDocBody({ gid: GID, epoch: 1, members: ['bb'.padStart(64, '0')] });
   const signed = await signDocEvent(body, SK);
-  const sealed = await sealDocBody(signed, PIN, GID);
-  const opened = await openSealedDocBody(sealed, PIN, GID);
+  const sealed = await sealDocBody(signed, PIN, GID, DOC_KEY);
+  const opened = await openSealedDocBody(sealed, PIN, GID, DOC_KEY);
   assert.equal(opened.id, signed.id);
   assert.deepEqual(opened.body, signed.body);
   assert.equal(await openSealedDocBody(sealed, 'ee'.repeat(33), GID), null); // wrong pin
@@ -139,12 +155,12 @@ test('ingestMemberDocEvent stores a genuine publish and refuses every forged sha
   const body = await genesisDocBody({ gid: GID, epoch: 1, members: ['aa'.padStart(64, '0')] });
   const signed = await signDocEvent(body, SK);
   const published = await buildMemberDocEvent({
-    signedDoc: signed, authoritySk: SK, pin: PIN, groupId: GID, createdAt: 1000,
+    signedDoc: signed, authoritySk: SK, pin: PIN, groupId: GID, createdAt: 1000, docKey: DOC_KEY,
   });
 
   __setDocsDbForTests({ groupMemberDocs: fakeDocsTable() });
   try {
-    const stored = await ingestMemberDocEvent(published, { pin: PIN, groupId: GID });
+    const stored = await ingestMemberDocEvent(published, { pin: PIN, groupId: GID, docKey: DOC_KEY });
     assert.equal(stored?.stored, true, 'a genuine publish ingests');
     const heads = await loadMemberDocHeads(GID);
     assert.equal(heads.length, 1);
@@ -152,21 +168,21 @@ test('ingestMemberDocEvent stores a genuine publish and refuses every forged sha
 
     // A relay-invented author (wrong key) never reaches the seal.
     const wrongAuthor = { ...published, pubkey: 'ee'.repeat(32) };
-    assert.equal(await ingestMemberDocEvent(wrongAuthor, { pin: PIN, groupId: GID }), null);
+    assert.equal(await ingestMemberDocEvent(wrongAuthor, { pin: PIN, groupId: GID, docKey: DOC_KEY }), null);
 
     // Wrong d tag / wrong kind / junk content: quiet refusals, no rows.
     const badD = { ...published, tags: [['d', 'cipher-gmemdoc:' + 'other'.padEnd(64, '0')]] };
-    assert.equal(await ingestMemberDocEvent(badD, { pin: PIN, groupId: GID }), null);
-    assert.equal(await ingestMemberDocEvent({ ...published, kind: 30078 }, { pin: PIN, groupId: GID }), null);
+    assert.equal(await ingestMemberDocEvent(badD, { pin: PIN, groupId: GID, docKey: DOC_KEY }), null);
+    assert.equal(await ingestMemberDocEvent({ ...published, kind: 30078 }, { pin: PIN, groupId: GID, docKey: DOC_KEY }), null);
     const tamperedContent = JSON.stringify({ v: 1, iv: 'AAAA', ct: 'AAAA' });
     assert.equal(await ingestMemberDocEvent(
-      { ...published, content: tamperedContent }, { pin: PIN, groupId: GID },
+      { ...published, content: tamperedContent }, { pin: PIN, groupId: GID, docKey: DOC_KEY },
     ), null);
 
     // No pin held: nothing can verify, refuse before any read.
     assert.equal(await ingestMemberDocEvent(published, { pin: '', groupId: GID }), null);
     // Idempotent re-ingest is not a conflict.
-    const again = await ingestMemberDocEvent(published, { pin: PIN, groupId: GID });
+    const again = await ingestMemberDocEvent(published, { pin: PIN, groupId: GID, docKey: DOC_KEY });
     assert.equal(again?.stored, true);
     assert.equal((await loadMemberDocHeads(GID)).length, 1);
   } finally {
@@ -239,7 +255,7 @@ test('SEC-1 observer attacks: derive the doc key from published event fields alo
 
 // ── Remediated path checks: v2 sealing + legacy decode coexistence ──────────
 
-test('post-fix: member-only open works; v1 events still decode', async () => {
+test('post-fix: member-only open works; historical v1 events still decode', async () => {
   const body = await genesisDocBody({ gid: GID, epoch: 1, members: ['aa'.padStart(64, '0')] });
   const signed = await signDocEvent(body, SK);
   const v2 = await buildMemberDocEvent({ signedDoc: signed, authoritySk: SK, pin: PIN, groupId: GID, createdAt: 2000, docKey: DOC_KEY });
@@ -259,8 +275,20 @@ test('post-fix: member-only open works; v1 events still decode', async () => {
   assert.equal(await openSealedDocBody(v2.content, PIN, GID, null), null, 'no held secret refuses v2 rather than leaking via legacy derivation');
 
   // Legacy v1 events already on relays keep decoding (remediation-agnostic):
-  const v1Sealed = await sealDocBody(signed, PIN, GID); // no docKey => v1
-  assert.equal(JSON.parse(v1Sealed).v, 1, 'a keyless seal degrades to v1');
+  // Historical wire fixture: v1 may be opened, but no current sealing API is
+  // allowed to create it. Build it independently to model an old relay event.
+  const legacyMaterial = new TextEncoder().encode(`cipher-gmemdoc-key-v1:${PIN.toLowerCase()}:${GID}`);
+  const legacyDigest = await crypto.subtle.digest('SHA-256', legacyMaterial);
+  const legacyKey = await crypto.subtle.importKey('raw', legacyDigest, { name: 'AES-GCM' }, false, ['encrypt']);
+  const legacyIv = crypto.getRandomValues(new Uint8Array(12));
+  const legacyPlaintext = new TextEncoder().encode(JSON.stringify({ id: signed.id, sig: signed.sig, body: signed.body }));
+  const legacyCt = await crypto.subtle.encrypt(
+    { name: 'AES-GCM', iv: legacyIv, additionalData: new TextEncoder().encode(`cipher-gmemdoc-v1|${GID}`) },
+    legacyKey,
+    legacyPlaintext,
+  );
+  const toB64 = (bytes) => btoa(String.fromCharCode(...bytes));
+  const v1Sealed = JSON.stringify({ v: 1, iv: toB64(legacyIv), ct: toB64(new Uint8Array(legacyCt)) });
   const openedV1 = await openSealedDocBody(v1Sealed, PIN, GID, DOC_KEY);
   assert.equal(openedV1.id, signed.id, 'a device holding a doc key still opens legacy v1 bodies');
 });

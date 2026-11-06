@@ -32,11 +32,10 @@ async function importAesKey(raw, uses) {
   return globalThis.crypto.subtle.importKey('raw', raw, { name: 'AES-GCM' }, false, uses);
 }
 
-// The content key derives from pin+gid (what every invite-holder knows)
-// rather than from any relay-fetchable value. Not a secret against a member,
-// who legitimately reads this; it is a curtain between the relay and the
-// body of a private group's governance record.
-async function docContentKey(pin, groupId) {
+// Historical v1 content key. It is public from the event fields and exists
+// only to read documents already published in that format; no new seal path
+// uses it after SEC-1.
+async function legacyDocContentKey(pin, groupId) {
   const material = new TextEncoder().encode(`cipher-gmemdoc-key-v1:${String(pin || '').toLowerCase()}:${groupId}`);
   const digest = await globalThis.crypto.subtle.digest('SHA-256', material);
   return new Uint8Array(digest);
@@ -52,32 +51,31 @@ async function docContentKey(pin, groupId) {
 const ENVELOPE_V1_AAD_PREFIX = 'cipher-gmemdoc-v1|';
 const ENVELOPE_V2_AAD_PREFIX = 'cipher-gmemdoc-v2|';
 
-function senderAad(version, groupId, _epochUnused = undefined) {
+function senderAad(version, groupId, pin = '') {
   const prefix = version === 2 ? ENVELOPE_V2_AAD_PREFIX : ENVELOPE_V1_AAD_PREFIX;
-  return new TextEncoder().encode(`${prefix}${groupId}`);
+  return new TextEncoder().encode(version === 2
+    ? `${prefix}${String(pin || '').toLowerCase()}|${groupId}`
+    : `${prefix}${groupId}`);
 }
 
-// Seal under the held governance-doc key (v2, SEC-1). When no doc key is held
-// this DEGRADES to the legacy pin+gid derivation so a creator's very first
-// genesis doc still publishes before any member holds the v2 secret; the
-// bootstrapping ride then delivers it. `docKey` may be raw bytes or hex.
+// Every new document requires the held governance-doc key (v2, SEC-1).
+// `docKey` may be raw bytes or hex. Version 1 is decode-only below.
 // Note: version 2 binds NO epoch counter into its AAD - the secret itself
 // rotates, so the key material is the truth and a publish racing a rotation
 // can never desynchronize from its own envelope fields.
 export async function sealDocBody(signed, pin, groupId, docKey = null) {
   if (!signed || !signed.id || !signed.sig || !signed.body) return null;
   const normalized = normalizeDocKey(docKey);
-  const version = normalized ? 2 : 1;
-  const aesInput = version === 2
-    ? await deriveDocAesInput(normalized)
-    : await docContentKey(pin, groupId);
+  if (!normalized) throw new Error('A valid governance-doc key is required to publish a new document.');
+  const version = 2;
+  const aesInput = await deriveDocAesInput(normalized);
   if (!aesInput) return null;
   const key = await importAesKey(aesInput, ['encrypt']);
   const iv = new Uint8Array(12);
   globalThis.crypto.getRandomValues(iv);
   const plaintext = new TextEncoder().encode(JSON.stringify({ id: signed.id, sig: signed.sig, body: signed.body }));
   const ct = await globalThis.crypto.subtle.encrypt(
-    { name: 'AES-GCM', iv, additionalData: senderAad(version, groupId) },
+    { name: 'AES-GCM', iv, additionalData: senderAad(version, groupId, pin) },
     key,
     plaintext,
   );
@@ -101,20 +99,18 @@ export async function openSealedDocBody(contentJson, pin, groupId, docKey = null
   if (!envelope || typeof envelope.iv !== 'string' || typeof envelope.ct !== 'string') return null;
   if (envelope.v !== 1 && envelope.v !== 2) return null;
   const unb64 = (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
-  // Candidate order for ANY envelope version: the held governance-doc key
-  // first (a v2 body opens only this way, and a stale-held reader simply
-  // misses until its bundle rides in), then the legacy pin+gid derivation
-  // for every v1-era body already on relays - including a creator's genesis
-  // doc sealed v1 in the seconds before its own bundle went out.
-  const candidates = [];
-  if (normalizeDocKey(docKey)) candidates.push(await deriveDocAesInput(docKey));
-  candidates.push(await docContentKey(pin, groupId));
+  // Version 1 is a historical decode-only format. Version 2 is always opened
+  // with the held random secret; neither version tries the other's key path.
+  const normalized = normalizeDocKey(docKey);
+  const candidates = envelope.v === 2
+    ? (normalized ? [await deriveDocAesInput(normalized)] : [])
+    : [await legacyDocContentKey(pin, groupId)];
   for (const aesInput of candidates) {
     if (!aesInput) continue;
     try {
       const key = await importAesDecryptKey(aesInput);
       const pt = await globalThis.crypto.subtle.decrypt(
-        { name: 'AES-GCM', iv: unb64(envelope.iv), additionalData: senderAad(envelope.v, groupId) },
+        { name: 'AES-GCM', iv: unb64(envelope.iv), additionalData: senderAad(envelope.v, groupId, pin) },
         key,
         unb64(envelope.ct),
       );
@@ -130,6 +126,7 @@ export async function openSealedDocBody(contentJson, pin, groupId, docKey = null
 // against fixed clocks instead of buried next to Date.now().
 export async function buildMemberDocEvent({ signedDoc, authoritySk, pin, groupId, createdAt, docKey = null }) {
   if (!authoritySk || !(authoritySk instanceof Uint8Array) || authoritySk.length !== 32) return null;
+  if (!normalizeDocKey(docKey)) throw new Error('A valid governance-doc key is required to publish a new document.');
   const canonical = canonicalBody(signedDoc?.body || signedDoc);
   if (!canonical || !Number.isInteger(Number(createdAt))) return null;
   const ciphertext = await sealDocBody(signedDoc, pin, groupId, docKey);
@@ -209,7 +206,8 @@ export async function loadMemberDocHeads(groupId, { limit = 5 } = {}) {
 // and store; this is the third piece). The event's OWN author is not believed:
 // the signature verifies against the OUT-OF-BAND pin this device holds (H5),
 // so a relay inventing events or a stranger publishing under any key reads
-// nothing. Content is sealed under pin+gid, which doubles as the gid binding.
+// nothing. V2 content is sealed under the held random key with pin+gid AAD;
+// v1's public pin+gid derivation is used only for historical decoding.
 
 // One wire event → {stored, opened} or null. Every refusal is quiet-by-design:
 // a wrong-pin or foreign-key doc is relay noise, not an error to surface, and
@@ -218,15 +216,15 @@ export async function ingestMemberDocEvent(event, { pin, groupId, docKey = null 
   if (!event || event.kind !== MEMBER_DOC_KIND) return null;
   if (!pin || !groupId) return null;
   // SEC-1: resolve this device's held governance-doc key here so every
-  // receiving path (live subscription, catch-up refresh) opens under it;
-  // without one the legacy candidates still decode pre-remediation events.
+  // receiving path (live subscription, catch-up refresh) opens v2 under it.
+  // Historical v1 events remain readable through their decode-only path.
   // An explicitly passed docKey wins over the store read.
   let heldDocKey = normalizeDocKey(docKey);
   if (!heldDocKey) {
     try {
       const { getDocKey } = await import('./groupKeyStore');
       heldDocKey = (await getDocKey(groupId))?.bytes || null;
-    } catch { /* no store available: legacy candidates only */ }
+    } catch { /* v2 will refuse; the decoder still supports historical v1 */ }
   }
   const dTag = (event.tags || []).find((tag) => tag[0] === 'd')?.[1] || '';
   if (dTag !== memberDocTag(groupId)) return null;

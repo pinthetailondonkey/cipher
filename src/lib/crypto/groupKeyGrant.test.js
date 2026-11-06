@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { generateSecretKey, getPublicKey, nip44 } from 'nostr-tools';
 import { decryptGroupMessage, encryptGroupMessage, fromHex, generateGroupKey } from './groupCipher.js';
+import { generateDocKey } from './groupDocKey.js';
 import { REGRANT_WINDOW_SEC, distributeGroupKey, epochsToBackfill, epochsToSend, installFloorAllows, missingEpochs, parseGroupKeyBundle } from './groupKeyDistribution.js';
 import { unwrapToRumor } from '../giftUnwrap';
 
@@ -65,6 +66,7 @@ test('a member offline across two rotations still receives every epoch and can d
     keyBytes: epochTwo,
     recipients: [recipientPk],
     extraEpochs: [{ epoch: 1, bytes: epochOne }],
+    docKey: generateDocKey(),
     publish: async (event) => { published.push(event); },
   });
   assert.equal(published.length, 1);
@@ -99,6 +101,7 @@ test('a rejected key delivery fails instead of pretending the grant was sent', a
     epoch: 1,
     keyBytes: generateGroupKey(),
     recipients: [getPublicKey(recipientSk)],
+    docKey: generateDocKey(),
     publish: async () => { throw new Error('relay rejected'); },
   }), /Could not distribute group keys/);
 });
@@ -140,11 +143,12 @@ test('approve-then-ask: the unsolicited key is refused by the member, and the re
   const memberPk = getPublicKey(memberSk);
   const groupId = 'group-bug9';
   const key = generateGroupKey();
+  const docKey = generateDocKey();
   const ledger = memoryLedger();
   const wire = [];
   const send = (answerRequest) => distributeGroupKey({
     senderPrivkey: ownerSk, senderPubkey: ownerPk, groupId, epoch: 1, keyBytes: key,
-    recipients: [memberPk], answerRequest, ledger, publish: async (event) => { wire.push(event); },
+    recipients: [memberPk], answerRequest, ledger, docKey, publish: async (event) => { wire.push(event); },
   });
   // The member's device: keyless, and has not asked yet.
   let memberKey = null;

@@ -1,6 +1,6 @@
 import { toHex, fromHex } from './groupCipher';
-import { normalizeDocKey } from './groupDocKey';
-import { recordGrant, getGrantRecords, getCurrentGroupKey, getAllGroupKeys, putGroupKey, getDocKey, putDocKey } from './groupKeyStore';
+import { docKeysEqual, normalizeDocKey } from './groupDocKey';
+import { recordGrant, getGrantRecords, getCurrentGroupKey, getAllGroupKeys, putGroupKey, getDocKey, putDocKey, removeDocKey } from './groupKeyStore';
 import { isGroupAdmin, trustedGroupCreator } from './groupMembership';
 import { getMyGroups, setMyGroups } from '../myGroups';
 import { currentOwner } from '../../db';
@@ -253,30 +253,44 @@ export async function installReceivedGroupKey(payload, sender = null) {
   }
   // The safety flag rides the install that changed key material, after
   // the guards all passed — never on a refused bundle.
-  const keyMaterialMoved = safetyChangeFromInstall({ currentEpoch: current?.epoch, maxEpoch });
-  for (const row of rows) await putGroupKey(row.groupId, row.epoch, fromHex(row.hex));
-  if (keyMaterialMoved) markSafetyChange(sender);
-  // SEC-1: the governance-doc key rides the SAME guard set as the keys. A
-  // bundle that names a doc key installs it only here, where sender standing,
-  // no-deny-wall, ask-evidence floor, rollback and byte-conflict checks have
-  // all passed for this group. An absent or malformed field changes nothing
-  // (pre-remediation bundles stay valid). The piggyback rule: a device
-  // without a doc key adopts with its first accepted install; a device
-  // holding one rolls forward ONLY when the bundle's epoch is strictly newer
-  // than the held doc-key epoch — rotations ship through here, and regrants
-  // to late-arriving members restate exactly what rotation shipped, so the
-  // newest epoch's secret is what wins. Equal-or-older restatements change
-  // nothing, matching the chat-key rollback posture.
+  // New bundles always carry a valid governance secret. Adopt it BEFORE chat
+  // epochs so a storage failure cannot leave this device with new chat keys
+  // but no key for the corresponding authorization document.
   const docKeyHex = typeof payload?.dk === 'string' ? payload.dk : '';
+  const hasDocKeyField = Object.prototype.hasOwnProperty.call(payload || {}, 'dk');
+  if (hasDocKeyField && !/^[0-9a-f]{64}$/.test(docKeyHex)) {
+    console.warn('[group-key] A key bundle was not installed: its governance-doc key is malformed.', { groupId, epoch: maxEpoch });
+    return false;
+  }
+  const priorDocKey = await getDocKey(groupId);
+  let adoptedDocKey = false;
   if (/^[0-9a-f]{64}$/.test(docKeyHex)) {
-    const heldDocKey = await getDocKey(groupId);
-    if (docKeyAdoptionAllows({ heldEpoch: heldDocKey?.epoch, offeredEpoch: maxEpoch })) {
-      const adopted = await putDocKey(groupId, maxEpoch, fromHex(docKeyHex));
-      if (adopted && heldDocKey) {
+    if (docKeyAdoptionAllows({ heldEpoch: priorDocKey?.epoch, offeredEpoch: maxEpoch })) {
+      adoptedDocKey = await putDocKey(groupId, maxEpoch, fromHex(docKeyHex));
+      if (!adoptedDocKey) {
+        console.warn('[group-key] A key bundle was not installed: the governance-doc key could not be stored.', { groupId, epoch: maxEpoch });
+        return false;
+      }
+      if (priorDocKey) {
         console.info('[group-key] Governance-doc key rolled forward by an accepted bundle.', { groupId, epoch: maxEpoch });
       }
+    } else if (!priorDocKey || !docKeysEqual(priorDocKey.bytes, fromHex(docKeyHex))) {
+      console.warn('[group-key] A key bundle was not installed: its governance-doc key is stale.', { groupId, epoch: maxEpoch });
+      return false;
     }
   }
+  const keyMaterialMoved = safetyChangeFromInstall({ currentEpoch: current?.epoch, maxEpoch });
+  try {
+    for (const row of rows) await putGroupKey(row.groupId, row.epoch, fromHex(row.hex));
+  } catch (error) {
+    if (adoptedDocKey) {
+      if (priorDocKey) await putDocKey(groupId, priorDocKey.epoch, priorDocKey.bytes);
+      else await removeDocKey(groupId);
+    }
+    console.warn('[group-key] A key bundle was not fully installed:', error?.message || error);
+    return false;
+  }
+  if (keyMaterialMoved) markSafetyChange(sender);
   // The sealed label, if this bundle carries one. It is a separate decision
   // from the key: installing the key is what a member of record may do, but
   // naming the group is what only its creator or an admin may do. A plain
@@ -373,12 +387,13 @@ export async function distributeGroupKey({ senderPrivkey, senderPubkey, groupId,
   // explicit `docKey` wins (rotation hands its freshly minted secret over);
   // otherwise what this device holds now travels, so every existing grant,
   // regrant and label-ride path delivers the current secret with zero
-  // per-caller wiring. A device holding none ships no field.
+  // per-caller wiring. Missing or unreadable state blocks the bundle.
   let resolvedDocKey = normalizeDocKey(docKey);
   if (!resolvedDocKey && docKey === undefined) {
     const held = await getDocKey(groupId).catch(() => null);
     resolvedDocKey = normalizeDocKey(held?.bytes);
   }
+  if (!resolvedDocKey) throw new Error('A readable governance-doc key is required before distributing new group keys. Recover the shared key; do not generate a replacement.');
   const now = Math.floor(Date.now() / 1000);
   const results = await Promise.allSettled(recipients.map(async (recipientPubkey) => {
     const records = await ledger.getGrantRecords(groupId, recipientPubkey);
@@ -401,7 +416,7 @@ export async function distributeGroupKey({ senderPrivkey, senderPubkey, groupId,
     const payload = {
       v: 1, t: 'gkey', gid: groupId, by: senderPubkey, at: now, keys: bundles,
       ...(label ? { name: label.name, about: label.about || '' } : {}),
-      ...(resolvedDocKey ? { dk: toHex(resolvedDocKey) } : {}),
+      dk: toHex(resolvedDocKey),
     };
     const shared = nip44.v2.utils.getConversationKey(senderPrivkey, recipientPubkey);
     const wrapped = nip44.v2.encrypt(JSON.stringify(payload), shared);

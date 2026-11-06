@@ -1,9 +1,9 @@
 import { db as appDb } from '../../db';
 import { refetchMembersCached, trustedGroupCreator } from './groupMembership';
-import { generateGroupKey } from './groupCipher';
+import { generateGroupKey, toHex } from './groupCipher';
 import { distributeGroupKey } from './groupKeyDistribution';
 import { getAllGroupKeys, getCurrentGroupKey, putGroupKey, getDocKey, putDocKey } from './groupKeyStore';
-import { generateDocKey } from './groupDocKey';
+import { generateDocKey, normalizeDocKey } from './groupDocKey';
 import { queueMemberBaseline } from './memberBaseline';
 import { isJoinDenied, hasPendingJoin } from '../groupJoinQueue';
 
@@ -43,7 +43,7 @@ const memberTable = () => (membershipDb || appDb).groupMemberSigs;
 // `strict` rethrows a failed write. The rotation path needs that: a removed
 // member must be stripped from the snapshot before the new epoch is stored, so a
 // failed strip has to abort the rotation rather than report success.
-export async function rememberMembers(groupId, members, { strict = false, pins = null } = {}) {
+export async function rememberMembers(groupId, members, { strict = false, pins = null, publishDoc = true } = {}) {
   const normalized = normalizeMembers(members);
   const pubkeys = normalized.map((member) => memberKey(member));
   let roles = {};
@@ -81,14 +81,12 @@ export async function rememberMembers(groupId, members, { strict = false, pins =
       roles,
       updatedAt: Math.floor(Date.now() / 1000),
     });
-    if (signature !== previousSignature) {
+    if (publishDoc && signature !== previousSignature) {
       queueMemberBaseline(groupId, pubkeys);
-      // Step 1 refinement: the same membership change rolls the doc forward.
-      // One write, two artifacts — the stored roster and the signed doc cannot
-      // drift apart because both fold from this call. Fire-and-forget: the
-      // roster write is the gate; a deferred doc publish retries on the next
-      // membership change.
-      publishDocOp(groupId, pubkeys, { pins }).catch((docError) => {
+      // The relay-backed governance doc follows this roster write. Publication
+      // is fire-and-forget here, but it fails closed without the held key and
+      // leaves the last verified doc head intact if it cannot be published.
+      publishMemberDocUpdate(groupId, pubkeys, { pins }).catch((docError) => {
         console.warn('[group-key] Member-set doc update deferred:', docError?.message || docError);
       });
     }
@@ -127,7 +125,7 @@ async function docPool(identity) {
   if (docOpEnv?.publish) return { publish: docOpEnv.publish };
   return getAuthenticatedPool(identity);
 }
-async function publishDocOp(groupId, pubkeys, { pins = null } = {}) {
+export async function publishMemberDocUpdate(groupId, pubkeys, { pins = null } = {}) {
   const owner = docOwner();
   if (!owner) throw new Error('No account open.');
   const { readAuthorityPin } = await import('./authorityPins.js');
@@ -150,15 +148,16 @@ async function publishDocOp(groupId, pubkeys, { pins = null } = {}) {
   if (derivedPin !== String(pin).toLowerCase()) {
     throw new Error('This device does not hold the signing side of this group authority.');
   }
-  // SEC-1: seal under the held governance-doc key when this device holds one
-  // (a signer that lost its doc key still publishes under a degraded v1 seal,
-  // which every receiver's dual-candidate decode opens). No held secret means
-  // no self-provisioning here: distributing is the store's job, not sealing's.
+  // New documents are v2 only. Never mint a replacement here: if this signer
+  // lost the shared secret, publication must stop so existing members are not
+  // stranded by a locally invented key.
   let docKeyForSeal = null;
   try {
-    const { getDocKey } = await import('./groupKeyStore');
-    docKeyForSeal = (await getDocKey(groupId))?.bytes || null;
-  } catch { /* no store available: legacy v1 seal */ }
+    docKeyForSeal = normalizeDocKey((await getDocKey(groupId))?.bytes);
+  } catch (error) {
+    throw new Error(`Could not read the held governance-doc key: ${error?.message || error}`);
+  }
+  if (!docKeyForSeal) throw new Error('No readable governance-doc key is held; document publication is blocked until the key is recovered.');
 
   const before = new Set(resolveMembership(head).map((row) => row.pubkey));
   const after = new Set((pubkeys || []).map((pubkey) => String(pubkey).toLowerCase()).filter(Boolean));
@@ -170,14 +169,13 @@ async function publishDocOp(groupId, pubkeys, { pins = null } = {}) {
     return /^[0-9a-f]{66}$/.test(pin) ? { pubkey, pin } : pubkey;
   });
   const remove = [...before].filter((pubkey) => !after.has(pubkey));
-  if (!admit.length && !remove.length) return null; // roles-only changes ride later work
-
-  const nextGen = canonicalBody(head).gen + 1;
-  const body = applyDocOps(head, { admit, remove, gen: nextGen });
-  if (!body) throw new Error('Could not fold membership ops onto the held head.');
-  const signed = await signDocEvent(body, privateKeyBytes);
-  const stored = await rememberVerifiedDoc({ groupId, pin, signed });
-  if (!stored?.stored) throw new Error('The doc update did not store.');
+  let signed = head;
+  if (admit.length || remove.length) {
+    const nextGen = canonicalBody(head).gen + 1;
+    const body = applyDocOps(head, { admit, remove, gen: nextGen });
+    if (!body) throw new Error('Could not fold membership ops onto the held head.');
+    signed = await signDocEvent(body, privateKeyBytes);
+  }
   // H2 stamp: created_at at least now; gen stays the ordering truth.
   const nowSec = Math.floor(Date.now() / 1000);
   const event = await buildMemberDocEvent({
@@ -195,9 +193,10 @@ async function publishDocOp(groupId, pubkeys, { pins = null } = {}) {
     Array.isArray(published) ? published : [Promise.resolve(published)],
   );
   if (!results.some((result) => result.status === 'fulfilled')) {
-    // Stored locally already; the publish retries on the next change.
     throw new Error('Relays rejected the member-set doc update.');
   }
+  const stored = await rememberVerifiedDoc({ groupId, pin, signed });
+  if (!stored?.stored) throw new Error('The encrypted member-set doc was published but could not be stored locally; refresh it from a relay before another membership change.');
   return signed.id;
 }
 
@@ -425,32 +424,43 @@ export async function patchMemberSnapshot(groupId, mutate) {
 export async function rotateGroupEpoch({ identity, groupId, remainingPubkeys, publish }) {
   const current = await getCurrentGroupKey(groupId);
   if (!current) return { rotated: false, reason: 'no-key' };
+  const priorDoc = await getDocKey(groupId).catch(() => null);
+  const priorDocKey = normalizeDocKey(priorDoc?.bytes);
+  if (!priorDocKey) {
+    return { rotated: false, reason: 'missing-doc-key' };
+  }
+  const [{ loadMemberDocHeads }, { resolveMembership }] = await Promise.all([
+    import('./groupDocWire.js'), import('./groupDoc.js'),
+  ]);
+  const heads = await loadMemberDocHeads(groupId);
+  if (!heads.length) return { rotated: false, reason: 'missing-member-doc' };
   const recipients = [...new Set((remainingPubkeys || []).filter(Boolean))];
+  const heldMembers = resolveMembership(heads[0]).map((row) => row.pubkey).sort();
+  const nextMembers = [...recipients].sort();
+  const docMembershipChanges = heldMembers.length !== nextMembers.length
+    || heldMembers.some((pubkey, index) => pubkey !== nextMembers[index]);
   const nextEpoch = current.epoch + 1;
   const newKey = generateGroupKey();
-  // SEC-1: the removal also rotates the governance-doc key, so the removed
-  // member loses future rosters the way it loses future messages. Installed
-  // HERE, before the member strip below, so the fire-and-forget member-set
-  // doc publish (rememberMembers -> publishDocOp) reads the NEW secret out
-  // of the store and seals gen+1 under it deterministically; the bundle ride
-  // then delivers that same secret to exactly the members who remain.
-  let rotatedDocKey = null;
-  try {
-    const priorDoc = await getDocKey(groupId);
+  // Never rotate chat membership when the shared governance secret is absent
+  // or unreadable. A fresh local secret would strand every current member.
+  let rotatedDocKey = priorDocKey;
+  if (docMembershipChanges) {
     rotatedDocKey = generateDocKey();
-    const stored = await putDocKey(groupId, (priorDoc?.epoch || 0) + 1, rotatedDocKey);
-    if (!stored) rotatedDocKey = null; // locked app: ship no secret we cannot hold ourselves
-  } catch (docKeyError) {
-    console.warn('[group-key] Governance-doc key not rotated:', docKeyError?.message || docKeyError);
-    rotatedDocKey = null;
+    const storedDocKey = await putDocKey(groupId, (priorDoc?.epoch || 0) + 1, rotatedDocKey);
+    if (!storedDocKey) throw new Error('Could not store the rotated governance-doc key; membership and chat keys were left unchanged. Unlock storage and retry.');
   }
+  // Publish and hold the removal document under the newly stored secret
+  // before changing the chat epoch. A relay failure leaves the old chat key
+  // and membership snapshot intact. A retry uses whichever doc key matches
+  // the last successfully held document, never a replacement for a no-op.
+  await publishMemberDocUpdate(groupId, recipients);
   // Drills D3-C/D3-E: the record is stripped BEFORE the new epoch lands.
   // The old order — key first, strip after — left a window where a grant
   // request saw the new epoch on a record that still named the removed
   // member, and both timestamps stamp the same whole second, so the
   // "newer snapshot" check collapsed to equality and shipped the key the
   // rotation existed to withhold.
-  await rememberMembers(groupId, recipients, { strict: true });
+  await rememberMembers(groupId, recipients, { strict: true, publishDoc: false });
   await putGroupKey(groupId, nextEpoch, newKey);
   // A failed publish must not leave them eligible to re-request the new
   // epoch — the strip above already saw to that.
@@ -464,7 +474,7 @@ export async function rotateGroupEpoch({ identity, groupId, remainingPubkeys, pu
       keyBytes: newKey,
       recipients,
       extraEpochs: prior,
-      ...(rotatedDocKey ? { docKey: rotatedDocKey } : {}),
+      docKey: rotatedDocKey,
       publish,
     });
   }

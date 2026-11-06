@@ -2,12 +2,12 @@ import { useEffect, useMemo } from 'react';
 import { getCurrentGroupKey, getAllGroupKeys, getGrantedEpochsFor, putGroupKey, getDocKey, putDocKey } from '../lib/crypto/groupKeyStore';
 import { distributeGroupKey } from '../lib/crypto/groupKeyDistribution';
 import { generateGroupKey } from '../lib/crypto/groupCipher';
-import { generateDocKey } from '../lib/crypto/groupDocKey';
+import { generateDocKey, normalizeDocKey } from '../lib/crypto/groupDocKey';
 import { getAuthenticatedPool } from '../lib/pool';
 import { generalRelays, queryWithTimeout } from '../lib/relays';
 import { relaysForPeer } from '../lib/dmRelays';
 import { currentOwner } from '../db';
-import { rememberMembers, loadMemberSnapshot, reconcileRunKey } from '../lib/crypto/groupKeyRotation';
+import { rememberMembers, publishMemberDocUpdate, loadMemberSnapshot, reconcileRunKey } from '../lib/crypto/groupKeyRotation';
 import { decryptMemberBaselines, MEMBER_BASELINE_KIND, memberBaselineTag } from '../lib/crypto/memberBaseline';
 const completedRuns = new Map();
 const inFlightRuns = new Map();
@@ -148,22 +148,15 @@ async function reconcile({ groupId, members, isOwner, identity }) {
   };
   let current = await getCurrentGroupKey(groupId);
   if (!current) {
+    // This is an existing group reconciliation path, not group creation: it
+    // may reuse a held secret, but must never invent one that could strand
+    // members on a prior governance-key generation.
+    const reconcilerDocKey = normalizeDocKey((await getDocKey(groupId).catch(() => null))?.bytes);
+    if (!reconcilerDocKey) throw new Error('No readable governance-doc key is held; group key bootstrap is blocked until the shared key is recovered.');
     const key = generateGroupKey();
     await putGroupKey(groupId, 1, key);
     current = { epoch: 1, bytes: key };
-    // SEC-1: a reconciler-bootstrapped group mints its governance-doc key
-    // here too — same idempotent-on-empty rule as createGroup, and it rides
-    // the very bundle that reaches every founding member.
-    let reconcilerDocKey;
-    try {
-      const heldDocKey = await getDocKey(groupId);
-      reconcilerDocKey = heldDocKey?.bytes || generateDocKey();
-      if (!heldDocKey) await putDocKey(groupId, 1, reconcilerDocKey);
-    } catch (docKeyError) {
-      console.warn('[reconciler] Governance-doc key deferred:', docKeyError?.message || docKeyError);
-      reconcilerDocKey = null;
-    }
-    await distributeGroupKey({ senderPrivkey: identity.sk, senderPubkey: identity.pk, groupId, epoch: 1, keyBytes: key, recipients: dedupe([...members, identity.pk]), ...(reconcilerDocKey ? { docKey: reconcilerDocKey } : {}), publish });
+    await distributeGroupKey({ senderPrivkey: identity.sk, senderPubkey: identity.pk, groupId, epoch: 1, keyBytes: key, recipients: dedupe([...members, identity.pk]), docKey: reconcilerDocKey, publish });
     await safePutSnapshot(groupId, members);
     return { epoch: 1 };
   }
@@ -177,25 +170,31 @@ async function reconcile({ groupId, members, isOwner, identity }) {
     // them on the record while the rotation reports success (the same gap
     // rotateGroupEpoch closed with strict). Strict here aborts the removal
     // before putGroupKey stores the new epoch or anything is published.
-    // SEC-1: the reconciler's own removal rotation re-keys the governance-doc
-    // secret too. Installed BEFORE the roster write so publishDocOp
-    // (fire-and-forget inside rememberMembers below) reads the NEW secret out
-    // of the store and seals gen+1 under it deterministically.
-    let reconcilerRotatedDocKey = null;
-    try {
-      const priorDoc = await getDocKey(groupId);
+    const priorDoc = await getDocKey(groupId).catch(() => null);
+    const priorDocKey = normalizeDocKey(priorDoc?.bytes);
+    if (!priorDocKey) throw new Error('No readable governance-doc key is held; removal rotation is blocked until the key is recovered.');
+    const { loadMemberDocHeads } = await import('../lib/crypto/groupDocWire.js');
+    const { resolveMembership } = await import('../lib/crypto/groupDoc.js');
+    const docHeads = await loadMemberDocHeads(groupId);
+    if (!docHeads.length) throw new Error('No verified member-set document is held; removal rotation is blocked until it is recovered.');
+    const heldMembers = resolveMembership(docHeads[0]).map((row) => row.pubkey).sort();
+    const nextMembers = [...members].sort();
+    const docMembershipChanges = heldMembers.length !== nextMembers.length
+      || heldMembers.some((pubkey, index) => pubkey !== nextMembers[index]);
+    let reconcilerRotatedDocKey = priorDocKey;
+    if (docMembershipChanges) {
       reconcilerRotatedDocKey = generateDocKey();
-      if (!(await putDocKey(groupId, (priorDoc?.epoch || 0) + 1, reconcilerRotatedDocKey))) reconcilerRotatedDocKey = null;
-    } catch (docKeyError) {
-      console.warn('[reconciler] Governance-doc key not rotated:', docKeyError?.message || docKeyError);
-      reconcilerRotatedDocKey = null;
+      if (!(await putDocKey(groupId, (priorDoc?.epoch || 0) + 1, reconcilerRotatedDocKey))) {
+        throw new Error('Could not store the rotated governance-doc key; no membership or chat-key change was made.');
+      }
     }
-    await rememberMembers(groupId, members, { strict: true });
+    await publishMemberDocUpdate(groupId, members);
+    await rememberMembers(groupId, members, { strict: true, publishDoc: false });
     const nextEpoch = current.epoch + 1;
     const newKey = generateGroupKey();
     await putGroupKey(groupId, nextEpoch, newKey);
     const priorEpochs = (await getAllGroupKeys(groupId)).filter(e => e.epoch !== nextEpoch);
-    await distributeGroupKey({ senderPrivkey: identity.sk, senderPubkey: identity.pk, groupId, epoch: nextEpoch, keyBytes: newKey, recipients: dedupe([...members, identity.pk]), extraEpochs: priorEpochs, ...(reconcilerRotatedDocKey ? { docKey: reconcilerRotatedDocKey } : {}), publish });
+    await distributeGroupKey({ senderPrivkey: identity.sk, senderPubkey: identity.pk, groupId, epoch: nextEpoch, keyBytes: newKey, recipients: dedupe([...members, identity.pk]), extraEpochs: priorEpochs, docKey: reconcilerRotatedDocKey, publish });
     await safePutSnapshot(groupId, members);
     return { epoch: nextEpoch };
   }

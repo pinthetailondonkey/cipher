@@ -24,7 +24,12 @@ import { unwrapToRumor } from '../giftUnwrap';
 import { encodeGroupPayload, decodeGroupEvent } from './groupMessageCodec.js';
 import { putDocKey, getDocKey } from './groupKeyStore.js';
 import { generateDocKey } from './groupDocKey.js';
-import { sealDocBody, openSealedDocBody } from './groupDocWire.js';
+import { sealDocBody, openSealedDocBody, __setDocsDbForTests, rememberVerifiedDoc, ingestMemberDocEvent } from './groupDocWire.js';
+import { groupAuthorityKey } from './groupAuthority.js';
+import { rememberAuthorityPin } from './authorityPins.js';
+import { genesisDocBody, signDocEvent } from './groupDoc.js';
+import { setSessionKey } from '../sessionKey.js';
+import { __setDocOpEnvForTests } from './groupKeyRotation.js';
 import { rememberPendingKeyRequest } from './groupKeyRequest.js';
 import { openDBFor } from '../../db.js';
 
@@ -43,6 +48,8 @@ const GROUP = 'audit-removal-group';
 // [groupId+epoch] rule), copied from src/lib/crypto/groupKeyAtRest.test.js.
 function fakeDb() {
   const rows = [];
+  const docRows = [];
+  let failDocKeyWrite = false;
   let nextId = 1;
   const collection = (match) => ({
     first: async () => { const r = rows.find(match); return r ? structuredClone(r) : undefined; },
@@ -65,20 +72,27 @@ function fakeDb() {
   };
   return { rows, db: {
     groupKeys: table,
-    groupDocKeys: (() => {
-      const docRows = [];
-      return {
-        get: async (key) => {
-          const gid = Array.isArray(key) ? key[0] : key;
-          return docRows.find((row) => row.groupId === gid) ? structuredClone(docRows.find((row) => row.groupId === gid)) : undefined;
-        },
-        delete: async (gid) => { const at = docRows.findIndex((r) => r.groupId === gid); if (at >= 0) docRows.splice(at, 1); },
-        put: async (row) => { const at = docRows.findIndex((r) => r.groupId === row.groupId); if (at >= 0) docRows[at] = structuredClone(row); else docRows.push(structuredClone(row)); },
-        transaction: undefined,
-      };
-    })(),
-    transaction: async (_m, _t, fn) => fn(),
-  } };
+    groupDocKeys: {
+      get: async (key) => {
+        const gid = Array.isArray(key) ? key[0] : key;
+        return docRows.find((row) => row.groupId === gid) ? structuredClone(docRows.find((row) => row.groupId === gid)) : undefined;
+      },
+      delete: async (gid) => { const at = docRows.findIndex((r) => r.groupId === gid); if (at >= 0) docRows.splice(at, 1); },
+      put: async (row) => {
+        if (failDocKeyWrite) throw new Error('QuotaExceededError');
+        const at = docRows.findIndex((r) => r.groupId === row.groupId);
+        if (at >= 0) docRows[at] = structuredClone(row); else docRows.push(structuredClone(row));
+      },
+    },
+    transaction: async (_m, table, fn) => {
+      if (table?.put === undefined && table !== undefined) return fn();
+      const before = docRows.map((row) => structuredClone(row));
+      try { return await fn(); } catch (error) {
+        docRows.splice(0, docRows.length, ...before);
+        throw error;
+      }
+    },
+  }, setDocKeyWriteFailure(value) { failDocKeyWrite = Boolean(value); } };
 }
 
 const SESSION = new Uint8Array(32).fill(9);
@@ -98,6 +112,35 @@ function asMember(name) {
   return fake;
 }
 
+function fakeMemberDocs() {
+  const rows = [];
+  return {
+    groupMemberDocs: {
+      async get(key) { return rows.find((row) => row.groupId === key[0] && row.gen === key[1]); },
+      async put(row) { rows.push(structuredClone(row)); },
+      where(field) {
+        return { equals: (value) => ({ toArray: async () => rows.filter((row) => row[field] === value).map((row) => structuredClone(row)) }) };
+      },
+    },
+  };
+}
+
+async function installGenesisMemberDoc({ ownerPubkey, ownerSecret, groupId, members }) {
+  const accountSk = Uint8Array.from(ownerSecret);
+  setSessionKey(accountSk);
+  const { privateKeyBytes, pin } = await groupAuthorityKey(accountSk, groupId);
+  rememberAuthorityPin(ownerPubkey, groupId, pin);
+  const signed = await signDocEvent(await genesisDocBody({ gid: groupId, epoch: 0, members }), privateKeyBytes);
+  __setDocsDbForTests(fakeMemberDocs());
+  assert.ok((await rememberVerifiedDoc({ groupId, pin, signed }))?.stored);
+  const publishedDocs = [];
+  __setDocOpEnvForTests({
+    owner: ownerPubkey,
+    publish: async (_relays, event) => { publishedDocs.push(event); return [Promise.resolve([null, event])]; },
+  });
+  return { pin, privateKeyBytes, publishedDocs };
+}
+
 test('a removed member cannot read a post-removal message; a remaining member can', async () => {
   setAtRestKeyProvider(() => SESSION);
 
@@ -108,6 +151,10 @@ test('a removed member cannot read a post-removal message; a remaining member ca
   // Epoch 0 exists for all three, as it did before the removal.
   const epoch0 = generateGroupKey();
   for (const [who] of [['A'], ['B'], ['C']]) { asMember(who); await putGroupKey(GROUP, 0, epoch0); }
+  const docKey0 = generateDocKey();
+  for (const who of ['A', 'B', 'C']) { asMember(who); assert.ok(await putDocKey(GROUP, 0, docKey0)); }
+  asMember('A');
+  const genesis = await installGenesisMemberDoc({ ownerPubkey: aPk, ownerSecret: A, groupId: GROUP, members: [aPk, bPk, cPk], docKey: docKey0 });
   // For the record: all three hold the same epoch-0 bytes.
   for (const who of ['A', 'B', 'C']) {
     asMember(who);
@@ -130,6 +177,8 @@ test('a removed member cannot read a post-removal message; a remaining member ca
 
   assert.equal(rotate.rotated, true, `rotation refused: ${rotate.reason}`);
   assert.equal(rotate.epoch, 1);
+  assert.equal(genesis.publishedDocs.length, 1, 'the removal governance document was published');
+  assert.equal(JSON.parse(genesis.publishedDocs[0].content).v, 2, 'the post-removal document is v2');
 
   // The new key reached exactly one member, and it is not C.
   assert.equal(published.length, 1, 'one bundle was published');
@@ -162,6 +211,7 @@ test('a removed member cannot read a post-removal message; a remaining member ca
   assert.equal(Math.max(...rows.map((r) => r.epoch)), 1);
   asMember('B');
   for (const row of rows) await putGroupKey(row.groupId, row.epoch, fromHex(row.hex));
+  assert.ok(await putDocKey(GROUP, 1, fromHex(payload.dk)), 'B stores the rotated governance key delivered in the real bundle');
   const bNow = await getCurrentGroupKey(GROUP);
   assert.equal(bNow.epoch, 1, 'B is on the new epoch');
   assert.notEqual(toHex(bNow.bytes), toHex(epoch0), 'the new epoch is different key material');
@@ -200,6 +250,17 @@ test('a removed member cannot read a post-removal message; a remaining member ca
   asMember('C');
   const cOld = await decodeGroupEvent({ event: beforeEvent, groupId: GROUP });
   assert.equal(cOld.parsed.message, 'before the kick', 'history stays readable to a former member');
+  asMember('C');
+  const cDoc = await openSealedDocBody(genesis.publishedDocs[0].content, genesis.pin, GROUP, docKey0);
+  assert.equal(cDoc, null, 'the removed member cannot decrypt the post-removal governance document');
+  asMember('B');
+  const bDocKey = await getDocKey(GROUP);
+  const bDoc = await openSealedDocBody(genesis.publishedDocs[0].content, genesis.pin, GROUP, bDocKey?.bytes);
+  assert.ok(bDoc, 'an authorized remaining member decrypts the rotated governance document');
+  __setDocsDbForTests(fakeMemberDocs());
+  assert.ok(await ingestMemberDocEvent(genesis.publishedDocs[0], { pin: genesis.pin, groupId: GROUP, docKey: bDocKey.bytes }));
+  __setDocOpEnvForTests(null);
+  __setDocsDbForTests(null);
 });
 
 test('a rotation that leaves the sender out still withholds the new epoch from the removed member', async () => {
@@ -209,12 +270,18 @@ test('a rotation that leaves the sender out still withholds the new epoch from t
   const A = generateSecretKey(); const aPk = getPublicKey(A);
   const B = generateSecretKey(); const bPk = getPublicKey(B);
   const C = generateSecretKey(); const cPk = getPublicKey(C);
+  const DISTRIBUTE_GROUP = 'audit-direct-distribution-group';
   const newKey = generateGroupKey();
   const published = [];
   const ledger = { getGrantRecords: async () => new Map(), recordGrant: async () => {} };
+  await assert.rejects(distributeGroupKey({
+    senderPrivkey: A, senderPubkey: aPk, groupId: DISTRIBUTE_GROUP, epoch: 7, keyBytes: newKey,
+    recipients: [bPk], publish: async (event) => { published.push(event); }, ledger,
+  }), /readable governance-doc key/);
+  assert.equal(published.length, 0, 'a new key bundle cannot silently omit the governance secret');
   await distributeGroupKey({
-    senderPrivkey: A, senderPubkey: aPk, groupId: GROUP, epoch: 7, keyBytes: newKey,
-    recipients: [bPk], publish: async (e) => { published.push(e); }, ledger,
+    senderPrivkey: A, senderPubkey: aPk, groupId: DISTRIBUTE_GROUP, epoch: 7, keyBytes: newKey,
+    recipients: [bPk], docKey: generateDocKey(), publish: async (e) => { published.push(e); }, ledger,
   });
   assert.equal(published.length, 1);
   assert.equal(published.some((e) => e.tags.some((t) => t[0] === 'p' && t[1] === cPk)), false);
@@ -230,6 +297,9 @@ test('a removal whose membership strip cannot be written aborts before the new e
   const epoch0 = generateGroupKey();
   asMember('A');
   await putGroupKey(STRIP_GROUP, 0, epoch0);
+  const stripDocKey = generateDocKey();
+  await putDocKey(STRIP_GROUP, 0, stripDocKey);
+  const stripDocs = await installGenesisMemberDoc({ ownerPubkey: aPk, ownerSecret: A, groupId: STRIP_GROUP, members: [aPk, bPk] });
 
   // The membership table refuses every write, as a full or locked store would.
   const failingSigs = { put: async () => { throw new Error('QuotaExceededError'); }, get: async () => undefined };
@@ -249,9 +319,98 @@ test('a removal whose membership strip cannot be written aborts before the new e
 
   // No new epoch was stored, and nothing was sent to anyone.
   __setMembershipDbForTests(null);
+  __setDocOpEnvForTests(null);
+  __setDocsDbForTests(null);
   assert.equal(fake.rows.some((r) => r.groupId === STRIP_GROUP && r.epoch === 1), false, 'no epoch 1 stored');
   assert.equal((await getCurrentGroupKey(STRIP_GROUP)).epoch, 0, 'still on epoch 0');
   assert.equal(published.length, 0, 'no key bundle published');
+  assert.equal(stripDocs.publishedDocs.length, 1, 'the v2 governance state is safely published before the strip gate');
+  assert.equal(JSON.parse(stripDocs.publishedDocs[0].content).v, 2, 'the partial state never downgrades encryption');
+  const heldStripDocKey = await getDocKey(STRIP_GROUP);
+  assert.equal((await openSealedDocBody(stripDocs.publishedDocs[0].content, stripDocs.pin, STRIP_GROUP, heldStripDocKey.bytes)).body.members.some((row) => row.pubkey === aPk), false,
+    'doc-first authorization already excludes the removed member');
+});
+
+test('a missing governance key blocks a legacy-group rotation without minting a replacement', async () => {
+  setAtRestKeyProvider(() => SESSION);
+  const A = generateSecretKey(); const aPk = getPublicKey(A);
+  const gid = 'legacy-no-doc-key-group';
+  asMember('A');
+  await putGroupKey(gid, 3, generateGroupKey());
+  const result = await rotateGroupEpoch({ identity: { sk: A, pk: aPk }, groupId: gid, remainingPubkeys: [], publish: async () => {} });
+  assert.deepEqual(result, { rotated: false, reason: 'missing-doc-key' });
+  assert.equal((await getCurrentGroupKey(gid)).epoch, 3, 'the current chat epoch remains untouched');
+  assert.equal(await getDocKey(gid), null, 'no replacement secret is silently generated');
+});
+
+test('governance-key storage failure aborts rotation before publishing or changing membership', async () => {
+  setAtRestKeyProvider(() => SESSION);
+  const A = generateSecretKey(); const aPk = getPublicKey(A);
+  const B = generateSecretKey(); const bPk = getPublicKey(B);
+  const gid = 'doc-key-store-failure-group';
+  asMember('A');
+  const keyStore = devices.get('A');
+  const oldChatKey = generateGroupKey();
+  const oldDocKey = generateDocKey();
+  await putGroupKey(gid, 0, oldChatKey);
+  await putDocKey(gid, 0, oldDocKey);
+  const docs = await installGenesisMemberDoc({ ownerPubkey: aPk, ownerSecret: A, groupId: gid, members: [aPk, bPk], docKey: oldDocKey });
+  const sent = [];
+  keyStore.setDocKeyWriteFailure(true);
+  await assert.rejects(rotateGroupEpoch({
+    identity: { sk: A, pk: aPk }, groupId: gid, remainingPubkeys: [aPk],
+    publish: async (event) => { sent.push(event); },
+  }), /Could not store the rotated governance-doc key/);
+  keyStore.setDocKeyWriteFailure(false);
+  assert.equal((await getCurrentGroupKey(gid)).epoch, 0, 'chat epoch is unchanged');
+  assert.equal(toHex((await getDocKey(gid)).bytes), toHex(oldDocKey), 'the prior secret survives the failed write');
+  assert.equal(docs.publishedDocs.length, 0, 'no document was published under an unstored secret');
+  assert.equal(sent.length, 0, 'no key bundle was sent');
+  __setDocOpEnvForTests(null);
+  __setDocsDbForTests(null);
+});
+
+test('partial key distribution keeps removal fail-closed and a retry recovers remaining members', async () => {
+  setAtRestKeyProvider(() => SESSION);
+  const A = generateSecretKey(); const aPk = getPublicKey(A);
+  const B = generateSecretKey(); const bPk = getPublicKey(B);
+  const C = generateSecretKey(); const cPk = getPublicKey(C);
+  const gid = 'doc-distribution-retry-group';
+  const docKey0 = generateDocKey();
+  for (const who of ['A', 'B', 'C']) {
+    asMember(who);
+    await putGroupKey(gid, 0, generateGroupKey());
+    await putDocKey(gid, 0, docKey0);
+  }
+  asMember('A');
+  const docs = await installGenesisMemberDoc({ ownerPubkey: aPk, ownerSecret: A, groupId: gid, members: [aPk, bPk, cPk], docKey: docKey0 });
+  const rejectPublish = async () => { throw new Error('temporary delivery failure'); };
+  await assert.rejects(rotateGroupEpoch({
+    identity: { sk: A, pk: aPk }, groupId: gid, remainingPubkeys: [aPk, bPk], publish: rejectPublish,
+  }), /Could not distribute group keys/);
+  const heldAfterFailure = await getDocKey(gid);
+  assert.notEqual(toHex(heldAfterFailure.bytes), toHex(docKey0), 'the rotated secret remains available for retry');
+  assert.equal((await getCurrentGroupKey(gid)).epoch, 1, 'the new local epoch is recoverable');
+  const removedDoc = docs.publishedDocs.at(-1);
+  assert.equal(JSON.parse(removedDoc.content).v, 2);
+  assert.equal(await openSealedDocBody(removedDoc.content, docs.pin, gid, docKey0), null, 'removed member key cannot open the removal doc');
+
+  // Retry on the same device. The held doc already excludes C, so the retry
+  // must reuse its key and resend current plus prior chat epochs to B.
+  const delivered = [];
+  const retry = await rotateGroupEpoch({
+    identity: { sk: A, pk: aPk }, groupId: gid, remainingPubkeys: [aPk, bPk],
+    publish: async (event) => { delivered.push(event); },
+  });
+  assert.equal(retry.rotated, true);
+  assert.equal(delivered.length, 2, 'both authorized remaining members receive their retry bundles');
+  assert.equal(delivered.some((event) => event.tags.some((tag) => tag[0] === 'p' && tag[1] === cPk)), false);
+  const rumorB = unwrapToRumor(delivered.find((event) => event.tags.some((tag) => tag[0] === 'p' && tag[1] === bPk)), B).rumor;
+  const bundle = JSON.parse(nip44.v2.decrypt(rumorB.content, nip44.v2.utils.getConversationKey(A, bPk)));
+  assert.equal(bundle.dk, toHex(heldAfterFailure.bytes), 'retry distributes the key that encrypts the held membership document');
+  assert.ok(await openSealedDocBody(removedDoc.content, docs.pin, gid, fromHex(bundle.dk)), 'authorized member can decrypt after recovery');
+  __setDocOpEnvForTests(null);
+  __setDocsDbForTests(null);
 });
 
 // ── SEC-1: the governance-doc key rotates with a kick and rides the bundle ─
@@ -259,9 +418,9 @@ test('a removal whose membership strip cannot be written aborts before the new e
 // Full path with real crypto.
 test('SEC-1: a kick rotates the doc key; remaining members receive only the new secret', async () => {
   setAtRestKeyProvider(() => SESSION);
+  const DOC_GROUP = 'audit-doc-rotate-group';
   const A = generateSecretKey(); const aPk = getPublicKey(A); // admin, rotates
   const B = generateSecretKey(); const bPk = getPublicKey(B); // stays
-  const C = generateSecretKey(); // removed; C's isolation here is structural, not asserted
   openDBFor(bPk);
 
   // Genesis doc key on every device (as createGroup/bootstrap ships it).
@@ -271,20 +430,21 @@ test('SEC-1: a kick rotates the doc key; remaining members receive only the new 
   const genesisDocKey = generateDocKey();
   for (const who of ['A', 'B', 'C']) {
     asMember(who);
-    assert.ok(await putDocKey(GROUP, 0, genesisDocKey), `${who} installs the genesis doc key`);
+    assert.ok(await putDocKey(DOC_GROUP, 0, genesisDocKey), `${who} installs the genesis doc key`);
   }
   asMember('A');
+  await installGenesisMemberDoc({ ownerPubkey: aPk, ownerSecret: A, groupId: DOC_GROUP, members: [aPk, bPk] });
   const epoch0 = generateGroupKey();
-  await putGroupKey(GROUP, 0, epoch0);
+  await putGroupKey(DOC_GROUP, 0, epoch0);
   asMember('B');
-  await putGroupKey(GROUP, 0, epoch0);
+  await putGroupKey(DOC_GROUP, 0, epoch0);
 
   // The removal. C is not in remainingPubkeys.
   asMember('A');
   const published = [];
   const rotate = await rotateGroupEpoch({
     identity: { sk: A, pk: aPk },
-    groupId: GROUP,
+    groupId: DOC_GROUP,
     remainingPubkeys: [bPk],
     publish: async (event) => { published.push(event); },
   });
@@ -303,28 +463,35 @@ test('SEC-1: a kick rotates the doc key; remaining members receive only the new 
   // and the bundle carries epoch 1, so the install floor, snapshot check and
   // rollback guards all pass here exactly as the live app runs them.
   asMember('B');
-  await putGroupKey(GROUP, 0, epoch0); // same bytes as A holds: no conflict guard trip
-  await rememberPendingKeyRequest(bPk, GROUP); // B's own ask-evidence (the floor)
+  await putGroupKey(DOC_GROUP, 0, epoch0); // same bytes as A holds: no conflict guard trip
+  await rememberPendingKeyRequest(bPk, DOC_GROUP); // B's own ask-evidence (the floor)
   // Sender standing: the roster snapshot names A as an ADMIN (a roll-forward
   // to a new epoch requires admin/creator standing - the takeover guard).
   __setMembershipDbForTests({ groupMemberSigs: {
     async get() { return { members: [{ pubkey: aPk, role: 'admin' }, bPk], roles: {}, updatedAt: Math.floor(Date.now()/1000) }; },
     async put() {},
   } });
+  const bDevice = devices.get('B');
+  const bDocBefore = await getDocKey(DOC_GROUP);
+  bDevice.setDocKeyWriteFailure(true);
+  assert.equal(await installReceivedGroupKey(payload, aPk), false, 'a doc-key storage failure refuses the whole bundle');
+  bDevice.setDocKeyWriteFailure(false);
+  assert.equal((await getCurrentGroupKey(DOC_GROUP)).epoch, 0, 'chat epochs were not installed without the governance key');
+  assert.equal(toHex((await getDocKey(DOC_GROUP)).bytes), toHex(bDocBefore.bytes), 'the prior governance key survives');
   assert.equal(await installReceivedGroupKey(payload, aPk), true, 'B accepts the rotation bundle');
-  const heldByB = await getDocKey(GROUP);
+  const heldByB = await getDocKey(DOC_GROUP);
   assert.ok(heldByB, 'B holds a doc key after adopting');
   assert.equal(toHex(heldByB.bytes), payload.dk, 'B holds exactly the rotated secret');
-  assert.equal(heldByB.epoch, 2, 'the ride carries the bundle max epoch (0 + backfill = 2 across rows)');
+  assert.equal(heldByB.epoch, 1, 'the ride carries the bundle max chat-key epoch');
   __setMembershipDbForTests(null);
 
   // The v2 body B or any member sees sealed thereafter cannot be opened by
   // the legacy pin derivation: an observer with public fields alone is shut out.
   const fakePin = PIN_COMPRESSED(aPk);
   const signedBody = { id: 'd'.repeat(64), sig: 'e'.repeat(128), body: { gen: 1, members: [] } };
-  const v2Sealed = await sealDocBody(signedBody, fakePin, GROUP, heldByB.bytes, 1);
+  const v2Sealed = await sealDocBody(signedBody, fakePin, DOC_GROUP, heldByB.bytes);
   assert.equal(JSON.parse(v2Sealed).v, 2, 'a held doc key seals v2');
-  assert.equal(await openSealedDocBody(v2Sealed, fakePin, GROUP, null), null, 'v2 refuses legacy-only decode');
+  assert.equal(await openSealedDocBody(v2Sealed, fakePin, DOC_GROUP, null), null, 'v2 refuses legacy-only decode');
 
   // C's isolation is structural: C was stripped before the ride, so the
   // rotated secret is addressed only to B — nothing new ever travels to C.

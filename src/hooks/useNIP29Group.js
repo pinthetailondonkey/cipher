@@ -13,7 +13,7 @@ import { getAllGroupKeys, getCurrentGroupKey, putGroupKey } from '../lib/crypto/
 import { authorizeGroupControl, authorizeGroupPin, authorizeMemberSnapshot, groupFrameAccepted, groupRelayPubkey, groupTimelinePlans, isRestrictedRelayClose, pickMemberSnapshot, pinnedMessageOf, resolveControlSender, resolveKeyRequestRequester, trustedGroupCreator } from '../lib/crypto/groupMembership';
 import { grantKeyRequest, loadMemberSnapshot, loadMemberSnapshotRecord, memberKey, patchMemberSnapshot, rememberMembers, rotateGroupEpoch } from '../lib/crypto/groupKeyRotation';
 import { generateGroupKey } from '../lib/crypto/groupCipher';
-import { generateDocKey } from '../lib/crypto/groupDocKey';
+import { generateDocKey, normalizeDocKey } from '../lib/crypto/groupDocKey';
 import { getDocKey, putDocKey } from '../lib/crypto/groupKeyStore';
 // Step 2 slice 3, live arm: onFrame routes kind 30079 by its constants and
 // strips the doc d-tag prefix; both come from the publisher so neither can
@@ -811,6 +811,27 @@ export function useNIP29Group({ identity }) {
     const signer = await resolveActorSigner({ identity, groupId });
     if (!signer) throw new Error('Unlock your account to create a group.');
 
+    // A private governance document must be sealable before any create event
+    // reaches a relay. Never create a group whose genesis can only be
+    // published under the publicly derivable historical v1 key.
+    let genesisDocKey = null;
+    try {
+      const heldDocKey = await getDocKey(groupId);
+      if (heldDocKey) {
+        genesisDocKey = normalizeDocKey(heldDocKey.bytes);
+      } else {
+        const generatedDocKey = generateDocKey();
+        if (await putDocKey(groupId, 1, generatedDocKey)) {
+          genesisDocKey = normalizeDocKey((await getDocKey(groupId))?.bytes);
+        }
+      }
+    } catch (docKeyError) {
+      console.warn('[createGroup] Could not secure the governance-doc key:', docKeyError?.message || docKeyError);
+    }
+    if (!genesisDocKey) {
+      throw new Error('Could not securely store this group’s governance key. No group was published; unlock storage and retry.');
+    }
+
     const createEv = await buildControlAct({
       identity, groupId, kind: 9007,
       tags: tags.create, createdAt, signer: { skBytes: signer.skBytes, pin: signer.pin },
@@ -854,26 +875,10 @@ export function useNIP29Group({ identity }) {
       if (!existing) {
         const key = generateGroupKey();
         await putGroupKey(groupId, 1, key);
-        // SEC-1: mint the governance-doc key at genesis. Idempotent-on-empty:
-        // a retry of createGroup must not silently re-key an existing secret.
-        let genesisDocKey = null;
-        try {
-          const heldDocKey = await getDocKey(groupId);
-          if (!heldDocKey) {
-            genesisDocKey = generateDocKey();
-            if (await putDocKey(groupId, 1, genesisDocKey)) {
-              console.info('[createGroup] Governance-doc key minted for this group.');
-            } else { genesisDocKey = null; }
-          } else {
-            genesisDocKey = heldDocKey.bytes;
-          }
-        } catch (docKeyError) {
-          console.warn('[createGroup] Governance-doc key deferred:', docKeyError?.message || docKeyError);
-        }
         await distributeGroupKey({
           senderPrivkey: identity.sk, senderPubkey: identity.pk,
           groupId, epoch: 1, keyBytes: key, recipients: [identity.pk],
-          ...(genesisDocKey ? { docKey: genesisDocKey } : {}),
+          docKey: genesisDocKey,
           // The real name and description travel sealed, in the same envelope
           // as the key. On a public group `sealed` is null and this is the
           // bundle it has always been.
@@ -884,11 +889,21 @@ export function useNIP29Group({ identity }) {
       }
     } catch (e) { console.warn('[createGroup] key bootstrap deferred', e); }
 
+    const newGroup = { id: groupId, name, about: about || '', isChannel, access, creator: identity.pk, members: [identity.pk], metaAt: metaEv.created_at, ...(tags.sealed ? { labelSealed: true } : {}) };
+    const saveCreatedGroup = () => {
+      const localGroups = getMyGroups(identity.pk);
+      if (!localGroups.find((group) => group.id === groupId)) {
+        localGroups.push(newGroup);
+        setMyGroups(identity.pk, localGroups);
+      }
+      setGroups(prev => [newGroup, ...(prev || []).filter(g => g.id !== groupId)]);
+    };
+
     // Step 1 issuance (MEMBERSHIP-DESIGN.md): derive this group's authority
     // key from the account secret, stamp its pin for every later invite link,
     // sign the genesis member-set doc naming only this account, and publish
-    // it to both relay sets. Failure defers: the doc publishes on the next
-    // membership change's publish hook instead of blocking creation.
+    // it to both relay sets. A publish failure is surfaced, and the group row
+    // stays local with its held key and signed doc so recovery can be retried.
     try {
       const { groupAuthorityKey } = await import('../lib/crypto/groupAuthority.js');
       const { genesisDocBody, signDocEvent } = await import('../lib/crypto/groupDoc.js');
@@ -912,13 +927,18 @@ export function useNIP29Group({ identity }) {
       await rememberVerifiedDoc({ groupId, pin, signed });
       const docEv = await buildMemberDocEvent({
         signedDoc: signed, authoritySk: privateKeyBytes, pin, groupId, createdAt: nowSec,
+        docKey: genesisDocKey,
       });
-      if (docEv) {
-        const targets = [...new Set([...groupRelays, ...generalRelays])];
-        await Promise.allSettled(pool.publish(targets, docEv));
+      if (!docEv) throw new Error('Could not build the encrypted genesis member document.');
+      const targets = [...new Set([...groupRelays, ...generalRelays])];
+      const results = await Promise.allSettled(pool.publish(targets, docEv));
+      if (!results.some((result) => result.status === 'fulfilled')) {
+        throw new Error('No relay accepted the encrypted genesis member document.');
       }
     } catch (e) {
-      console.warn('[createGroup] member-set doc deferred; it publishes on the next membership change', e);
+      console.error('[createGroup] Group was created, but its encrypted genesis member document was not confirmed. The held key and signed local document remain available for recovery.', e);
+      saveCreatedGroup();
+      throw new Error('The group was created, but its encrypted membership document could not be published. It remains on this device; restore relay access and retry recovery before inviting members.');
     }
 
     appendSystemMessage(groupId, 'You created the group');
@@ -928,14 +948,7 @@ export function useNIP29Group({ identity }) {
     // rather than from the relay's tags. On a private group the tags carry the
     // fixed placeholder, so every path that could refill the name from the
     // relay has to know not to.
-    const newGroup = { id: groupId, name, about: about || '', isChannel, access, creator: identity.pk, members: [identity.pk], metaAt: metaEv.created_at, ...(tags.sealed ? { labelSealed: true } : {}) };
-
-    const localGroups = getMyGroups(identity.pk);
-    if (!localGroups.find(g => g.id === groupId)) {
-      localGroups.push(newGroup);
-      setMyGroups(identity.pk, localGroups);
-    }
-    setGroups(prev => [newGroup, ...(prev || []).filter(g => g.id !== groupId)]);
+    saveCreatedGroup();
 
     return newGroup;
   }, [identity, setGroups, appendSystemMessage]);
@@ -976,12 +989,17 @@ export function useNIP29Group({ identity }) {
         remainingPubkeys: remaining,
         publish: (dmEvent) => publishKeyDm(identity, dmEvent),
       });
-      if (!rotation?.rotated) await rememberMembers(groupId, remaining);
+      if (!rotation?.rotated) {
+        const reason = rotation?.reason === 'missing-doc-key'
+          ? 'This group has no readable governance key. Recover it from an authorized member before leaving.'
+          : rotation?.reason === 'missing-member-doc'
+            ? 'This device has no verified membership document. Restore it from the group relays before leaving.'
+          : 'The group key could not be rotated safely. Your membership was not changed; unlock storage and retry.';
+        throw new Error(reason);
+      }
     } catch (error) {
       console.error('[group-key] Could not rotate the key after a member left:', error);
-      try { await rememberMembers(groupId, remaining); } catch (snapshotError) {
-        console.error('[group-key] Could not update the membership snapshot:', snapshotError);
-      }
+      throw error;
     }
     // Step 2 slice 2: a leave is a group act; the actor key signs it.
     const leaveEv = await buildControlAct({
@@ -1111,12 +1129,17 @@ export function useNIP29Group({ identity }) {
         remainingPubkeys: remaining,
         publish: (dmEvent) => publishKeyDm(identity, dmEvent),
       });
-      if (!rotation?.rotated) await rememberMembers(groupId, remaining);
+      if (!rotation?.rotated) {
+        const reason = rotation?.reason === 'missing-doc-key'
+          ? 'This group has no readable governance key. Recover it from an authorized member before removing anyone.'
+          : rotation?.reason === 'missing-member-doc'
+            ? 'This device has no verified membership document. Restore it from the group relays before removing anyone.'
+          : 'The group key could not be rotated safely. No member was removed; unlock storage and retry.';
+        throw new Error(reason);
+      }
     } catch (error) {
       console.error('[group-key] Could not rotate the key after a kick:', error);
-      try { await rememberMembers(groupId, remaining); } catch (snapshotError) {
-        console.error('[group-key] Could not update the membership snapshot:', snapshotError);
-      }
+      throw error;
     }
     // Step 2 slice 2: a kick is a group act; the actor key signs it.
     const ev = await buildControlAct({

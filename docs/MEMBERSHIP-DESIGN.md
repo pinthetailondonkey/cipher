@@ -480,3 +480,30 @@ Worktree at the final pin: ` M AGENTS.md` (this doc added to the read order),
 ` M docs/PRIVACY-REVIEW.md` (uncommitted, so citations to it are to its worktree
 text), `?? docs/MEMBERSHIP-DESIGN.md`. Nobody committed this file; it is the
 only new artifact three rounds of design produced.
+
+## 11. Governance-document key recovery rule (2026-11)
+
+New kind-30079 documents use envelope v2 and require the random governance-doc
+key held by the publisher. The old pin-and-group-id derivation remains only in
+the v1 decoder for historical relay events. A missing, malformed, locked, or
+unreadable key blocks new document publication and membership rotation; no
+publisher invents a replacement key during an update.
+
+Creation stores and reads back its random key before sending the group's create
+event. A later relay failure leaves the group and signed genesis document on
+the creator's device with that key, and reports that recovery is needed before
+inviting members. Rotation first stores the next governance key and publishes
+the corresponding v2 membership state. It then strips the local authorization
+snapshot, advances the chat epoch, and distributes both current secrets only
+to remaining members. A failed key-store write stops before roster or chat-key
+mutation. If delivery fails after state advances, the removed member is already
+excluded; an authorized retry resends the held governance key and current plus
+prior chat epochs to remaining members.
+
+Pre-SEC-1 groups keep reading historical v1 events. If a device still has the
+shared random key, it can distribute that same key in an accepted key bundle.
+If no authorized device can recover it, the app refuses governance updates and
+removal rotation; it does not guess a new key. The group needs an explicit,
+out-of-band membership recovery and rekey, or recreation. V1 events already
+published remain decryptable by relay observers; no client change can retract
+those copies.

@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { __setDocOpEnvForTests, __setMembershipDbForTests } from './groupKeyRotation.js';
+import { __setDocOpEnvForTests, __setMembershipDbForTests, publishMemberDocUpdate } from './groupKeyRotation.js';
 // publishDocOp runs through rememberMembers; drive it end to end here.
 import { rememberMembers } from './groupKeyRotation.js';
+import { setAtRestKeyProvider } from '../messageAtRest.js';
+import { __setGroupKeyStoreForTests, putDocKey } from './groupKeyStore.js';
 
 const OWNER = '41'.repeat(32);
 const GID = 'pubop-test'.padEnd(64, '0');
@@ -45,12 +47,28 @@ async function setup() {
   pins.rememberAuthorityPin(OWNER, GID, pin);
   sess.setSessionKey(accountSk);
   mem.bindMemberDocPins(pins.authorityPinGetterFor(OWNER));
+  setAtRestKeyProvider(() => accountSk);
+  const docKeyRows = new Map();
+  const publishedDocs = [];
+  __setGroupKeyStoreForTests({
+    owner: () => OWNER,
+    db: {
+      groupDocKeys: {
+        async get(key) { return docKeyRows.get(Array.isArray(key) ? key[0] : key); },
+        async delete(key) { docKeyRows.delete(Array.isArray(key) ? key[0] : key); },
+        async put(row) { docKeyRows.set(row.groupId, { ...row }); },
+      },
+      async transaction(_mode, _table, fn) { return fn(); },
+    },
+  });
+  assert.ok(await putDocKey(GID, 0, new Uint8Array(32).fill(88)));
 
   __setDocOpEnvForTests({
     owner: OWNER,
     // Mirrors SimplePool.publish(relays, event): relays first.
     publish: async (relays, event) => {
       if (!event || !event.id) throw new Error('bad event');
+      publishedDocs.push(event);
       return [Promise.resolve([null, 'ok'])];
     },
   });
@@ -62,7 +80,7 @@ async function setup() {
       async put(row) { memberRow = { ...row }; },
     },
   });
-  return { privateKeyBytes, pin, docsTable, g, w };
+  return { privateKeyBytes, pin, docsTable, docKeyRows, publishedDocs, g, w };
 }
 
 // publishDocOp runs fire-and-forget beside the roster write; the tests wait
@@ -96,6 +114,7 @@ test('a membership change folds onto the held doc and publishes gen+1', async ()
   } finally {
     __setDocOpEnvForTests(null);
     __setMembershipDbForTests(null);
+    __setGroupKeyStoreForTests(null);
   }
 });
 
@@ -116,6 +135,7 @@ test('removal rides the same publisher and lands as a tombstone', async () => {
   } finally {
     __setDocOpEnvForTests(null);
     __setMembershipDbForTests(null);
+    __setGroupKeyStoreForTests(null);
   }
 });
 
@@ -138,5 +158,25 @@ test('no signing parity refuses rather than improvises (member device)', async (
   } finally {
     __setDocOpEnvForTests(null);
     __setMembershipDbForTests(null);
+    __setGroupKeyStoreForTests(null);
+  }
+});
+
+test('the real membership publisher refuses a missing key without advancing its held doc', async () => {
+  const env = await setup();
+  try {
+    const genesis = await env.g.signDocEvent(
+      await env.g.genesisDocBody({ gid: GID, epoch: 1, members: [OWNER] }),
+      env.privateKeyBytes,
+    );
+    await env.w.rememberVerifiedDoc({ groupId: GID, pin: env.pin, signed: genesis });
+    env.docKeyRows.clear(); // simulate a legacy group or unreadable local row
+    await assert.rejects(publishMemberDocUpdate(GID, [OWNER, PK(8)]), /No readable governance-doc key/);
+    assert.equal((await env.w.loadMemberDocHeads(GID)).length, 1, 'no unpublishable generation was stored');
+    assert.equal(env.publishedDocs.length, 0, 'no v1 downgrade reached a relay');
+  } finally {
+    __setDocOpEnvForTests(null);
+    __setMembershipDbForTests(null);
+    __setGroupKeyStoreForTests(null);
   }
 });

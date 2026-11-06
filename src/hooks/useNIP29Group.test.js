@@ -177,3 +177,17 @@ test('SEC-2: the gkey arm resolves the requester through verified bindings, not 
   assert.match(block, /recipients: \[requester\]/,
     'the bundle is addressed to the resolved account, not the actor pin');
 });
+
+test('SEC-1: createGroup passes its stored genesis secret to the real document publisher', () => {
+  const createStart = SOURCE.indexOf('const createGroup = useCallback');
+  assert.ok(createStart >= 0, 'createGroup implementation exists');
+  const publishStart = SOURCE.indexOf('buildMemberDocEvent({', createStart);
+  assert.ok(publishStart >= 0, 'createGroup builds and publishes its genesis member document');
+  const call = SOURCE.slice(publishStart, SOURCE.indexOf('});', publishStart) + 2);
+  assert.match(call, /docKey:\s*genesisDocKey/, 'the real genesis caller supplies the held random key');
+  const preCreate = SOURCE.slice(createStart, SOURCE.indexOf('const createEv', createStart));
+  assert.match(preCreate, /putDocKey\(groupId,\s*1,\s*generatedDocKey\)/,
+    'createGroup persists the random secret before publishing the group create event');
+  assert.match(preCreate, /if \(!genesisDocKey\)\s*\{[\s\S]*?throw new Error/,
+    'createGroup stops before publishing if secure key storage fails');
+});

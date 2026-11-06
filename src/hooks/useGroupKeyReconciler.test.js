@@ -24,18 +24,15 @@ import { generateSecretKey, getPublicKey } from 'nostr-tools';
 import { setAtRestKeyProvider } from '../lib/messageAtRest.js';
 import { openDBFor } from '../db.js';
 import {
-  __setGroupKeyStoreForTests, putGroupKey, getCurrentGroupKey,
+  __setGroupKeyStoreForTests, getCurrentGroupKey,
 } from '../lib/crypto/groupKeyStore.js';
 import { generateGroupKey, toHex } from '../lib/crypto/groupCipher.js';
 import { __setMembershipDbForTests } from '../lib/crypto/groupKeyRotation.js';
 import { reconcileGroupKeys } from './useGroupKeyReconciler.js';
 
-// The removal branch of the group key reconciler stored the new epoch before
-// touching the membership snapshot, and the snapshot write swallowed errors:
-// a failed snapshot write left a removed member on the record while the new
-// epoch was already stored and (worse) already published. This test proves
-// the removal branch strips strictly FIRST, so a failed strip aborts before
-// any new epoch is stored and nothing is published.
+// A pre-remediation group with no held governance key cannot safely be
+// rotated. The reconciler must stop before changing its roster, chat epoch,
+// or sending a key bundle instead of silently minting a replacement.
 
 const SESSION = new Uint8Array(32).fill(9);
 
@@ -69,10 +66,14 @@ function fakeKeyTable() {
 
 // The table plus the transaction wrapper the store seam expects.
 function fakeKeyDb(keyTable) {
-  return { groupKeys: keyTable, transaction: async (_mode, _table, fn) => fn() };
+  return {
+    groupKeys: keyTable,
+    groupDocKeys: { get: async () => undefined, put: async () => {}, delete: async () => {} },
+    transaction: async (_mode, _table, fn) => fn(),
+  };
 }
 
-test('the reconciler removal branch strips strictly before the new epoch is stored', async () => {
+test('the reconciler refuses to rotate a legacy group without its governance key', async () => {
   setAtRestKeyProvider(() => SESSION);
 
   const A = generateSecretKey(); const aPk = getPublicKey(A);
@@ -93,7 +94,8 @@ test('the reconciler removal branch strips strictly before the new epoch is stor
   keyTable.rows.push(seeded);
 
   // The membership table refuses every write, as a full or locked store would.
-  __setMembershipDbForTests({ groupMemberSigs: { put: async () => { throw new Error("QuotaExceededError"); }, get: async () => ({ members: [aPk, bPk], roles: {}, updatedAt: 1 }) } });
+  let stripAttempted = false;
+  __setMembershipDbForTests({ groupMemberSigs: { put: async () => { stripAttempted = true; throw new Error("QuotaExceededError"); }, get: async () => ({ members: [aPk, bPk], roles: {}, updatedAt: 1 }) } });
 
   const published = [];
   // Removal: B is gone from the roster.
@@ -105,11 +107,12 @@ test('the reconciler removal branch strips strictly before the new epoch is stor
       identity: { sk: A, pk: aPk },
       publish: async (event) => { published.push(event); },
     }),
-    /QuotaExceededError/,
+    /No readable governance-doc key/,
   );
 
   __setMembershipDbForTests(null);
   // No new epoch was stored, and nothing was sent to anyone.
+  assert.equal(stripAttempted, false, 'a legacy group without a held governance key is not silently changed');
   assert.equal(keyTable.rows.some((r) => r.groupId === GROUP && r.epoch === 1), false, 'no epoch 1 stored');
   assert.equal((await getCurrentGroupKey(GROUP))?.epoch, 0, 'still on epoch 0');
   assert.equal(published.length, 0, 'no key bundle published');
