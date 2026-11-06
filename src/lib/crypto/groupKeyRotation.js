@@ -42,7 +42,7 @@ const memberTable = () => (membershipDb || appDb).groupMemberSigs;
 // `strict` rethrows a failed write. The rotation path needs that: a removed
 // member must be stripped from the snapshot before the new epoch is stored, so a
 // failed strip has to abort the rotation rather than report success.
-export async function rememberMembers(groupId, members, { strict = false } = {}) {
+export async function rememberMembers(groupId, members, { strict = false, pins = null } = {}) {
   const normalized = normalizeMembers(members);
   const pubkeys = normalized.map((member) => memberKey(member));
   let roles = {};
@@ -87,7 +87,7 @@ export async function rememberMembers(groupId, members, { strict = false } = {})
       // drift apart because both fold from this call. Fire-and-forget: the
       // roster write is the gate; a deferred doc publish retries on the next
       // membership change.
-      publishDocOp(groupId, pubkeys).catch((docError) => {
+      publishDocOp(groupId, pubkeys, { pins }).catch((docError) => {
         console.warn('[group-key] Member-set doc update deferred:', docError?.message || docError);
       });
     }
@@ -126,7 +126,7 @@ async function docPool(identity) {
   if (docOpEnv?.publish) return { publish: docOpEnv.publish };
   return getAuthenticatedPool(identity);
 }
-async function publishDocOp(groupId, pubkeys) {
+async function publishDocOp(groupId, pubkeys, { pins = null } = {}) {
   const owner = docOwner();
   if (!owner) throw new Error('No account open.');
   const { readAuthorityPin } = await import('./authorityPins.js');
@@ -152,7 +152,13 @@ async function publishDocOp(groupId, pubkeys) {
 
   const before = new Set(resolveMembership(head).map((row) => row.pubkey));
   const after = new Set((pubkeys || []).map((pubkey) => String(pubkey).toLowerCase()).filter(Boolean));
-  const admit = [...after].filter((pubkey) => !before.has(pubkey));
+  const admit = [...after].filter((pubkey) => !before.has(pubkey)).map((pubkey) => {
+    // Step 2 slice 3: an admit carries the member's actor pin when this
+    // device has verified one (its own derivation, or an act-derived binding
+    // the caller passed in). The roster is where the pin→account map lives.
+    const pin = typeof pins === 'object' && pins ? String(pins[pubkey] || '').toLowerCase() : '';
+    return /^[0-9a-f]{66}$/.test(pin) ? { pubkey, pin } : pubkey;
+  });
   const remove = [...before].filter((pubkey) => !after.has(pubkey));
   if (!admit.length && !remove.length) return null; // roles-only changes ride later work
 

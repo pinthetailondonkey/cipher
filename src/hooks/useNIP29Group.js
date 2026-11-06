@@ -1108,7 +1108,19 @@ export function useNIP29Group({ identity }) {
     dropPendingJoin(groupId, memberPubkey);
     clearJoinDenial(groupId, memberPubkey);
     const snapshot = await loadMemberSnapshot(groupId);
-    await rememberMembers(groupId, [...new Set([...(snapshot || []), memberPubkey, identity.pk])]);
+    // Step 2 slice 3: any verified (account -> pin) binding this device holds
+    // rides into the next doc's admit. A member added after having spoken
+    // under an earlier epoch gets its pin stamped in the same write.
+    let observedPins = null;
+    try {
+      const { readActorBindings } = await import('../lib/crypto/authorityPins.js');
+      observedPins = readActorBindings(identity.pk, groupId);
+    } catch { /* best-effort: the admit goes out without pins */ }
+    await rememberMembers(
+      groupId,
+      [...new Set([...(snapshot || []), memberPubkey, identity.pk])],
+      { pins: observedPins },
+    );
     appendSystemMessage(groupId, `${shortNpub(memberPubkey)} was added to the group`, ev.id);
     setGroupMembers(prev => {
       if (prev.findIndex(x => x.pubkey === memberPubkey) === -1) {
@@ -1566,6 +1578,20 @@ export function useNIP29Group({ identity }) {
       const actByClamped = (typeof parsed.by === 'string' && /^[0-9a-f]{64}$/.test(parsed.by))
         ? parsed.by
         : actBy;
+
+      // Step 2 slice 3 (publisher capture): a decoded act is a VERIFIED pair.
+      // The cipher AAD binds the wire pubkey, so event.pubkey IS this member's
+      // actor pin; `by` names their account. Recorded only when both halves
+      // are present and differ from pre-Step-2 shape (by == pubkey means the
+      // old shape taught us nothing new). The doc publisher folds these into
+      // its next admit, which is how a member's row gains its pin in the doc.
+      if (!isPending && actByClamped !== identity.pk
+        && /^[0-9a-f]{64}$/.test(actByClamped) && actByClamped !== event.pubkey) {
+        try {
+          const { rememberActorBinding } = await import('../lib/crypto/authorityPins.js');
+          rememberActorBinding(identity.pk, groupId, actByClamped, event.pubkey);
+        } catch { /* storage full or private mode: capture is best-effort */ }
+      }
 
       if (!isPending && parsed.type === 'typing') {
         const age = (Date.now() / 1000) - event.created_at;

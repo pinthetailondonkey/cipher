@@ -8,6 +8,60 @@
 
 const PREFIX = 'cipher_group_auth_pin_';
 
+// Step 2 slice 3 (publisher capture): verified (account -> actor pin) pairs
+// observed on this device. The only honest channel is this device's own
+// decrypts: a kind-9 whose ciphertext opened under the group key has an AAD
+// bound to the wire pubkey, which IS the sender's actor pin, and the sealed
+// body's `by` names the account. Both halves verified by construction — so a
+// pair recorded here is evidence, not a claim. The doc publisher folds these
+// into its next admit set.
+const ACTOR_PREFIX = 'cipher_group_actor_pin_';
+
+function actorKeyFor(ownerPk, groupId) {
+  const scope = String(ownerPk || '').toLowerCase().slice(0, 16);
+  return scope && groupId ? `${ACTOR_PREFIX}${scope}_${groupId}` : '';
+}
+
+/** Record a verified act observation. Returns false for junk shapes. */
+export function rememberActorBinding(ownerPk, groupId, accountPk, pin) {
+  const key = actorKeyFor(ownerPk, groupId);
+  const account = String(accountPk || '').toLowerCase();
+  const value = String(pin || '').toLowerCase().trim();
+  if (!key || !/^[0-9a-f]{64}$/.test(account) || !/^[0-9a-f]{66}$/.test(value)) return false;
+  try {
+    const raw = localStorage.getItem(key);
+    const map = raw ? JSON.parse(raw) : {};
+    if (!map || typeof map !== 'object' || Array.isArray(map)) throw new Error('junk');
+    const held = map[account];
+    map[account] = value;
+    // Two different pins naming one account is either a rotation in flight or
+    // corrupt observation; overwrite is the safe answer (the newest decode won).
+    if (held && held !== value) {
+      console.warn('[group-pins] An account presented two different actor pins; keeping the newest.', { groupId: String(groupId).slice(0, 8) });
+    }
+    localStorage.setItem(key, JSON.stringify(map));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function readActorBindings(ownerPk, groupId) {
+  const key = actorKeyFor(ownerPk, groupId);
+  if (!key) return {};
+  try {
+    const parsed = JSON.parse(localStorage.getItem(key) || '{}');
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+    const out = {};
+    for (const [account, pin] of Object.entries(parsed)) {
+      if (/^[0-9a-f]{64}$/.test(account) && /^[0-9a-f]{66}$/.test(String(pin))) out[account] = pin.toLowerCase();
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
+
 function scoped(ownerPk) {
   return String(ownerPk || '').toLowerCase().slice(0, 16);
 }

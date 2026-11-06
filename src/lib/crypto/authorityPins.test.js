@@ -5,6 +5,8 @@ import {
   readAuthorityPin,
   forgetAuthorityPin,
   authorityPinGetterFor,
+  rememberActorBinding,
+  readActorBindings,
 } from './authorityPins.js';
 
 const OWNER = 'a'.repeat(64);
@@ -45,4 +47,33 @@ test('forget clears both layers; getter binds for loadDocStanding', () => {
   const get = authorityPinGetterFor(OWNER);
   rememberAuthorityPin(OWNER, GID, PIN);
   return get(GID).then((pin) => assert.equal(pin, PIN));
+});
+
+// ── Step 2 slice 3: verified act bindings (publisher capture) ───────────────
+
+test('a verified act binding records, reads back, and refuses junk', () => {
+  const account = '41'.repeat(32);
+  const pin = '02ab'.repeat(16) + 'cd'; // 66 hex
+  assert.equal(pin.length, 66);
+  new FakeStorage().map.clear();
+  globalThis.localStorage = new FakeStorage();
+  assert.equal(rememberActorBinding(OWNER, 'g-capture', account, pin), true);
+  assert.deepEqual(readActorBindings(OWNER, 'g-capture'), { [account]: pin });
+  // Case normalization on both halves.
+  rememberActorBinding(OWNER.toUpperCase(), 'g-capture', account, pin);
+  assert.deepEqual(readActorBindings(OWNER, 'g-capture'), { [account]: pin });
+  // A second pin for the same account replaces the first (newest decode won).
+  const newer = '03ee'.repeat(16) + 'ff';
+  rememberActorBinding(OWNER, 'g-capture', account, newer);
+  assert.deepEqual(readActorBindings(OWNER, 'g-capture'), { [account]: newer });
+  // Accounts are scoped per group; another group reads nothing.
+  assert.deepEqual(readActorBindings(OWNER, 'g-other'), {});
+  // Junk shapes are refused at the door.
+  assert.equal(rememberActorBinding('', 'g', account, pin), false);
+  assert.equal(rememberActorBinding(OWNER, '', account, pin), false);
+  assert.equal(rememberActorBinding(OWNER, 'g-capture', 'zz', pin), false);
+  assert.equal(rememberActorBinding(OWNER, 'g-capture', account, '66-not'), false);
+  // Corrupt stored JSON reads empty rather than throwing.
+  localStorage.setItem(`cipher_group_actor_pin_${OWNER.slice(0, 16)}_g-junk`, '{oops');
+  assert.deepEqual(readActorBindings(OWNER, 'g-junk'), {});
 });
