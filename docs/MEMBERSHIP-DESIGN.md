@@ -489,6 +489,14 @@ the v1 decoder for historical relay events. A missing, malformed, locked, or
 unreadable key blocks new document publication and membership rotation; no
 publisher invents a replacement key during an update.
 
+Two v2 AAD forms have existed: the original `cipher-gmemdoc-v2|<gid>` and the
+pin-bound `cipher-gmemdoc-v2|<pin>|<gid>` form. Both require the same random
+governance key. Readers try both authenticated-data forms for v2 because the
+wire version did not distinguish them; a successful AES-GCM authentication
+selects the format. New publications use only the pin-bound form. The reader
+never tries the public v1-derived key for a v2 envelope, and no new marker is
+needed to keep these already-published envelopes compatible.
+
 Creation stores and reads back its random key before sending the group's create
 event. A later relay failure leaves the group and signed genesis document on
 the creator's device with that key, and reports that recovery is needed before

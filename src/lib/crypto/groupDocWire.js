@@ -58,6 +58,13 @@ function senderAad(version, groupId, pin = '') {
     : `${prefix}${groupId}`);
 }
 
+// The first v2 publisher omitted the pin from its AAD. Keep this exact
+// historical AAD as a read-only candidate; the random doc key is still
+// mandatory, and all new envelopes use senderAad() above.
+function legacyV2SenderAad(groupId) {
+  return new TextEncoder().encode(`${ENVELOPE_V2_AAD_PREFIX}${groupId}`);
+}
+
 // Every new document requires the held governance-doc key (v2, SEC-1).
 // `docKey` may be raw bytes or hex. Version 1 is decode-only below.
 // Note: version 2 binds NO epoch counter into its AAD - the secret itself
@@ -100,17 +107,22 @@ export async function openSealedDocBody(contentJson, pin, groupId, docKey = null
   if (envelope.v !== 1 && envelope.v !== 2) return null;
   const unb64 = (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
   // Version 1 is a historical decode-only format. Version 2 is always opened
-  // with the held random secret; neither version tries the other's key path.
+  // with the held random secret. Its two AAD forms are tried for compatibility
+  // because both were published as v:2; neither version tries the other's key path.
   const normalized = normalizeDocKey(docKey);
+  const v2AesInput = envelope.v === 2 && normalized ? await deriveDocAesInput(normalized) : null;
   const candidates = envelope.v === 2
-    ? (normalized ? [await deriveDocAesInput(normalized)] : [])
-    : [await legacyDocContentKey(pin, groupId)];
-  for (const aesInput of candidates) {
+    ? (v2AesInput
+      ? [{ aesInput: v2AesInput, aad: senderAad(2, groupId, pin) },
+        { aesInput: v2AesInput, aad: legacyV2SenderAad(groupId) }]
+      : [])
+    : [{ aesInput: await legacyDocContentKey(pin, groupId), aad: senderAad(1, groupId) }];
+  for (const { aesInput, aad } of candidates) {
     if (!aesInput) continue;
     try {
       const key = await importAesDecryptKey(aesInput);
       const pt = await globalThis.crypto.subtle.decrypt(
-        { name: 'AES-GCM', iv: unb64(envelope.iv), additionalData: senderAad(envelope.v, groupId, pin) },
+        { name: 'AES-GCM', iv: unb64(envelope.iv), additionalData: aad },
         key,
         unb64(envelope.ct),
       );
@@ -206,8 +218,9 @@ export async function loadMemberDocHeads(groupId, { limit = 5 } = {}) {
 // and store; this is the third piece). The event's OWN author is not believed:
 // the signature verifies against the OUT-OF-BAND pin this device holds (H5),
 // so a relay inventing events or a stranger publishing under any key reads
-// nothing. V2 content is sealed under the held random key with pin+gid AAD;
-// v1's public pin+gid derivation is used only for historical decoding.
+// nothing. V2 content is sealed under the held random key; current v2 binds
+// pin+gid as AAD and the pre-pin v2 AAD remains a decode-only candidate. V1's
+// public pin+gid derivation is used only for historical decoding.
 
 // One wire event → {stored, opened} or null. Every refusal is quiet-by-design:
 // a wrong-pin or foreign-key doc is relay noise, not an error to surface, and

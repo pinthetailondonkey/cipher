@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { finalizeEvent } from 'nostr-tools';
 import {
   MEMBER_DOC_KIND,
   memberDocTag,
@@ -21,6 +22,26 @@ const SK = new Uint8Array(32).fill(21);
 const PIN = authorityPinOf(SK);
 // SEC-1: the remediation's per-group secret, as if minted at genesis and held.
 const DOC_KEY = new Uint8Array(32).fill(77);
+
+// Fixed fixture produced with src/lib/crypto/groupDocWire.js from parent
+// commit 040fda9. Its v2 AAD is cipher-gmemdoc-v2|<gid> (without the pin).
+const LEGACY_V2 = {
+  gid: 'legacy-v2-compatibility-audit'.padEnd(64, '0'),
+  pin: '03d793631af7aa0e709439dd47fc001acd0b0727670b6670ea528ac83cb0127f4a',
+  signed: {
+    id: '1bab24caafc7c2997523432c438bb81e533ff015d7486c7a54b78726e961591b',
+    body: {
+      v: 2, t: 'gmemdoc',
+      gid: 'legacy-v2-compatibility-audit'.padEnd(64, '0'),
+      gen: 0, epoch: 7, parents: [],
+      members: [{ pubkey: '0'.repeat(62) + 'aa', role: 'member', gen: 0 }],
+      removed: [],
+    },
+    at: 1793999876,
+    sig: 'dfbe52c2eee64a2a81a7302ed1205f50de9984d272aef9a3c58fdcd151c403a224e41d23c6023b5a1cc3846a7efc7a11c2362a4d386275475527821746821f02',
+  },
+  envelope: '{"v":2,"iv":"3E7NpL2idcv10sRf","ct":"HIOyKUSux1da6IHPxfD32qUW8dcyn59o+M1MXnOrZtC3ceSBcpRiBMCFsUYFpzfFd1Spoc8UFaJvfExT2uCxs4TMMvPF/0D6biJEXzwkJkWnRwcaXQH1J7CS3yu7KejCW54hNBXwOOgWg3nPkqZzogBU17WGGPDJf+QanEW3Lh4xGHmk5Hj/GEb6rSY3mcWNg8fI+CO/IC06yReWJSZi5X69sLEO0HxnSepCclG6MooklPtaH08wbZOru/7NGSvbMkek9sGCgbKcT7SjDOmv5fNz61jYb4hM2SuTWQ8qWGsGZZlZeyyboYDJcnWfz514XTUnOp8AK0grLBlZ09OZGiDKG/2MGjr0sjkkQ7F7bOLzhfHFG/X6J3fOQaYVuehqOaoEntwOXs27kzYIaV+slFqlprRLiI3PumG/29EKRvAAnHwhF9jGzmJBLneI6y4HubnQsAGqxB5kWglSvhAuI4WLJbfQqwu4PxKH3iqCYoI8uFeXi8umnqrUKlsUinG2UiQ1rXoZJPQRMpFI3qBuKn40yxzdnuBJzO75nv3iCW3Je5sjQjq7YCzvX1ipmOOTrmzf1ANbIqvWZfDjsE+z2BVzR5sHYYlXSByxdpICmP6Tk+xoE+ZmmXS/XIzGVSw6ddSO1EK/"}',
+};
 
 function pad(n) { return String(n).padStart(64, String(n % 10)); }
 
@@ -91,6 +112,41 @@ test('wrong pin or gid reads nothing; seal/open round-trips through the real one
   assert.equal(await openSealedDocBody(sealed, PIN, 'other'), null); // wrong gid AAD
   assert.equal(await openSealedDocBody('not-json', PIN, GID), null);
   assert.equal(await openSealedDocBody(JSON.stringify({ v: 2 }), PIN, GID), null);
+});
+
+test('parent-commit v2 fixture decrypts with its original AAD and held key', async () => {
+  assert.equal(LEGACY_V2.pin, PIN, 'fixture authority is the deterministic test authority');
+  const opened = await openSealedDocBody(LEGACY_V2.envelope, LEGACY_V2.pin, LEGACY_V2.gid, DOC_KEY);
+  assert.equal(opened?.id, LEGACY_V2.signed.id);
+  assert.deepEqual(opened?.body, LEGACY_V2.signed.body);
+  assert.equal(await openSealedDocBody(LEGACY_V2.envelope, LEGACY_V2.pin, LEGACY_V2.gid, new Uint8Array(32).fill(78)), null);
+  assert.equal(await openSealedDocBody(LEGACY_V2.envelope, LEGACY_V2.pin, LEGACY_V2.gid), null);
+
+  // Only public fields are available to this simulated observer. Even trying
+  // the old public pin/gid-derived v1 material as a candidate v2 secret fails.
+  const publicMaterial = new TextEncoder().encode(`cipher-gmemdoc-key-v1:${LEGACY_V2.pin}:${LEGACY_V2.gid}`);
+  const publicDerivedCandidate = new Uint8Array(await crypto.subtle.digest('SHA-256', publicMaterial));
+  assert.equal(await openSealedDocBody(LEGACY_V2.envelope, LEGACY_V2.pin, LEGACY_V2.gid, publicDerivedCandidate), null);
+
+  // Wrap the fixed ciphertext in a real signed kind-30079 event and exercise
+  // the same verification + storage door used by relay ingestion.
+  const event = finalizeEvent({
+    kind: MEMBER_DOC_KIND,
+    created_at: 1800000000,
+    tags: [['d', memberDocTag(LEGACY_V2.gid)]],
+    content: LEGACY_V2.envelope,
+  }, SK);
+  __setDocsDbForTests({ groupMemberDocs: fakeDocsTable() });
+  try {
+    const stored = await ingestMemberDocEvent(event, {
+      pin: LEGACY_V2.pin, groupId: LEGACY_V2.gid, docKey: DOC_KEY,
+    });
+    assert.equal(stored?.stored, true, 'legacy-v2 event passes signature verification and at-rest storage');
+    assert.equal((await loadMemberDocHeads(LEGACY_V2.gid))[0]?.id, LEGACY_V2.signed.id);
+    assert.equal(await ingestMemberDocEvent(event, {
+      pin: LEGACY_V2.pin, groupId: LEGACY_V2.gid, docKey: new Uint8Array(32).fill(78),
+    }), null, 'wrong key is rejected by actual ingest');
+  } finally { __setDocsDbForTests(null); }
 });
 
 test('rememberVerifiedDoc stores only verified docs; tampered refused', async () => {
@@ -227,9 +283,11 @@ test('SEC-1 observer attacks: derive the doc key from published event fields alo
   let opened = null;
   for (const prefix of ['02', '03', '']) {
     const candidatePin = `${prefix}${event.pubkey.toLowerCase()}`;
-    const material = new TextEncoder().encode(`cipher-gmemdoc-key-v1:${candidatePin}:${observerGid}`);
-    const digest = await globalThis.crypto.subtle.digest('SHA-256', material);
-    const key = await globalThis.crypto.subtle.importKey('raw', digest, { name: 'AES-GCM' }, false, ['decrypt']);
+    assert.equal(await openSealedDocBody(event.content, candidatePin, observerGid), null, 'public event data without a governance key cannot open new v2');
+    const publicDocMaterial = new TextEncoder().encode(`cipher-gmemdoc-key-v1:${candidatePin}:${observerGid}`);
+    const publicDocCandidate = new Uint8Array(await globalThis.crypto.subtle.digest('SHA-256', publicDocMaterial));
+    assert.equal(await openSealedDocBody(event.content, candidatePin, observerGid, publicDocCandidate), null, 'publicly derived v1 material is not accepted as a v2 key');
+    const key = await globalThis.crypto.subtle.importKey('raw', publicDocCandidate, { name: 'AES-GCM' }, false, ['decrypt']);
     try {
       const pt = await globalThis.crypto.subtle.decrypt(
         { name: 'AES-GCM', iv: unb64(envelope.iv), additionalData: new TextEncoder().encode(`cipher-gmemdoc-v1|${observerGid}`) },
