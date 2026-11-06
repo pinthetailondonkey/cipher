@@ -39,8 +39,16 @@ async function pinFor(groupId) {
 export function docSnapshotShape(doc) {
   // The consumers' existing gates take the old snapshot shape:
   // [{pubkey, role}] / strings. Resolving the doc folds tombstones first.
+  // Step 2 slice 3: a row that names an actor pin keeps it — the (account ->
+  // pin) map the control-authorization cutover resolves senders through.
+  // memberKey-style consumers read .pubkey and are untouched by the extra
+  // field; isGroupAdmin reads role.
   const standing = resolveMembership(doc);
-  return standing.map((row) => ({ pubkey: row.pubkey, role: row.role || 'member' }));
+  return standing.map((row) => ({
+    pubkey: row.pubkey,
+    role: row.role || 'member',
+    ...(row.actor ? { actor: row.actor } : {}),
+  }));
 }
 
 /**

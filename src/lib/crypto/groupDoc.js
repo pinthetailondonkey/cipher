@@ -23,15 +23,33 @@ const HEX64 = /^[0-9a-f]{64}$/;
 const HEX66 = /^[0-9a-f]{66}$/;
 
 export const DOC_T = 'gmemdoc';
-export const DOC_V = 1;
+// DOC_V 2: member rows may carry an `actor` pin (the per-group authority
+// key's compressed pubkey, 66 hex). Step 2 slice 3 of MEMBERSHIP-DESIGN.md:
+// the roster is the out-of-band map that lets a receiver translate an act's
+// actor pin back to the account that acted, so control authorization keeps
+// working after control kinds sign with the actor key. Old rows without the
+// field canonicalize identically under v1; the version rises only because
+// pinned rows are a new canonical shape, and a v1 verifier seeing one must
+// refuse rather than silently drop a field it would then re-derive wrong.
+export const DOC_V = 2;
 
 function normalizePubkey(value) {
   const text = String(value || '').toLowerCase();
   return HEX64.test(text) ? text : '';
 }
 
-// A member row carries the generation that admitted it, so a tombstone at a
-// higher generation beats it without any clock (H1(b): the entry's own `gen`).
+// A member row carries the generation that admitted it (H1(b): the entry's
+// own `gen` beats any clock) and, since DOC_V 2, MAY carry the member's actor
+// pin: the compressed pubkey (66 hex) of this group's authority key as that
+// account derives it. The publisher writes its own when it knows the derivation;
+// rows without one stay legal so pre-pin docs keep reading.
+const PIN_FIELD = 'actor';
+
+function normalizeActorPin(value) {
+  const text = String(value || '').toLowerCase().trim();
+  return HEX66.test(text) ? text : '';
+}
+
 export function memberRow(row) {
   if (!row) return null;
   const pubkey = normalizePubkey(typeof row === 'string' ? row : row?.pubkey);
@@ -39,7 +57,14 @@ export function memberRow(row) {
   const role = row && typeof row === 'object' && typeof row.role === 'string' && row.role
     ? row.role : 'member';
   const gen = Number.isInteger(Number(row?.gen)) && Number(row.gen) >= 0 ? Number(row.gen) : null;
-  return gen === null ? null : { pubkey, role, gen };
+  if (gen === null) return null;
+  // Only an object row can carry a pin; a bare string never had one to lose.
+  const actor = row && typeof row === 'object' ? normalizeActorPin(row[PIN_FIELD]) : '';
+  return actor ? { pubkey, role, gen, [PIN_FIELD]: actor } : { pubkey, role, gen };
+}
+
+export function actorPinOfRow(row) {
+  return row && typeof row === 'object' ? normalizeActorPin(row[PIN_FIELD] || row.pin) : '';
 }
 
 export function removedRow(row) {
@@ -161,14 +186,23 @@ export async function verifySignedDoc({ signed, pin }) {
 }
 
 // Genesis: first doc of a group, no parent, generation 0.
-export async function genesisDocBody({ gid, epoch, members }) {
+export async function genesisDocBody({ gid, epoch, members, actorPins = null }) {
+  // The creator stamps its own actor pin at genesis when it knows the
+  // derivation (it just derived it). Later members stamp theirs through the
+  // admit path (applyDocOps), so a join is what puts a pin beside a name.
+  const pinsByKey = new Map(Object.entries(actorPins || {}).map(([key, value]) => [String(key).toLowerCase(), String(value).toLowerCase().trim()]));
   return canonicalBody({
     gid,
     gen: 0,
     epoch,
     parents: [],
     members: (members || []).map((pubkey) => ({
-      pubkey, role: 'member', gen: 0,
+      pubkey,
+      role: 'member',
+      gen: 0,
+      ...(pinsByKey.has(String(pubkey).toLowerCase()) && pinsByKey.get(String(pubkey).toLowerCase())
+        ? { actor: pinsByKey.get(String(pubkey).toLowerCase()) }
+        : {}),
     })),
     removed: [],
   });
@@ -183,11 +217,15 @@ export function applyDocOps(headCanonical, { admit = [], remove = [], demote = [
   const head = canonicalBody(headCanonical);
   if (!head || !Number.isInteger(gen) || gen <= head.gen) return null;
   const membersByKey = new Map(head.members.map((row) => [row.pubkey, { ...row }]));
-  const removedByKey = new Map(head.removed.map((row) => [row.pubkey, { ...row }]));
+  const removedByKey = new Map(head.removed.map((row) => ({ ...row })).map((row) => [row.pubkey, row]));
   for (const entry of admit) {
     const pubkey = normalizePubkey(typeof entry === 'string' ? entry : entry?.pubkey);
     if (!pubkey) continue;
-    membersByKey.set(pubkey, { pubkey, role: 'member', gen });
+    const prior = membersByKey.get(pubkey);
+    // An admit that names a pin stamps it; one without leaves whatever the
+    // held row carried (a re-admit after kick should not have to restate it).
+    const actor = typeof entry === 'object' ? normalizeActorPin(entry.actor || entry.pin) : '';
+    membersByKey.set(pubkey, { pubkey, role: 'member', gen, ...(actor ? { [PIN_FIELD]: actor } : (prior?.actor ? { [PIN_FIELD]: prior.actor } : {})) });
     // An admit clears the tombstone only when it answers it (H1(b)): a removal
     // recorded at gen R survives unless someone deliberately re-admits at >= R.
     const tombstone = removedByKey.get(pubkey);

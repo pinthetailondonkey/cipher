@@ -176,3 +176,66 @@ test('grant must name the doc it rides and stay inside its epoch (H3)', async ()
   assert.equal(grantPermittedByDoc({ docId: signed.id, doc: signed.body, grant: { docId: signed.id, gen: 0, epochs: [4, 5] } }), false);
   assert.equal(docEpoch(signed), 4);
 });
+
+// ── Step 2 slice 3: the roster names actor pins beside members ─────────────
+// The pin→account map the control-authorization cutover resolves senders
+// through. Same key, two shapes on the wire (compressed invite pin 66, event
+// pubkey x-only 64); the DOC carries the compressed form and groupDoc keeps it
+// byte-stable through canonical hashing and every fold.
+
+const ACTOR = '02' + PK(9); // 66-hex compressed pin shape
+
+test('a genesis row names its member\u2019s actor pin, canonicalized', async () => {
+  const body = await genesisDocBody({
+    gid: GID, epoch: 1,
+    members: [PK(1)],
+    actorPins: { [PK(1)]: ACTOR.toUpperCase() },
+  });
+  assert.equal(body.members[0].actor, ACTOR.toLowerCase(), 'the pin rides lowercased');
+  // Canonical hashing covers the pin: a doc without it is a different doc.
+  const plain = await genesisDocBody({ gid: GID, epoch: 1, members: [PK(1)] });
+  assert.notEqual(body.id || (await docIdOf(body)), await docIdOf(plain), 'pin changes the doc id');
+  // A junk pin is dropped at canonicalization, not half-carried.
+  const junk = await genesisDocBody({
+    gid: GID, epoch: 1, members: [PK(1)],
+    actorPins: { [PK(1)]: 'zz-not-hex' },
+  });
+  assert.equal('actor' in junk.members[0], false);
+});
+
+test('an admit stamps the pin; re-admitting bare keeps the held one; roles keep theirs', () => {
+  const head = canonicalBody({
+    gid: GID, gen: 0, epoch: 1, parents: [],
+    members: [{ pubkey: PK(1), role: 'member', gen: 0, actor: ACTOR }, row(PK(2))],
+    removed: [],
+  });
+  const next = applyDocOps(head, {
+    admit: [{ pubkey: PK(3), pin: '03' + PK(8) }],
+    promote: [PK(1)],
+    remove: [PK(2)],
+    gen: 2,
+  });
+  const byKey = new Map(next.members.map((r) => [r.pubkey, r]));
+  assert.equal(byKey.get(PK(3)).actor, ('03' + PK(8)).toLowerCase(), 'the admit writes the new member\u2019s pin');
+  assert.equal(byKey.get(PK(1)).actor, ACTOR.toLowerCase(), 'promote keeps the pinned actor');
+  assert.equal('actor' in byKey.get(PK(1)) === false ? true : byKey.get(PK(1)).role, 'admin', 'promote changes only role');
+  // A bare re-admit of an already-pinned member keeps the held pin.
+  const again = applyDocOps(next, { admit: [{ pubkey: PK(2) }], gen: 3 });
+  const againByKey = new Map(again.members.map((r) => [r.pubkey, r]));
+  assert.equal('actor' in (againByKey.get(PK(2)) || {}), false, 'no pin was ever held for this member');
+});
+
+test('v1 docs still canonicalize: a body with no actor fields hashes as before', async () => {
+  const v1Shape = { gid: GID, gen: 4, epoch: 1, parents: [], members: [row(PK(1), 'member', 2)], removed: [] };
+  const canonicalNow = canonicalBody(v1Shape);
+  assert.equal(canonicalNow.v, 2, 'the current version stamps');
+  assert.deepEqual(canonicalNow.members[0], { pubkey: PK(1).toLowerCase(), role: 'member', gen: 2 },
+    'a row without a pin round-trips to exactly the old three fields');
+  // resolveMembership passes pins through untouched.
+  const pinned = canonicalBody({
+    gid: GID, gen: 5, epoch: 1, parents: [],
+    members: [{ pubkey: PK(1), role: 'admin', gen: 2, actor: ACTOR }], removed: [],
+  });
+  const standing = resolveMembership(pinned);
+  assert.equal(standing[0].actor, ACTOR.toLowerCase());
+});

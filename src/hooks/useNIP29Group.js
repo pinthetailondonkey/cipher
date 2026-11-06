@@ -810,7 +810,16 @@ export function useNIP29Group({ identity }) {
       const skBytes = identity.sk instanceof Uint8Array ? identity.sk : Uint8Array.from(identity.sk);
       const { privateKeyBytes, pin } = await groupAuthorityKey(skBytes, groupId);
       rememberAuthorityPin(identity.pk, groupId, pin);
-      const body = await genesisDocBody({ gid: groupId, epoch: 1, members: [identity.pk.toLowerCase()] });
+      // Step 2 slice 3: the genesis row names this account's actor pin beside
+      // it — the same key that signs this device's kind-9s and docs. Every
+      // later member stamps its own through the admit path when the doc's
+      // publisher has verified the (account -> pin) pair out of band.
+      const body = await genesisDocBody({
+        gid: groupId,
+        epoch: 1,
+        members: [identity.pk.toLowerCase()],
+        actorPins: { [identity.pk.toLowerCase()]: pin },
+      });
       const signed = await signDocEvent(body, privateKeyBytes);
       const nowSec = Math.floor(Date.now() / 1000);
       await rememberVerifiedDoc({ groupId, pin, signed });
