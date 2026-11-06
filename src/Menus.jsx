@@ -1,10 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { ORDER_STATUS } from './lib/paymentState';
 import { Search, ChevronRight, ShoppingBag, X, Link2 } from 'lucide-react';
-import OneTapCheckout from './components/OneTapCheckout';
-import { useNIP44DM } from './hooks/useNIP44DM';
 import { useChatStore } from './store/chatStore';
-import { saveMessage, db } from './db';
 import { haptic } from './lib/haptics';
 import { copyText } from './lib/copyText';
 import { generalRelays } from './lib/relays';
@@ -14,9 +10,7 @@ import Avatar from './components/ui/Avatar';
 import EmptyState from './components/ui/EmptyState';
 import { pressable } from './components/ui/Button';
 import { SkeletonGrid } from './components/ui/Skeleton';
-import { listingFromEvent, orderProduct, priceLabel, productShareLink } from './lib/listing';
-import { discardRejectedOrder } from './lib/orderLedger';
-import { stampArrival } from './features/chat/media';
+import { listingFromEvent, priceLabel, productShareLink } from './lib/listing';
 import { noHexName } from './lib/npub';
 
 // The menus tab is a browse first: vendors on the network and the items
@@ -77,20 +71,15 @@ function MenuTile({ item, onBuy, onCopyLink }) {
   );
 }
 
-export default function Menus({ identity, setActiveTab }) {
+export default function Menus() {
   const [query, setQuery] = useState('');
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  // Checkout lives in the chat store, not component state (fold from the
-  // desktop lane's Shop change): a saved product link (?product=&vendor=)
-  // sets it on boot, before this screen mounts, and the same field still
-  // holds the screen's own Buy taps. The store is presentation-only state
-  // here; no §0 selector was renamed.
-  const checkoutProduct = useChatStore((s) => s.checkoutProduct);
+  // Checkout presentation is owned by Chat, which also renders products from
+  // threads. Menus only selects the product so exactly one sheet can mount.
   const setCheckoutProduct = useChatStore((s) => s.setCheckoutProduct);
   const profiles = useChatStore((state) => state.profiles);
-  const { sendDM } = useNIP44DM({ identity });
 
   // One loader, named so the error state can call it again. The ref guard
   // stops a second tap from starting a fetch while the first is still out.
@@ -137,67 +126,6 @@ export default function Menus({ identity, setActiveTab }) {
   // not on this window's origin: inside the desktop build the origin is a
   // loopback address, and that link opens nowhere else.
   const shareProduct = async (product) => copyText(productShareLink(product, APP_HOST_URL));
-
-  const confirmOrder = async (order) => {
-    const payload = order?.type === 'cipher_order' ? order : {
-      type: 'cipher_order',
-      status: ORDER_STATUS.PENDING,
-      vendorPubkey: order?.vendorPubkey || '',
-      product: orderProduct(order),
-    };
-    const vendorPubkey = payload.vendorPubkey;
-    if (!identity?.sk || !vendorPubkey) throw new Error('Unlock your account to contact the seller.');
-    if (vendorPubkey === identity.pk) throw new Error('You cannot place an order with yourself.');
-    const tempId = `temp-${Date.now()}`;
-    const optimistic = stampArrival({
-      id: tempId,
-      clientId: tempId,
-      isSender: true,
-      isGroup: false,
-      pubkey: identity.pk,
-      timestamp: Math.floor(Date.now() / 1000),
-      local_timestamp: Date.now(),
-      deliveryStatus: 'sending',
-      data: payload,
-    });
-    useChatStore.getState().setDms((current) => ({
-      ...current,
-      [vendorPubkey]: [...(current[vendorPubkey] || []), optimistic],
-    }));
-    await saveMessage(vendorPubkey, optimistic);
-    const result = await sendDM(vendorPubkey, payload, tempId);
-    if (!result?.success) {
-      // The order was written twice — the visible list and the database. Both
-      // go, so a reload cannot read the failed order back. A queued order
-      // never reaches here; it is a send, and it stays.
-      const cleanup = await discardRejectedOrder({
-        vendorPubkey,
-        tempId,
-        setDms: useChatStore.getState().setDms,
-        removeStored: (id) => db.messages.delete(id),
-      });
-      const reason = result?.error || 'The order request could not be sent.';
-      throw new Error(cleanup.cleared
-        ? reason
-        : `${reason} The saved copy could not be removed from this device, so a reload may show it again.`);
-    }
-    const confirmed = {
-      ...optimistic,
-      id: result.event?.id || tempId,
-      timestamp: result.event?.created_at || optimistic.timestamp,
-      deliveryStatus: result.queued ? 'queued' : 'sent',
-    };
-    await saveMessage(vendorPubkey, confirmed);
-    useChatStore.getState().setDms((current) => ({
-      ...current,
-      [vendorPubkey]: (current[vendorPubkey] || []).map((message) => (
-        message.clientId === tempId ? confirmed : message
-      )),
-    }));
-    useChatStore.getState().openChat('dm', vendorPubkey);
-    setCheckoutProduct(null);
-    setActiveTab?.('chat');
-  };
 
   // The browse: the network's published items grouped per vendor. Search
   // matches a vendor's name or an item's; a section keeps only its matches.
@@ -327,20 +255,6 @@ export default function Menus({ identity, setActiveTab }) {
           </p>
         </footer>
       </div>
-      {checkoutProduct && (
-        <OneTapCheckout
-          product={checkoutProduct}
-          identity={identity}
-          onConfirmOrder={confirmOrder}
-          onJumpToChat={() => {
-            const vendor = checkoutProduct.vendorPubkey;
-            setCheckoutProduct(null);
-            if (vendor) useChatStore.getState().openChat('dm', vendor);
-            setActiveTab?.('chat');
-          }}
-          onClose={() => setCheckoutProduct(null)}
-        />
-      )}
     </div>
   );
 }

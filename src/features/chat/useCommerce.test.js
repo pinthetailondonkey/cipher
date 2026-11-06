@@ -64,3 +64,18 @@ test('row 19c-s: the payment-state refusal speaks this device\'s words, never th
     'row 19c-s: the payment-state refusal no longer says what did not happen in this device\'s own words',
   );
 });
+
+test('the checkout callback reports failed, queued, or relay-accepted sends from sendOutcome', () => {
+  assert.match(SOURCE, /const outcome = sendOutcome\(result\)/,
+    'checkout uses the shared send classifier');
+  assert.match(SOURCE, /if \(outcome !== 'sent' && outcome !== 'queued'\)/,
+    'a refused or malformed write is rolled back');
+  assert.match(SOURCE, /return \{ outcome: 'failed', error \}/,
+    'the sheet receives a failure instead of mistaking undefined for success');
+  assert.match(SOURCE, /return \{ outcome: confirmedMessage\.deliveryStatus === 'queued' \? 'queued' : 'sent' \}/,
+    'the sheet receives the persisted delivery state');
+  assert.match(SOURCE, /openChat\('dm', vendorPubkey\)/,
+    'the thread opens after the write result is known');
+  assert.doesNotMatch(SOURCE, /setCheckoutProduct\(null\)/,
+    'the shared checkout stays mounted long enough to show the outcome');
+});

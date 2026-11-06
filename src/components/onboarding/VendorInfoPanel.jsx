@@ -9,7 +9,7 @@ export default function VendorInfoPanel({ onBack }) {
     <div className="pb-6 pt-2 text-center">
       <h2 className="mb-3 text-[20px] font-bold tracking-tight text-ink">Selling</h2>
       <p className="mb-4 px-2 text-[14px] leading-relaxed text-inkMuted">
-        Turn on selling in Profile and add a paying address. Publish items to your menu and share the link. Orders reach you in chat, and payment goes straight to your address. Cipher never holds the money.
+        Under You, choose Start selling and add your payment details. Publish menu items and share the link. Order requests reach you in Threads, and payment goes straight to your address. Cipher never holds the money.
       </p>
       <Button onClick={onBack} fullWidth>
         Back to the tour

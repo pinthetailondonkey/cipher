@@ -1,7 +1,7 @@
 import ScreenHeader from '../ui/ScreenHeader';
 import { HOW_TO_STEPS } from '../../lib/howToGuide';
 
-// The full-screen guide behind Profile → How to use. Words only: the same
+// The full-screen guide behind You → How to use. Words only: the same
 // header, cards and numbering the app already uses — SaveKey numbers the
 // recovery words the same way — so this screen restyles nothing. The after-
 // signup tour (TutorialModal) keeps its own door and is untouched here.

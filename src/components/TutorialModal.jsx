@@ -13,11 +13,11 @@ const steps = [
   },
   {
     title: "Encrypted Chats",
-    desc: "Open a thread under Chats for private messages. Groups are the room next door, and Menus is the shelf beside them.",
+    desc: "Open Threads. Chats holds private messages, Groups holds your rooms, and Menus shows vendor menus.",
   },
   {
     title: "Find the Menu",
-    desc: "Menus lists what vendors are selling right now. Under Groups, Discover is the door to rooms and shops you are not in yet.",
+    desc: "In Threads, choose Menus to see what vendors are selling. Choose Groups, then Discover, to find rooms you have not joined.",
   },
   {
     // The Selling step is a door, not prose. Its body would teach the paying
@@ -85,7 +85,7 @@ function TutorialSteps({ onClose }) {
                 </>
               )}
               {last && (
-                <p className="mb-4 px-2 text-[13px] leading-relaxed text-accentText">You can reopen this guide any time under Profile → How to use.</p>
+                <p className="mb-4 px-2 text-[13px] leading-relaxed text-accentText">You can reopen this guide any time under You → How to use.</p>
               )}
               <div className="mb-6 flex gap-2">
                 {steps.map((_, i) => (

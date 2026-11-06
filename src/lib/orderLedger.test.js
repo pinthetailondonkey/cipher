@@ -315,20 +315,26 @@ test('each orders-ledger row carries the card\'s human next-step line', () => {
 });
 
 test('the checkout failure branch cleans up, and a queued order never takes that path', () => {
-  const menus = read('../Menus.jsx');
-  assert.match(menus, /import \{ saveMessage, db \} from '\.\/db'/);
-  assert.match(menus, /discardRejectedOrder\(\{/);
-  assert.match(menus, /removeStored: \(id\) => db\.messages\.delete\(id\)/);
-  // The cleanup sits inside the explicit failure branch, after the send.
-  const failure = menus.slice(menus.indexOf('if (!result?.success)'), menus.indexOf('const confirmed = {'));
-  assert.match(failure, /discardRejectedOrder/);
-  assert.match(failure, /a reload may show it again/);
-  assert.equal(/db\.messages\.delete/.test(failure), true);
-  // Nothing after the failure branch deletes a row, so a queued order stays.
-  const after = menus.slice(menus.indexOf('const confirmed = {'));
-  assert.equal(/discardRejectedOrder/.test(after), false);
-  assert.equal(/db\.messages\.delete/.test(after), false);
-  assert.match(menus, /deliveryStatus: result\.queued \? 'queued' : 'sent'/);
+  const commerce = read('../features/chat/useCommerce.js');
+  const checkout = commerce.slice(
+    commerce.indexOf('const sendCheckoutOrder'),
+    commerce.indexOf('const beginOrderWithVendor'),
+  );
+  assert.match(checkout, /const outcome = sendOutcome\(result\)/);
+  // A refused write removes the optimistic copy from both the store and disk.
+  const failure = checkout.slice(
+    checkout.indexOf("if (outcome !== 'sent' && outcome !== 'queued')"),
+    checkout.indexOf('let confirmedMessage ='),
+  );
+  assert.match(failure, /setDms\([\s\S]*filter\(\(message\) => message\.clientId !== tempId\)/);
+  assert.match(failure, /await db\.messages\.delete\(tempId\)/);
+  assert.match(failure, /return \{ outcome: 'failed', error \}/);
+  // Accepted and queued writes settle the stored row; neither runs rollback.
+  const accepted = checkout.slice(checkout.indexOf('let confirmedMessage ='));
+  assert.match(accepted, /deliveryStatus: outcome/);
+  assert.match(accepted, /result\.queued && !\(await db\.outbox\.get\(result\.event\.id\)\)/);
+  assert.match(accepted, /return \{ outcome: confirmedMessage\.deliveryStatus === 'queued' \? 'queued' : 'sent' \}/);
+  assert.equal(/db\.messages\.delete|outcome: 'failed'/.test(accepted), false);
 });
 
 // ————— which ledger an order sits on: only a receipt that PASSED the gate —————

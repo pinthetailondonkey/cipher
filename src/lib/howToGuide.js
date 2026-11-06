@@ -1,4 +1,4 @@
-// The Profile guide's steps: the founder's approved copy (2026-10-30),
+// The You guide's steps: current navigation and security copy,
 // verbatim. Fifteen numbered steps. Words only; the screen that renders
 // this list owns every style choice.
 export const HOW_TO_STEPS = [
@@ -12,11 +12,11 @@ export const HOW_TO_STEPS = [
   },
   {
     title: "Save your recovery phrase",
-    body: "Open Profile, then Backup. It holds your secret key and twelve words. Write the twelve words on paper and keep them somewhere only you can reach. Never type them into a chat, a photo or a website. Anyone who has them is you.",
+    body: "Open You, then Backup. It holds your secret key and recovery phrase. Write the words on paper and keep them somewhere only you can reach. Never type them into a chat, a photo or a website. Anyone who has them is you.",
   },
   {
-    title: "Chats",
-    body: "Open Chats for private messages. Tap a row to show the preview of a chat you have not opened yet. Press and hold a row (or right-click on a computer) for its options: pin, mute, archive, block. Messages from people you have not answered wait under Profile, then Message requests.",
+    title: "Threads",
+    body: "Open Threads. The Chats segment holds your private messages. Tap a row to show a preview of a chat you have not opened yet. Press and hold a row (or right-click on a computer) for its options: pin, mute, archive, block. Messages from people you have not answered wait under You, then Message requests.",
   },
   {
     title: "Sending a message",
@@ -24,35 +24,35 @@ export const HOW_TO_STEPS = [
   },
   {
     title: "Groups",
-    body: "Create a group from the menu at the top of Chats. A group has its own name and its own members, and its messages are encrypted with a key only the members hold. Add people by their address, and remove someone and they stop reading new messages.",
+    body: "Open Threads and choose Groups. Use the menu above the list, then choose New group. A group has its own name and members, and its messages are encrypted with a key only members hold. Add people by their address. Removing someone stops them reading new messages.",
   },
   {
     title: "The chat list menu",
-    body: "The menu at the top of Chats holds the smaller tools. Burn note writes something that is said once and then gone. Saved holds the messages you kept. Scan opens the camera for an address. Notifications shows what happened while you were away. Refresh re-reads your chats from the network.",
+    body: "The menu above the Chats list holds the smaller tools. Burn note writes something that can be opened once on each device. Saved messages holds what you kept. Scan QR code opens the camera for an address. Notifications shows what happened while you were away. Refresh chats reads your chats from the network again.",
   },
   {
     title: "Menus",
-    body: "Open Menus to see vendors. Each menu is one vendor's own page: what they sell, the price in dollars, the weight in grams, and how they take payment. Filter the list to find what you want, then open a menu and message the vendor directly.",
+    body: "In Threads, choose Menus to see vendors. Each menu is one vendor's own page: what they sell, the price in dollars, the weight in grams, and how they take payment. Filter the list to find what you want, then message the vendor directly.",
   },
   {
     title: "Buying",
-    body: "Tap Buy on a menu item and the checkout asks for the delivery address once: it is sealed into a burn-once note that opens for that vendor only, and never rides in the chat itself. You ask in the chat and the vendor accepts. The vendor then issues a payment address that belongs to your order alone — never send to an address from a different order, and never to an address you were given somewhere else; the accepted order in the chat carries that address and its QR code, and it is what ties your payment to the chain check. The app watches the chain and moves the order along as the coins arrive.",
+    body: "Tap Buy on a menu item and enter the delivery address once. Cipher encrypts it into a note before it leaves this device. The message relay stores the encrypted note, and the order sends its link to the vendor in the private chat. Anyone with the link can open it once on each device. The vendor accepts the order and issues a payment address for that order alone. Use only the address and QR code on the accepted order. A payment watcher you run and set under You → Connections checks the chain and updates the order.",
   },
   {
     title: "When payment counts",
-    body: "Bitcoin counts once it is mined, and Monero after it is confirmed; the app shows each step on the order card. A default of three confirmations is used for Bitcoin and ten for Monero, and you can change those numbers under Profile, then Order settings. The vendor's own word is never a confirmation — only the chain is.",
+    body: "Bitcoin counts once it is mined, and Monero after it is confirmed; the order card shows each step. The defaults are three confirmations for Bitcoin and ten for Monero. Change them under You → Order settings. The vendor's own word is never a confirmation — only the chain is.",
   },
   {
     title: "Orders",
-    body: "Open Orders for everything you bought or sold. Each order shows what it was for, how it was paid, and where it stands. A receipt covers exactly one transaction, so if you paid twice you have two receipts. If something goes wrong, the order is where you raise it.",
+    body: "Under You, open My Orders (or Incoming Orders if you sell). Each order shows what it was for, how it was paid, and where it stands. A receipt covers exactly one transaction, so if you paid twice you have two receipts. If something goes wrong, the order is where you raise it.",
   },
   {
     title: "Selling",
-    body: "Open Profile and choose Start selling. Add a Bitcoin address for receiving payments, or a Monero view key so each order gets its own address, then put your items up with a name, a weight in grams and a price in dollars. Every order you accept gets its own address, so no two buyers ever pay into the same one.",
+    body: "Under You, choose Start selling. Add a Bitcoin address for receiving payments, or a Monero view key so each order gets its own address. Then publish menu items with a name, a weight in grams, and a price in dollars. Every order you accept gets its own address, so no two buyers ever pay into the same one.",
   },
   {
     title: "The You tab",
-    body: "Profile holds the rest. Edit Profile changes your name, bio and photo. Accounts switches between accounts on this device. Order settings picks your preferred coin, how many confirmations count, and whether to vouch automatically. Privacy covers last seen and blocked people. Connections is where Tor and a proxy are set.",
+    body: "You holds your settings. Edit Profile changes your name, bio, and photo. Accounts switches between accounts on this device. Order settings picks your preferred coin, confirmation count, and whether to vouch automatically. Privacy covers last seen and blocked people. Connections holds your payment watcher, push gateway, and approved media servers.",
   },
   {
     title: "Locking and wiping",
@@ -60,6 +60,6 @@ export const HOW_TO_STEPS = [
   },
   {
     title: "Start using Cipher",
-    body: "You can reopen this guide any time under Profile → How to use. The app is yours; nothing here is shared with a server it does not need.",
+    body: "You can reopen this guide any time under You → How to use.",
   },
 ];

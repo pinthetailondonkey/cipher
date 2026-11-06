@@ -6,6 +6,7 @@ import { addressSpokenFor, getOrderPaymentMethods, loadVendorPaymentConfig, mark
 import { getAuthenticatedPool } from '../../lib/pool';
 import { generalRelays } from '../../lib/relays';
 import { ORDER_STATUS, RECEIPT_OUTCOME, acceptAmount, acceptanceCoin, acceptanceDemand, acceptanceDerivationPreference, amountCovers, nextPaymentState, orderCoinAmount } from '../../lib/paymentState';
+import { sendOutcome } from '../../lib/sendOutcome';
 import { checkPayment } from '../../lib/paymentWatch';
 import { readCachedProducts, orderProduct } from '../../lib/listing';
 import { activeUrl, entryById } from '../../lib/egress';
@@ -83,6 +84,7 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
   // re-render the optimistic insert causes; its behaviour is tested in
   // src/lib/singleFlight.test.js.
   const orderGuardRef = useRef(null);
+  const checkoutSendGuardRef = useRef(null);
   const setToast = useChatStore((s) => s.setToast);
   const setSelectedMessage = useChatStore((s) => s.setSelectedMessage);
   const setDms = useChatStore((s) => s.setDms);
@@ -95,15 +97,15 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
   // group listing and chat product land here from startOrderWithVendor. The
   // sheet sends its own cipher_order through beginOrderWithVendor once the
   // sealed note exists.
-  const beginOrderWithVendor = async (order) => {
+  const sendCheckoutOrder = async (order) => {
     const vendorPubkey = order?.vendorPubkey;
     if (!identity?.sk || !vendorPubkey) {
-      setToast({ type: 'error', message: 'Unlock your account to contact the seller.' });
-      return;
+      const error = 'Unlock your account to contact the seller.';
+      return { outcome: 'failed', error };
     }
     if (vendorPubkey === identity.pk) {
-      setToast({ type: 'error', message: 'You cannot place an order with yourself.' });
-      return;
+      const error = 'You cannot place an order with yourself.';
+      return { outcome: 'failed', error };
     }
 
     const paymentMethod = scopedGet('preferred_payment_method', 'xmr');
@@ -121,8 +123,6 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
       data: payload,
     });
 
-    openChat('dm', vendorPubkey);
-    setVendorStorefrontPubkey(null);
     setDms((current) => ({
       ...current,
       [vendorPubkey]: [...(current[vendorPubkey] || []), optimisticMessage],
@@ -130,21 +130,22 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
     await saveMessage(vendorPubkey, optimisticMessage);
 
     const result = await sendDM(vendorPubkey, payload, tempId);
-    if (!result.success) {
+    const outcome = sendOutcome(result);
+    if (outcome !== 'sent' && outcome !== 'queued') {
       setDms((current) => ({
         ...current,
         [vendorPubkey]: (current[vendorPubkey] || []).filter((message) => message.clientId !== tempId),
       }));
       await db.messages.delete(tempId);
-      setToast({ type: 'error', message: result.error || 'The order request could not be sent.' });
-      return;
+      const error = result.error || 'The order request could not be sent.';
+      return { outcome: 'failed', error };
     }
 
     let confirmedMessage = {
       ...optimisticMessage,
       id: result.event.id,
       timestamp: result.event.created_at,
-      deliveryStatus: result.queued ? 'queued' : 'sent',
+      deliveryStatus: outcome,
     };
     await saveMessage(vendorPubkey, confirmedMessage);
     if (result.queued && !(await db.outbox.get(result.event.id))) {
@@ -157,11 +158,17 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
         message.clientId === tempId ? confirmedMessage : message
       )),
     }));
-    useChatStore.getState().setCheckoutProduct(null);
-    setToast({
-      type: 'success',
-      message: result.queued ? 'Order saved and will send when connected.' : 'Order request sent to seller.',
-    });
+    openChat('dm', vendorPubkey);
+    setVendorStorefrontPubkey(null);
+    return { outcome: confirmedMessage.deliveryStatus === 'queued' ? 'queued' : 'sent' };
+  };
+
+  // Keep the delivery-note checkout's network write single-flight too. The
+  // sheet's ref latch covers repeated taps; this hook guard also protects
+  // callers that invoke the callback from another surface or before a render.
+  const beginOrderWithVendor = (order) => {
+    if (!checkoutSendGuardRef.current) checkoutSendGuardRef.current = createSingleFlight();
+    return checkoutSendGuardRef.current(() => sendCheckoutOrder(order));
   };
 
   // The screen and the database both take the change. A history fetch rebuilds
@@ -638,7 +645,7 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
           const rails = readPaymentAddresses();
           const shared = Object.hasOwn(rails, currency) ? String(rails[currency] || '').trim().toLowerCase() : '';
           if (shared && String(address || '').trim().toLowerCase() === shared) {
-            setToast({ type: 'error', message: 'This order was issued the shared account address, so one transfer could pay many orders. Turn on address derivation in Profile, then accept the order again to give it its own address.' });
+            setToast({ type: 'error', message: 'This order was issued the shared account address, so one transfer could pay many orders. Under You, open Payment settings and turn on address derivation, then accept the order again to give it its own address.' });
             setSelectedMessage(null);
             return true;
           }

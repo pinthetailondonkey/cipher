@@ -11,6 +11,8 @@ const shell = readFileSync(new URL('../AuthenticatedApp.jsx', import.meta.url), 
 const list = readFileSync(new URL('../components/chat/ChatList.jsx', import.meta.url), 'utf8');
 const home = readFileSync(new URL('../features/chat/ChatHome.jsx', import.meta.url), 'utf8');
 const orders = readFileSync(new URL('../components/chat/MyOrders.jsx', import.meta.url), 'utf8');
+const chat = readFileSync(new URL('../Chat.jsx', import.meta.url), 'utf8');
+const menus = readFileSync(new URL('../Menus.jsx', import.meta.url), 'utf8');
 
 test('tabs are exactly Threads and You, with the badges the two destinations own', () => {
   assert.deepEqual(TAB_IDS, ['chat', 'profile']);
@@ -87,4 +89,12 @@ test('the list pane never has to know what a menu pane is: the browse arrives as
   // The directory is one door, and it stands on the Groups segment alone.
   assert.match(list, /onOpenDiscover/);
   assert.match(home, /<Discover identity=\{identity\} onJoined=\{onGoToChat\}/);
+});
+
+test('one chat-level checkout owns products selected from Menus and threads', () => {
+  assert.match(home, /browse=\{<Menus\b/, 'Menus is nested in the chat list surface');
+  assert.equal((chat.match(/<OneTapCheckout\b/g) || []).length, 1, 'Chat mounts exactly one checkout');
+  assert.equal((menus.match(/<OneTapCheckout\b/g) || []).length, 0, 'Menus selects a product but mounts no second sheet');
+  assert.match(menus, /onBuy=\{\(chosen\) => setCheckoutProduct\(chosen\)\}/, 'a Buy tap selects into shared state');
+  assert.match(chat, /const checkoutProduct = useChatStore\(\(s\) => s\.checkoutProduct\)/, 'Chat owns the shared selection');
 });

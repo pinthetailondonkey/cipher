@@ -105,16 +105,22 @@ test('the confirmed checkout names the vendor, says what happens next, and jumps
   assert.equal(/Sealed\. Only the vendor can open it\.<\//.test(checkout), false);
   assert.equal(/pushToast/.test(checkout), false,
     'the toast fires once at most in one place; the card carries the line, so no second firing');
-  assert.match(checkout, /Order sent\. Waiting for them to accept\./);
+  assert.match(checkout, /Sent to a relay\. Waiting for them to accept\./);
+  assert.match(checkout, /Saved on this device\. It will send when connected\./);
+  assert.match(checkout, /result\?\.outcome !== 'sent' && result\?\.outcome !== 'queued'/,
+    'an absent, failed, or unknown callback result cannot open the confirmation state');
+  assert.match(checkout, /<ProductImage\s+value=\{image\}/, 'encrypted product entries use the private-media renderer');
+  assert.match(checkout, /sendingRef\.current/,
+    'a ref latch blocks a second submit before React can rerender');
   assert.match(checkout, /<Avatar src=\{vendorProfile\.picture\}/);
   assert.match(checkout, /onJumpToChat/);
   assert.match(checkout, />\s*Go to the chat\s*</);
   // Every call site hands over the jump so no confirmed sheet dead-ends.
-  for (const site of ['../Menus.jsx', '../Chat.jsx']) {
-    const source = read(site);
-    assert.ok(source.includes('<OneTapCheckout') && source.includes('onJumpToChat='), `${site} wires onJumpToChat`);
-    assert.match(source, /openChat\('dm', vendor\)/);
-  }
+  const chat = read('../Chat.jsx');
+  assert.match(chat, /<OneTapCheckout[\s\S]*?onJumpToChat=/);
+  assert.match(chat, /openChat\('dm', vendor\)/);
+  assert.doesNotMatch(read('../Menus.jsx'), /<OneTapCheckout/,
+    'Menus selects products; the chat hierarchy owns the single sheet');
 });
 
 // ————— menu discovery offers the retry it names —————

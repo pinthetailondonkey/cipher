@@ -47,11 +47,7 @@ export default function ChatHome({
           segment={segment}
           onSegmentChange={onSegmentChange}
           onOpenDiscover={() => onDiscoverChange(true)}
-          /* Menus calls its prop `setActiveTab` (it predates the segments) and
-             only ever means "now show me the seller's thread": the shell's
-             callback sets the tab and the Chats segment together, so a vendor
-             order never lands on a browse. */
-          browse={<Menus identity={identity} setActiveTab={onGoToChat} />}
+              browse={<Menus />}
         />
       )}
       <CreateGroupModal isOpen={showCreateGroup} onClose={() => setShowCreateGroup(false)} createGroup={createGroup} />

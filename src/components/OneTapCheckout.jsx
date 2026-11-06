@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { ORDER_STATUS } from '../lib/paymentState';
 import { deliveryMissMap, deliveryMisses, emptyDelivery, sealedNoteText, withFieldMiss } from '../lib/deliveryAddress';
 import { createDeadDropNote } from '../lib/deadDrop';
@@ -7,7 +7,7 @@ import { generalRelays } from '../lib/relays';
 import { useProfiles } from '../useProfiles';
 import { Loader2, MessageCircle, ShoppingBag } from 'lucide-react';
 import Sheet from './ui/Sheet';
-import Picture from './ui/Picture';
+import { ProductImage } from './ui/PrivateMedia';
 import Input from './ui/Input';
 import Avatar from './ui/Avatar';
 import { useChatStore } from '../store/chatStore';
@@ -70,9 +70,10 @@ function DeliveryField({ spec, value, miss, onChange, onBlur }) {
 // checkout as the Sheet; §4 anatomy: image, title, price, payment block,
 // actions.
 export default function OneTapCheckout({ product, open = true, onConfirmOrder, onJumpToChat, onClose, identity }) {
-  const [confirmed, setConfirmed] = useState(false);
+  const [confirmed, setConfirmed] = useState('');
   const [sending, setSending] = useState(false);
   const [orderError, setOrderError] = useState('');
+  const sendingRef = useRef(false);
   // The required delivery address: incomplete until filled, checked by
   // shape only (deliveryAddress.js — no third-party lookup ever).
   const [delivery, setDelivery] = useState(() => emptyDelivery());
@@ -91,11 +92,12 @@ export default function OneTapCheckout({ product, open = true, onConfirmOrder, o
   const vendorName = noHexName(vendorProfile, vendorPubkey);
 
   const confirmOrder = async () => {
-    if (confirmed || sending) return;
+    if (confirmed || sendingRef.current) return;
     // Send is the one moment every required field speaks at once.
     const map = deliveryMissMap(delivery);
     setMisses(map);
     if (deliveryMisses(delivery).length) return; // the misses under the fields are the gate
+    sendingRef.current = true;
     setSending(true);
     setOrderError('');
     try {
@@ -108,12 +110,16 @@ export default function OneTapCheckout({ product, open = true, onConfirmOrder, o
         pool,
         relays: generalRelays,
       });
-      await onConfirmOrder?.(cipherOrder(product, url));
-      setConfirmed(true);
+      const result = await onConfirmOrder?.(cipherOrder(product, url));
+      if (result?.outcome !== 'sent' && result?.outcome !== 'queued') {
+        throw new Error(result?.error || 'The order request could not be sent.');
+      }
+      setConfirmed(result.outcome);
     } catch (error) {
       console.error('[OneTapCheckout] Order confirmation failed:', error);
       setOrderError(error?.message || 'Could not send your order request.');
     } finally {
+      sendingRef.current = false;
       setSending(false);
     }
   };
@@ -134,7 +140,11 @@ export default function OneTapCheckout({ product, open = true, onConfirmOrder, o
         <div className="flex flex-col items-center py-4 text-center">
           <Avatar src={vendorProfile.picture} name={vendorName} pubkey={vendorPubkey} size="lg" />
           <p className="mt-3 text-[15px] font-semibold text-ink">{vendorName}</p>
-          <p className="mt-1 text-[13px] leading-relaxed text-inkMuted">Order sent. Waiting for them to accept.</p>
+          <p role="status" aria-live="polite" className="mt-1 text-[13px] leading-relaxed text-inkMuted">
+            {confirmed === 'queued'
+              ? 'Saved on this device. It will send when connected.'
+              : 'Sent to a relay. Waiting for them to accept.'}
+          </p>
           <button
             type="button"
             onClick={() => { onJumpToChat?.(); }}
@@ -148,8 +158,8 @@ export default function OneTapCheckout({ product, open = true, onConfirmOrder, o
       <div className="space-y-4">
         <div className="flex items-start gap-3">
           <div className="h-20 w-20 shrink-0 overflow-hidden rounded-2xl border border-line bg-panelStrong">
-            <Picture
-              src={image}
+            <ProductImage
+              value={image}
               alt={title}
               className="h-full w-full object-cover"
               fallback={<div className="flex h-full w-full items-center justify-center text-ink/30"><ShoppingBag size={26} /></div>}
@@ -165,20 +175,16 @@ export default function OneTapCheckout({ product, open = true, onConfirmOrder, o
           <p className="text-[12px] text-inkSubtle">Amount due</p>
           <p className="font-mono text-[20px] font-bold text-ink">{amount}</p>
         </div>
-        {/* The one explanation wall the sheet keeps. Everything else about
-            paying — the accepted order, the issued address, the QR, the
-            chain check — lives in Profile → How to use, Buying; a second
-            panel here repeated it at the exact moment the buyer only wants
-            to fill fields and send. (security S2: the address travels
-            sealed in a burn-once note, the order carries its URL; no
-            payment address ever sits on a menu or in this sheet.) */}
+        {/* The address is encrypted into a note before upload. The private
+            order carries its link; anyone who gets that link can open it once
+            on each device. The accepted order and payment steps live under
+            You → How to use. */}
         <div className="space-y-3 pt-1">
           <p className="text-[13px] leading-relaxed text-inkMuted">
-            Your address goes to the vendor once, sealed — never into the chat,
-            <br />
-            never off your phone any other way. The note will not open again on their
-            phone. Cipher checks its shape, not the address — that part is between you
-            and the mail.
+            Your address is encrypted into a note before it leaves this device. The
+            message relay stores the encrypted note, and the order sends its link to
+            the vendor in the private chat. Anyone with the link can open it once on
+            each device.
           </p>
           {/* Monero leads: XMR does not write a public chain trail the way
               Bitcoin does. Bitcoin stays fully available behind it, and an
@@ -186,7 +192,7 @@ export default function OneTapCheckout({ product, open = true, onConfirmOrder, o
           <p className="text-[12px] leading-snug text-inkSubtle">
             Payment asks for Monero first — XMR leaves no public chain trail
             like Bitcoin does. Bitcoin stays available, and your choice under
-            Profile → Order settings always wins.
+            You → Order settings always wins.
           </p>
           {DELIVERY_FIELDS.map((spec) => (
             <DeliveryField
@@ -215,6 +221,7 @@ export default function OneTapCheckout({ product, open = true, onConfirmOrder, o
           type="button"
           onClick={confirmOrder}
           disabled={sending}
+          aria-busy={sending}
           className="flex min-h-[52px] w-full items-center justify-center gap-2 rounded-full bg-accent font-bold text-accentInk active:bg-accent disabled:opacity-60"
         >
           {sending ? <><Loader2 size={17} className="animate-spin" /> Sealing…</> : 'Seal and send'}
