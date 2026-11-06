@@ -113,6 +113,20 @@ test.describe('rebuilt components follow the spec (source)', () => {
     expect(src).toMatch(/h-\[52px\] w-\[52px\]/);
   });
 
+  test('EmptyState: quiet, unboxed, and the only empty state screens use', () => {
+    const src = read('src/components/ui/EmptyState.jsx');
+    // No card: no border, no panel ground. Icon 28 subdued, title 15/600,
+    // line 13 muted, per this file's own bullet.
+    expect(src).not.toMatch(/border|bg-panel/);
+    expect(src).toMatch(/\[&_svg\]:h-7 \[&_svg\]:w-7/);
+    expect(src).toMatch(/text-\[15px\] font-semibold/);
+    expect(src).toMatch(/text-\[13px\] text-inkMuted/);
+    // And the thread pane wears it rather than hand-rolling a card again.
+    const chat = read('src/Chat.jsx');
+    expect(chat).toMatch(/<EmptyState/);
+    expect(chat).toMatch(/from '\.\/components\/ui\/EmptyState'/);
+  });
+
   test('ListRow: 72px row, 52px lead, 76px inset divider', () => {
     const src = read('src/components/ui/ListRow.jsx');
     expect(src).toMatch(/min-h-\[72px\]/);
@@ -252,12 +266,13 @@ test.describe('live: the founder ruling — dialogs sit in the middle', () => {
   }
 });
 
-test.describe('live: the empty thread pane holds its card whole', () => {
+test.describe('live: the empty thread pane holds its state whole', () => {
   // The md+ column is 480 wide: the 340px list plus a 140px thread pane. The
-  // card used to be `w-full mx-4`, which is 100% + 32 and so overflowed the
-  // pane's own overflow-hidden — the right border and half a sentence were cut
-  // at every md+ width. Both halves are pinned: the card inside the pane, and
-  // the pane free of horizontal overflow.
+  // pane's empty state used to be a hand-rolled `w-full mx-4` card, which is
+  // 100% + 32 and so overflowed the pane's own overflow-hidden — the right
+  // border and half a sentence were cut at every md+ width, and DESIGN.md says
+  // screens do not hand-roll an empty state at all. Both halves are pinned: the
+  // state inside the pane, and the pane free of horizontal overflow.
   test.beforeEach(async ({ page }) => {
     await page.addInitScript(seedVault);
     await page.setViewportSize({ width: 1280, height: 800 });
@@ -266,20 +281,22 @@ test.describe('live: the empty thread pane holds its card whole', () => {
     await expect(page.getByText('No chat open', { exact: true })).toBeVisible({ timeout: 30000 });
   });
 
-  test('at 1280x800 the card fits the pane, gutters included', async ({ page }) => {
-    const card = page.getByText('No chat open', { exact: true }).locator('..');
-    const pane = card.locator('..');
-    const cardBox = await card.boundingBox();
+  test('at 1280x800 the state fits the pane, gutters included', async ({ page }) => {
+    const state = page.getByText('No chat open', { exact: true }).locator('..');
+    const pane = state.locator('..');
+    const stateBox = await state.boundingBox();
     const paneBox = await pane.boundingBox();
 
     // The pane really is the sliver, or this would pass on a wide pane too.
     expect(paneBox.width).toBeLessThan(300);
-    expect(cardBox.x).toBeGreaterThanOrEqual(paneBox.x);
-    expect(cardBox.x + cardBox.width).toBeLessThanOrEqual(paneBox.x + paneBox.width + 0.5);
+    expect(stateBox.x).toBeGreaterThanOrEqual(paneBox.x);
+    expect(stateBox.x + stateBox.width).toBeLessThanOrEqual(paneBox.x + paneBox.width + 0.5);
 
-    // Not collapsed to a word by the fix, and both lines readable.
-    expect(cardBox.width).toBeGreaterThan(80);
+    // The shared EmptyState, icon and line, not a bespoke box: the component
+    // carries its own gutter (px-[var(--gutter)]) and its icon is aria-hidden.
+    expect(await pane.evaluate((el) => el.className)).toContain('overflow-hidden');
     await expect(page.getByText('Pick a chat from the list.')).toBeVisible();
+    expect(await state.locator('svg').count()).toBe(1);
   });
 
   test('the pane does not scroll sideways', async ({ page }) => {
