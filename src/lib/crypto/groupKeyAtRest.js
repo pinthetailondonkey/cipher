@@ -14,6 +14,7 @@
 // the caller must not write a plaintext row in that state.
 import { atRestSecretBytes } from '../messageAtRest';
 import { fromHex, toHex, b64, unb64 } from './groupCipher';
+import { normalizeDocKey } from './groupDocKey';
 
 const subtle = globalThis.crypto.subtle;
 const enc = new TextEncoder();
@@ -56,6 +57,13 @@ async function atRestKey() {
 
 function aadFor(groupId, epoch, version) {
   return enc.encode(`cipher-groupkey-at-rest-${version}|${groupId}|${epoch}`);
+}
+
+// The governance-doc key (SEC-1) reuses the same session-secret-derived AES
+// key and sealed-row shape as chat keys; only its AAD differs, so copying a
+// chat-key row's ciphertext onto a doc-key row decrypts nothing.
+function docAadFor(groupId, epoch, version) {
+  return enc.encode(`cipher-dockey-at-rest-${version}|${groupId}|${epoch}`);
 }
 
 export function isSealedKeyRow(row) {
@@ -111,6 +119,43 @@ export async function openGroupKeyRow(row) {
       unb64(row.sealed.ct),
     );
     return new Uint8Array(pt);
+  } catch {
+    throw new GroupKeyUnreadableError();
+  }
+}
+
+// ── Governance-doc key rows (SEC-1). Same sealing law as key rows: a locked
+// app throws GroupKeyLockedError rather than ever writing or reading plaintext.
+export async function sealDocKeyRow({ groupId, epoch = 0, keyBytes }) {
+  const normalized = normalizeDocKey(keyBytes);
+  if (!normalized) throw new Error('A governance-doc key must be 32 bytes.');
+  const key = await atRestKey();
+  if (!key) throw new GroupKeyLockedError();
+  const iv = new Uint8Array(12);
+  globalThis.crypto.getRandomValues(iv);
+  const ct = await subtle.encrypt(
+    { name: 'AES-GCM', iv, additionalData: docAadFor(groupId, epoch, 1) },
+    key,
+    normalized,
+  );
+  return {
+    groupId, epoch,
+    sealed: { v: 1, iv: b64(iv), ct: b64(new Uint8Array(ct)) },
+  };
+}
+
+export async function openDocKeyRow(row) {
+  if (!groupKeysUnlocked()) throw new GroupKeyLockedError();
+  if (!row || !isSealedKeyRow(row)) throw new GroupKeyUnreadableError('A stored governance-doc key row has no key.');
+  const key = await atRestKey();
+  if (!key) throw new GroupKeyLockedError();
+  try {
+    const pt = await subtle.decrypt(
+      { name: 'AES-GCM', iv: unb64(row.sealed.iv), additionalData: docAadFor(row.groupId, row.epoch, row.sealed.v) },
+      key,
+      unb64(row.sealed.ct),
+    );
+    return normalizeDocKey(new Uint8Array(pt));
   } catch {
     throw new GroupKeyUnreadableError();
   }

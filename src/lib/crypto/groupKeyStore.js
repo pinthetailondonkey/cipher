@@ -1,6 +1,6 @@
 import { db, currentOwner } from '../../db';
 import { toHex } from './groupCipher';
-import { sealGroupKeyRow, openGroupKeyRow, isLegacyKeyRow, groupKeysUnlocked, GroupKeyLockedError } from './groupKeyAtRest';
+import { sealGroupKeyRow, openGroupKeyRow, isLegacyKeyRow, groupKeysUnlocked, GroupKeyLockedError, sealDocKeyRow, openDocKeyRow } from './groupKeyAtRest';
 let store = { db, owner: currentOwner };
 // Test seam: lets the node tests run the real store against an in-memory
 // table (the project has no IndexedDB in node). Not used by the app.
@@ -134,4 +134,36 @@ export async function recordGrant(groupId, pubkey, epoch, { answered = false } =
     ...(answered ? { answeredAt: sentAt } : (held?.answeredAt ? { answeredAt: held.answeredAt } : {})),
     ...(held ? { id: held.id } : {}),
   });
+}
+
+// ── Governance-doc key (SEC-1). Same store as chat keys (one owner-scoped
+// IndexedDB), same sealed-at-rest law. A locked app sees 'no key', never
+// plaintext — which is exactly how the doc seal/open treats it.
+// Routes through `store` like the key rows so the node-suite seam injects it.
+export async function putDocKey(groupId, epoch, keyBytes) {
+  if (!ready()) return false;
+  try {
+    const row = await sealDocKeyRow({ groupId, epoch, keyBytes });
+    await store.db.transaction('rw', store.db.groupDocKeys, async () => {
+      const existing = await store.db.groupDocKeys.get([groupId]);
+      if (existing) await store.db.groupDocKeys.delete(existing.groupId);
+      await store.db.groupDocKeys.put(row);
+    });
+    return true;
+  } catch (error) {
+    console.warn('[group-key] Could not store the governance-doc key:', error?.name || error);
+    return false;
+  }
+}
+export async function getDocKey(groupId) {
+  if (!usable()) return null; // locked: null means 'no key', like getCurrentGroupKey
+  try {
+    const row = await store.db.groupDocKeys.get([groupId]);
+    if (!row) return null;
+    const bytes = await openDocKeyRow(row);
+    return { epoch: Number.isInteger(row.epoch) ? row.epoch : 0, bytes };
+  } catch (error) {
+    console.warn('[group-key] A stored governance-doc key could not be opened:', error?.name || error);
+    return null;
+  }
 }

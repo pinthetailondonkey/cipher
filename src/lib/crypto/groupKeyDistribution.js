@@ -1,5 +1,6 @@
 import { toHex, fromHex } from './groupCipher';
-import { recordGrant, getGrantRecords, getCurrentGroupKey, getAllGroupKeys, putGroupKey } from './groupKeyStore';
+import { normalizeDocKey } from './groupDocKey';
+import { recordGrant, getGrantRecords, getCurrentGroupKey, getAllGroupKeys, putGroupKey, getDocKey, putDocKey } from './groupKeyStore';
 import { isGroupAdmin, trustedGroupCreator } from './groupMembership';
 import { getMyGroups, setMyGroups } from '../myGroups';
 import { currentOwner } from '../../db';
@@ -255,6 +256,27 @@ export async function installReceivedGroupKey(payload, sender = null) {
   const keyMaterialMoved = safetyChangeFromInstall({ currentEpoch: current?.epoch, maxEpoch });
   for (const row of rows) await putGroupKey(row.groupId, row.epoch, fromHex(row.hex));
   if (keyMaterialMoved) markSafetyChange(sender);
+  // SEC-1: the governance-doc key rides the SAME guard set as the keys. A
+  // bundle that names a doc key installs it only here, where sender standing,
+  // no-deny-wall, ask-evidence floor, rollback and byte-conflict checks have
+  // all passed for this group. An absent or malformed field changes nothing
+  // (pre-remediation bundles stay valid). The piggyback rule: a device
+  // without a doc key adopts with its first accepted install; a device
+  // holding one rolls forward ONLY when the bundle's epoch is strictly newer
+  // than the held doc-key epoch — rotations ship through here, and regrants
+  // to late-arriving members restate exactly what rotation shipped, so the
+  // newest epoch's secret is what wins. Equal-or-older restatements change
+  // nothing, matching the chat-key rollback posture.
+  const docKeyHex = typeof payload?.dk === 'string' ? payload.dk : '';
+  if (/^[0-9a-f]{64}$/.test(docKeyHex)) {
+    const heldDocKey = await getDocKey(groupId);
+    if (docKeyAdoptionAllows({ heldEpoch: heldDocKey?.epoch, offeredEpoch: maxEpoch })) {
+      const adopted = await putDocKey(groupId, maxEpoch, fromHex(docKeyHex));
+      if (adopted && heldDocKey) {
+        console.info('[group-key] Governance-doc key rolled forward by an accepted bundle.', { groupId, epoch: maxEpoch });
+      }
+    }
+  }
   // The sealed label, if this bundle carries one. It is a separate decision
   // from the key: installing the key is what a member of record may do, but
   // naming the group is what only its creator or an admin may do. A plain
@@ -292,6 +314,16 @@ export function safetyChangeFromInstall({ currentEpoch, maxEpoch }) {
   if (!Number.isInteger(maxEpoch)) return false;
   if (!Number.isInteger(currentEpoch)) return true; // the first key this device holds
   return maxEpoch > currentEpoch;
+}
+
+// SEC-1 pure decision: should an ACCEPTED bundle's doc-key ride change this
+// device's held governance-doc secret? Same posture as chat keys — nothing
+// held adopts, and only a strictly newer epoch rolls forward, so a re-delivery
+// or restatement can never overwrite what the store already sealed.
+export function docKeyAdoptionAllows({ heldEpoch, offeredEpoch }) {
+  if (!Number.isInteger(offeredEpoch) || offeredEpoch < 0) return false;
+  if (!Number.isInteger(heldEpoch)) return true; // nothing held: adopt
+  return offeredEpoch > heldEpoch; // roll forward only
 }
 
 export function epochsToBackfill(allEpochs, currentEpoch) {  return (allEpochs || []).filter((item) => item && item.epoch !== currentEpoch && item.bytes);
@@ -335,8 +367,18 @@ export function epochsToSend({ records, epoch, extraEpochs = [], explicit = fals
 
 const grantLedger = { getGrantRecords, recordGrant };
 
-export async function distributeGroupKey({ senderPrivkey, senderPubkey, groupId, epoch, keyBytes, recipients, publish, extraEpochs = [], answerRequest = false, label = null, ledger = grantLedger }) {
+export async function distributeGroupKey({ senderPrivkey, senderPubkey, groupId, epoch, keyBytes, recipients, publish, extraEpochs = [], answerRequest = false, label = null, ledger = grantLedger, docKey }) {
   const { nip44 } = await import('nostr-tools');
+  // SEC-1: the governance-doc key rides every bundle this call ships. An
+  // explicit `docKey` wins (rotation hands its freshly minted secret over);
+  // otherwise what this device holds now travels, so every existing grant,
+  // regrant and label-ride path delivers the current secret with zero
+  // per-caller wiring. A device holding none ships no field.
+  let resolvedDocKey = normalizeDocKey(docKey);
+  if (!resolvedDocKey && docKey === undefined) {
+    const held = await getDocKey(groupId).catch(() => null);
+    resolvedDocKey = normalizeDocKey(held?.bytes);
+  }
   const now = Math.floor(Date.now() / 1000);
   const results = await Promise.allSettled(recipients.map(async (recipientPubkey) => {
     const records = await ledger.getGrantRecords(groupId, recipientPubkey);
@@ -352,9 +394,14 @@ export async function distributeGroupKey({ senderPrivkey, senderPubkey, groupId,
     if (!carrying.length) return;
     const byEpoch = new Map([[epoch, keyBytes], ...extraEpochs.map((item) => [item.epoch, item.bytes])]);
     const bundles = carrying.map((ep) => ({ ep, k: toHex(byEpoch.get(ep)) }));
+    // SEC-1: the resolved doc key (caller-passed or held) rides every
+    // bundle - grants, rotations, regrants and label rides all pass here,
+    // so any accepted install adopts or rolls forward to exactly what the
+    // sender holds now.
     const payload = {
       v: 1, t: 'gkey', gid: groupId, by: senderPubkey, at: now, keys: bundles,
       ...(label ? { name: label.name, about: label.about || '' } : {}),
+      ...(resolvedDocKey ? { dk: toHex(resolvedDocKey) } : {}),
     };
     const shared = nip44.v2.utils.getConversationKey(senderPrivkey, recipientPubkey);
     const wrapped = nip44.v2.encrypt(JSON.stringify(payload), shared);

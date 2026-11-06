@@ -81,6 +81,25 @@ function makeDB(name) {
     vendorReviews: '&receiptHash, vendorPubkey, createdAt',
     groupMemberDocs: '&[groupId+gen+docId], groupId, gen, docId',
   });
+  // v13 adds groupDocKeys: the per-group governance-doc content key (SEC-1),
+  // one random secret per group created at genesis and rotated wherever chat
+  // epochs rotate. Sealed at rest by the same law as groupKeys; a device
+  // without it refuses to decrypt kind-30079 content instead of falling back
+  // to a publicly derivable key.
+  d.version(13).stores({
+    messages: 'id, chatId, pubkey, timestamp, clientId, type',
+    profiles: 'pubkey, name, displayName',
+    groups: 'id, name',
+    chatReads: 'chatId',
+    groupKeys: '++id, &[groupId+epoch], groupId, epoch, isCurrent, obtainedAt',
+    groupKeyGrants: '++id, &[groupId+pubkey+epoch], groupId, pubkey, epoch, sentAt',
+    groupMemberSigs: '&groupId, members, updatedAt',
+    outbox: '&id, kind, created_at, queuedAt',
+    tombstones: 'id, chatId',
+    vendorReviews: '&receiptHash, vendorPubkey, createdAt',
+    groupMemberDocs: '&[groupId+gen+docId], groupId, gen, docId',
+    groupDocKeys: '&groupId, epoch',
+  });
   return d;
 }
 

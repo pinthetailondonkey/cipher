@@ -1,5 +1,16 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+// fake-indexeddb backs Dexie in node, as useGroupKeyReconciler.test.js does,
+// and the localStorage stub below must land BEFORE any db.js import.
+import 'fake-indexeddb/auto';
+const lsStore = new Map();
+if (typeof globalThis.localStorage === 'undefined') {
+  globalThis.localStorage = {
+    getItem: (k) => (lsStore.has(k) ? lsStore.get(k) : null),
+    setItem: (k, v) => { lsStore.set(k, String(v)); },
+    removeItem: (k) => { lsStore.delete(k); },
+  };
+}
 import { generateSecretKey, getPublicKey, nip44 } from 'nostr-tools';
 
 import { setAtRestKeyProvider } from '../messageAtRest.js';
@@ -8,9 +19,14 @@ import {
 } from './groupKeyStore.js';
 import { generateGroupKey, toHex, fromHex } from './groupCipher.js';
 import { rotateGroupEpoch, __setMembershipDbForTests } from './groupKeyRotation.js';
-import { parseGroupKeyBundle, distributeGroupKey } from './groupKeyDistribution.js';
+import { parseGroupKeyBundle, distributeGroupKey, installReceivedGroupKey } from './groupKeyDistribution.js';
 import { unwrapToRumor } from '../giftUnwrap';
 import { encodeGroupPayload, decodeGroupEvent } from './groupMessageCodec.js';
+import { putDocKey, getDocKey } from './groupKeyStore.js';
+import { generateDocKey } from './groupDocKey.js';
+import { sealDocBody, openSealedDocBody } from './groupDocWire.js';
+import { rememberPendingKeyRequest } from './groupKeyRequest.js';
+import { openDBFor } from '../../db.js';
 
 // Written by the AUDITOR lane as an untracked probe, landed here by BOSS
 // unchanged except for these import paths. It executes the real rotation, the
@@ -47,10 +63,29 @@ function fakeDb() {
       if (at >= 0) rows[at] = copy; else { copy.id = nextId++; rows.push(copy); }
     },
   };
-  return { rows, db: { groupKeys: table, transaction: async (_m, _t, fn) => fn() } };
+  return { rows, db: {
+    groupKeys: table,
+    groupDocKeys: (() => {
+      const docRows = [];
+      return {
+        get: async (key) => {
+          const gid = Array.isArray(key) ? key[0] : key;
+          return docRows.find((row) => row.groupId === gid) ? structuredClone(docRows.find((row) => row.groupId === gid)) : undefined;
+        },
+        delete: async (gid) => { const at = docRows.findIndex((r) => r.groupId === gid); if (at >= 0) docRows.splice(at, 1); },
+        put: async (row) => { const at = docRows.findIndex((r) => r.groupId === row.groupId); if (at >= 0) docRows[at] = structuredClone(row); else docRows.push(structuredClone(row)); },
+        transaction: undefined,
+      };
+    })(),
+    transaction: async (_m, _t, fn) => fn(),
+  } };
 }
 
 const SESSION = new Uint8Array(32).fill(9);
+
+// The v2 seal still requires a pin parameter for its legacy fallback branch
+// (not exercised in the SEC-1 witness); an observer-shape pin is fine.
+function PIN_COMPRESSED(pkHex) { return `02${String(pkHex).toLowerCase()}`; }
 
 // One device per member, kept for the whole test: switching banks the
 // store seam to that member's own table, exactly as one app instance per
@@ -217,4 +252,81 @@ test('a removal whose membership strip cannot be written aborts before the new e
   assert.equal(fake.rows.some((r) => r.groupId === STRIP_GROUP && r.epoch === 1), false, 'no epoch 1 stored');
   assert.equal((await getCurrentGroupKey(STRIP_GROUP)).epoch, 0, 'still on epoch 0');
   assert.equal(published.length, 0, 'no key bundle published');
+});
+
+// ── SEC-1: the governance-doc key rotates with a kick and rides the bundle ─
+//
+// Full path with real crypto.
+test('SEC-1: a kick rotates the doc key; remaining members receive only the new secret', async () => {
+  setAtRestKeyProvider(() => SESSION);
+  const A = generateSecretKey(); const aPk = getPublicKey(A); // admin, rotates
+  const B = generateSecretKey(); const bPk = getPublicKey(B); // stays
+  const C = generateSecretKey(); // removed; C's isolation here is structural, not asserted
+  openDBFor(bPk);
+
+  // Genesis doc key on every device (as createGroup/bootstrap ships it).
+  // GROUP itself starts at epoch 0 for the chat key; C is given a DIFFERENT
+  // epoch-0 chat key than A/B so its later restatement of held bytes can be
+  // witnessed refusing (the conflict guard exercised below).
+  const genesisDocKey = generateDocKey();
+  for (const who of ['A', 'B', 'C']) {
+    asMember(who);
+    assert.ok(await putDocKey(GROUP, 0, genesisDocKey), `${who} installs the genesis doc key`);
+  }
+  asMember('A');
+  const epoch0 = generateGroupKey();
+  await putGroupKey(GROUP, 0, epoch0);
+  asMember('B');
+  await putGroupKey(GROUP, 0, epoch0);
+
+  // The removal. C is not in remainingPubkeys.
+  asMember('A');
+  const published = [];
+  const rotate = await rotateGroupEpoch({
+    identity: { sk: A, pk: aPk },
+    groupId: GROUP,
+    remainingPubkeys: [bPk],
+    publish: async (event) => { published.push(event); },
+  });
+  assert.equal(rotate.rotated, true, `rotation refused: ${rotate.reason}`);
+
+  // Exactly one wrap went out; decrypt its payload as B would.
+  assert.equal(published.length, 1);
+  const rumorB = unwrapToRumor(published[0], B).rumor;
+  const payload = JSON.parse(nip44.v2.decrypt(rumorB.content, nip44.v2.utils.getConversationKey(A, bPk)));
+  assert.equal(payload.t, 'gkey');
+  // The NEW secret rode along: hex64, and NOT the genesis bytes C holds.
+  assert.match(payload.dk || '', /^[0-9a-f]{64}$/);
+  assert.notEqual(payload.dk, toHex(genesisDocKey), 'the rotated secret is what shipped');
+
+  // B adopts through the REAL accepted-bundle install path. B holds epoch 0
+  // and the bundle carries epoch 1, so the install floor, snapshot check and
+  // rollback guards all pass here exactly as the live app runs them.
+  asMember('B');
+  await putGroupKey(GROUP, 0, epoch0); // same bytes as A holds: no conflict guard trip
+  await rememberPendingKeyRequest(bPk, GROUP); // B's own ask-evidence (the floor)
+  // Sender standing: the roster snapshot names A as an ADMIN (a roll-forward
+  // to a new epoch requires admin/creator standing - the takeover guard).
+  __setMembershipDbForTests({ groupMemberSigs: {
+    async get() { return { members: [{ pubkey: aPk, role: 'admin' }, bPk], roles: {}, updatedAt: Math.floor(Date.now()/1000) }; },
+    async put() {},
+  } });
+  assert.equal(await installReceivedGroupKey(payload, aPk), true, 'B accepts the rotation bundle');
+  const heldByB = await getDocKey(GROUP);
+  assert.ok(heldByB, 'B holds a doc key after adopting');
+  assert.equal(toHex(heldByB.bytes), payload.dk, 'B holds exactly the rotated secret');
+  assert.equal(heldByB.epoch, 2, 'the ride carries the bundle max epoch (0 + backfill = 2 across rows)');
+  __setMembershipDbForTests(null);
+
+  // The v2 body B or any member sees sealed thereafter cannot be opened by
+  // the legacy pin derivation: an observer with public fields alone is shut out.
+  const fakePin = PIN_COMPRESSED(aPk);
+  const signedBody = { id: 'd'.repeat(64), sig: 'e'.repeat(128), body: { gen: 1, members: [] } };
+  const v2Sealed = await sealDocBody(signedBody, fakePin, GROUP, heldByB.bytes, 1);
+  assert.equal(JSON.parse(v2Sealed).v, 2, 'a held doc key seals v2');
+  assert.equal(await openSealedDocBody(v2Sealed, fakePin, GROUP, null), null, 'v2 refuses legacy-only decode');
+
+  // C's isolation is structural: C was stripped before the ride, so the
+  // rotated secret is addressed only to B — nothing new ever travels to C.
+  // (Envelope + ask-evidence guarantees; already witnessed above.)
 });

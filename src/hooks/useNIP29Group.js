@@ -13,6 +13,8 @@ import { getAllGroupKeys, getCurrentGroupKey, putGroupKey } from '../lib/crypto/
 import { authorizeGroupControl, authorizeGroupPin, authorizeMemberSnapshot, groupFrameAccepted, groupRelayPubkey, groupTimelinePlans, isRestrictedRelayClose, pickMemberSnapshot, pinnedMessageOf, resolveControlSender, trustedGroupCreator } from '../lib/crypto/groupMembership';
 import { grantKeyRequest, loadMemberSnapshot, loadMemberSnapshotRecord, memberKey, patchMemberSnapshot, rememberMembers, rotateGroupEpoch } from '../lib/crypto/groupKeyRotation';
 import { generateGroupKey } from '../lib/crypto/groupCipher';
+import { generateDocKey } from '../lib/crypto/groupDocKey';
+import { getDocKey, putDocKey } from '../lib/crypto/groupKeyStore';
 // Step 2 slice 3, live arm: onFrame routes kind 30079 by its constants and
 // strips the doc d-tag prefix; both come from the publisher so neither can
 // drift from the wire shape.
@@ -842,9 +844,26 @@ export function useNIP29Group({ identity }) {
       if (!existing) {
         const key = generateGroupKey();
         await putGroupKey(groupId, 1, key);
+        // SEC-1: mint the governance-doc key at genesis. Idempotent-on-empty:
+        // a retry of createGroup must not silently re-key an existing secret.
+        let genesisDocKey = null;
+        try {
+          const heldDocKey = await getDocKey(groupId);
+          if (!heldDocKey) {
+            genesisDocKey = generateDocKey();
+            if (await putDocKey(groupId, 1, genesisDocKey)) {
+              console.info('[createGroup] Governance-doc key minted for this group.');
+            } else { genesisDocKey = null; }
+          } else {
+            genesisDocKey = heldDocKey.bytes;
+          }
+        } catch (docKeyError) {
+          console.warn('[createGroup] Governance-doc key deferred:', docKeyError?.message || docKeyError);
+        }
         await distributeGroupKey({
           senderPrivkey: identity.sk, senderPubkey: identity.pk,
           groupId, epoch: 1, keyBytes: key, recipients: [identity.pk],
+          ...(genesisDocKey ? { docKey: genesisDocKey } : {}),
           // The real name and description travel sealed, in the same envelope
           // as the key. On a public group `sealed` is null and this is the
           // bundle it has always been.

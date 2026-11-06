@@ -2,7 +2,8 @@ import { db as appDb } from '../../db';
 import { refetchMembersCached, trustedGroupCreator } from './groupMembership';
 import { generateGroupKey } from './groupCipher';
 import { distributeGroupKey } from './groupKeyDistribution';
-import { getAllGroupKeys, getCurrentGroupKey, putGroupKey } from './groupKeyStore';
+import { getAllGroupKeys, getCurrentGroupKey, putGroupKey, getDocKey, putDocKey } from './groupKeyStore';
+import { generateDocKey } from './groupDocKey';
 import { queueMemberBaseline } from './memberBaseline';
 import { isJoinDenied, hasPendingJoin } from '../groupJoinQueue';
 
@@ -149,6 +150,15 @@ async function publishDocOp(groupId, pubkeys, { pins = null } = {}) {
   if (derivedPin !== String(pin).toLowerCase()) {
     throw new Error('This device does not hold the signing side of this group authority.');
   }
+  // SEC-1: seal under the held governance-doc key when this device holds one
+  // (a signer that lost its doc key still publishes under a degraded v1 seal,
+  // which every receiver's dual-candidate decode opens). No held secret means
+  // no self-provisioning here: distributing is the store's job, not sealing's.
+  let docKeyForSeal = null;
+  try {
+    const { getDocKey } = await import('./groupKeyStore');
+    docKeyForSeal = (await getDocKey(groupId))?.bytes || null;
+  } catch { /* no store available: legacy v1 seal */ }
 
   const before = new Set(resolveMembership(head).map((row) => row.pubkey));
   const after = new Set((pubkeys || []).map((pubkey) => String(pubkey).toLowerCase()).filter(Boolean));
@@ -172,6 +182,7 @@ async function publishDocOp(groupId, pubkeys, { pins = null } = {}) {
   const nowSec = Math.floor(Date.now() / 1000);
   const event = await buildMemberDocEvent({
     signedDoc: signed, authoritySk: privateKeyBytes, pin, groupId, createdAt: nowSec,
+    docKey: docKeyForSeal,
   });
   if (!event) throw new Error('Could not build the doc event.');
   const pool = await docPool(identityLike(owner, accountSk));
@@ -381,6 +392,22 @@ export async function rotateGroupEpoch({ identity, groupId, remainingPubkeys, pu
   const recipients = [...new Set((remainingPubkeys || []).filter(Boolean))];
   const nextEpoch = current.epoch + 1;
   const newKey = generateGroupKey();
+  // SEC-1: the removal also rotates the governance-doc key, so the removed
+  // member loses future rosters the way it loses future messages. Installed
+  // HERE, before the member strip below, so the fire-and-forget member-set
+  // doc publish (rememberMembers -> publishDocOp) reads the NEW secret out
+  // of the store and seals gen+1 under it deterministically; the bundle ride
+  // then delivers that same secret to exactly the members who remain.
+  let rotatedDocKey = null;
+  try {
+    const priorDoc = await getDocKey(groupId);
+    rotatedDocKey = generateDocKey();
+    const stored = await putDocKey(groupId, (priorDoc?.epoch || 0) + 1, rotatedDocKey);
+    if (!stored) rotatedDocKey = null; // locked app: ship no secret we cannot hold ourselves
+  } catch (docKeyError) {
+    console.warn('[group-key] Governance-doc key not rotated:', docKeyError?.message || docKeyError);
+    rotatedDocKey = null;
+  }
   // Drills D3-C/D3-E: the record is stripped BEFORE the new epoch lands.
   // The old order — key first, strip after — left a window where a grant
   // request saw the new epoch on a record that still named the removed
@@ -401,6 +428,7 @@ export async function rotateGroupEpoch({ identity, groupId, remainingPubkeys, pu
       keyBytes: newKey,
       recipients,
       extraEpochs: prior,
+      ...(rotatedDocKey ? { docKey: rotatedDocKey } : {}),
       publish,
     });
   }

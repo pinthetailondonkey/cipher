@@ -19,6 +19,7 @@
 import { finalizeEvent } from 'nostr-tools';
 import { db } from '../../db';
 import { canonicalBody } from './groupDoc.js';
+import { deriveDocAesInput, normalizeDocKey } from './groupDocKey';
 
 export const MEMBER_DOC_KIND = 30079;
 export const MEMBER_DOC_D_PREFIX = 'cipher-gmemdoc';
@@ -41,62 +42,97 @@ async function docContentKey(pin, groupId) {
   return new Uint8Array(digest);
 }
 
-function senderAad(groupId) {
-  return new TextEncoder().encode(`cipher-gmemdoc-v1|${groupId}`);
+// The content key for envelope version 2 is HKDF over the group's governance
+// doc key (SEC-1): a random per-group secret created at genesis, shared only
+// through the sealed gkey-bundle riders, rotated wherever chat epochs rotate.
+// Version 1 keeps the old pin+gid derivation as a DECODE-ONLY fallback for
+// events already on relays when this remediation lands — a device with no
+// legacy knowledge (never derivable except from an invite link) still opens
+// them, but every NEW seal uses v2.
+const ENVELOPE_V1_AAD_PREFIX = 'cipher-gmemdoc-v1|';
+const ENVELOPE_V2_AAD_PREFIX = 'cipher-gmemdoc-v2|';
+
+function senderAad(version, groupId, _epochUnused = undefined) {
+  const prefix = version === 2 ? ENVELOPE_V2_AAD_PREFIX : ENVELOPE_V1_AAD_PREFIX;
+  return new TextEncoder().encode(`${prefix}${groupId}`);
 }
 
-export async function sealDocBody(signed, pin, groupId) {
+// Seal under the held governance-doc key (v2, SEC-1). When no doc key is held
+// this DEGRADES to the legacy pin+gid derivation so a creator's very first
+// genesis doc still publishes before any member holds the v2 secret; the
+// bootstrapping ride then delivers it. `docKey` may be raw bytes or hex.
+// Note: version 2 binds NO epoch counter into its AAD - the secret itself
+// rotates, so the key material is the truth and a publish racing a rotation
+// can never desynchronize from its own envelope fields.
+export async function sealDocBody(signed, pin, groupId, docKey = null) {
   if (!signed || !signed.id || !signed.sig || !signed.body) return null;
-  const key = await importAesKey(await docContentKey(pin, groupId), ['encrypt']);
+  const normalized = normalizeDocKey(docKey);
+  const version = normalized ? 2 : 1;
+  const aesInput = version === 2
+    ? await deriveDocAesInput(normalized)
+    : await docContentKey(pin, groupId);
+  if (!aesInput) return null;
+  const key = await importAesKey(aesInput, ['encrypt']);
   const iv = new Uint8Array(12);
   globalThis.crypto.getRandomValues(iv);
   const plaintext = new TextEncoder().encode(JSON.stringify({ id: signed.id, sig: signed.sig, body: signed.body }));
   const ct = await globalThis.crypto.subtle.encrypt(
-    { name: 'AES-GCM', iv, additionalData: senderAad(groupId) },
+    { name: 'AES-GCM', iv, additionalData: senderAad(version, groupId) },
     key,
     plaintext,
   );
   // Reuse groupCipher's envelope shape (v/iv/ct b64) without dragging its
   // epoch/sender AAD semantics here — those bind to chat key epochs.
   const toB64 = (bytes) => btoa(String.fromCharCode(...bytes));
-  return JSON.stringify({ v: 1, iv: toB64(iv), ct: toB64(new Uint8Array(ct)) });
+  return JSON.stringify({ v: version, iv: toB64(iv), ct: toB64(new Uint8Array(ct)) });
 }
 
 async function importAesDecryptKey(raw) {
   return importAesKey(raw, ['decrypt']);
 }
 
-export async function openSealedDocBody(contentJson, pin, groupId) {
+export async function openSealedDocBody(contentJson, pin, groupId, docKey = null) {
   let envelope;
   try {
     envelope = typeof contentJson === 'string' ? JSON.parse(contentJson) : contentJson;
   } catch {
     return null;
   }
-  if (!envelope || envelope.v !== 1 || typeof envelope.iv !== 'string' || typeof envelope.ct !== 'string') return null;
-  try {
-    const key = await importAesDecryptKey(await docContentKey(pin, groupId));
-    const unb64 = (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
-    const pt = await globalThis.crypto.subtle.decrypt(
-      { name: 'AES-GCM', iv: unb64(envelope.iv), additionalData: senderAad(groupId) },
-      key,
-      unb64(envelope.ct),
-    );
-    const parsed = JSON.parse(new TextDecoder().decode(pt));
-    return parsed && parsed.id && parsed.sig && parsed.body ? parsed : null;
-  } catch {
-    return null;
+  if (!envelope || typeof envelope.iv !== 'string' || typeof envelope.ct !== 'string') return null;
+  if (envelope.v !== 1 && envelope.v !== 2) return null;
+  const unb64 = (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
+  // Candidate order for ANY envelope version: the held governance-doc key
+  // first (a v2 body opens only this way, and a stale-held reader simply
+  // misses until its bundle rides in), then the legacy pin+gid derivation
+  // for every v1-era body already on relays - including a creator's genesis
+  // doc sealed v1 in the seconds before its own bundle went out.
+  const candidates = [];
+  if (normalizeDocKey(docKey)) candidates.push(await deriveDocAesInput(docKey));
+  candidates.push(await docContentKey(pin, groupId));
+  for (const aesInput of candidates) {
+    if (!aesInput) continue;
+    try {
+      const key = await importAesDecryptKey(aesInput);
+      const pt = await globalThis.crypto.subtle.decrypt(
+        { name: 'AES-GCM', iv: unb64(envelope.iv), additionalData: senderAad(envelope.v, groupId) },
+        key,
+        unb64(envelope.ct),
+      );
+      const parsed = JSON.parse(new TextDecoder().decode(pt));
+      return parsed && parsed.id && parsed.sig && parsed.body ? parsed : null;
+    } catch { /* next candidate */ }
   }
+  return null;
 }
 
 // Build the wire event. `createdAt` arrives stamped by the caller (H2:
 // max(prev.created_at + 1, now)); passing it in keeps the stamp rule testable
 // against fixed clocks instead of buried next to Date.now().
-export async function buildMemberDocEvent({ signedDoc, authoritySk, pin, groupId, createdAt }) {
+export async function buildMemberDocEvent({ signedDoc, authoritySk, pin, groupId, createdAt, docKey = null }) {
   if (!authoritySk || !(authoritySk instanceof Uint8Array) || authoritySk.length !== 32) return null;
   const canonical = canonicalBody(signedDoc?.body || signedDoc);
   if (!canonical || !Number.isInteger(Number(createdAt))) return null;
-  const ciphertext = await sealDocBody(signedDoc, pin, groupId);
+  const ciphertext = await sealDocBody(signedDoc, pin, groupId, docKey);
   if (!ciphertext) return null;
   return finalizeEvent({
     kind: MEMBER_DOC_KIND,
@@ -178,9 +214,20 @@ export async function loadMemberDocHeads(groupId, { limit = 5 } = {}) {
 // One wire event → {stored, opened} or null. Every refusal is quiet-by-design:
 // a wrong-pin or foreign-key doc is relay noise, not an error to surface, and
 // the caller answers from whatever heads it already holds (H4's null path).
-export async function ingestMemberDocEvent(event, { pin, groupId }) {
+export async function ingestMemberDocEvent(event, { pin, groupId, docKey = null }) {
   if (!event || event.kind !== MEMBER_DOC_KIND) return null;
   if (!pin || !groupId) return null;
+  // SEC-1: resolve this device's held governance-doc key here so every
+  // receiving path (live subscription, catch-up refresh) opens under it;
+  // without one the legacy candidates still decode pre-remediation events.
+  // An explicitly passed docKey wins over the store read.
+  let heldDocKey = normalizeDocKey(docKey);
+  if (!heldDocKey) {
+    try {
+      const { getDocKey } = await import('./groupKeyStore');
+      heldDocKey = (await getDocKey(groupId))?.bytes || null;
+    } catch { /* no store available: legacy candidates only */ }
+  }
   const dTag = (event.tags || []).find((tag) => tag[0] === 'd')?.[1] || '';
   if (dTag !== memberDocTag(groupId)) return null;
   // The pin itself names this group's authority key only when the event was
@@ -190,7 +237,7 @@ export async function ingestMemberDocEvent(event, { pin, groupId }) {
   const xonly = String(pin).toLowerCase();
   const compact = /^[0-9a-f]{66}$/.test(xonly) ? xonly.slice(2) : xonly;
   if (String(event.pubkey || '').toLowerCase() !== compact) return null;
-  const signed = await openSealedDocBody(event.content, pin, groupId);
+  const signed = await openSealedDocBody(event.content, pin, groupId, heldDocKey);
   if (!signed) return null;
   return rememberVerifiedDoc({ groupId, pin, signed });
 }

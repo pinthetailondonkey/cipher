@@ -1,7 +1,8 @@
 import { useEffect, useMemo } from 'react';
-import { getCurrentGroupKey, getAllGroupKeys, getGrantedEpochsFor, putGroupKey } from '../lib/crypto/groupKeyStore';
+import { getCurrentGroupKey, getAllGroupKeys, getGrantedEpochsFor, putGroupKey, getDocKey, putDocKey } from '../lib/crypto/groupKeyStore';
 import { distributeGroupKey } from '../lib/crypto/groupKeyDistribution';
 import { generateGroupKey } from '../lib/crypto/groupCipher';
+import { generateDocKey } from '../lib/crypto/groupDocKey';
 import { getAuthenticatedPool } from '../lib/pool';
 import { generalRelays, queryWithTimeout } from '../lib/relays';
 import { relaysForPeer } from '../lib/dmRelays';
@@ -150,7 +151,19 @@ async function reconcile({ groupId, members, isOwner, identity }) {
     const key = generateGroupKey();
     await putGroupKey(groupId, 1, key);
     current = { epoch: 1, bytes: key };
-    await distributeGroupKey({ senderPrivkey: identity.sk, senderPubkey: identity.pk, groupId, epoch: 1, keyBytes: key, recipients: dedupe([...members, identity.pk]), publish });
+    // SEC-1: a reconciler-bootstrapped group mints its governance-doc key
+    // here too — same idempotent-on-empty rule as createGroup, and it rides
+    // the very bundle that reaches every founding member.
+    let reconcilerDocKey;
+    try {
+      const heldDocKey = await getDocKey(groupId);
+      reconcilerDocKey = heldDocKey?.bytes || generateDocKey();
+      if (!heldDocKey) await putDocKey(groupId, 1, reconcilerDocKey);
+    } catch (docKeyError) {
+      console.warn('[reconciler] Governance-doc key deferred:', docKeyError?.message || docKeyError);
+      reconcilerDocKey = null;
+    }
+    await distributeGroupKey({ senderPrivkey: identity.sk, senderPubkey: identity.pk, groupId, epoch: 1, keyBytes: key, recipients: dedupe([...members, identity.pk]), ...(reconcilerDocKey ? { docKey: reconcilerDocKey } : {}), publish });
     await safePutSnapshot(groupId, members);
     return { epoch: 1 };
   }
@@ -164,12 +177,25 @@ async function reconcile({ groupId, members, isOwner, identity }) {
     // them on the record while the rotation reports success (the same gap
     // rotateGroupEpoch closed with strict). Strict here aborts the removal
     // before putGroupKey stores the new epoch or anything is published.
+    // SEC-1: the reconciler's own removal rotation re-keys the governance-doc
+    // secret too. Installed BEFORE the roster write so publishDocOp
+    // (fire-and-forget inside rememberMembers below) reads the NEW secret out
+    // of the store and seals gen+1 under it deterministically.
+    let reconcilerRotatedDocKey = null;
+    try {
+      const priorDoc = await getDocKey(groupId);
+      reconcilerRotatedDocKey = generateDocKey();
+      if (!(await putDocKey(groupId, (priorDoc?.epoch || 0) + 1, reconcilerRotatedDocKey))) reconcilerRotatedDocKey = null;
+    } catch (docKeyError) {
+      console.warn('[reconciler] Governance-doc key not rotated:', docKeyError?.message || docKeyError);
+      reconcilerRotatedDocKey = null;
+    }
     await rememberMembers(groupId, members, { strict: true });
     const nextEpoch = current.epoch + 1;
     const newKey = generateGroupKey();
     await putGroupKey(groupId, nextEpoch, newKey);
     const priorEpochs = (await getAllGroupKeys(groupId)).filter(e => e.epoch !== nextEpoch);
-    await distributeGroupKey({ senderPrivkey: identity.sk, senderPubkey: identity.pk, groupId, epoch: nextEpoch, keyBytes: newKey, recipients: dedupe([...members, identity.pk]), extraEpochs: priorEpochs, publish });
+    await distributeGroupKey({ senderPrivkey: identity.sk, senderPubkey: identity.pk, groupId, epoch: nextEpoch, keyBytes: newKey, recipients: dedupe([...members, identity.pk]), extraEpochs: priorEpochs, ...(reconcilerRotatedDocKey ? { docKey: reconcilerRotatedDocKey } : {}), publish });
     await safePutSnapshot(groupId, members);
     return { epoch: nextEpoch };
   }
