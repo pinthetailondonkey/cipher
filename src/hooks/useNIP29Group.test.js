@@ -136,3 +136,17 @@ test('a live member-doc event reaches the ingest door and only that arm', () => 
   assert.ok(snapshotIdx !== -1 && snapshotIdx > routeIdx,
     'the doc arm returns before the roster-snapshot arm can see a doc event');
 });
+
+test('the pinned-slot read stops naming the account once its alias pin is held', () => {
+  // Wire-capture finding: the owner's kind-9005 read shipped authors:[account,
+  // ...pin] even after capture, so four subscription frames per session named
+  // the account on the group box. With a held pin the alias form answers
+  // alone; without one the account arm still covers pre-capture creators.
+  const idx = SOURCE.search(/ownerAuthorFilter/);
+  assert.ok(idx !== -1, 'the dedicated owner-pin filter exists');
+  const block = SOURCE.slice(idx, idx + 1100);
+  assert.match(block, /actor \? \[actor\] : \[standing\.creator\]/,
+    'a held pin replaces the account arm entirely (pin-or-account, never both)');
+  assert.doesNotMatch(block, /standing\.creator, \.\.\.\(actor/,
+    'the both-shapes array is gone');
+});

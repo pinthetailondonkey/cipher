@@ -1857,7 +1857,11 @@ export function useNIP29Group({ identity }) {
         ? (() => {
           const row = (standing.members || []).find((m) => (typeof m === 'object' && m?.pubkey) === String(standing.creator).toLowerCase());
           const actor = row && typeof row === 'object' && /^[0-9a-f]{66}$/.test(row.actor || '') ? row.actor.slice(2) : null;
-          return { kinds: [9005], '#h': [groupId], authors: [...new Set([standing.creator, ...(actor ? [actor] : [])])], limit: 10 };
+          // Wire-capture finding (LAUNCH-LOG Phase 11): once the creator's pin
+          // IS held, the account-key arm is dead weight that still names the
+          // account on the group box, so it ships only while nothing better
+          // exists. With a pin, the alias form answers alone.
+          return { kinds: [9005], '#h': [groupId], authors: [...new Set([...(actor ? [actor] : [standing.creator])])], limit: 10 };
         })()
         : null;
       const [ownerEvents, memberEvents] = await Promise.all([
