@@ -144,6 +144,37 @@ export function controlSubject(event) {
   return event.tags?.find((tag) => tag[0] === 'p')?.[1] || event.pubkey || '';
 }
 
+// Step 2 slice 2: resolve WHO sent a control event when the wire pubkey is not
+// the account key itself. Two legitimate shapes:
+//   legacy      event.pubkey IS an account (pre-cutover events, and members
+//               whose pin was never captured)
+//   actor       event.pubkey is the x-only form of a standing row's `actor`
+//               pin — resolved through the doc-derived snapshot, the same
+//               out-of-band map every other standing check reads
+// A verified signature alone never promotes a stranger; resolution runs before
+// authorizeGroupControl sees the sender. An unresolvable sender answers '',
+// which authorizeGroupControl refuses.
+const PIN_SHAPE = /^[0-9a-f]{66}$/;
+
+function pinXonly(value) {
+  const text = String(value || '').toLowerCase();
+  return PIN_SHAPE.test(text) ? text.slice(2) : (/^[0-9a-f]{64}$/.test(text) ? text : '');
+}
+
+export function resolveControlSender({ wirePubkey, members }) {
+  const signer = String(wirePubkey || '').toLowerCase();
+  if (!signer || !Array.isArray(members)) return '';
+  for (const member of members) {
+    const row = typeof member === 'object' && member ? member : { pubkey: String(member || '') };
+    const account = String(row.pubkey || '').toLowerCase();
+    if (!account) continue;
+    if (account === signer) return account;
+    const actor = pinXonly(row.actor);
+    if (actor && actor === signer) return account;
+  }
+  return '';
+}
+
 export function authorizeGroupControl({ kind, sender, subject, members, creator }) {
   if (!sender) return false;
   if (kind === 39002) return false;

@@ -22,6 +22,7 @@ import {
   refetchMembersCached,
   resetGroupRelayPubkeyCache,
   resetMemberRereadCache,
+  resolveControlSender,
   trustedGroupCreator,
 } from './groupMembership.js';
 import { GRANT_DECISION_TABLE, grantKeyRequest, keyRequestDecision, requesterMayReceiveKey, resolveKeyRequest } from './groupKeyRotation.js';
@@ -760,4 +761,76 @@ test('a relay-admin cannot kick, demote or edit the creator', () => {
   assert.equal(authorizeGroupControl({
     kind: 9001, sender: creator, subject: creator, members: [{ pubkey: creator, role: 'admin' }], creator: '',
   }), true);
+});
+
+// ── Step 2 slice 2: actor-shaped control events resolve through standing rows
+
+test('resolveControlSender maps an x-only actor pin to its account, and passes legacy account keys straight through', () => {
+  const pinnedActor = '02' + 'a'.repeat(64); // 66-hex compressed over admin's key shape
+  const rows = [
+    { pubkey: member },
+    { pubkey: admin, actor: pinnedActor },
+  ];
+  const xonly = pinnedActor.slice(2);
+  assert.equal(resolveControlSender({ wirePubkey: xonly, members: rows }), admin,
+    'the pin resolves to the account whose row names it');
+  assert.equal(resolveControlSender({ wirePubkey: admin, members: rows }), admin,
+    'a legacy event signed with the account key matches directly');
+  assert.equal(resolveControlSender({ wirePubkey: stranger, members: rows }), '',
+    'an unresolvable signer answers empty and authorizeGroupControl refuses it');
+  assert.equal(resolveControlSender({ wirePubkey: '', members: rows }), '');
+  assert.equal(resolveControlSender({ wirePubkey: xonly, members: [] }), '');
+  // A junk row shape does not crash the scan.
+  assert.equal(resolveControlSender({ wirePubkey: xonly, members: [null, '', { pubkey: '' }, admin] }), admin);
+});
+
+test('a resolved actor sender then authorizes exactly as that account would', async () => {
+  const pinnedActor = '03' + 'cd'.repeat(32);
+  const snapshotRows = [
+    { pubkey: creator, role: 'admin' },
+    { pubkey: admin, role: 'admin', actor: pinnedActor },
+    { pubkey: member, role: 'member' },
+  ];
+  const resolvedAdmin = resolveControlSender({ wirePubkey: pinnedActor.slice(2), members: snapshotRows });
+  assert.equal(resolvedAdmin, admin);
+  // The kick an admin may make under its own key holds when made under its pin.
+  assert.equal(authorizeGroupControl({
+    kind: 9001, sender: resolvedAdmin, subject: member, members: snapshotRows, creator,
+  }), true);
+  // A non-admin's pin can never borrow standing.
+  const memberPin = resolveControlSender({
+    wirePubkey: pinnedActor.slice(2),
+    members: [{ pubkey: member, role: 'member', actor: pinnedActor }],
+  });
+  assert.equal(memberPin, member);
+  assert.equal(authorizeGroupControl({
+    kind: 9001, sender: memberPin, subject: admin, members: snapshotRows, creator,
+  }), false);
+
+  // End-to-end: buildControlAct signs a real control event with a derived
+  // actor key; the receiver holding that derivation resolves and authorizes.
+  const sessionKeyMod = await import('../sessionKey.js');
+  const { groupAuthorityKey } = await import('./groupAuthority.js');
+  const skBytes = new Uint8Array(32).fill(5);
+  sessionKeyMod.setSessionKey(skBytes);
+  const { buildControlAct } = await import('./gmIdentityWire.js');
+  const GID = 'control-act-gid';
+  const derived = await groupAuthorityKey(skBytes, GID);
+  const identity = { pk: getPublicKey(generateSecretKey()), sk: skBytes };
+  // The derived pin IS this device's own — for a live end-to-end we authorize
+  // against a row naming OUR account with our OWN pin.
+  const meRow = [{ pubkey: identity.pk, role: 'admin', actor: derived.pin }];
+  const event = await buildControlAct({ identity, groupId: GID, kind: 9002, tags: [['h', GID], ['name', 'x']] });
+  assert.ok(event, 'actor-signed control event builds while unlocked');
+  assert.equal(event.kind, 9002);
+  assert.deepEqual(event.tags.find((t) => t[0] === 'author'), ['author', derived.pin]);
+  assert.equal(event.pubkey, derived.pin.slice(2));
+  const roundTrip = resolveControlSender({ wirePubkey: event.pubkey, members: meRow });
+  assert.equal(roundTrip, identity.pk.toLowerCase(), 'the receiver resolves the event back to my account');
+  assert.equal(authorizeGroupControl({
+    kind: 9002, sender: roundTrip, subject: 'x', members: meRow, creator: identity.pk,
+  }), true);
+  // A locked tab refuses rather than improvising an account-key fallback.
+  sessionKeyMod.clearSessionKey();
+  assert.equal(await buildControlAct({ identity, groupId: GID, kind: 9002, tags: [['h', GID]] }), null);
 });

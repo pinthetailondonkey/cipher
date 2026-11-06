@@ -108,6 +108,32 @@ export async function buildSignedAct({ identity, groupId, content, tags, created
   );
 }
 
+// The control kinds' door (Step 2 slice 2): same signer, same author tag, any
+// kind the membership protocol uses. Unlike buildSignedAct the content is NOT
+// sealed — control events are plaintext by protocol — so all identity-level
+// trust flows from (a) the signature over its own fields and (b) the receiver's
+// out-of-band resolution of this pin back to an account through the doc's
+// standing rows. A null return means no derivation available; callers refuse
+// rather than falling back to the account key.
+export async function buildControlAct({ identity, groupId, kind, tags, createdAt, content = '' }) {
+  if (!identity?.pk || !groupId || !Number.isInteger(Number(kind))) return null;
+  if (!Array.isArray(tags)) return null;
+  const known = await signerFor(identity.pk, groupId);
+  if (!known) return null;
+  const nowSec = Number.isInteger(Number(createdAt))
+    ? Math.floor(Number(createdAt))
+    : Math.floor(Date.now() / 1000);
+  return finalizeEvent(
+    {
+      kind: Number(kind),
+      created_at: nowSec,
+      tags: [...tags, ...actorTag(known.pin)],
+      content,
+    },
+    known.skBytes,
+  );
+}
+
 // ── Proofs (NIP-42) ────────────────────────────────────────────────────────
 
 // Sign one relay challenge with this group's actor key. The template comes

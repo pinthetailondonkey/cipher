@@ -10,7 +10,7 @@ import { shortNpub } from '../lib/npub';
 import { getMyGroups, setMyGroups } from '../lib/myGroups';
 import { encodeGroupPayload, decodeGroupEvent } from '../lib/crypto/groupMessageCodec';
 import { getAllGroupKeys, getCurrentGroupKey, putGroupKey } from '../lib/crypto/groupKeyStore';
-import { authorizeGroupControl, authorizeGroupPin, authorizeMemberSnapshot, groupFrameAccepted, groupRelayPubkey, groupTimelinePlans, isRestrictedRelayClose, pickMemberSnapshot, pinnedMessageOf, trustedGroupCreator } from '../lib/crypto/groupMembership';
+import { authorizeGroupControl, authorizeGroupPin, authorizeMemberSnapshot, groupFrameAccepted, groupRelayPubkey, groupTimelinePlans, isRestrictedRelayClose, pickMemberSnapshot, pinnedMessageOf, resolveControlSender, trustedGroupCreator } from '../lib/crypto/groupMembership';
 import { grantKeyRequest, loadMemberSnapshot, loadMemberSnapshotRecord, memberKey, patchMemberSnapshot, rememberMembers, rotateGroupEpoch } from '../lib/crypto/groupKeyRotation';
 import { generateGroupKey } from '../lib/crypto/groupCipher';
 import { heldGroupRow } from '../lib/groupJoin';
@@ -25,7 +25,7 @@ import { admitRelayRoster, isJoinDenied, joinRequestDecision, denyPendingJoin, d
 import { allowsGroupJoins } from '../lib/privacy.js';
 import { groupMetaAnnouncement } from '../lib/groupMetaAnnouncement.js';
 import { clampGroupBody } from '../lib/disappearing';
-import { buildSignedAct, resolveActorSigner, signActProof } from '../lib/crypto/gmIdentityWire';
+import { buildSignedAct, buildControlAct, resolveActorSigner, signActProof } from '../lib/crypto/gmIdentityWire';
 
 // How long an authenticated group stream must have held before its close counts
 // as a real drop rather than a refused handshake. A stream that authenticated
@@ -690,12 +690,14 @@ export async function flushSecuringGroupSends(identity, groupId) {
 
 export async function publishGroupJoin(identity, groupId) {
   if (!identity?.sk || !groupId) throw new Error('Unlock your account before joining.');
-  const event = finalizeEvent({
+  // Step 2 slice 2: the join request is signed by this group's actor key.
+  const event = await buildControlAct({
+    identity,
+    groupId,
     kind: 9021,
-    created_at: Math.floor(Date.now() / 1000),
     tags: [['h', groupId]],
-    content: '',
-  }, identity.sk);
+  });
+  if (!event) throw new Error('Unlock your account before joining.');
   await publishAuthedGroupEvent(identity, event);
   return event;
 }
@@ -785,13 +787,27 @@ export function useNIP29Group({ identity }) {
     const tags = groupCreateTags({ name, about, isChannel, access, joinPolicy, groupId, pubkey: identity.pk });
     const createdAt = Math.floor(Date.now() / 1000);
 
-    const createEv = finalizeEvent({ kind: 9007, created_at: createdAt, tags: tags.create, content: '' }, identity.sk);
+    // Step 2 slice 2: every creation control event is signed by this group's
+    // freshly derived actor key — the same key the genesis doc names. The
+    // creator's own device is also its first verifier (the pin is in scope).
+    // Failure throws: a mixed-shape creation window would hand a relay-written
+    // create event a legitimacy it has not earned.
+    const signer = await resolveActorSigner({ identity, groupId });
+    if (!signer) throw new Error('Unlock your account to create a group.');
+
+    const createEv = await buildControlAct({
+      identity, groupId, kind: 9007,
+      tags: tags.create, createdAt, signer: { skBytes: signer.skBytes, pin: signer.pin },
+    });
 
     const r9007 = await Promise.allSettled(pool.publish(groupRelays, createEv));
     const ok = r9007.some(r => r.status === 'fulfilled');
     if (!ok) throw new Error('No relay accepted 9007');
 
-    const metaEv = finalizeEvent({ kind: 9002, created_at: createdAt, tags: tags.meta, content: '' }, identity.sk);
+    const metaEv = await buildControlAct({
+      identity, groupId, kind: 9002,
+      tags: tags.meta, createdAt, signer: { skBytes: signer.skBytes, pin: signer.pin },
+    });
     await Promise.allSettled(pool.publish(groupRelays, metaEv));
 
     // The join policy also goes out on its own 9002, through the update path
@@ -804,18 +820,17 @@ export function useNIP29Group({ identity }) {
     // the discovery tag. Sending the same tags again costs nothing and is safe
     // whether the relay adds to the state or replaces it.
     if (joinPolicy === JOIN_APPROVAL) {
-      const policyEv = finalizeEvent({
-        kind: 9002, created_at: createdAt + 1,
-        tags: tags.meta,
-        content: ''
-      }, identity.sk);
+      const policyEv = await buildControlAct({
+        identity, groupId, kind: 9002,
+        tags: tags.meta, createdAt: createdAt + 1, signer: { skBytes: signer.skBytes, pin: signer.pin },
+      });
       await Promise.allSettled(pool.publish(groupRelays, policyEv));
     }
 
-    const joinEv = finalizeEvent({
-      kind: 9021, created_at: createdAt,
-      tags: tags.join, content: 'Creator'
-    }, identity.sk);
+    const joinEv = await buildControlAct({
+      identity, groupId, kind: 9021,
+      tags: tags.join, createdAt, content: 'Creator', signer: { skBytes: signer.skBytes, pin: signer.pin },
+    });
     await Promise.allSettled(pool.publish(groupRelays, joinEv));
 
     try {
@@ -935,10 +950,12 @@ export function useNIP29Group({ identity }) {
         console.error('[group-key] Could not update the membership snapshot:', snapshotError);
       }
     }
-    const leaveEv = finalizeEvent({
-      kind: 9022, created_at: Math.floor(Date.now() / 1000),
-      tags: [['h', groupId]], content: ''
-    }, identity.sk);
+    // Step 2 slice 2: a leave is a group act; the actor key signs it.
+    const leaveEv = await buildControlAct({
+      identity, groupId, kind: 9022,
+      tags: [['h', groupId]],
+    });
+    if (!leaveEv) throw new Error('Unlock your account before leaving.');
     await Promise.allSettled(pool.publish(groupRelays, leaveEv));
     appendSystemMessage(groupId, 'You left the group', leaveEv.id);
 
@@ -1068,33 +1085,41 @@ export function useNIP29Group({ identity }) {
         console.error('[group-key] Could not update the membership snapshot:', snapshotError);
       }
     }
-    const ev = finalizeEvent({
-      kind: 9001, created_at: Math.floor(Date.now() / 1000),
-      tags: [['h', groupId], ['p', memberPubkey]], content: ''
-    }, identity.sk);
+    // Step 2 slice 2: a kick is a group act; the actor key signs it.
+    const ev = await buildControlAct({
+      identity, groupId, kind: 9001,
+      tags: [['h', groupId], ['p', memberPubkey]],
+    });
+    if (!ev) throw new Error('Unlock your account first.');
     await Promise.allSettled(pool.publish(groupRelays, ev));
     setGroupMembers(prev => prev.filter(m => m.pubkey !== memberPubkey));
     appendSystemMessage(groupId, `${shortNpub(memberPubkey)} was kicked from the group`, ev.id);
   }, [identity, setGroupMembers, appendSystemMessage]);
 
   const promoteMember = useCallback(async (groupId, memberPubkey, isAdmin) => {
-    const pool = await getAuthenticatedPool(identity);
-    const ev = finalizeEvent({
-      kind: 9000, created_at: Math.floor(Date.now() / 1000),
+    // Step 2 slice 2: a role change is a group act.
+    const ev = await buildControlAct({
+      identity, groupId, kind: 9000,
       tags: [['h', groupId], ['p', memberPubkey], ['role', isAdmin ? 'member' : 'admin']],
-      content: ''
-    }, identity.sk);
+    });
+    if (!ev) throw new Error('Unlock your account first.');
+    const pool = await getAuthenticatedPool(identity);
     await Promise.allSettled(pool.publish(groupRelays, ev));
     setGroupMembers(prev => prev.map(m => m.pubkey === memberPubkey ? { ...m, role: isAdmin ? 'member' : 'admin' } : m));
     appendSystemMessage(groupId, `${shortNpub(memberPubkey)} was ${isAdmin ? 'demoted to member' : 'promoted to admin'}`, ev.id);
   }, [identity, setGroupMembers, appendSystemMessage]);
 
   const addMember = useCallback(async (groupId, memberPubkey) => {
+    // Step 2 slice 2: an add-back receipt is a group act. Same kind the kick
+    // wall's receiver arm reads to clear its own removal record — an actor-
+    // signed receipt resolves through standing rows' actor field exactly like
+    // every other control event now does.
+    const ev = await buildControlAct({
+      identity, groupId, kind: 9000,
+      tags: [['h', groupId], ['p', memberPubkey]],
+    });
+    if (!ev) throw new Error('Unlock your account first.');
     const pool = await getAuthenticatedPool(identity);
-    const ev = finalizeEvent({
-      kind: 9000, created_at: Math.floor(Date.now() / 1000),
-      tags: [['h', groupId], ['p', memberPubkey]], content: ''
-    }, identity.sk);
     // The publish outcome decides the row. If every relay rejected the add,
     // the owner must see the failure instead of a false success that drops
     // the request silently until a someday replay re-queues it.
@@ -1157,12 +1182,9 @@ export function useNIP29Group({ identity }) {
     if (updates.requireApproval !== undefined) {
       tags.push(['join', updates.requireApproval ? 'approval' : 'open']);
     }
-    const ev = finalizeEvent({
-      kind: 9002,
-      created_at: Math.floor(Date.now() / 1000),
-      tags,
-      content: ''
-    }, identity.sk);
+    // Step 2 slice 2: a metadata edit is a group act.
+    const ev = await buildControlAct({ identity, groupId, kind: 9002, tags });
+    if (!ev) throw new Error('Unlock your account first.');
     await Promise.allSettled(pool.publish(groupRelays, ev));
     // The local edit is now the applied metadata: record the mark so a
     // replayed older 9002 can neither announce a fake change nor roll the
@@ -1321,19 +1343,28 @@ export function useNIP29Group({ identity }) {
         }
         return;
       }
+      let resolvedSender = '';
       if ([9000, 9001, 9002, 9021, 9022].includes(event.kind)) {
         const { creator, members } = await controlContext(groupId, identity.pk);
+        // Step 2 slice 2: the sender resolves through standing rows first —
+        // an actor-signed control event carries its account only via the doc's
+        // (account -> pin) map; a legacy event still signs with the account
+        // key itself and matches directly. An unresolvable sender answers ''
+        // and authorizeGroupControl refuses it — a verified signature alone
+        // never promotes anyone.
+        resolvedSender = resolveControlSender({ wirePubkey: event.pubkey, members });
         const subject = event.kind === 9021 || event.kind === 9022
-          ? event.pubkey
-          : (event.tags.find((tag) => tag[0] === 'p')?.[1] || event.pubkey);
-        if (!authorizeGroupControl({ kind: event.kind, sender: event.pubkey, subject, members, creator })) {
+          ? (resolvedSender || event.pubkey)
+          : (event.tags.find((tag) => tag[0] === 'p')?.[1] || resolvedSender || event.pubkey);
+        if (!authorizeGroupControl({ kind: event.kind, sender: resolvedSender, subject, members, creator })) {
           console.warn('[group] Ignored an unauthorized membership event', event.kind, event.id);
           return;
         }
       }
 
       if (event.kind === 9021) {
-        const pk = event.pubkey;
+        // Gate-verified above; the actor-signed shape names the account here.
+        const pk = resolvedSender || event.pubkey;
         const members = await loadMemberSnapshot(groupId);
         // One pure decision, in a fixed order (joinRequestDecision): a denied
         // or already-queued sender is stopped BEFORE the roster is looked at,
@@ -1391,7 +1422,7 @@ export function useNIP29Group({ identity }) {
         return;
       }
       if (event.kind === 9022) {
-        const pk = event.pubkey;
+        const pk = resolvedSender || event.pubkey;
         await patchMemberSnapshot(groupId, (members) => members.filter((member) => member !== pk));
         if (useChatStore.getState().activeGroup?.id === groupId) {
           setGroupMembers(prev => Array.isArray(prev) ? prev.filter(m => m.pubkey !== pk) : []);
@@ -1756,12 +1787,12 @@ export function useNIP29Group({ identity }) {
       throw new Error('Only the group owner or an admin can pin.');
     }
     const pool = await getAuthenticatedPool(identity);
-    const ev = finalizeEvent({
-      kind: 9005,
-      created_at: Math.floor(Date.now() / 1000),
+    // Step 2 slice 2: a pin is a group act (S9 standing checked above).
+    const ev = await buildControlAct({
+      identity, groupId, kind: 9005,
       tags: [['h', groupId], ['e', messageEventId]],
-      content: ''
-    }, identity.sk);
+    });
+    if (!ev) throw new Error('Unlock your account first.');
     const results = await Promise.allSettled(pool.publish(groupRelays, ev));
     if (!results.some((result) => result.status === 'fulfilled')) {
       throw new Error('All group relays rejected the pin.');
@@ -1777,12 +1808,13 @@ export function useNIP29Group({ identity }) {
       throw new Error('Only the group owner or an admin can unpin.');
     }
     const pool = await getAuthenticatedPool(identity);
-    const ev = finalizeEvent({
-      kind: 9005,
-      created_at: Math.floor(Date.now() / 1000),
+    // Step 2 slice 2: an unpin is a group act too.
+    const ev = await buildControlAct({
+      identity, groupId, kind: 9005,
       tags: [['h', groupId]],
-      content: 'unpin'
-    }, identity.sk);
+      content: 'unpin',
+    });
+    if (!ev) throw new Error('Unlock your account first.');
     const results = await Promise.allSettled(pool.publish(groupRelays, ev));
     if (!results.some((result) => result.status === 'fulfilled')) {
       throw new Error('All group relays rejected the unpin.');
@@ -1803,12 +1835,27 @@ export function useNIP29Group({ identity }) {
       // owner has none. (security S9 re-attack)
       const standing = await controlContext(groupId, identity.pk);
       const read = (filter) => queryWithTimeout(pool, groupRelays, filter, 3000).catch(() => []);
+      // Step 2 slice 2: the creator's pin event is authored by their actor
+      // key's x-only form once captured, so the dedicated filter asks for BOTH
+      // author shapes; a creator with no row pin yet matches by account only.
+      const ownerAuthorFilter = standing.creator
+        ? (() => {
+          const row = (standing.members || []).find((m) => (typeof m === 'object' && m?.pubkey) === String(standing.creator).toLowerCase());
+          const actor = row && typeof row === 'object' && /^[0-9a-f]{66}$/.test(row.actor || '') ? row.actor.slice(2) : null;
+          return { kinds: [9005], '#h': [groupId], authors: [...new Set([standing.creator, ...(actor ? [actor] : [])])], limit: 10 };
+        })()
+        : null;
       const [ownerEvents, memberEvents] = await Promise.all([
-        standing.creator ? read({ kinds: [9005], '#h': [groupId], authors: [standing.creator], limit: 10 }) : [],
+        ownerAuthorFilter ? read(ownerAuthorFilter) : [],
         read({ kinds: [9005], '#h': [groupId], limit: 500 }),
       ]);
       const pin = pinnedMessageOf(ownerEvents, memberEvents, (event) => (
-        authorizeGroupPin({ sender: event.pubkey, members: standing.members, creator: standing.creator })
+        // Step 2 slice 2: actor-shaped pin events resolve through rows first.
+        authorizeGroupPin({
+          sender: resolveControlSender({ wirePubkey: event.pubkey, members: standing.members }),
+          members: standing.members,
+          creator: standing.creator,
+        })
       ));
       setPinnedMessages(prev => ({ ...prev, [groupId]: pin }));
       return pin;
