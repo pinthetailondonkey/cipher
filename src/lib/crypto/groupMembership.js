@@ -186,7 +186,7 @@ export function resolveControlSender({ wirePubkey, members }) {
     const account = String(row.pubkey || '').toLowerCase();
     if (!account) continue;
     if (account === signer) return account;
-    const actor = pinXonly(row.actor);
+    const actor = row.actorVerified === true ? pinXonly(row.actor) : '';
     if (actor && (actor === signer || (signerX && actor === signerX))) return account;
   }
   return '';
@@ -318,6 +318,38 @@ export function pickMemberSnapshot(events, relayPubkey, groupId) {
   return latest.tags
     .filter((tag) => tag[0] === 'p' && HEX_PUBKEY.test(String(tag[1] || '').toLowerCase()))
     .map((tag) => ({ pubkey: tag[1].toLowerCase(), role: tag[2] || 'member' }));
+}
+
+// Relay roster authors are actor keys for new groups; governance documents
+// bind those pseudonyms back to account keys. Unknown actors are ignored
+// whenever a verified document is available. Rows without an actor binding
+// remain compatible with historical account-key rosters.
+export function mapRelayRosterToAccounts(relayRows, governanceRows) {
+  if (!Array.isArray(relayRows)) return null;
+  if (!Array.isArray(governanceRows)) return relayRows;
+  const byActor = new Map();
+  const legacy = new Map();
+  for (const row of governanceRows) {
+    const account = String(typeof row === 'string' ? row : row?.pubkey || '').toLowerCase();
+    if (!/^[0-9a-f]{64}$/.test(account)) continue;
+    const actor = row?.actorVerified === true ? pinXonly(row.actor) : '';
+    if (actor) byActor.set(actor, row);
+    else legacy.set(account, row);
+  }
+  const out = new Map();
+  for (const relayRow of relayRows) {
+    const wire = String(typeof relayRow === 'string' ? relayRow : relayRow?.pubkey || '').toLowerCase();
+    const account = byActor.get(pinXonly(wire)) || legacy.get(wire);
+    if (account) out.set(String(typeof account === 'string' ? account : account.pubkey).toLowerCase(), account);
+  }
+  return [...out.values()];
+}
+
+// Control-event authorization must use the verified governance document.
+// Store/UI rosters can be stale or have been populated from old shared-key
+// attribution hints, so absent document state deliberately fails closed.
+export function controlMembersFromDocument(documentMembers) {
+  return Array.isArray(documentMembers) ? documentMembers : [];
 }
 
 export async function refetchMembersCached({

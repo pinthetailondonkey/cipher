@@ -75,7 +75,7 @@ export function pendingJoinsFor(groupId) {
 
 // True the first time this pubkey is queued for the group; false on a repeat,
 // so one sender reissuing 9021 cannot stack rows.
-export function queuePendingJoin(groupId, { pubkey, eventId, at } = {}) {
+export function queuePendingJoin(groupId, { pubkey, actor, nonce, eventId, at, requestEvent } = {}) {
   const id = String(groupId || '').trim();
   const who = String(pubkey || '').toLowerCase();
   if (!id || !HEX_PUBKEY.test(who)) return false;
@@ -84,7 +84,19 @@ export function queuePendingJoin(groupId, { pubkey, eventId, at } = {}) {
   const rows = Array.isArray(all[id]) ? all[id] : [];
   if (rows.some((row) => row.pubkey === who)) return false;
   const seconds = Number.isFinite(Number(at)) && Number(at) > 0 ? Math.floor(Number(at)) : Math.floor(Date.now() / 1000);
-  all[id] = [...rows, { pubkey: who, eventId: String(eventId || ''), at: seconds }];
+  const actorPin = String(actor || '').toLowerCase();
+  const ticketNonce = String(nonce || '').toLowerCase();
+  all[id] = [...rows, {
+    pubkey: who,
+    ...( /^0[23][0-9a-f]{64}$/.test(actorPin) ? { actor: actorPin } : {}),
+    ...( /^[0-9a-f]{64}$/.test(ticketNonce) ? { nonce: ticketNonce } : {}),
+    ...(requestEvent && requestEvent.kind === 9021 && Array.isArray(requestEvent.tags)
+      && typeof requestEvent.id === 'string' && typeof requestEvent.pubkey === 'string'
+      && typeof requestEvent.content === 'string' && typeof requestEvent.sig === 'string'
+      ? { requestEvent } : {}),
+    eventId: String(eventId || ''),
+    at: seconds,
+  }];
   const saved = persist(KEY, capPending(all));
   notifyJoinRequests();
   return saved;

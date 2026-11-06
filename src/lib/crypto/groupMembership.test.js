@@ -20,6 +20,8 @@ import {
   groupTimelinePlans,
   isGroupAdmin,
   isRestrictedRelayClose,
+  mapRelayRosterToAccounts,
+  controlMembersFromDocument,
   pickMemberSnapshot,
   pinnedMessageOf,
   refetchMembersCached,
@@ -898,7 +900,7 @@ test('resolveControlSender maps an x-only actor pin to its account, and passes l
   const pinnedActor = '02' + 'a'.repeat(64); // 66-hex compressed over admin's key shape
   const rows = [
     { pubkey: member },
-    { pubkey: admin, actor: pinnedActor },
+    { pubkey: admin, actor: pinnedActor, actorVerified: true },
   ];
   const xonly = pinnedActor.slice(2);
   assert.equal(resolveControlSender({ wirePubkey: xonly, members: rows }), admin,
@@ -913,11 +915,34 @@ test('resolveControlSender maps an x-only actor pin to its account, and passes l
   assert.equal(resolveControlSender({ wirePubkey: xonly, members: [null, '', { pubkey: '' }, admin] }), admin);
 });
 
+test('control authorization roster fails closed without governance document state', () => {
+  const staleStoreRoster = [{ pubkey: 'a'.repeat(64), actor: '02' + 'd'.repeat(64), actorVerified: true }];
+  assert.deepEqual(controlMembersFromDocument(null), []);
+  assert.deepEqual(controlMembersFromDocument(staleStoreRoster), staleStoreRoster);
+});
+
+test('a shared-key message claim cannot promote an actor pin into an account authorization', () => {
+  const forged = { pubkey: admin, role: 'admin', actor: '02' + 'd'.repeat(64) };
+  assert.equal(resolveControlSender({ wirePubkey: forged.actor.slice(2), members: [forged] }), '',
+    'an actor binding without an account-signed admission proof has no standing');
+});
+
+test('actor-only relay rosters map through the verified governance document and drop unknown actors', () => {
+  const known = { pubkey: admin, role: 'member', actor: '02' + 'd'.repeat(64), actorVerified: true };
+  const legacy = { pubkey: 'b'.repeat(64), role: 'admin' };
+  const mapped = mapRelayRosterToAccounts([
+    { pubkey: known.actor.slice(2), role: 'member' },
+    { pubkey: legacy.pubkey, role: 'admin' },
+    { pubkey: 'e'.repeat(64), role: 'member' },
+  ], [known, legacy]);
+  assert.deepEqual(mapped, [known, legacy]);
+});
+
 test('a resolved actor sender then authorizes exactly as that account would', async () => {
   const pinnedActor = '03' + 'cd'.repeat(32);
   const snapshotRows = [
     { pubkey: creator, role: 'admin' },
-    { pubkey: admin, role: 'admin', actor: pinnedActor },
+    { pubkey: admin, role: 'admin', actor: pinnedActor, actorVerified: true },
     { pubkey: member, role: 'member' },
   ];
   const resolvedAdmin = resolveControlSender({ wirePubkey: pinnedActor.slice(2), members: snapshotRows });
@@ -929,7 +954,7 @@ test('a resolved actor sender then authorizes exactly as that account would', as
   // A non-admin's pin can never borrow standing.
   const memberPin = resolveControlSender({
     wirePubkey: pinnedActor.slice(2),
-    members: [{ pubkey: member, role: 'member', actor: pinnedActor }],
+    members: [{ pubkey: member, role: 'member', actor: pinnedActor, actorVerified: true }],
   });
   assert.equal(memberPin, member);
   assert.equal(authorizeGroupControl({
@@ -948,7 +973,7 @@ test('a resolved actor sender then authorizes exactly as that account would', as
   const identity = { pk: getPublicKey(generateSecretKey()), sk: skBytes };
   // The derived pin IS this device's own — for a live end-to-end we authorize
   // against a row naming OUR account with our OWN pin.
-  const meRow = [{ pubkey: identity.pk, role: 'admin', actor: derived.pin }];
+  const meRow = [{ pubkey: identity.pk, role: 'admin', actor: derived.pin, actorVerified: true }];
   const event = await buildControlAct({ identity, groupId: GID, kind: 9002, tags: [['h', GID], ['name', 'x']] });
   assert.ok(event, 'actor-signed control event builds while unlocked');
   assert.equal(event.kind, 9002);
@@ -973,7 +998,7 @@ test('a resolved actor sender then authorizes exactly as that account would', as
 // when the wire actor is unbound and the claim names a member of record.
 test('SEC-2: a bound actor pin resolves to its account, never to a body claim', () => {
   const actorPin = '02' + 'f'.repeat(64); // a per-group signer, bound to `member`
-  const rows = [...members, { pubkey: member, role: 'member', actor: actorPin }];
+  const rows = [...members, { pubkey: member, role: 'member', actor: actorPin, actorVerified: true }];
   // The actor is bound: the account it belongs to is the requester.
   assert.equal(resolveKeyRequestRequester({ wirePubkey: actorPin, bodyBy: member, members: rows }), member);
   // A forged body claim to a DIFFERENT member cannot move the answer: the

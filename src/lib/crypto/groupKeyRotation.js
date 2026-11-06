@@ -161,18 +161,26 @@ export async function publishMemberDocUpdate(groupId, pubkeys, { pins = null } =
 
   const before = new Set(resolveMembership(head).map((row) => row.pubkey));
   const after = new Set((pubkeys || []).map((pubkey) => String(pubkey).toLowerCase()).filter(Boolean));
+  const verifiedPins = new Map(Object.entries(pins || {})
+    .map(([pubkey, actor]) => [String(pubkey).toLowerCase(), String(actor || '').toLowerCase()])
+    .filter(([pubkey, actor]) => /^[0-9a-f]{64}$/.test(pubkey) && /^0[23][0-9a-f]{64}$/.test(actor)));
   const admit = [...after].filter((pubkey) => !before.has(pubkey)).map((pubkey) => {
     // Step 2 slice 3: an admit carries the member's actor pin when this
     // device has verified one (its own derivation, or an act-derived binding
     // the caller passed in). The roster is where the pin→account map lives.
-    const pin = typeof pins === 'object' && pins ? String(pins[pubkey] || '').toLowerCase() : '';
-    return /^[0-9a-f]{66}$/.test(pin) ? { pubkey, pin } : pubkey;
+    const pin = verifiedPins.get(pubkey) || '';
+    return pin ? { pubkey, pin, actorVerified: true } : pubkey;
   });
+  const heldRows = new Map(resolveMembership(head).map((row) => [row.pubkey, row]));
+  const bind = [...after].filter((pubkey) => before.has(pubkey) && verifiedPins.has(pubkey))
+    .filter((pubkey) => heldRows.get(pubkey)?.actorVerified !== true
+      || heldRows.get(pubkey)?.actor !== verifiedPins.get(pubkey))
+    .map((pubkey) => ({ pubkey, pin: verifiedPins.get(pubkey), actorVerified: true }));
   const remove = [...before].filter((pubkey) => !after.has(pubkey));
   let signed = head;
-  if (admit.length || remove.length) {
+  if (admit.length || bind.length || remove.length) {
     const nextGen = canonicalBody(head).gen + 1;
-    const body = applyDocOps(head, { admit, remove, gen: nextGen });
+    const body = applyDocOps(head, { admit, bind, remove, gen: nextGen });
     if (!body) throw new Error('Could not fold membership ops onto the held head.');
     signed = await signDocEvent(body, privateKeyBytes);
   }
@@ -215,6 +223,14 @@ async function loadDocFirstSnapshotRecord(groupId) {
   } catch {
     return null;
   }
+}
+
+// Authorization callers that must not fall back to a relay roster use this
+// explicit read. `null` means no verified governance document is held; an
+// empty array means a held document intentionally has no current members.
+export async function loadVerifiedMemberSnapshot(groupId) {
+  const record = await loadDocFirstSnapshotRecord(groupId);
+  return Array.isArray(record?.members) ? record.members : null;
 }
 
 export async function loadMemberSnapshotRecord(groupId) {

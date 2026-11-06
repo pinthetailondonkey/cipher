@@ -48,6 +48,7 @@ export function docSnapshotShape(doc) {
     pubkey: row.pubkey,
     role: row.role || 'member',
     ...(row.actor ? { actor: row.actor } : {}),
+    ...(row.actorVerified ? { actorVerified: true } : {}),
   }));
 }
 

@@ -46,6 +46,19 @@ test('a join request is written to storage, and a stored one reads back after a 
   });
 });
 
+test('the owner queue retains the signed ciphertext event so approval can re-verify its binding', () => {
+  withStorage(() => {
+    const requestEvent = { id: 'e1', pubkey: 'c'.repeat(64), kind: 9021, tags: [['h', GROUP]], content: 'ciphertext', sig: 'd'.repeat(128) };
+    assert.equal(queuePendingJoin(GROUP, {
+      pubkey: PK, actor: '02' + 'c'.repeat(64), nonce: 'f'.repeat(64), eventId: 'e1', requestEvent,
+    }), true);
+    const stored = pendingJoinsFor(GROUP)[0];
+    assert.deepEqual(stored.requestEvent, requestEvent);
+    assert.equal(stored.pubkey, PK);
+    assert.equal(stored.actor, '02' + 'c'.repeat(64));
+  });
+});
+
 test('a denied sender stays denied: the 9021 replay cannot re-queue them', () => {
   withStorage(() => {
     queuePendingJoin(GROUP, { pubkey: PK, eventId: 'ev3', at: 10 });

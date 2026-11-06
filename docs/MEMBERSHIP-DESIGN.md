@@ -395,9 +395,10 @@ Nothing else needs deciding here.
   and signs: `resolveActorSigner` returns the byte secret, the canonical
   AAD-sender (`wireSender`, the x-only form event.pubkey will carry) and the
   compressed pin for the `author` tag. The sealed body carries the sender's
-  account pubkey in a `by` field (`groupMessageCodec.encodeGroupPayload`), so
-  blocking, roster standing, own-message cleanup and grant routing read an
-  account-level fact from inside ciphertext while the relay sees only the pin.
+  account pubkey in a `by` field (`groupMessageCodec.encodeGroupPayload`). It
+  remains an encrypted attribution hint, not proof: control authorization and
+  account-to-actor bindings resolve only through verified governance rows or
+  direct legacy account signatures. The relay sees only the actor pin.
   Witnessed by `gmIdentity.test.js` / `gmIdentityWire.test.js`: actor-key-is-
   authority-key pin equality, distinct pins per group, refusal without a session
   secret, x-only/compressed pin matching on receive, the full round trip under
@@ -413,11 +414,15 @@ Nothing else needs deciding here.
   `resolveControlSender` against standing rows' `actor` field; legacy
   account-key events match directly and anything else answers '', which
   authorizeGroupControl refuses.
-  **Landed (slice 3 core).** The member-set doc (DOC_V 2) carries each
-  member's actor pin beside their account: creator stamped at genesis,
-  members stamped from VERIFIED observations — a decoded kind-9 binds
-  event.pubkey (= their pin) to the sealed body's `by` (= their account), and
-  publishDocOp folds captured pairs into its next admit. Members receive docs
+  **Landed (slice 3 core; proof provenance corrected in DOC_V 3).** The
+  member-set doc carries actor pins beside accounts. The creator's pin is
+  verified by derivation at genesis; a new member's pin is verified by the
+  account-signed, NIP-44-encrypted admission proof and explicit owner approval.
+  A decoded kind-9's sealed `by` is NOT proof: every current group member knows
+  the message key and can forge that field. DOC_V 1/2 remains readable, but
+  actor pins in those versions are migration hints and cannot authorize
+  actor-signed controls until the account completes a fresh admission. The
+  publisher writes proof-backed v3 bindings into the governance doc. Members receive docs
   through `ingestMemberDocEvent` (relay author checked against the held pin's
   x-only form before any AES work) at join, on every roster read, and live
   (the group subscription carries a kind-30079 filter keyed by the doc's

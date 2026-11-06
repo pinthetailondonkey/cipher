@@ -112,7 +112,15 @@ async function membershipConfirmed(identity, groupId, nip29, options) {
   }
   if (outcome?.status !== 'found' || !Array.isArray(outcome.members)) return false;
   const me = String(identity?.pk || '').toLowerCase();
-  return outcome.members.some((member) => String(member?.pubkey || '').toLowerCase() === me);
+  const { resolveActorSigner } = await import('./crypto/gmIdentityWire.js');
+  const actor = await resolveActorSigner({ identity, groupId });
+  const wireActor = String(actor?.wireSender || '').toLowerCase();
+  return outcome.members.some((member) => {
+    const pubkey = String(member?.pubkey || '').toLowerCase();
+    // Current actor-only rosters are the private-group proof. The account
+    // key comparison is retained solely for historical NIP-29 rosters.
+    return pubkey === wireActor || pubkey === me;
+  });
 }
 
 // A refusal becomes a sentence a person can act on. The relay's own reason

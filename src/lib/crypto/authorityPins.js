@@ -8,13 +8,10 @@
 
 const PREFIX = 'cipher_group_auth_pin_';
 
-// Step 2 slice 3 (publisher capture): verified (account -> actor pin) pairs
-// observed on this device. The only honest channel is this device's own
-// decrypts: a kind-9 whose ciphertext opened under the group key has an AAD
-// bound to the wire pubkey, which IS the sender's actor pin, and the sealed
-// body's `by` names the account. Both halves verified by construction — so a
-// pair recorded here is evidence, not a claim. The doc publisher folds these
-// into its next admit set.
+// Legacy local actor-binding cache. A shared-key message's `by` field is not
+// proof of account ownership, so this cache is not an authorization source
+// and no current publisher or control path reads it. New bindings live only
+// in v3 governance docs after an account-signed private admission proof.
 const ACTOR_PREFIX = 'cipher_group_actor_pin_';
 
 function actorKeyFor(ownerPk, groupId) {
@@ -22,7 +19,7 @@ function actorKeyFor(ownerPk, groupId) {
   return scope && groupId ? `${ACTOR_PREFIX}${scope}_${groupId}` : '';
 }
 
-/** Record a verified act observation. Returns false for junk shapes. */
+/** Legacy storage helper; returned values are untrusted migration hints. */
 export function rememberActorBinding(ownerPk, groupId, accountPk, pin) {
   const key = actorKeyFor(ownerPk, groupId);
   const account = String(accountPk || '').toLowerCase();

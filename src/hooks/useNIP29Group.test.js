@@ -23,6 +23,16 @@ function lineOf(index) {
   return SOURCE.slice(0, index).split('\n').length;
 }
 
+test('wire control authorization uses only held verified governance standing', () => {
+  const start = SOURCE.indexOf('async function controlContext(');
+  const end = SOURCE.indexOf('\nasync function actorPinForMember', start);
+  assert.ok(start >= 0 && end > start, 'control context is located');
+  const block = SOURCE.slice(start, end);
+  assert.match(block, /loadVerifiedMemberSnapshot\(groupId\)/);
+  assert.match(block, /controlMembersFromDocument\(documentMembers\)/);
+  assert.doesNotMatch(block, /state\.groupMembers|group\?\.members|loadMemberSnapshot\(/);
+});
+
 function frameFromExpression(expression, bindings) {
   // Re-executes the captured send expression's array literal with the
   // names the send site itself uses, bound to the stored value.
@@ -137,22 +147,39 @@ test('a live member-doc event reaches the ingest door and only that arm', () => 
     'the doc arm returns before the roster-snapshot arm can see a doc event');
 });
 
-test('the pinned-slot read stops naming the account once its alias pin is held', () => {
-  // Wire-capture finding: the owner's kind-9005 read shipped authors:[account,
-  // ...pin] even after capture, so four subscription frames per session named
-  // the account on the group box. With a held pin the alias form answers
-  // alone; without one the account arm still covers pre-capture creators.
+test('the pinned-slot read never names the account when the actor pin is missing', () => {
+  // A missing actor pin widens the read rather than linking account and group
+  // in the relay-visible authors filter.
   const idx = SOURCE.search(/ownerAuthorFilter/);
   assert.ok(idx !== -1, 'the dedicated owner-pin filter exists');
   const block = SOURCE.slice(idx, idx + 1800);
-  assert.match(block, /actor \? \[actor\] : \[standing\.creator\]/,
-    'a held pin replaces the account arm entirely (pin-or-account, never both)');
+  assert.match(block, /actor \? \{ authors: \[actor\] \} : \{\}/,
+    'a held pin filters by actor; no pin removes author filtering');
   assert.doesNotMatch(block, /standing\.creator, \.\.\.\(actor/,
     'the both-shapes array is gone');
   // Second leg from the same capture: on the creator's own device the pin
   // is known by construction even when the snapshot still holds plain rows.
   assert.match(block, /readAuthorityPin\(identity\.pk, groupId\)/,
-    'the creator device answers from its own out-of-band pin before falling back to the account arm');
+    'the creator device answers from its own out-of-band pin');
+});
+
+test('moderation targets group actors and resolves them through the verified roster', () => {
+  assert.match(SOURCE, /\['p', targetPin\.slice\(2\)\]/,
+    '9000 and 9001 target the actor wire key instead of the account key');
+  assert.match(SOURCE, /resolveControlSender\(\{ wirePubkey: rawSubject, members \}\)/,
+    'receivers map the p-tag back through a governance-bound actor pin');
+  const targetActions = SOURCE.slice(SOURCE.indexOf('const kickMember'), SOURCE.indexOf('const updateGroupSettings'));
+  assert.doesNotMatch(targetActions, /\['p',\s*memberPubkey\]/,
+    'no moderation action puts an account pubkey in a relay p-tag');
+});
+
+test('shared-key message attribution never creates account-to-actor authorization bindings', () => {
+  assert.doesNotMatch(SOURCE, /rememberActorBinding\([^\n]*actBy/,
+    'a group member cannot turn its shared-key by claim into a governance identity binding');
+  assert.match(SOURCE, /openAdmissionRequest\(\{ identity, groupId, event: pending\.requestEvent \}\)/,
+    'approval re-verifies the signed encrypted ticket from storage');
+  assert.match(SOURCE, /proof\.accountPubkey !== String\(memberPubkey/,
+    'the proof account must match the person the owner approved');
 });
 
 test('SEC-2: the gkey arm resolves the requester through verified bindings, not the body claim', () => {

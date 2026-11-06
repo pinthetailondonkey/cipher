@@ -11,6 +11,7 @@ import {
   signDocEvent,
   verifySignedDoc,
   authorityPinOf,
+  actorPinOfRow,
   grantPermittedByDoc,
   docEpoch,
 } from './groupDoc.js';
@@ -192,6 +193,7 @@ test('a genesis row names its member\u2019s actor pin, canonicalized', async () 
     actorPins: { [PK(1)]: ACTOR.toUpperCase() },
   });
   assert.equal(body.members[0].actor, ACTOR.toLowerCase(), 'the pin rides lowercased');
+  assert.equal(body.members[0].actorVerified, true, 'the creator pin is verified by its own derivation');
   // Canonical hashing covers the pin: a doc without it is a different doc.
   const plain = await genesisDocBody({ gid: GID, epoch: 1, members: [PK(1)] });
   assert.notEqual(body.id || (await docIdOf(body)), await docIdOf(plain), 'pin changes the doc id');
@@ -206,7 +208,7 @@ test('a genesis row names its member\u2019s actor pin, canonicalized', async () 
 test('an admit stamps the pin; re-admitting bare keeps the held one; roles keep theirs', () => {
   const head = canonicalBody({
     gid: GID, gen: 0, epoch: 1, parents: [],
-    members: [{ pubkey: PK(1), role: 'member', gen: 0, actor: ACTOR }, row(PK(2))],
+    members: [{ pubkey: PK(1), role: 'member', gen: 0, actor: ACTOR, actorVerified: true }, row(PK(2))],
     removed: [],
   });
   const next = applyDocOps(head, {
@@ -217,6 +219,7 @@ test('an admit stamps the pin; re-admitting bare keeps the held one; roles keep 
   });
   const byKey = new Map(next.members.map((r) => [r.pubkey, r]));
   assert.equal(byKey.get(PK(3)).actor, ('03' + PK(8)).toLowerCase(), 'the admit writes the new member\u2019s pin');
+  assert.equal(byKey.get(PK(3)).actorVerified, true, 'a proof-backed admit is marked verified');
   assert.equal(byKey.get(PK(1)).actor, ACTOR.toLowerCase(), 'promote keeps the pinned actor');
   assert.equal('actor' in byKey.get(PK(1)) === false ? true : byKey.get(PK(1)).role, 'admin', 'promote changes only role');
   // A bare re-admit of an already-pinned member keeps the held pin.
@@ -228,14 +231,31 @@ test('an admit stamps the pin; re-admitting bare keeps the held one; roles keep 
 test('v1 docs still canonicalize: a body with no actor fields hashes as before', async () => {
   const v1Shape = { gid: GID, gen: 4, epoch: 1, parents: [], members: [row(PK(1), 'member', 2)], removed: [] };
   const canonicalNow = canonicalBody(v1Shape);
-  assert.equal(canonicalNow.v, 2, 'the current version stamps');
+  assert.equal(canonicalNow.v, 3, 'the current version stamps');
   assert.deepEqual(canonicalNow.members[0], { pubkey: PK(1).toLowerCase(), role: 'member', gen: 2 },
     'a row without a pin round-trips to exactly the old three fields');
   // resolveMembership passes pins through untouched.
   const pinned = canonicalBody({
     gid: GID, gen: 5, epoch: 1, parents: [],
-    members: [{ pubkey: PK(1), role: 'admin', gen: 2, actor: ACTOR }], removed: [],
+    members: [{ pubkey: PK(1), role: 'admin', gen: 2, actor: ACTOR, actorVerified: true }], removed: [],
   });
   const standing = resolveMembership(pinned);
   assert.equal(standing[0].actor, ACTOR.toLowerCase());
+  assert.equal(standing[0].actorVerified, true);
+});
+
+test('legacy v2 actor pins remain readable but cannot authorize until rebound by v3 proof', () => {
+  const legacy = canonicalBody({
+    v: 2, gid: GID, gen: 5, epoch: 1, parents: [],
+    members: [{ pubkey: PK(1), role: 'admin', gen: 2, actor: ACTOR }], removed: [],
+  });
+  assert.equal(legacy.v, 2, 'old signed document versions retain their canonical form');
+  assert.equal(legacy.members[0].actor, ACTOR.toLowerCase(), 'the historical pin remains inspectable');
+  assert.equal(actorPinOfRow(legacy.members[0]), '', 'historical pins are not trusted as account proofs');
+  const rebound = applyDocOps(legacy, {
+    bind: [{ pubkey: PK(1), pin: ACTOR }],
+    gen: 6,
+  });
+  assert.equal(rebound.v, 3, 'a safe update upgrades the document format');
+  assert.equal(actorPinOfRow(rebound.members[0]), ACTOR.toLowerCase());
 });

@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
-import { finalizeEvent, generateSecretKey } from 'nostr-tools';
+import { finalizeEvent, generateSecretKey, verifyEvent } from 'nostr-tools';
+import { resolveActorSigner, buildControlAct } from './crypto/gmIdentityWire.js';
+import { setSessionKey } from './sessionKey.js';
 import {
   ACCESS_PRIVATE,
   ACCESS_PUBLIC,
@@ -29,6 +31,23 @@ test('a public create keeps the shape the app sent before, and adds the join pol
   assert.deepEqual(meta, [
     ['h', 'g1'], ['name', 'Thursday'], ['about', 'moved'], ['join', 'approval'], ['cipher', 'true'],
   ]);
+});
+
+test('the create caller signs and tags the real group actor, never the account key', async () => {
+  const accountSk = generateSecretKey();
+  const identity = { sk: accountSk, pk: (await import('nostr-tools')).getPublicKey(accountSk) };
+  const groupId = 'actor-only-create';
+  setSessionKey(accountSk);
+  const signer = await resolveActorSigner({ identity, groupId });
+  const tags = groupCreateTags({ ...base, groupId, pubkey: signer.wireSender });
+  const event = await buildControlAct({ identity, groupId, kind: 9007, tags: tags.create });
+  assert.equal(verifyEvent(event), true);
+  assert.equal(event.pubkey, signer.wireSender);
+  assert.deepEqual(tagsOf(event.tags, 'p'), [['p', signer.wireSender, 'admin']]);
+  assert.equal(JSON.stringify(event).includes(identity.pk), false);
+  const hook = fs.readFileSync(new URL('../hooks/useNIP29Group.js', import.meta.url), 'utf8');
+  assert.match(hook, /groupCreateTags\(\{[^}]*pubkey: signer\.wireSender/s,
+    'the live createGroup caller passes its actor from the same signer used for event signing');
 });
 
 test('a private create is private AND closed, and never says open', () => {

@@ -23,15 +23,11 @@ const HEX64 = /^[0-9a-f]{64}$/;
 const HEX66 = /^[0-9a-f]{66}$/;
 
 export const DOC_T = 'gmemdoc';
-// DOC_V 2: member rows may carry an `actor` pin (the per-group authority
-// key's compressed pubkey, 66 hex). Step 2 slice 3 of MEMBERSHIP-DESIGN.md:
-// the roster is the out-of-band map that lets a receiver translate an act's
-// actor pin back to the account that acted, so control authorization keeps
-// working after control kinds sign with the actor key. Old rows without the
-// field canonicalize identically under v1; the version rises only because
-// pinned rows are a new canonical shape, and a v1 verifier seeing one must
-// refuse rather than silently drop a field it would then re-derive wrong.
-export const DOC_V = 2;
+// DOC_V 3 distinguishes actor pins backed by an account-signed admission
+// proof from pre-v3 pins that may have come from a shared-key `by` claim.
+// Versions 1 and 2 remain verifiable, but their actor fields are not used for
+// authorization until the member completes the private admission proof.
+export const DOC_V = 3;
 
 function normalizePubkey(value) {
   const text = String(value || '').toLowerCase();
@@ -50,7 +46,7 @@ function normalizeActorPin(value) {
   return HEX66.test(text) ? text : '';
 }
 
-export function memberRow(row) {
+export function memberRow(row, version = DOC_V) {
   if (!row) return null;
   const pubkey = normalizePubkey(typeof row === 'string' ? row : row?.pubkey);
   if (!pubkey) return null;
@@ -59,12 +55,17 @@ export function memberRow(row) {
   const gen = Number.isInteger(Number(row?.gen)) && Number(row.gen) >= 0 ? Number(row.gen) : null;
   if (gen === null) return null;
   // Only an object row can carry a pin; a bare string never had one to lose.
-  const actor = row && typeof row === 'object' ? normalizeActorPin(row[PIN_FIELD]) : '';
-  return actor ? { pubkey, role, gen, [PIN_FIELD]: actor } : { pubkey, role, gen };
+  const actor = row && typeof row === 'object' && Number(version) >= 2
+    ? normalizeActorPin(row[PIN_FIELD]) : '';
+  const actorVerified = actor && Number(version) >= 3 && row.actorVerified === true;
+  return actor
+    ? { pubkey, role, gen, [PIN_FIELD]: actor, ...(actorVerified ? { actorVerified: true } : {}) }
+    : { pubkey, role, gen };
 }
 
 export function actorPinOfRow(row) {
-  return row && typeof row === 'object' ? normalizeActorPin(row[PIN_FIELD] || row.pin) : '';
+  return row && typeof row === 'object' && row.actorVerified === true
+    ? normalizeActorPin(row[PIN_FIELD] || row.pin) : '';
 }
 
 export function removedRow(row) {
@@ -98,15 +99,17 @@ export function canonicalBody(doc) {
   if (!gid || !Number.isInteger(gen) || gen < 0 || !Number.isInteger(epoch) || epoch < 0) return null;
   const parents = [...new Set((Array.isArray(source.parents) ? source.parents : [])
     .map((id) => String(id || '').toLowerCase()).filter((id) => HEX64.test(id)))].sort();
+  const sourceVersion = Number(source.v);
+  const version = [1, 2, 3].includes(sourceVersion) ? sourceVersion : DOC_V;
   const members = sortRows((Array.isArray(source.members) ? source.members : [])
-    .map(memberRow).filter(Boolean))
+    .map((row) => memberRow(row, version)).filter(Boolean))
     .map((row) => ({ ...row }));
   const removed = sortRows((Array.isArray(source.removed) ? source.removed : [])
     .map(removedRow).filter(Boolean))
     .map((row) => ({ ...row }));
   // Genesis is the one document with no parent; after it, parents are
   // mandatory and `docComplete` says whether they are all held.
-  return { v: DOC_V, t: DOC_T, gid, gen, epoch, parents, members, removed };
+  return { v: version, t: DOC_T, gid, gen, epoch, parents, members, removed };
 }
 
 export async function docIdOf(canonical) {
@@ -201,7 +204,7 @@ export async function genesisDocBody({ gid, epoch, members, actorPins = null }) 
       role: 'member',
       gen: 0,
       ...(pinsByKey.has(String(pubkey).toLowerCase()) && pinsByKey.get(String(pubkey).toLowerCase())
-        ? { actor: pinsByKey.get(String(pubkey).toLowerCase()) }
+        ? { actor: pinsByKey.get(String(pubkey).toLowerCase()), actorVerified: true }
         : {}),
     })),
     removed: [],
@@ -213,7 +216,7 @@ export async function genesisDocBody({ gid, epoch, members, actorPins = null }) 
 // the higher gen and the standing role), clear the tombstones this doc's
 // members re-admit at or above their removal gen, add new admits at the new
 // gen. Deterministic because the ops are deterministic (H9 merge note).
-export function applyDocOps(headCanonical, { admit = [], remove = [], demote = [], promote = [], gen }) {
+export function applyDocOps(headCanonical, { admit = [], bind = [], remove = [], demote = [], promote = [], gen }) {
   const head = canonicalBody(headCanonical);
   if (!head || !Number.isInteger(gen) || gen <= head.gen) return null;
   const membersByKey = new Map(head.members.map((row) => [row.pubkey, { ...row }]));
@@ -225,11 +228,24 @@ export function applyDocOps(headCanonical, { admit = [], remove = [], demote = [
     // An admit that names a pin stamps it; one without leaves whatever the
     // held row carried (a re-admit after kick should not have to restate it).
     const actor = typeof entry === 'object' ? normalizeActorPin(entry.actor || entry.pin) : '';
-    membersByKey.set(pubkey, { pubkey, role: 'member', gen, ...(actor ? { [PIN_FIELD]: actor } : (prior?.actor ? { [PIN_FIELD]: prior.actor } : {})) });
+    membersByKey.set(pubkey, {
+      pubkey,
+      role: prior?.role || 'member',
+      gen,
+      ...(actor
+        ? { [PIN_FIELD]: actor, actorVerified: true }
+        : (prior?.actor ? { [PIN_FIELD]: prior.actor, ...(prior.actorVerified ? { actorVerified: true } : {}) } : {})),
+    });
     // An admit clears the tombstone only when it answers it (H1(b)): a removal
     // recorded at gen R survives unless someone deliberately re-admits at >= R.
     const tombstone = removedByKey.get(pubkey);
     if (tombstone && gen >= tombstone.gen) removedByKey.delete(pubkey);
+  }
+  for (const entry of bind) {
+    const pubkey = normalizePubkey(typeof entry === 'string' ? entry : entry?.pubkey);
+    const prior = membersByKey.get(pubkey);
+    const actor = typeof entry === 'object' ? normalizeActorPin(entry.actor || entry.pin) : '';
+    if (prior && actor) membersByKey.set(pubkey, { ...prior, [PIN_FIELD]: actor, actorVerified: true });
   }
   for (const entry of remove) {
     const pubkey = normalizePubkey(entry);
@@ -248,6 +264,7 @@ export function applyDocOps(headCanonical, { admit = [], remove = [], demote = [
     if (row && row.role !== 'admin') membersByKey.set(pubkey, { ...row, role: 'admin' });
   }
   return canonicalBody({
+    v: DOC_V,
     gid: head.gid,
     gen,
     epoch: head.epoch,
