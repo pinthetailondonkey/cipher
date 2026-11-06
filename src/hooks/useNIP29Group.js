@@ -1191,6 +1191,12 @@ export function useNIP29Group({ identity }) {
 
   const fetchGroupMembers = useCallback(async (groupId) => {
     try {
+      // Step 1 live arm: every roster read is also the moment a newer doc
+      // generation would arrive. Same verify-then-store door as the join
+      // fetch — nothing trusts an unverified row. Fire-and-forget: the roster
+      // read below does not wait on it, and a failure here is a warn, not a
+      // refused roster (H4's fallback law stands until the doc verifies).
+      refreshMemberDocs(identity, groupId).catch(() => {});
       const pool = await getAuthenticatedPool(identity);
       const [byDTag, byHTag] = await Promise.all([
         queryWithTimeout(pool, groupRelays, { kinds: [39002], '#d': [groupId] }),
