@@ -28,6 +28,9 @@ says where the rest of the truth is, so an agent does not have to guess.
    who may hold a group's rotating key: why the relay-signed roster is the wrong
    normative source, the holes found getting there, and the step order. Read
    before changing key hand-off, membership authority, or group key distribution.
+10. [docs/HANDOFF.md](docs/HANDOFF.md) — where the security and UI remediation
+   stopped, what is committed, what is finished but uncommitted, and what is
+   left. Read when joining the work mid-flight instead of re-deriving it.
 
 ## Hard lines
 
