@@ -344,7 +344,12 @@ Nothing else needs deciding here.
 ## 7. Deferred questions
 
 - **B1 `[O]`** the derivation and the signature scheme have no external review;
-  canonical encodings and test vectors are owed.
+  the cost is not a sign-off pass but real artifacts: canonical encodings and
+  test vectors for every hashed structure (doc body, doc id, pin forms, gid
+  salt), a written threat model that says which adversary each primitive is
+  assumed to stop, and an adversarial read of the HKDF info-string choices
+  (`cipher-group-authority-key-v1`, `cipher-gmemdoc-key-v1`) for cross-domain
+  derivation collisions. B5 decides before any of it starts.
 - **B2 `[O]`** whether any relay support is needed at all (the argument above is
   that it is not, which is the design's main selling point and therefore the
   first thing to falsify).
@@ -383,6 +388,32 @@ Nothing else needs deciding here.
   creation, learned out of band through the invite link. Step 2 closes N3's
   passive-observer graph the moment both cut over, because after it the identity
   key signs nothing on a group box.
+  **Landed (slice 1).** Every kind-9 send site (messages, queued Securing sends,
+  key requests including the inline one on a pending encode, typing) signs with
+  `gmIdentity.actorForGroup`, and the NIP-42 AUTH proof does too
+  (`gmIdentityWire.signActProof`). One derivation per kind-9 encrypts (`AAD`)
+  and signs: `resolveActorSigner` returns the byte secret, the canonical
+  AAD-sender (`wireSender`, the x-only form event.pubkey will carry) and the
+  compressed pin for the `author` tag. The sealed body carries the sender's
+  account pubkey in a `by` field (`groupMessageCodec.encodeGroupPayload`), so
+  blocking, roster standing, own-message cleanup and grant routing read an
+  account-level fact from inside ciphertext while the relay sees only the pin.
+  Witnessed by `gmIdentity.test.js` / `gmIdentityWire.test.js`: actor-key-is-
+  authority-key pin equality, distinct pins per group, refusal without a session
+  secret, x-only/compressed pin matching on receive, the full round trip under
+  a receiver whose session secret differs, pre-Step-2 bodies without `by`
+  still opening, and the AUTH proof shape.
+  **Open (slice 2):** control kinds 9000/9001/9002/9021/9022/9005 still sign
+  with the account key, so N3 closes fully only when they cut over; receive
+  paths deliberately trust no mixed shape mid-slice. Two pool-level AUTH
+  answers also still name the account: the group-host auto-auth installed on
+  `getAuthenticatedPool` (`pool.js:138-141`) and the directory reader's own
+  pool (`relayDirectoryRead.js:26-29, 58-65`), both of which finalize a
+  challenge kind-22242 with `identity.sk` when a group host asks. The hook's
+  raw socket path is actor-signed; these two are the remaining senders to cut
+  over in slice 2. **Slice 3:** the roster/doc naming actor pins beside
+  members (the member-set doc today names account pubkeys, so doc-carrying
+  surfaces remain an observer's join until then).
 - **Step 3 — gated.** The log, only if B4 or attribution starts to bind, or if
   equal-generation conflicts show up often enough to justify causality per
   *operation* rather than per *document*.

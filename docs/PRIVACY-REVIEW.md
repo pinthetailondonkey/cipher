@@ -33,7 +33,7 @@ with a frozen grandfathered set. Everything below is the code behind each row.
 | Contact list | the `profileRead` class first, the message relay only for misses | `{kinds:[0], authors:[every peer]}` then a straggler filter | the address book on the profile readers; on the message relay only names nobody else had (A2/F2) | `useChatBootstrap.js:243-273` |
 | Profile | `nos.lol`, `relay.damus.io` | kind 0, 10003 handle, 10002 relays | pubkey ↔ handle ↔ face ↔ blurb | `useIdentity.js:236-273` |
 | Search | `relay.vertexlab.io`, `relay.noswhere.com` | NIP-50 text; a 200-group directory blast | the query, and the asker's IP | `usePeopleSearch.js:220-228` |
-| Groups | `groups.ciphertele.com`, `groups2.ciphertele.com` | kind-9 signed by the author, `h`, `ep`, AES-GCM body; 9021/9022/9000/9001/9002/7/9005 | the whole social graph: author, group, epoch, second, size | `useNIP29Group.js:811-851`, `groupCipher.js:10-16` |
+| Groups | `groups.ciphertele.com`, `groups2.ciphertele.com` | kind-9 signed by a per-group **actor key** (`author` tag names its pin), `h`, `ep`, AES-GCM body with the sender's account key folded inside the ciphertext; control kinds and two pool-level AUTH answers still name the account | kind-9: per-group pseudonym plus group, epoch, second, size; controls: account + group + epoch + second + size | `useNIP29Group.js` Step 2 arms, `gmIdentityWire.js`, `groupCipher.js:10-16`; the pre-Step-2 statement stands for kinds 9000/9001/9002/9021/9022/9005 and the two pool auto-auth installs (`pool.js:138-141`, `relayDirectoryRead.js:58-65`) until slice 2 |
 | Roster | same | 39002 **signed by the relay's own key**, read over NIP-11 HTTPS | membership, by the relay | `groupMembership.js:35-68, 222-229` |
 | Group keys | DMs | NIP-44 to each member with the raw epoch key | the relay never sees a key | `groupKeyDistribution.js:336-361` |
 | Private group name | 9002 + sealed envelope | fixed `Private group` placeholder on the relay | nothing about a rename | `groupCreate.js:41-47` |
@@ -44,7 +44,7 @@ with a frozen grandfathered set. Everything below is the code behind each row.
 | Push delivery | FCM / APNs / browser push | token, `{"kind":"message"}` | token, timing, count | `nativePushSend.js:17-24` |
 | Payments | a self-run watcher | address, currency, child token | the vendor's own box | `payment-watch` GET |
 | Public trade | `relay.primal.net` | 10004/10005 with **both pubkeys** and the receipt hash; optional 10007 with **raw txids** | a public trade graph; amounts stay inside the DM | `useReputation.js:154-238`, `vendorStats.js:105-135` |
-| Marketplace | `relay.primal.net` | 30402 title, price, image, `t=cipher_marketplace` | a public menu tied to the vendor npub | `Wallet.jsx:229-262` |
+| Marketplace | `relay.primal.net` | 30402 title, price, image, `t=cipher_marketplace`; the image tag is a plain URL or a serialized private entry `{url,key,iv}` (`listing.js:18-40`) | a public menu tied to the vendor npub; a private-entry image hides the bytes behind a throwaway upload key but the listing itself still names the vendor | `Wallet.jsx`, `listing.js` |
 
 Two facts about the DM envelope matter more than its row. NIP-59 sets
 `created_at = now − U(0, 2 days)` (`nostr-tools nip59.js:232-234`) `[V]`, and the
@@ -449,9 +449,12 @@ A/B a 30s cover wrap over 8h, then add a 2s batch window.
 
 **D1 Light every door, not just the group and media ones.** Hides the hostnames
 of each service from the resolver and the exit. Reveals Tor use, volume, timing;
-Tor does not hide an identity asserted in-protocol (the group relay's 22242 names
-the account by design, `pool.js:139-141`). Failure: a stale door after a box
-moves. Product impact: desktop only; a web page cannot set its own proxy
+Tor does not hide an identity asserted in-protocol. The raw group socket's
+NIP-42 answer now signs with a per-group actor key (Step 2 slice 1,
+`gmIdentityWire.signActProof`), so a captured 22242 there no longer names the
+account; two pool-level auto-auth answers still do (`pool.js:138-141`,
+`relayDirectoryRead.js:58-65`, cut over in slice 2). Failure: a stale door after
+a box moves. Product impact: desktop only; a web page cannot set its own proxy
 (`README.md:52-54`). Established. Falsifier: an exit log still showing the
 clearnet hostname for the message path. **Today `dm-relay`, both search relays
 and `dead-drop` are dark** (`egress.js:103-111`).
@@ -695,10 +698,18 @@ iterations of PBKDF2-SHA-256).
 
 - The PIN floor is 10^8 for any account made since `1c7aba4`, not 10^6; 10^6 is
   legacy only (F7, F10).
+- The Groups row and D1 were written before two later changes and have been
+  corrected in place: media uploads sign their 24242 with a throwaway key
+  (`917793e`, N1), so the media host no longer earns an npub-to-IP-to-hash row
+  per vendor; and kind-9 group acts plus the raw socket's NIP-42 answer are now
+  signed by a per-group actor key (Step 2 slice 1 of MEMBERSHIP-DESIGN.md),
+  with control kinds and the two pool-level auto-auth answers still naming the
+  account until slice 2.
 - `db.js` is `src/db.js`; group crypto is `src/lib/crypto/`.
 - The size channel is the *message class*, not the deal size (F6).
 - NIP-42 group-relay-only auto-auth was **designed**, with a comment saying a
-  clearnet host must not harvest a 22242 (`pool.js:139-141`).
+  clearnet host must not harvest a 22242 (`pool.js:135-141`; the review cited
+  139-141, one line off).
 - `restoreFromRelays` restores from local storage, not relays (section 7).
 - Three fixes landed while writing this, so their findings read in the past
   tense: F1 and F12 (the two signed senders, typing and group key grants), F9

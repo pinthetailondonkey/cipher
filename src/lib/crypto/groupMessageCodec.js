@@ -6,11 +6,23 @@ async function waitForKey(groupId) {
   while (Date.now() - start < KEY_WAIT_MS) { const k = await groupKeyStore.getCurrentGroupKey(groupId); if (k) return k; await new Promise(r => setTimeout(r, KEY_POLL_MS)); }
   return null;
 }
-export async function encodeGroupPayload({ groupId, payload, senderPubkey, waitForKey: wfk = false }) {
+export async function encodeGroupPayload({ groupId, payload, senderPubkey, by, waitForKey: wfk = false }) {
   let current = await groupKeyStore.getCurrentGroupKey(groupId);
   if (!current && wfk) current = await waitForKey(groupId);
   if (!current) return { pending: true };
-  const envelope = await encryptGroupMessage({ rawKey: current.bytes, plaintext: JSON.stringify(payload), groupId, epoch: current.epoch, senderPubkey });
+  // Step 2 (gmIdentityWire.js): senderPubkey may be the per-group ACTOR pin
+  // rather than the account pubkey. The AAD binds whatever key sits on the
+  // wire event, so the caller decides; the default keeps the old behaviour
+  // for callers not yet cut over.
+  //
+  // `by` folds the sender's account pubkey INTO the sealed body: the relay
+  // sees only the actor pin on the wire, while members open the ciphertext
+  // and read who the act belongs to (roster standing, blocking, the grant
+  // path). Omitted means the body leaves exactly the shape it arrived with.
+  const body = (by && payload && typeof payload === 'object' && !Array.isArray(payload))
+    ? { ...payload, by }
+    : payload;
+  const envelope = await encryptGroupMessage({ rawKey: current.bytes, plaintext: JSON.stringify(body), groupId, epoch: current.epoch, senderPubkey });
   return { content: JSON.stringify(envelope), epoch: current.epoch, tags: [['ep', String(current.epoch)]] };
 }
 

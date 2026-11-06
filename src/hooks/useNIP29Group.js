@@ -25,6 +25,7 @@ import { admitRelayRoster, isJoinDenied, joinRequestDecision, denyPendingJoin, d
 import { allowsGroupJoins } from '../lib/privacy.js';
 import { groupMetaAnnouncement } from '../lib/groupMetaAnnouncement.js';
 import { clampGroupBody } from '../lib/disappearing';
+import { buildSignedAct, resolveActorSigner, signActProof } from '../lib/crypto/gmIdentityWire';
 
 // How long an authenticated group stream must have held before its close counts
 // as a real drop rather than a refused handshake. A stream that authenticated
@@ -256,13 +257,15 @@ export async function fetchMemberRosterOutcome(identity, groupId, options = {}) 
   return { status: 'found', members, why: '' };
 }
 
-function sameOutgoingMessage(message, event, identity, clientId) {
+function sameOutgoingMessage(message, event, identity, clientId, byPubkey = null) {
   if (!message) return false;
   if (message.id === event.id) return true;
   if (clientId && (message.id === clientId || message.clientId === clientId)) return true;
+  // Step 2: the wire pubkey is the actor pin; the account-level answer lives
+  // in the sealed body's by field, which the caller resolves and passes.
   return !!(
     message.isSender
-    && event.pubkey === identity?.pk
+    && (byPubkey || event.pubkey) === identity?.pk
     && String(message.id || '').startsWith('temp-')
     && Math.abs((message.timestamp || 0) - (event.created_at || 0)) <= 8
   );
@@ -287,6 +290,20 @@ function mergeGroupMessage(existing, incoming) {
 
 function withGroupTag(groupId, tags = []) {
   return [['h', groupId], ...tags.filter((tag) => tag[0] !== 'h')];
+}
+
+// The account key a sealed kind-9 body names in its `by` field (Step 2):
+// the identity-level fact the wire pubkey no longer carries. Pure: returns
+// '' for anything that is not a plausible pubkey on a plain object body.
+function bodyByOf(event) {
+  try {
+    const parsed = typeof event?.content === 'string' ? JSON.parse(event.content) : null;
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return '';
+    const value = typeof parsed.by === 'string' ? parsed.by : '';
+    return /^[0-9a-f]{64}$/.test(value) ? value : '';
+  } catch {
+    return '';
+  }
 }
 
 export async function loadGroupProfile(identity, rawId, passedName = null) {
@@ -340,18 +357,52 @@ function markGroupAuthed(session) {
 
 function sendAuthResponse(session, challenge) {
   if (!challenge || !session.identity?.sk || session.authSent) return;
-  const authEvent = finalizeEvent({
-    kind: 22242,
-    created_at: Math.floor(Date.now() / 1000),
-    tags: [
-      ['relay', session.relayUrl || currentGroupRelay()],
-      ['challenge', challenge],
-    ],
-    content: '',
-  }, session.identity.sk);
-  session.authEventId = authEvent.id;
-  session.authSent = true;
-  session.ws.send(JSON.stringify(['AUTH', authEvent]));
+  // Step 2 (MEMBERSHIP-DESIGN.md): the proof that opens a group box is
+  // signed by this account's per-group actor key, not by the account key.
+  // signActProof builds it: kind 22242, relay + challenge tags, the author
+  // pin riding alongside, all under the actor key.
+  const gid = sessionActorGroupId(session);
+  if (!gid) {
+    console.warn('[NIP29] No open group to prove under; the challenge goes unanswered.');
+    return;
+  }
+  signActProof({
+    identity: session.identity,
+    groupId: gid,
+    relayUrl: session.relayUrl || currentGroupRelay(),
+    challenge,
+  }).then((signed) => {
+    if (!signed || !session.ws || session.ws.readyState !== WebSocket.OPEN) return;
+    session.actorPin = signed.pin;
+    session.actorGid = gid;
+    session.authEventId = signed.event.id;
+    session.authSent = true;
+    session.ws.send(JSON.stringify(['AUTH', signed.event]));
+  }).catch((error) => {
+    console.error('[NIP29] Actor proof failed:', error);
+    rejectAuthWaiters(session, error);
+  });
+}
+
+// The group this socket's traffic should prove under right now: the store's
+// active group when it belongs to this session, else the newest group whose
+// id any live subscriber asked about. Nothing network-facing reads a value
+// from storage here; this only picks WHICH already-known actor signs.
+function sessionActorGroupId(session) {
+  const state = useChatStore.getState();
+  const active = state.activeGroup?.id;
+  if (active && isKnownGroupId(state, active)) return active;
+  for (const [, filter] of session.subs || new Map()) {
+    const tag = Array.isArray(filter)
+      ? filter.flatMap((f) => f['#h'] || []).find(Boolean)
+      : null;
+    if (tag && isKnownGroupId(state, tag)) return tag;
+  }
+  return '';
+}
+
+function isKnownGroupId(state, groupId) {
+  return Boolean(groupId) && (state.groups || []).some((g) => g.id === groupId);
 }
 
 function handleGroupSocketFrame(session, raw) {
@@ -564,18 +615,27 @@ const shouldSuppressGroup = (groupId) => {
 export async function flushSecuringGroupSends(identity, groupId) {
   if (!identity?.sk || !groupId) return;
   const items = securingSendsFor(identity.pk, groupId);
+  // Step 2: the AAD binds the pin that will sit on the wire event
+  // (groupCipher.aad() reads the sender field off the received event), so the
+  // encoder folds the SAME actor pin that signs these kind-9s.
+  const signer = await resolveActorSigner({ identity, groupId });
+  if (!signer) {
+    console.warn('[group-key] The waiting message has no signer (locked tab or unknown owner).');
+    return;
+  }
   for (const item of items) {
-    const encoded = await encodeGroupPayload({ groupId: item.groupId, payload: item.payload, senderPubkey: identity.pk });
+    const encoded = await encodeGroupPayload({ groupId: item.groupId, payload: item.payload, senderPubkey: signer.wireSender, by: identity.pk });
     if (encoded.pending) return;
     const tags = withGroupTag(item.groupId, encoded.tags);
     if (item.id) tags.push(['client', item.id]);
     if (item.replyId) tags.push(['e', item.replyId, '', 'reply']);
-    const event = finalizeEvent({
-      kind: 9,
-      created_at: Math.floor(Date.now() / 1000),
-      tags,
+    // Step 2: the actor key signs the kind-9, never identity.sk.
+    const event = await buildSignedAct({
+      identity,
+      groupId: item.groupId,
       content: encoded.content,
-    }, identity.sk);
+      tags,
+    });
     try {
       await publishAuthedGroupEvent(identity, event);
       dropSecuringSend(identity.pk, item.id);
@@ -604,12 +664,14 @@ export async function publishGroupJoin(identity, groupId) {
 export async function retrySecuringGroup(identity, groupId) {
   if (!identity?.sk || !groupId) throw new Error('Unlock your account first.');
   resetKeyRequest(identity.pk, groupId);
-  const event = finalizeEvent({
-    kind: 9,
-    created_at: Math.floor(Date.now() / 1000),
+  // Step 2: actor-signed.
+  const event = await buildSignedAct({
+    identity,
+    groupId,
     tags: [['h', groupId]],
     content: JSON.stringify({ type: 'gkey_req' }),
-  }, identity.sk);
+  });
+  if (!event) throw new Error('No signer for the key request.');
   await publishAuthedGroupEvent(identity, event);
   await flushSecuringGroupSends(identity, groupId);
 }
@@ -838,19 +900,26 @@ export function useNIP29Group({ identity }) {
 
   const sendGroupMessage = useCallback(async (groupId, payload, clientId = null, replyId = null) => {
     try {
-      const encoded = await encodeGroupPayload({ groupId, payload, senderPubkey: identity.pk, waitForKey: true });
+      // Step 2: resolve the actor once; the SAME pin folds into the group
+      // cipher's AAD and signs the event. Two derivations racing here would
+      // produce an event a receiver cannot open.
+      const signer = await resolveActorSigner({ identity, groupId });
+      if (!signer) throw new Error('Unlock your account to write in this group.');
+      const encoded = await encodeGroupPayload({ groupId, payload, senderPubkey: signer.wireSender, by: identity.pk, waitForKey: true });
       if (encoded.pending) {
         if (clientId) queueSecuringSend(identity.pk, { id: clientId, groupId, payload, replyId, since: Date.now() });
         // Drills D4: the keyless install floor opens on this record — it is
         // the evidence that this device itself asked for the key.
         rememberPendingKeyRequest(identity.pk, groupId);
         try {
-          const reqEvent = finalizeEvent({
-            kind: 9,
-            created_at: Math.floor(Date.now() / 1000),
+          // Step 2: the key request is a group act too; the actor signs it.
+          const reqEvent = await buildSignedAct({
+            identity,
+            groupId,
             tags: withGroupTag(groupId),
             content: JSON.stringify({ type: 'gkey_req' }),
-          }, identity.sk);
+          });
+          if (!reqEvent) throw new Error('No signer for the key request.');
           await publishAuthedGroupEvent(identity, reqEvent);
         } catch (error) {
           console.error('[NIP29] Failed to request a group key:', error);
@@ -860,12 +929,16 @@ export function useNIP29Group({ identity }) {
       const tags = withGroupTag(groupId, encoded.tags);
       if (clientId) tags.push(['client', clientId]);
       if (replyId) tags.push(['e', replyId, '', 'reply']);
-      const event = finalizeEvent({
-        kind: 9,
-        created_at: Math.floor(Date.now() / 1000),
-        tags,
+      // Step 2: the actor key signs the message; identity.sk never reaches
+      // a group relay. Same wire shape otherwise.
+      const event = await buildSignedAct({
+        identity,
+        groupId,
         content: encoded.content,
-      }, identity.sk);
+        tags,
+        signer: { skBytes: signer.skBytes, pin: signer.pin },
+      });
+      if (!event) throw new Error('This group message has no signer: unlock your account.');
       // Write-ahead: the signed event is in the outbox before the relay is
       // tried and leaves it on the first accept (publishWriteAhead).
       const sent = await publishWriteAhead(event, null, () => [publishAuthedGroupEvent(identity, event)]);
@@ -882,12 +955,14 @@ export function useNIP29Group({ identity }) {
     // The floor reads this record before the request even clears the relay.
     rememberPendingKeyRequest(identity.pk, groupId);
     try {
-      const ev = finalizeEvent({
-        kind: 9,
-        created_at: Math.floor(Date.now() / 1000),
+      // Step 2: actor-signed, like every kind-9 on this box now.
+      const ev = await buildSignedAct({
+        identity,
+        groupId,
         tags: withGroupTag(groupId),
         content: JSON.stringify({ type: 'gkey_req' }),
-      }, identity.sk);
+      });
+      if (!ev) throw new Error('No signer for the key request.');
       await publishAuthedGroupEvent(identity, ev);
     } catch (error) {
       console.error('[group] Key request did not send:', error);
@@ -897,14 +972,20 @@ export function useNIP29Group({ identity }) {
   const sendGroupTypingIndicator = useCallback(async (groupId) => {
     if (!allowsTyping()) return;
     try {
-      const encoded = await encodeGroupPayload({ groupId, payload: { type: 'typing' }, senderPubkey: identity.pk });
+      // Step 2: the typing act is encrypted under the SAME actor pin that
+      // signs it, because receivers derive the cipher AAD from event.pubkey.
+      const signer = await resolveActorSigner({ identity, groupId });
+      if (!signer) return;
+      const encoded = await encodeGroupPayload({ groupId, payload: { type: 'typing' }, senderPubkey: signer.wireSender, by: identity.pk });
       if (encoded.pending) return;
-      const ev = finalizeEvent({
-        kind: 9,
-        created_at: Math.floor(Date.now() / 1000),
+      // Step 2: actor-signed.
+      const ev = await buildSignedAct({
+        identity,
+        groupId,
         tags: withGroupTag(groupId, encoded.tags),
         content: encoded.content,
-      }, identity.sk);
+      });
+      if (!ev) return;
       await publishAuthedGroupEvent(identity, ev);
     } catch (e) {}
   }, [identity]);
@@ -1335,21 +1416,34 @@ export function useNIP29Group({ identity }) {
       }
       if (event.kind !== 9) return;
 
+      // Step 2: the wire pubkey is now the sender's per-group ACTOR pin.
+      // Identity-level facts (blocking, who the act is by) read the sealed
+      // body's `by` field, which the sender's device folded in; a body with
+      // no `by` keeps the wire pubkey, which covers pre-Step-2 events. The
+      // message branch below re-reads by AFTER clamp; this first read is
+      // what the gkey-request and blocking arms act on.
+      const actBy = bodyByOf(event) || event.pubkey;
+
       const blocked = useChatStore.getState().blockedUsers || [];
-      if (blocked.includes(event.pubkey) && event.pubkey !== identity.pk) return;
+      if (blocked.includes(actBy) && actBy !== identity.pk) return;
 
       let isGkeyReq = false;
       try {
         const parsedQuick = JSON.parse(event.content);
         if (parsedQuick.type === 'gkey_req') {
           isGkeyReq = true;
-          if (event.pubkey !== identity.pk) {
+          // The request is answered to the ACCOUNT key the sealed body names:
+          // a key bundle is a DM that only that account's devices can open,
+          // and the actor pin on the wire cannot read one.
+          const requesterAccount = actBy !== event.pubkey ? actBy : '';
+          if ((requesterAccount || event.pubkey) !== identity.pk) {
+            const requester = requesterAccount || event.pubkey;
             const record = await loadMemberSnapshotRecord(groupId);
             const current = await getCurrentGroupKey(groupId);
             const { creator } = await controlContext(groupId, identity.pk);
             const decision = await grantKeyRequest({
               groupId,
-              requester: event.pubkey,
+              requester,
               creator,
               // F3: the device's own creation record is the one self-attested
               // standing; even a relay outage cannot take the owner's grant.
@@ -1364,7 +1458,7 @@ export function useNIP29Group({ identity }) {
               await distributeGroupKey({
                 senderPrivkey: identity.sk, senderPubkey: identity.pk,
                 groupId, epoch: current.epoch, keyBytes: current.bytes,
-                recipients: [event.pubkey],
+                recipients: [requester],
                 extraEpochs: prior,
                 // An explicit request is answered whatever the ledger says
                 // was sent before (rate limited inside distributeGroupKey).
@@ -1408,18 +1502,24 @@ export function useNIP29Group({ identity }) {
       // JSON the row will save is rebuilt when the clamp moves it.
       ({ parsed, plaintext } = clampGroupBody(parsed, plaintext));
 
+      // Step 2: the clamp may have rebuilt the body, so the message arms read
+      // by from the CLAMPED body, preferring it over the pre-clamp read above.
+      const actByClamped = (typeof parsed.by === 'string' && /^[0-9a-f]{64}$/.test(parsed.by))
+        ? parsed.by
+        : actBy;
+
       if (!isPending && parsed.type === 'typing') {
         const age = (Date.now() / 1000) - event.created_at;
-        if (age < 10 && event.pubkey !== identity.pk) {
-          setGroupTypingUsers(prev => ({ ...prev, [event.pubkey]: Date.now() }));
+        if (age < 10 && actByClamped !== identity.pk) {
+          setGroupTypingUsers(prev => ({ ...prev, [actByClamped]: Date.now() }));
         }
         return;
       }
 
-      if (event.pubkey !== identity.pk) {
+      if (actByClamped !== identity.pk) {
         setGroupMembers(prev => {
-          if (prev.findIndex(m => m.pubkey === event.pubkey) === -1) {
-            return [...prev, { pubkey: event.pubkey, role: 'member' }];
+          if (prev.findIndex(m => m.pubkey === actByClamped) === -1) {
+            return [...prev, { pubkey: actByClamped, role: 'member' }];
           }
           return prev;
         });
@@ -1428,7 +1528,7 @@ export function useNIP29Group({ identity }) {
       const replyTag = event.tags.find(t => t[0] === 'e' && t[3] === 'reply');
       const clientId = event.tags.find(t => t[0] === 'client')?.[1];
 
-      if (event.pubkey === identity.pk && clientId) {
+      if (actByClamped === identity.pk && clientId) {
         const optimisticMessage = await db.messages.where('clientId').equals(clientId).first();
         if (optimisticMessage?.chatId === groupId && optimisticMessage.isSender && optimisticMessage.id !== event.id) {
           await db.messages.delete(optimisticMessage.id);
@@ -1437,12 +1537,12 @@ export function useNIP29Group({ identity }) {
 
       setGroupMessages(prev => {
         const groupMsgs = prev[groupId] || [];
-        const existingIndex = groupMsgs.findIndex((m) => sameOutgoingMessage(m, event, identity, clientId));
+        const existingIndex = groupMsgs.findIndex((m) => sameOutgoingMessage(m, event, identity, clientId, actByClamped));
 
         const baseMsg = stampArrival({
-          id: event.id, clientId, isSender: event.pubkey === identity.pk,
-          pubkey: event.pubkey, timestamp: event.created_at,
-          deliveryStatus: event.pubkey === identity.pk ? 'sent' : undefined,
+          id: event.id, clientId, isSender: actByClamped === identity.pk,
+          pubkey: actByClamped, timestamp: event.created_at,
+          deliveryStatus: actByClamped === identity.pk ? 'sent' : undefined,
           local_timestamp: Date.now(),
           rawContent: isPending ? null : plaintext,
           ciphertext: isPending ? event.content : null,
@@ -1459,10 +1559,10 @@ export function useNIP29Group({ identity }) {
         saveMessage(groupId, baseMsg);
         // A message arriving into the group on screen is read: the marker is
         // written to the database or the message counts as unread after reload.
-        if (event.pubkey !== identity.pk && useChatStore.getState().activeGroup?.id === groupId) {
+        if (actByClamped !== identity.pk && useChatStore.getState().activeGroup?.id === groupId) {
           markChatRead(groupId, Math.max(Math.floor(Date.now() / 1000), event.created_at));
         }
-        if (event.pubkey !== identity.pk && !isPending && !shouldSuppressGroup(groupId)) {
+        if (actByClamped !== identity.pk && !isPending && !shouldSuppressGroup(groupId)) {
           let isReplyToMe = false;
           let isMentioned = false;
           if (replyTag) {
@@ -1480,9 +1580,9 @@ export function useNIP29Group({ identity }) {
             if (myUsername && parsed.message && parsed.message.includes('@' + myUsername)) isMentioned = true;
           } catch (e) {}
           // S11: the sender is the throttle key; only the OS notification is held back.
-          if (isReplyToMe) showNotification(`💬 Reply in ${groupId.slice(0, 6)}`, event.pubkey);
-          else if (isMentioned) showNotification('📣 You were mentioned', event.pubkey);
-          else showNotification('New Group Message', event.pubkey);
+          if (isReplyToMe) showNotification(`💬 Reply in ${groupId.slice(0, 6)}`, actByClamped);
+          else if (isMentioned) showNotification('📣 You were mentioned', actByClamped);
+          else showNotification('New Group Message', actByClamped);
         }
         return { ...prev, [groupId]: [...groupMsgs, baseMsg].sort(sortMessages) };
       });
@@ -1514,13 +1614,17 @@ export function useNIP29Group({ identity }) {
           const { plaintext: keptPlaintext } = clampGroupBody(parsed, decoded.plaintext);
           const replyTag = event.tags.find(t => t[0] === 'e' && t[3] === 'reply');
           const clientId = event.tags.find(t => t[0] === 'client')?.[1];
+          // Step 2: same by-field rule the live arm holds.
+          const actBy = (typeof parsed.by === 'string' && /^[0-9a-f]{64}$/.test(parsed.by))
+            ? parsed.by
+            : event.pubkey;
           setGroupMessages(prev => {
             const groupMsgs = prev[gid] || [];
-            const idx = groupMsgs.findIndex((m) => sameOutgoingMessage(m, event, identity, clientId));
+            const idx = groupMsgs.findIndex((m) => sameOutgoingMessage(m, event, identity, clientId, actBy));
             const newMsg = stampArrival({
-              id: event.id, clientId, isSender: event.pubkey === identity.pk,
-              pubkey: event.pubkey, timestamp: event.created_at,
-              deliveryStatus: event.pubkey === identity.pk ? 'sent' : undefined,
+              id: event.id, clientId, isSender: actBy === identity.pk,
+              pubkey: actBy, timestamp: event.created_at,
+              deliveryStatus: actBy === identity.pk ? 'sent' : undefined,
               local_timestamp: Date.now(), rawContent: keptPlaintext,
               epoch: decoded.epoch, pending: false,
               replyTo: replyTag ? replyTag[1] : null, isGroup: true,
