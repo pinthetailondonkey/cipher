@@ -284,3 +284,39 @@ opened locally) but nothing they sent, unless that device was the sender
 and kept it. Receipts are untouched: commerce papers are stored by both
 sides as events in their own right, so an order trail survives any
 reinstall through the vendor's copy alone.
+
+## Phase 11 — Step 2 closes: no group-box event names the account key
+
+The passive-observer leak on the group boxes (an account's membership graph
+readable from what it signs) is closed at this app's boundary. Every event
+this app publishes to `groups.ciphertele.com` / `groups2.ciphertele.com`
+signs with the per-group actor key derived from the account secret — never
+with the account key itself. Design and evidence live in
+`docs/MEMBERSHIP-DESIGN.md` §7/§8; the review rows it re-derived are
+`docs/PRIVACY-REVIEW.md` Groups/D1. `2026-11-06`.
+
+### What landed
+
+| SHA | Change | Witness |
+|---|---|---|
+| `1e76736` | kind-9 bodies + raw-socket AUTH cut to `gmIdentityWire`; three wire bugs found and fixed via red tests (pin shape fold, byte-vs-hex secret keys, AAD parity on `wireSender`) | [V] targeted suites + desktop build |
+| `9ae91be`, `2a999f4`, `b27c6bb` | member-set doc v2 carries per-member actor pins; receive door verifies against the invite-learned pin before any AES work; refresh fires on every roster read | [V] author-gate removal went red |
+| `686a379` | publisher capture: decoded kind-9s are verified (account -> pin) pairs folded into the next doc admit | [V] junk-pin refuse test |
+| `f115255`, `bb3940c` | all twelve control-kind send sites actor-signed; receivers resolve senders through standing doc rows (`resolveControlSender`), unresolvable answers '' and authorization refuses | [V] end-to-end build -> resolve -> authorize witness; red-when-reverted |
+| `de7fc83` | both pool auto-auth installs sign NIP-42 proofs under the actor key; ordering bug found en route — the authed marker fired when signing *started*, not resolved, which released waiters before the AUTH frame existed | [V] pool tests re-seeded; identity.sk revert went 11/12 -> fail -> restored 12/12 |
+| `497377f` | live arm: the roster doc rides every group subscription on its own kind-30079 filter (doc events carry no h tag); gen bumps reach members between reads | [V] plan-shape + routing-arm witnesses both red-when-reverted |
+
+### Residual account-key uses, judged and recorded
+
+Three `identity.sk` sites remain inside `useNIP29Group.js` and each is sound:
+`:864` derives the authority key locally (that derivation *is* Step 1), and
+`:842/:1206/:1561` pass the account secret into `distributeGroupKey`'s gift-
+wrap seal only, where a fresh anonymous wrap key signs the outer event a relay
+sees. Searched the whole tree: every other remaining site is DM-side or
+note-side, outside the group-box scope. A captured relay frame still names no
+account anywhere in this app's group traffic.
+
+### Deliberately open
+
+B5 (per-account vs per-device pseudonym) is a design decision, not code debt;
+pin rotation rides account-key rotation until someone argues otherwise (H5).

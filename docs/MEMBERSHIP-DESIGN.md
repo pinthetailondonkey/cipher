@@ -419,7 +419,10 @@ Nothing else needs deciding here.
   event.pubkey (= their pin) to the sealed body's `by` (= their account), and
   publishDocOp folds captured pairs into its next admit. Members receive docs
   through `ingestMemberDocEvent` (relay author checked against the held pin's
-  x-only form before any AES work) at join and on every roster read; H4's
+  x-only form before any AES work) at join, on every roster read, and live
+  (the group subscription carries a kind-30079 filter keyed by the doc's
+  prefixed d-tag, so a gen bump published while a member sits in the group
+  reaches them without their next read); H4's
   null path stands while nothing verifies.
   **Open: B5** stays deliberate; pin rotation rides account-key rotation (H5
   residual). The kick-wall's own add-back receipt now travels actor-signed and
