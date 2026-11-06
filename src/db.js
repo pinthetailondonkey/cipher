@@ -64,6 +64,23 @@ function makeDB(name) {
     tombstones: 'id, chatId',
     vendorReviews: '&receiptHash, vendorPubkey, createdAt',
   });
+  // v12 adds groupMemberDocs: the owner-signed member-set document at rest
+  // (MEMBERSHIP-DESIGN.md Step 1). Keyed by groupId+gen so a generation is
+  // written once and never demoted; conflict pairs at one gen keep one row
+  // per doc id.
+  d.version(12).stores({
+    messages: 'id, chatId, pubkey, timestamp, clientId, type',
+    profiles: 'pubkey, name, displayName',
+    groups: 'id, name',
+    chatReads: 'chatId',
+    groupKeys: '++id, &[groupId+epoch], groupId, epoch, isCurrent, obtainedAt',
+    groupKeyGrants: '++id, &[groupId+pubkey+epoch], groupId, pubkey, epoch, sentAt',
+    groupMemberSigs: '&groupId, members, updatedAt',
+    outbox: '&id, kind, created_at, queuedAt',
+    tombstones: 'id, chatId',
+    vendorReviews: '&receiptHash, vendorPubkey, createdAt',
+    groupMemberDocs: '&[groupId+gen+docId], groupId, gen, docId',
+  });
   return d;
 }
 
@@ -300,7 +317,7 @@ export const db = new Proxy({}, {
         _warnedOnce = true;
         console.warn('[db] accessed before openDBFor — returning empty stubs');
       }
-      if (['messages', 'chatReads', 'profiles', 'groups', 'groupKeys', 'groupKeyGrants', 'groupMemberSigs', 'outbox', 'tombstones', 'vendorReviews'].includes(prop)) {
+      if (['messages', 'chatReads', 'profiles', 'groups', 'groupKeys', 'groupKeyGrants', 'groupMemberSigs', 'outbox', 'tombstones', 'vendorReviews', 'groupMemberDocs'].includes(prop)) {
         return stubTable(prop);
       }
       return () => Promise.resolve();
