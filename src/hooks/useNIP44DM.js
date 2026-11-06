@@ -11,7 +11,7 @@ import { publishWriteAhead, startOutboxSync } from '../lib/outbox';
 import { allowsTyping } from '../lib/privacy';
 import { publishOwnRelayList, relaysForPeer } from '../lib/dmRelays';
 import { sortMessages, stampArrival } from '../features/chat/media';
-import { rumorTags, sealAndWrap, withBuzzLabel, wrapForGateway, buzzLabelFor, GIFT_WRAP_KIND } from '../lib/giftWrap';
+import { rumorTags, sealAndWrap, withBuzzLabel, wrapForGateway, buzzLabelFor, GIFT_WRAP_KIND, padRumorContent, unpadRumorBody } from '../lib/giftWrap';
 import { isGiftWrap, unwrapToRumor } from '../lib/giftUnwrap';
 import { storedGatewayPubkey as activeGatewayPubkey, rememberGatewayPubkey } from '../lib/pushGatewayStore';
 import { conversationKey } from '../lib/dmKeys';
@@ -113,7 +113,9 @@ export function useNIP44DM({ identity }) {
       // recipient's key opens the wrap and reads what kind of message it was.
       const stamped = withBuzzLabel(payload);
       const shared = conversationKey(identity.sk, targetDm);
-      const encrypted = nip44.v2.encrypt(JSON.stringify(stamped), shared);
+      // F6: the plaintext body is padded to a fixed size BEFORE encryption so
+      // every short-to-medium DM seals into one wire length class.
+      const encrypted = nip44.v2.encrypt(padRumorContent(JSON.stringify(stamped)), shared);
       const rumor = nip59.createRumor({
         kind: 4,
         created_at: Math.floor(Date.now() / 1000),
@@ -187,7 +189,9 @@ export function useNIP44DM({ identity }) {
       // the rumor carries that ciphertext. Ingest decrypts event.content, so a
       // plaintext body here would parse as a failed decrypt and be dropped.
       const shared = conversationKey(identity.sk, targetDm);
-      const encrypted = nip44.v2.encrypt(JSON.stringify({ type: 'typing' }), shared);
+      // F6: typing rides the same fixed-size class as messages — one length
+      // for both so cadence cannot be told from content on the wire.
+      const encrypted = nip44.v2.encrypt(padRumorContent(JSON.stringify({ type: 'typing' })), shared);
       const rumor = nip59.createRumor({
         kind: 4, // Use kind 4 so strict relays accept it
         created_at: Math.floor(Date.now() / 1000),
@@ -266,7 +270,7 @@ export function useNIP44DM({ identity }) {
               try { text = nip44.v2.decrypt(event.content, shared); }
               catch (e) { return; }
               let data = {};
-              try { data = JSON.parse(text); } catch (e) { data = { type: 'text', message: text }; }
+              try { data = unpadRumorBody(JSON.parse(text)); } catch (e) { data = { type: 'text', message: text }; }
 
               if (data.type === 'call') {
                 if (!isSender) {

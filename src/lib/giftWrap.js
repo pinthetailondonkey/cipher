@@ -70,6 +70,49 @@ export function rumorTags({ recipient, clientId = null, replyId = null, extra = 
   ];
 }
 
+// ── F6: one length class for DM rumor bodies ───────────────────────────────
+// The seal's ciphertext length is a function of the rumor's content length,
+// and every relay can read a length. Without padding, six message lengths map
+// to four distinct wire sizes (see PRIVACY-REVIEW.md section 1): "yes" reads
+// differently from a real message. NIP-44 already quantizes to 32/64-byte
+// buckets; padding the RUMOR body to a fixed size before sealing collapses
+// everything under ~480 chars into one rung. Longer payloads fall through to
+// nip44's own buckets (the second rung) rather than truncating content.
+export const RUMOR_PAD_TARGET_BYTES = 640;
+
+export function padRumorContent(content, targetBytes = RUMOR_PAD_TARGET_BYTES) {
+  const text = typeof content === 'string' ? content : '';
+  const deficit = targetBytes - text.length;
+  if (deficit <= 0) return text;
+  // Padding rides INSIDE the encrypted body as a JSON field, so the receiver
+  // drops it naturally on parse and no out-of-band length survives unwrap.
+  // Build `pad` as a string that makes the WHOLE body exactly target bytes:
+  // body = {"pad":"xxxx..."} appended after the original compact JSON.
+  try {
+    const parsed = JSON.parse(text);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return text;
+    if ('pad' in parsed && parsed.pad !== undefined) return text; // never twice
+    // Length math: JSON.stringify({...parsed, pad}) = current + ,"pad":"N"
+    const budget = deficit - ',"pad":""'.length;
+    if (budget < 1) return text;
+    const filler = 'x'.repeat(Math.max(0, budget));
+    return JSON.stringify({ ...parsed, pad: filler });
+  } catch {
+    // Not our shape (e.g. sealed body): leave it; the caller may still pad at
+    // its own layer.
+    return text;
+  }
+}
+
+// Strip helper for receivers whose ingest compares or stores raw bodies.
+export function unpadRumorBody(payload) {
+  if (!payload || typeof payload !== 'object') return payload;
+  if (!('pad' in payload)) return payload;
+  const { pad, ...rest } = payload;
+  void pad;
+  return rest;
+}
+
 // Wraps a rumor-shaped event for one recipient. Returns the signed kind-1059
 // wrap (outer, anonymous sender) and the kind-13 seal (inner, signed by the
 // sender) so a caller can prove what it hid. The rumor must carry its own id
