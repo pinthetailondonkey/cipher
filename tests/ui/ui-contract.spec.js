@@ -416,3 +416,67 @@ test.describe('live: the md+ rail holds its own 72px', () => {
     expect(hit.onRail, `the rail is the topmost element at its centre (${hit.tag})`).toBe(false);
   });
 });
+
+test.describe('live: a run avatar is the 28px its own spacer draws', () => {
+  // The avatar column is a run thing: the last message of a run draws the
+  // avatar, every message above it draws an `h-7 w-7` spacer so the bubbles
+  // stay in one column. `Avatar` carries its own `size` map, so a plain
+  // `h-7 w-7` at the call site loses the cascade to `SIZES.sm` (`h-8`) and the
+  // avatar grows 4px under a spacer that cannot follow it. The needle is the
+  // two widths inside one run; measured off the boxes, not read off the class
+  // string, because that is exactly what hid the disagreement.
+  test.beforeEach(async ({ page }) => {
+    await page.addInitScript(seedVault);
+    await page.goto('/');
+    await unlock(page);
+    await expect(page.getByRole('heading', { name: 'Chats' })).toBeVisible({ timeout: 30000 });
+    // The boot's history fetch would replace the store's copy with the relay's
+    // empty one if it landed after the seed.
+    await page.waitForTimeout(2000);
+    await page.evaluate(() => {
+      const pk = 'f'.repeat(64);
+      const now = Math.floor(Date.now() / 1000);
+      window.__cipherStore.setState({
+        dms: {
+          [pk]: [
+            { id: 'run-1', pubkey: pk, timestamp: now - 600, data: { message: 'First of the run', type: 'text' }, isSender: false },
+            { id: 'run-2', pubkey: pk, timestamp: now - 540, data: { message: 'Last of the run', type: 'text' }, isSender: false },
+            { id: 'run-3', pubkey: pk, timestamp: now - 480, data: { message: 'Mine, so no avatar', type: 'text' }, isSender: true },
+          ],
+        },
+      });
+    });
+    await page.getByRole('button', { name: /^npub1/ }).click();
+    await expect(page.getByText('Last of the run')).toBeVisible({ timeout: 20000 });
+  });
+
+  test('the avatar and the spacer above it are the same width', async ({ page }) => {
+    // Scoped to the run on purpose: the thread header carries an avatar too,
+    // at its own size, and a whole-tree sweep would count it. For each message
+    // the closest ancestor that has a lead is that message's own row, so this
+    // reads the spacer beside the first message and the avatar beside the last.
+    const leads = await page.evaluate((texts) => {
+      // The words sit in a text node beside the time, so match the element that
+      // owns them rather than a childless one.
+      const own = (el) => [...el.childNodes].filter((n) => n.nodeType === 3).map((n) => n.textContent).join('');
+      const leadWidth = (text) => {
+        const node = [...document.querySelectorAll('*')].find((el) => own(el).includes(text)
+          && el.getBoundingClientRect().width > 0);
+        if (!node) return { text, w: null, cls: null };
+        for (let el = node; el; el = el.parentElement) {
+          const lead = el.querySelector('span[aria-hidden="true"][class*="shrink-0"]');
+          if (lead) {
+            const box = lead.getBoundingClientRect();
+            return { text, w: Math.round(box.width), h: Math.round(box.height), cls: lead.className };
+          }
+        }
+        return { text, w: null, cls: null };
+      };
+      return texts.map(leadWidth);
+    }, ['First of the run', 'Last of the run']);
+
+    // Both rows must have found a lead, or two nulls would agree with anything.
+    const found = leads.map((l) => l.w);
+    expect(found, JSON.stringify(leads)).toEqual([28, 28]);
+  });
+});

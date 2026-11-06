@@ -531,7 +531,7 @@ export default function MessageBubble({ message, data, onAction, senderName, ide
       )}
       {!isSender && showAvatar && !selectMode && (
         runEnd
-          ? <Avatar src={avatarUrl} name={avatarInitial === '?' ? senderName : avatarInitial} pubkey={message?.pubkey || ''} size="sm" className="h-7 w-7 shrink-0 rounded-full object-cover !text-[11px]" />
+          ? <Avatar src={avatarUrl} name={avatarInitial === '?' ? senderName : avatarInitial} pubkey={message?.pubkey || ''} size="sm" className="!h-7 !w-7 shrink-0 rounded-full object-cover !text-[11px]" />
           : <span className="h-7 w-7 shrink-0" aria-hidden="true" />
       )}
       <div
