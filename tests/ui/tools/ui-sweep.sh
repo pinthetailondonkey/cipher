@@ -7,10 +7,17 @@ cd /home/aegis/cipher
 OUT=${JCODE_SCRATCH_DIR:-/tmp}/ui-sweep
 mkdir -p "$OUT"
 SUM=$OUT/sweep.tsv
-: > "$SUM"
+# Accumulate rather than truncate, and skip a batch whose line is already
+# green: a sweep takes an hour, and the tool that launched it can be timed out
+# and signalled mid-run. Delete the file to start a fresh one.
+touch "$SUM"
 
 run() {
   local label=$1; shift
+  if grep -q "^$label	.*exit=0" "$SUM" 2>/dev/null; then
+    echo "JCODE_PROGRESS {\"message\":\"$label already green, skipped\"}"
+    return 0
+  fi
   local sha dirty
   sha=$(git rev-parse --short HEAD)
   dirty=$(git status --porcelain | wc -l | tr -d ' ')
