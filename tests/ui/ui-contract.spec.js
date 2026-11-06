@@ -252,6 +252,43 @@ test.describe('live: the founder ruling — dialogs sit in the middle', () => {
   }
 });
 
+test.describe('live: the empty thread pane holds its card whole', () => {
+  // The md+ column is 480 wide: the 340px list plus a 140px thread pane. The
+  // card used to be `w-full mx-4`, which is 100% + 32 and so overflowed the
+  // pane's own overflow-hidden — the right border and half a sentence were cut
+  // at every md+ width. Both halves are pinned: the card inside the pane, and
+  // the pane free of horizontal overflow.
+  test.beforeEach(async ({ page }) => {
+    await page.addInitScript(seedVault);
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto('/');
+    await unlock(page);
+    await expect(page.getByText('No chat open', { exact: true })).toBeVisible({ timeout: 30000 });
+  });
+
+  test('at 1280x800 the card fits the pane, gutters included', async ({ page }) => {
+    const card = page.getByText('No chat open', { exact: true }).locator('..');
+    const pane = card.locator('..');
+    const cardBox = await card.boundingBox();
+    const paneBox = await pane.boundingBox();
+
+    // The pane really is the sliver, or this would pass on a wide pane too.
+    expect(paneBox.width).toBeLessThan(300);
+    expect(cardBox.x).toBeGreaterThanOrEqual(paneBox.x);
+    expect(cardBox.x + cardBox.width).toBeLessThanOrEqual(paneBox.x + paneBox.width + 0.5);
+
+    // Not collapsed to a word by the fix, and both lines readable.
+    expect(cardBox.width).toBeGreaterThan(80);
+    await expect(page.getByText('Pick a chat from the list.')).toBeVisible();
+  });
+
+  test('the pane does not scroll sideways', async ({ page }) => {
+    const pane = page.getByText('No chat open', { exact: true }).locator('..').locator('..');
+    const overflow = await pane.evaluate((el) => ({ scroll: el.scrollWidth, client: el.clientWidth }));
+    expect(overflow.scroll).toBeLessThanOrEqual(overflow.client + 1);
+  });
+});
+
 test.describe('live: the md+ rail holds its own 72px', () => {
   // No node test can see where anything lands in the flex row. The panes used
   // to carry `md:left-[72px]`, compensation for a rail that was `fixed` and so

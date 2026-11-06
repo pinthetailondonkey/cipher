@@ -165,7 +165,13 @@ export default function Chat({
             openChat={directory.openChat}
           />
         ) : thread || (
-          <div className="m-auto mx-4 w-full max-w-sm rounded-2xl border border-line bg-panel px-4 py-8 text-center shadow-lg">
+          /* The card owns its own gutters: `w-full` plus `mx-4` is 100% + 32,
+             which at md+ overflows the 140px thread pane beside the fixed
+             340px list and gets cut by the pane's own overflow-hidden. The
+             width is the pane minus those gutters, capped by max-w-sm, and
+             `m-auto` puts the shortfall either side so the card sits centred
+             in the sliver and on a full-width pane alike. */
+          <div className="m-auto w-[calc(100%-2rem)] max-w-sm rounded-2xl border border-line bg-panel px-4 py-8 text-center shadow-lg">
             <p className="text-[15px] font-semibold text-ink">No chat open</p>
             <p className="mt-1 text-[13px] text-ink/40">Pick a chat from the list.</p>
           </div>
