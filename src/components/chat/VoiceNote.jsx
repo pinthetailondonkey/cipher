@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { Pause, Play } from 'lucide-react';
 import { openPrivateMedia, releasePrivateMedia } from '../../lib/mediaCrypto';
+import { MEDIA_FETCH_OPTIONS } from '../../lib/mediaUrl';
+import { useVisibleSrc } from '../ui/Picture';
 
 const BARS = 32;
 // Even placeholder bars until the real amplitude decode lands.
@@ -16,9 +18,15 @@ function height(peak) {
 // decrypt machinery underneath is the same MediaAudio path — reskin only,
 // nothing about how media enters or leaves changes here.
 function VoiceNoteInner({ item, name = '', sent = false, className = '' }) {
-  // A plain entry already has its url; an encrypted one opens on mount.
-  const [src, setSrc] = useState(() => (item?.shape === 'private' ? '' : item?.entry?.url || ''));
-  const [failed, setFailed] = useState(false);
+  // Plain entries go through the approved-origin fetch in useVisibleSrc; an
+  // encrypted entry is fetched and decrypted by openPrivateMedia.
+  const entry = item?.entry;
+  const itemKey = `${entry?.url || ''}|${entry?.key || ''}|${entry?.iv || ''}`;
+  const [privateMedia, setPrivateMedia] = useState({ key: '', src: '' });
+  const [failedKey, setFailedKey] = useState('');
+  const privateSrc = privateMedia.key === itemKey ? privateMedia.src : '';
+  const src = useVisibleSrc(item?.shape === 'private' ? privateSrc : entry?.url);
+  const failed = failedKey === itemKey;
   const [playing, setPlaying] = useState(false);
   const [progress, setProgress] = useState(0);
   const [peaks, setPeaks] = useState(FALLBACK_PEAKS);
@@ -26,30 +34,32 @@ function VoiceNoteInner({ item, name = '', sent = false, className = '' }) {
 
   useEffect(() => {
     if (item?.shape !== 'private') return undefined;
-    const entry = item.entry;
+    const url = item?.entry?.url;
+    const key = item?.entry?.key;
+    const iv = item?.entry?.iv;
+    const mime = item?.entry?.mime;
+    if (!url || !key || !iv) return undefined;
+    const mediaEntry = { url, key, iv, mime };
+    const mediaKey = `${url}|${key}|${iv}`;
     let live = true;
-    if (!entry?.url || !entry?.key || !entry?.iv) {
-      setFailed(true);
-      return undefined;
-    }
-    openPrivateMedia(entry)
-      .then((url) => { if (live) setSrc(url); })
+    openPrivateMedia(mediaEntry)
+      .then((src) => { if (live) setPrivateMedia({ key: mediaKey, src }); })
       .catch((error) => {
         console.error('[voice] Could not open the voice note:', error);
-        if (live) setFailed(true);
+        if (live) setFailedKey(mediaKey);
       });
     return () => {
       live = false;
-      releasePrivateMedia(entry);
+      releasePrivateMedia(mediaEntry);
     };
-  }, [item]);
+  }, [item?.shape, item?.entry?.url, item?.entry?.key, item?.entry?.iv, item?.entry?.mime]);
 
   useEffect(() => {
     if (!src) return undefined;
     let cancelled = false;
     (async () => {
       try {
-        const response = await fetch(src);
+        const response = await fetch(src, MEDIA_FETCH_OPTIONS);
         const buffer = await response.arrayBuffer();
         const Ctx = window.AudioContext || window.webkitAudioContext;
         if (!Ctx) return;
@@ -132,7 +142,7 @@ function VoiceNoteInner({ item, name = '', sent = false, className = '' }) {
           if (audio?.duration) setProgress(audio.currentTime / audio.duration);
         }}
         onEnded={() => { setPlaying(false); setProgress(0); }}
-        onError={() => setFailed(true)}
+        onError={() => setFailedKey(itemKey)}
         className="hidden"
       />
       {name && <span className="max-w-24 truncate text-[11px] text-ink/50">{name}</span>}

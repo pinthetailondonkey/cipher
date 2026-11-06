@@ -38,7 +38,7 @@ with a frozen grandfathered set. Everything below is the code behind each row.
 | Group keys | DMs | NIP-44 to each member with the raw epoch key | the relay never sees a key | `groupKeyDistribution.js:336-361` |
 | Private group name | 9002 + sealed envelope | fixed `Private group` placeholder on the relay | nothing about a rename | `groupCreate.js:41-47` |
 | Media | `blossom.primal.net`, `nostr.build`, `blossom.band` | AES-GCM bytes, 24242 signed by a throwaway key | uploader IP, hash, size; each reader's IP and open time | `mediaCrypto.js:29-101` |
-| Public images | the host named in a profile or product | plaintext bytes | the picture, and every viewer's IP | `egress.js:27` |
+| Public images | same-origin or a configured Blossom media origin | plaintext bytes for public profile/product images | the approved host sees the requested file, viewer IP, and access time; sender-named origins are refused | `mediaUrl.js`, `Picture.jsx`, `Connections.jsx` |
 | Notes | the app host, or a carrier box | key and iv in the fragment | ciphertext only; the carrier deletes on read | `deadDrop.js:144-262`, `note-carrier.mjs:201-220` |
 | Push | a self-run gateway | a wrap copy to a gateway key | "something arrived for pubkey X" | `pushGateway.js:108-158` |
 | Push delivery | FCM / APNs / browser push | token, `{"kind":"message"}` | token, timing, count | `nativePushSend.js:17-24` |

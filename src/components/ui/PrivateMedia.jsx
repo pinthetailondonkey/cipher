@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { isPrivateMedia, openPrivateMedia, releasePrivateMedia } from '../../lib/mediaCrypto';
-import Picture from './Picture';
+import { MEDIA_REFERRER_POLICY, mediaHostOf } from '../../lib/mediaUrl';
+import Picture, { useVisibleSrc } from './Picture';
 
 // Loading rule set by the founder: every attachment opens when it renders —
 // no warning cards, no tap-through (load-all + VPN tip, docs/NO-IP-LEAKS.md).
@@ -26,11 +27,13 @@ export function usePrivateMediaUrl({ url, key, iv, mime } = {}) {
 
 function PrivateImage({ entry, className }) {
   const state = usePrivateMediaUrl(entry);
+  // A blob URL has no host of its own, so the tooltip names the entry's.
+  const host = mediaHostOf(entry?.url);
   if (state.failed) return <p className="text-[13px] text-ink/45">Couldn't open this photo</p>;
   if (!state.src) return <div className={`animate-pulse bg-ink/10 ${className}`} />;
   return (
     <a href={state.src} target="_blank" rel="noreferrer" className="block" onClick={(event) => event.stopPropagation()}>
-      <img src={state.src} alt="Shared image" className={className} />
+      <img src={state.src} alt="Shared image" referrerPolicy={MEDIA_REFERRER_POLICY} title={host || undefined} className={className} />
     </a>
   );
 }
@@ -42,6 +45,20 @@ function PrivateAudio({ entry, className }) {
   return <audio controls preload="metadata" src={state.src} className={className} onClick={(event) => event.stopPropagation()} />;
 }
 
+function PublicAudio({ entry, className }) {
+  const src = useVisibleSrc(entry?.url);
+  return (
+    <audio
+      controls
+      preload="metadata"
+      src={src || undefined}
+      referrerPolicy={MEDIA_REFERRER_POLICY}
+      className={className}
+      onClick={(event) => event.stopPropagation()}
+    />
+  );
+}
+
 // Picks by shape: an encrypted entry is decrypted, a pre-encryption URL is
 // shown as it always was.
 export function MediaImage({ item, className = '' }) {
@@ -51,7 +68,7 @@ export function MediaImage({ item, className = '' }) {
 
 export function MediaAudio({ item, className = '' }) {
   if (item.shape === 'private') return <PrivateAudio entry={item.entry} className={className} />;
-  return <audio controls preload="metadata" src={item.entry.url} className={className} onClick={(event) => event.stopPropagation()} />;
+  return <PublicAudio entry={item.entry} className={className} />;
 }
 
 // A product photo rides its listing payload as either a plain URL (the

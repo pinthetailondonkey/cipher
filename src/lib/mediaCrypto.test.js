@@ -9,6 +9,7 @@ import * as mediaCrypto from './mediaCrypto.js';
 // does not exist, and a missing named export fails the whole file at link time
 // with no per-test split. This way each door test goes red on its own line.
 const { uploadAttachment } = mediaCrypto;
+const TEST_MEDIA_POLICY = { approvedServers: ['https://media.example'] };
 
 const jpeg = () => new Blob([new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3, 4, 5, 6, 7, 8])], { type: 'image/jpeg' });
 
@@ -39,7 +40,7 @@ test('the upload is handed ciphertext only, and the message carries the key', as
   assert.notDeepEqual([...uploaded.bytes.slice(0, 2)], [0xff, 0xd8]);
   assert.deepEqual(uploaded.options, { servers: ['https://media.example'] });
   const fetchImpl = async () => ({ ok: true, arrayBuffer: async () => uploaded.bytes.buffer });
-  const src = await openPrivateMedia(entry, fetchImpl);
+  const src = await openPrivateMedia(entry, fetchImpl, TEST_MEDIA_POLICY);
   assert.match(src, /^blob:/);
   const blob = resolveObjectURL(src);
   assert.deepEqual([...new Uint8Array(await blob.arrayBuffer())], [...new Uint8Array(await jpeg().arrayBuffer())]);
@@ -223,7 +224,7 @@ test('an encrypted photo goes to an http host and comes back, with a throwaway k
     assert.match(entry.url, /^http:\/\/127\.0\.0\.1:\d+\/[0-9a-f]{64}$/);
     const [stored0] = stored.values();
     assert.notDeepEqual([...stored0.subarray(0, 2)], [0xff, 0xd8]);
-    const src = await openPrivateMedia(entry);
+    const src = await openPrivateMedia(entry, globalThis.fetch, { approvedServers: [host] });
     const opened = resolveObjectURL(src);
     assert.deepEqual([...new Uint8Array(await opened.arrayBuffer())], [...new Uint8Array(await jpeg().arrayBuffer())]);
     // A second photo is signed by a different throwaway key.
@@ -326,12 +327,68 @@ test('the blob URL is revoked when the last viewer lets go', async () => {
   const { ciphertext, meta } = await encryptMedia(jpeg());
   const entry = { url: 'https://media.example/revoke', ...meta };
   const fetchImpl = async () => ({ ok: true, arrayBuffer: async () => ciphertext.buffer });
-  const a = await openPrivateMedia(entry, fetchImpl);
-  const b = await openPrivateMedia(entry, fetchImpl);
+  const a = await openPrivateMedia(entry, fetchImpl, TEST_MEDIA_POLICY);
+  const b = await openPrivateMedia(entry, fetchImpl, TEST_MEDIA_POLICY);
   assert.equal(a, b);
-  releasePrivateMedia(entry);
+  releasePrivateMedia(entry, TEST_MEDIA_POLICY);
   assert.ok(resolveObjectURL(a));
-  releasePrivateMedia(entry);
+  releasePrivateMedia(entry, TEST_MEDIA_POLICY);
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal(resolveObjectURL(a), undefined);
+});
+
+// SEC-4: reading an attachment is one GET of the address the sender named,
+// with nothing else on the wire. A malicious member controls that address, so
+// what the reader's browser does with it is the whole exposure.
+test('opening an attachment dials the sender URL once, no referrer, no credentials', async () => {
+  const { ciphertext, meta } = await encryptMedia(jpeg());
+  const entry = { url: '  HTTPS://Media.Example/ONE  ', ...meta };
+  const calls = [];
+  const fetchImpl = async (url, options) => {
+    calls.push({ url, options });
+    return { ok: true, arrayBuffer: async () => ciphertext.buffer };
+  };
+  const src = await openPrivateMedia(entry, fetchImpl, TEST_MEDIA_POLICY);
+  assert.match(src, /^blob:/);
+  assert.equal(calls.length, 1);
+  // The address is normalised before it is dialled, so the same file named
+  // two ways is one address.
+  assert.equal(calls[0].url, 'https://media.example/ONE');
+  assert.equal(calls[0].options.referrerPolicy, 'no-referrer');
+  assert.equal(calls[0].options.credentials, 'omit');
+  // A second open of the same entry (however it is spelled) is the same
+  // fetch, and a release still finds the record its open made.
+  await openPrivateMedia({ ...entry, url: 'https://media.example/ONE' }, fetchImpl, TEST_MEDIA_POLICY);
+  assert.equal(calls.length, 1);
+  releasePrivateMedia(entry, TEST_MEDIA_POLICY);
+  releasePrivateMedia({ ...entry, url: 'https://media.example/ONE' }, TEST_MEDIA_POLICY);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(resolveObjectURL(src), undefined);
+});
+
+test('an attachment whose address is not http(s) makes no request at all', async () => {
+  const { ciphertext, meta } = await encryptMedia(jpeg());
+  const calls = [];
+  const fetchImpl = async (url) => {
+    calls.push(url);
+    return { ok: true, arrayBuffer: async () => ciphertext.buffer };
+  };
+  for (const url of ['javascript:alert(1)', 'ftp://files.example/a.png', '']) {
+    await assert.rejects(() => openPrivateMedia({ url, ...meta }, fetchImpl, TEST_MEDIA_POLICY), /names no host to dial/, url);
+  }
+  assert.deepEqual(calls, [], 'a stray address must not reach the transport');
+  // A release on an entry that never dialled is still quiet.
+  releasePrivateMedia({ url: 'javascript:alert(1)', ...meta });
+});
+
+test('a sender-chosen media origin is refused before the transport runs', async () => {
+  const calls = [];
+  const fetchImpl = async (url) => {
+    calls.push(url);
+    return { ok: true, arrayBuffer: async () => new ArrayBuffer(0) };
+  };
+  const entry = { url: 'https://attacker.invalid/pixel', key: 'key', iv: 'iv', mime: 'image/png' };
+  await assert.rejects(() => openPrivateMedia(entry, fetchImpl), /names no host to dial/);
+  assert.deepEqual(calls, [], 'rendering an unapproved encrypted attachment makes no request');
+  releasePrivateMedia(entry);
 });

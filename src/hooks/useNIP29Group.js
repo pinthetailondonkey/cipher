@@ -32,6 +32,7 @@ import { allowsGroupJoins } from '../lib/privacy.js';
 import { groupMetaAnnouncement } from '../lib/groupMetaAnnouncement.js';
 import { clampGroupBody } from '../lib/disappearing';
 import { buildSignedAct, buildControlAct, resolveActorSigner, signActProof } from '../lib/crypto/gmIdentityWire';
+import { socketProofGroupId } from '../lib/groupSocketProof';
 
 // How long an authenticated group stream must have held before its close counts
 // as a real drop rather than a refused handshake. A stream that authenticated
@@ -429,25 +430,34 @@ function sendAuthResponse(session, challenge) {
   });
 }
 
-// The group this socket's traffic should prove under right now: the store's
-// active group when it belongs to this session, else the newest group whose
-// id any live subscriber asked about. Nothing network-facing reads a value
-// from storage here; this only picks WHICH already-known actor signs.
-function sessionActorGroupId(session) {
-  const state = useChatStore.getState();
-  const active = state.activeGroup?.id;
-  if (active && isKnownGroupId(state, active)) return active;
+// The group this socket's traffic should prove under. One socket carries every
+// group this device follows, so the relay already reads the whole set off the
+// REQ frames; WHICH group's already-known actor signs the proof decides only
+// what the proof discloses. See lib/groupSocketProof for the rule and why the
+// store's active group is deliberately not preferred. Nothing network-facing
+// reads a value from storage here; this only picks which held actor signs.
+// Exported with lib/groupSocketProof so the whole seam — held pin, live subs,
+// held groups — is driven from the real tree rather than re-stated in a test.
+export function sessionActorGroupId(session) {
+  return socketProofGroupId({
+    held: session.actorGid || '',
+    readable: groupIdsOnSession(session),
+    known: (useChatStore.getState().groups || []).map((group) => group.id),
+  });
+}
+
+// The group ids this socket currently reads. A subscriber's filter carries the
+// group as an `#h` tag, one per sub; the sub id itself is client-side only.
+// Exported with the rule above so the seam is driven directly, not re-stated.
+export function groupIdsOnSession(session) {
+  const ids = [];
   for (const [, filter] of session.subs || new Map()) {
     const tag = Array.isArray(filter)
       ? filter.flatMap((f) => f['#h'] || []).find(Boolean)
       : null;
-    if (tag && isKnownGroupId(state, tag)) return tag;
+    if (tag) ids.push(tag);
   }
-  return '';
-}
-
-function isKnownGroupId(state, groupId) {
-  return Boolean(groupId) && (state.groups || []).some((g) => g.id === groupId);
+  return ids;
 }
 
 function handleGroupSocketFrame(session, raw) {

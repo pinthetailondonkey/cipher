@@ -23,8 +23,8 @@ export const EGRESS = [
   // Call-routing rows (stun, turn) are gone: calls are off in every build
   // under the no-IP-leak law, so no call-routing host is contacted at all.
   { id: 'dns', role: 'Name lookup', url: '', hint: 'This device’s resolver', sees: 'Every hostname, at the resolver on this device. Cipher cannot choose it or turn it off.', dynamic: true },
-  { id: 'images', role: 'Pictures', url: '', hint: 'Each picture’s own host', sees: 'Your IP and the address of every chat or product picture. The browser fetches each host. The app does not choose that path.', dynamic: true },
-  { id: 'profile-photo', role: 'Profile photos', url: '', hint: 'Each photo’s own host', sees: 'Your IP and whatever host a profile photo points at. A photo can be any site. The app does not proxy it.', dynamic: true },
+  { id: 'images', role: 'Pictures', url: '', hint: 'Configured media origins only', sees: 'A configured media host sees your IP, the requested file, and when you opened it. A URL in a message or menu cannot add a new host.', dynamic: true },
+  { id: 'profile-photo', role: 'Profile photos', url: '', hint: 'Configured media origins only', sees: 'A configured media host sees your IP, the requested file, and when you opened it. A profile photo cannot add a new host.', dynamic: true },
   { id: 'app-host', role: 'App host', url: 'https://www.ciphermessenger.org', hint: '', sees: 'Your IP if you open the website here. The installed app loads its own files and does not contact this host when it opens.', app: true, gate: 'founder' },
   { id: 'nip05', role: 'Name lookup', url: '', hint: 'The host after the @', sees: 'Your IP and the name you look up. The host is whatever sits after the @.', dynamic: true },
   { id: 'explorer', role: 'Payment watcher', url: '', hint: 'Not set', sees: 'Nothing until you paste a watcher you run. This device does not ask a block explorer. Until then a payment cannot be marked seen or confirmed from the chain.' },

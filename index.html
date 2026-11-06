@@ -4,6 +4,12 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content" />
     <meta name="description" content="Cipher — private messaging and direct-deal commerce. No phone number, no email." />
+    <!-- SEC-4: the app never tells a host where it came from. Pictures, voice
+         notes and faces come off hosts a sender named; without this line the
+         browser hands every one of them the app's own address. The per-element
+         attributes in the media components say the same thing at each door;
+         this is the floor under them. -->
+    <meta name="referrer" content="no-referrer" />
     
     <!-- PWA Manifest -->
     <link rel="manifest" href="/manifest.json" />

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { isPrivateMedia, openPrivateMedia, releasePrivateMedia } from '../../lib/mediaCrypto';
+import { MEDIA_REFERRER_POLICY, mediaHostOf } from '../../lib/mediaUrl';
 import { useVisibleSrc } from './Picture';
 
 // Identity at a glance (DESIGN.md): a deterministic two-tone gradient keyed
@@ -53,7 +54,18 @@ export default function Avatar({ src, name = '', pubkey = '', size = 'md', class
   const scale = SIZES[size] || SIZES.md;
   const textSize = size === 'row' ? 'text-[20px]' : size === 'lg' ? 'text-lg' : size === 'sm' ? 'text-[12px]' : 'text-[15px]';
   if (shown) {
-    return <img src={shown} alt="" className={`${scale} rounded-full object-cover shrink-0 ${className}`} />;
+    // The host rides a tooltip, when the face came off a host rather than out
+    // of a local blob URL.
+    const host = mediaHostOf(shown);
+    return (
+      <img
+        src={shown}
+        alt=""
+        referrerPolicy={MEDIA_REFERRER_POLICY}
+        title={host || undefined}
+        className={`${scale} rounded-full object-cover shrink-0 ${className}`}
+      />
+    );
   }
   const key = pubkey || name || '?';
   const [from, to] = PAIRS[key.charCodeAt(0) % PAIRS.length];

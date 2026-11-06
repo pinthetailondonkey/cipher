@@ -2,6 +2,7 @@ import { sha256 } from '@noble/hashes/sha2.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
 import { finalizeEvent, generateSecretKey } from 'nostr-tools';
 import { compressImage } from './imageCompression.js';
+import { mediaFetch, mediaHref } from './mediaUrl.js';
 
 // Chat photos and voice notes are encrypted on this device before they leave
 // it. The media host stores ciphertext under a throwaway upload key, so it
@@ -167,18 +168,29 @@ export function attachmentsFor(content) {
 
 const opened = new Map();
 
-function cacheKeyOf(entry) {
-  return `${entry.url}#${entry.key}`;
+function cacheKeyOf(entry, mediaPolicy) {
+  // The guarded address, so two spellings of one URL share a single fetch and
+  // a release finds the record its open made.
+  return `${mediaHref(entry?.url, globalThis.location?.origin, mediaPolicy?.approvedServers)}#${entry?.key}`;
 }
 
 // Fetches the ciphertext once per attachment and hands back a blob: URL.
 // Each open is matched by a release; the last release revokes the URL.
-export function openPrivateMedia(entry, fetchImpl = globalThis.fetch) {
-  const cacheKey = cacheKeyOf(entry);
+//
+// SEC-4: a reader's request goes through the wire-URL gate (lib/mediaUrl), so
+// the only thing a member can make a recipient's browser do is one GET of the
+// address they named: no Referer, no credentials, nothing else on the wire.
+export function openPrivateMedia(entry, fetchImpl = globalThis.fetch, mediaPolicy) {
+  const href = mediaHref(entry?.url, globalThis.location?.origin, mediaPolicy?.approvedServers);
+  if (!href) {
+    // Nothing to dial: the shape is wrong, so no request is made at all.
+    return Promise.reject(new Error('The attachment names no host to dial.'));
+  }
+  const cacheKey = cacheKeyOf(entry, mediaPolicy);
   let record = opened.get(cacheKey);
   if (!record) {
     const pending = (async () => {
-      const response = await fetchImpl(entry.url);
+      const response = await mediaFetch(href, fetchImpl, mediaPolicy);
       if (!response.ok) throw new Error(`The media host answered ${response.status}.`);
       const blob = await decryptMedia(new Uint8Array(await response.arrayBuffer()), entry);
       return URL.createObjectURL(blob);
@@ -191,8 +203,8 @@ export function openPrivateMedia(entry, fetchImpl = globalThis.fetch) {
   return record.pending;
 }
 
-export function releasePrivateMedia(entry) {
-  const cacheKey = cacheKeyOf(entry);
+export function releasePrivateMedia(entry, mediaPolicy) {
+  const cacheKey = cacheKeyOf(entry, mediaPolicy);
   const record = opened.get(cacheKey);
   if (!record) return;
   record.refs -= 1;

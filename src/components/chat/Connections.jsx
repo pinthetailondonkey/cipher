@@ -3,24 +3,18 @@ import { Link2 } from 'lucide-react';
 import ScreenHeader from '../ui/ScreenHeader';
 import { listEgress, setRelayOverride } from '../../lib/egress';
 
-// There is deliberately no settings key here. This screen used to carry a Tor
-// switch and a proxy field that wrote to one localStorage key and routed
-// nothing — nothing outside this file ever read it. A control that looks like
-// a setting and changes only the paragraph under it is worse than no control,
-// because the user believes a choice was made. What is left on this screen is
-// two paste rows whose overrides the watcher and the push gateway really read.
+// This screen used to carry a Tor switch and a proxy field that wrote to one
+// localStorage key and routed nothing. The rows below are limited to settings
+// the app actually reads: the payment watcher, push gateway, and media servers.
 
 function readEgressRows() {
   const rows = listEgress();
   return Object.fromEntries(PASTEABLE.map(({ id }) => [id, rows.find((row) => row.id === id) || { override: '', active: '' }]));
 }
 
-// The two rows a vendor has to be able to paste into: the watcher that is
-// the only thing allowed to move a payment to seen or confirmed, and the
-// gateway a locked phone buzzes through. They are egress entries with no
-// shipped address, so the paste is an override on the entry itself — the
-// same store every other row reads, which is why Check the chain and push
-// start working the moment one is filled in and say plainly when it is not.
+// The watcher and push rows have no shipped address; the three media rows
+// are the named Blossom servers. A saved media override also becomes the
+// exact-origin allowlist used by the render gate.
 const PASTEABLE = [
   {
     id: 'explorer',
@@ -34,6 +28,24 @@ const PASTEABLE = [
     placeholder: 'https://…/cipher-push.json',
     empty: 'Not set. A locked phone does not buzz until you paste the gateway you run.',
   },
+  {
+    id: 'blossom-primal',
+    label: 'Media server 1',
+    placeholder: 'https://… or off',
+    empty: 'Uses the configured default. This origin may load photos and voice notes.',
+  },
+  {
+    id: 'blossom-nostr-build',
+    label: 'Media server 2',
+    placeholder: 'https://… or off',
+    empty: 'Uses the configured default. This origin may load photos and voice notes.',
+  },
+  {
+    id: 'blossom-band',
+    label: 'Media server 3',
+    placeholder: 'https://… or off',
+    empty: 'Uses the configured default. This origin may load photos and voice notes.',
+  },
 ];
 
 export default function Connections({ onBack }) {
@@ -46,12 +58,13 @@ export default function Connections({ onBack }) {
 
   return (
     <div className="h-full overflow-y-auto bg-transparent">
-      <ScreenHeader title="Connections" subtitle="Payment watcher and push gateway" onBack={onBack} />
+      <ScreenHeader title="Connections" subtitle="Payment, push, and media servers" onBack={onBack} />
       <div className="space-y-4 p-4">
         <div className="space-y-4">
           {PASTEABLE.map(({ id, label, placeholder, empty }) => {
             const row = services[id] || { override: '', active: '' };
             const set = Boolean(row.override);
+            const disabled = row.override.toLowerCase() === 'off';
             return (
               <label key={id} className="block rounded-2xl border border-line bg-panel p-4">
                 <span className="flex items-center gap-3">
@@ -69,14 +82,16 @@ export default function Connections({ onBack }) {
                   className="mt-3 w-full rounded-2xl border border-line bg-panelStrong px-4 py-3 text-[13px] text-ink outline-none placeholder:text-inkSubtle focus:border-lineStrong"
                 />
                 <p className="mt-2 text-[13px] leading-snug text-inkMuted">
-                  {set ? `In use: ${row.active || row.override}` : empty}
+                  {disabled ? 'Off. Media from this server will not load.' : set ? `In use: ${row.active || row.override}` : empty}
                 </p>
               </label>
             );
           })}
         </div>
         <div className="rounded-2xl border border-line bg-panel p-4">
-          <p className="text-[13px] leading-snug text-inkMuted">Messages and groups talk to their own hosts, and the defaults hold. Clear a row above to go back to none.</p>
+          <p className="text-[13px] leading-snug text-inkMuted">
+            Messages and groups use their listed hosts. Photos and voice notes load only from this app or the media origins above. A media server can see your IP address, the file requested, and when you opened it. A sender cannot make your device contact a different origin just by putting it in a message or profile. Saving an origin approves its exact scheme, host, and port on this device; type off to disable a server or clear the field to restore its default.
+          </p>
         </div>
       </div>
     </div>

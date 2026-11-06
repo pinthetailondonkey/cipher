@@ -1,5 +1,5 @@
 import { groupSocketUrl } from './egress';
-import { useChatStore } from '../store/chatStore';
+import { socketProofGroupId } from './groupSocketProof';
 
 let pools = {};
 
@@ -13,6 +13,11 @@ const hostOf = (url) => { try { return new URL(url).host; } catch { return ''; }
 // the AUTH landed is final as far as the library is concerned: only the caller
 // can ask again. The signer is the one moment we know the answer went out.
 const poolAuth = new WeakMap();
+
+// Which group's pin this pool already proved under, per pool. Read by the
+// group-host signer below so the pseudonym is chosen once per pool instead of
+// following the store's active group (see lib/groupSocketProof).
+const heldProofGroup = new WeakMap();
 
 function authState(pool) {
   let state = poolAuth.get(pool);
@@ -144,10 +149,12 @@ export const getAuthenticatedPool = async (identity) => {
   // install the directory reader puts on its own pool.
   // Step 2 slice 2b: the group-host auto-auth signs with this account's
   // per-group actor key, never the account key. NIP-42 is relay-level, so any
-  // owned group's derivation opens the socket; the ACTIVE group's actor is
-  // picked for pseudonym stability (the same preference the raw session uses).
-  // None known or a locked tab: the challenge goes unanswered rather than
-  // leaking identity.sk — a relay that refuses reads then just gets no read.
+  // owned group's derivation opens the socket, which is what leaves the CHOICE
+  // free; SEC-5 takes the same lowest-held-group rule the raw session uses
+  // (lib/groupSocketProof) so the box sees ONE pin for this device on this host
+  // instead of one that moves with the screen. None known or a locked tab: the
+  // challenge goes unanswered rather than leaking identity.sk — a relay that
+  // refuses reads then just gets no read.
   installAutoAuth(pool, (host) => {
     if (!groupHost || host !== groupHost) return null;
     return async (authEvent) => {
@@ -155,16 +162,21 @@ export const getAuthenticatedPool = async (identity) => {
       const { getMyGroups } = await import('./myGroups');
       const groups = getMyGroups(identity.pk);
       if (!groups.length) return null;
-      const active = useChatStore.getState().activeGroup?.id;
-      const gid = (active && groups.some((g) => g.id === active)) ? active : groups[groups.length - 1].id;
+      const held = heldProofGroup.get(pool);
+      const gid = socketProofGroupId({ held, known: groups.map((group) => group.id) });
+      if (!gid) return null;
       const actor = await actorForGroup(identity.pk, gid);
       if (!actor) return null; // locked tab: no proof, never a fallback
       // The pin rides alongside (same shape signActProof builds), so an
       // observer of the box sees one pseudonym consistently across kinds.
-      return finalizeEvent(
+      const signed = finalizeEvent(
         { ...authEvent, tags: [...(authEvent.tags || []), ...actorTag(actor.pin)] },
         actor.privateKeyBytes,
       );
+      // Prove under one pseudonym for as long as the pool lives: a later
+      // challenge on another relay must not re-pick and split the identity.
+      if (!heldProofGroup.has(pool)) heldProofGroup.set(pool, gid);
+      return signed;
     };
   });
 
