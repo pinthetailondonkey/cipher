@@ -1,17 +1,17 @@
-# Direction A receipts — clean tree at cf275e7 (2026-11-05)
+# Direction A receipts — tree at `bb746f5` (2026-11-05)
 
-The screenshots `docs/DESIGN.md` asks a phase to leave behind, at both widths:
-390x844 (phone ring) and 1280x800 (desktop ring). Taken from a local UI-test
-build of a working tree at `cf275e7` that recorded `dirty=false`, so these are
-pixels of a commit and nothing else. No relay reached, no real key anywhere.
+The six screenshots `docs/DESIGN.md` asks a phase to leave behind, at both
+widths: 390x844 (phone ring) and 1280x800 (desktop ring). Taken from a local
+UI-test build of a working tree at `bb746f5`. No relay reached, no real key
+anywhere.
 
-An earlier set was built at `3f4a854` and committed in `645a878`. Eleven of
-these twelve files are byte-identical to that set. The two that moved are the
-thread pair, and only their clock did: the synthetic message's relative time,
-a 243x232 patch at phone width and 243 pixels at desktop width. Between the
-two trees landed a group-key grant, the membership memo, three commits on the
-kind-0 record the boot reads, and the vendor-bulletin rework — none of which
-draws these six screens, which is why the Menus pair did not shift under it.
+The tree was not clean when the shutter opened, and the receipts say so rather
+than rounding it off. A parallel lane was landing group work all evening, so
+`HEAD` moved under the sitting and the sweeps below record the sha and the dirty
+count they actually built. The screenshots are the last thing the sweep does, so
+by the time they were taken every batch behind them had already run; the shot's
+own record is in the batch table. What was dirty at that moment is named in the
+same table, and none of it draws these six screens.
 
 Six screens, each at both widths:
 
@@ -24,55 +24,125 @@ Six screens, each at both widths:
 - `seeded-thread-*` — a thread with two synthetic messages, one each way. No
   order card in this pair; the card has its own spec.
 - `seeded-you-*` — the You tab, which carries Orders through Wallet's own My
-  Orders row.
+  Orders row. The ledger view itself sits behind that row and is not in this
+  pair; a live contract case walks it and measures the row instead.
 - `seeded-settings-*` — You > Privacy.
 - `seeded-onboarding-*` — the first screen a new device shows, with no vault
   and no session.
 
-How they were made, and what the pixels are:
+## What moved since the set committed in `645a878`
+
+Seven of these twelve files are byte-identical to that set. Five moved, and
+every pixel of the move is accounted for:
+
+- `seeded-home-1280x800` — the empty thread pane. It wore a hand-rolled
+  `max-w-sm` card whose right border the 140px md+ pane cut, wrapping the line
+  mid-sentence ("Pick a chat from | the list."). It now wears the shared
+  `EmptyState`: no card, the icon above the title, both centred in the pane.
+  Measured 124x132 at (792,334). `e95953c` and `2451e67`, with two live cases
+  measuring it at both widths.
+- `seeded-thread-*` and `seeded-you-*` — every avatar on both screens, from
+  the media commit `917793e` and one repair. That commit moved the avatar off a
+  flat `--panel-alt` circle onto the DESIGN.md two-tone gradient keyed by the
+  pubkey, which is what the ruling asks for, and gave the Wallet avatar its
+  `--line` ring and its 24px glyph. It also left the caller's `h-7 w-7` beside
+  `SIZES.sm`, so the run avatar drew 32px where its own spacer drew 28 and every
+  lead pushed its bubble right; `3ea07bd` made the call site win. Measured:
+  1011x556 at (36,36) at phone width and 101x318 at (788,12) on the desktop
+  thread, 240x240 at (465,36) and 80x80 at (636,32) on the You pair.
+- Nothing else on those two screens moved. The messages, the clock, the rail
+  and the list are byte-identical.
+
+One thing in the thread pair is a change of subject, not of style: the header
+avatar drew the lowercase `n` of the truncated npub before `917793e`, and draws
+`?` now, because the peer has no profile and the new call passes an empty name.
+Named here so a reader does not spend an hour deriving it from the pixels.
+
+## How they were made, and what the pixels are
 
     CIPHER_DESKTOP_BUILD=1 npx playwright test tests/ui/screenshots.spec.js
+    bash tests/ui/tools/ui-shots-out.sh
 
-then copied out of `test-results/` under these names. The phone ring is the
-`iphone` project: 390x844 CSS, deviceScaleFactor 3 (so the files are
-1170x2532), iPhone user agent, touch. The desktop ring overrides the viewport
-to 1280x800 and drops the phone flags, so it is a real desktop context at 1x.
-Both rings open the harness's own vault first — a literal pre-generated
-envelope whose secret is 32 bytes of 0xAA under PIN 13572468, so the pictures
-show an account with no key material behind it.
+The spec writes twelve captures into the gitignored `test-results/` under
+generic names; the tool is the naming step, and it refuses unless all twelve
+land. Copy them first and run anything else afterwards: a later playwright run
+wipes `test-results/`. The phone ring is the `iphone` project: 390x844 CSS,
+deviceScaleFactor 3 (so the files are 1170x2532), iPhone user agent, touch. The
+desktop ring overrides the viewport to 1280x800 and drops the phone flags, so it
+is a real desktop context at 1x. Both rings open the harness's own vault first —
+a literal pre-generated envelope whose secret is 32 bytes of 0xAA under PIN
+13572468, so the pictures show an account with no key material behind it.
 
 Not in these receipts: an order card in the thread (covered by
 `tests/ui/order-card.spec.js`), the Groups list, the QR scanner, and the
 installed-PWA geometry (covered by the `pwa-standalone-*` specs, which assert
-the safe-area maths rather than photograph it). The raw per-run captures stay
-in `test-results/`, which is gitignored; this folder is the copy that travels.
+the safe-area maths rather than photograph it). The raw per-run captures stay in
+`test-results/`, which is gitignored; this folder is the copy that travels.
 
 ## The checks that stood behind them
 
-Run around this tree, in this sitting. The browser suite is 175 tests in 30
-spec files (`--list` counts a 31st file, the run-context setup, which holds no
-test). All 30 of those files were run green after these shots were taken — 205
-test executions over 14 batches — each batch sized to fit the ten-minute tool
-budget (`tests/ui/tools/ui-files.sh`), because every spec seeds the fixture
-vault and pays a real PBKDF2 derivation at its gate.
+The browser suite is 181 tests in 31 files (`--list` counts a 31st file, the
+run-context setup, which holds one setup test, not a spec). All 30 of the spec
+files were run green in the sitting that produced these shots, in batches sized
+to fit a ten-minute tool budget (`tests/ui/tools/ui-sweep.sh`), because every
+spec seeds the fixture vault and pays a real PBKDF2 derivation at its gate. The
+batches write one TSV line each — label, sha, dirty count, exit, the reporter's
+own tally — into `$JCODE_SCRATCH_DIR/ui-sweep/sweep.tsv`, which is what the
+numbers below are read from instead of a remembered total.
 
-- `npm run lint` — 0 errors. The warning count sits at a hundred and one, none
-  of them from this work: it moves by one as the in-flight lane edits files.
-- `npm test` — 1010 tests, 1006 pass, 0 fail, 4 skipped (14m).
-- The 41-test batch of `tests/ui/ui-contract.spec.js` (31) and
-  `tests/ui/sheet-a11y.spec.js` (10), and the 13-test
-  `tests/ui/screenshots.spec.js` run that produced this folder.
+- `npm run lint` — 0 errors, 105 warnings. None of the warnings is in a file
+  this receipts' commits touched (checked file by file). The count moves with
+  the lane; it stood at 101 at the previous take.
+- `npm test` — 1064 tests, 1060 pass, 0 fail, 4 skipped (this run is at
+  `3ea07bd`; the lane keeps adding unit tests, so the count moves).
+- The 47-test batch of `tests/ui/ui-contract.spec.js` (36, one of them new) and
+  `tests/ui/sheet-a11y.spec.js` (11).
 - The `devicePrf` pair (`devicePrf.spec.js`, `account-switch.devicePrf.spec.js`)
-  run under `--project=chromium`: it is the only project whose `testMatch`
-  takes those two, and the `iphone` project's `testIgnore` drops both. A file
-  slice that names the pair without the project runs nothing at all.
+  runs under `--project=chromium`: it is the only project whose `testMatch`
+  takes those two. Two tripwires, both real and neither where a reader would
+  guess. Without `CIPHER_DESKTOP_BUILD=1` the webServer build refuses and zero
+  tests run. With `--project=iphone` over the pair, playwright prints `No tests
+  found`. A bare slice with the flag runs the whole pair, run-context included.
 
-HEAD moved under the sitting — a reputation commit, a bulletin commit, two doc
-commits — so the batches ran across a few trees rather than one. Each run
-records the sha it built and whether the tree was dirty in
-`test-results/run-context.json`; the shots above are the one run that recorded
-`dirty=false`.
+`HEAD` moved under the sitting — four group commits and a doc commit — so the
+batches ran across a few trees. Each batch stamps the sha it built and whether
+the tree was dirty. The shots are the one batch that ran last, after every
+other batch had reported, so nothing the sweep itself wrote could dirty a tree
+that another batch was stamping.
 
-The one naming wrinkle worth knowing: `--` in `npx playwright test -- <files>`
-swallows the file filter, so the batches pass the paths without a separator and
-let the project's own `testMatch` sort them.
+## The adjudication
+
+`docs/ADJUDICATION.md` is a falsification pass by a session that did none of
+this work, landed at `c29e784`. It re-derived every claim in this folder from
+source or by running the thing, marked what it could not check `[U]` and did not
+count those as verified, and left the report in the house voice. It found one
+real product bug the receipts had photographed and nobody had read, and four
+sentences in the docs that were false.
+
+Fixed, worst first, one commit each:
+
+- `e95953c` then `2451e67` — the clipped empty card above. Two live contract
+  cases now measure the pane at both widths.
+- `ace7030` — `MyOrders` dropped its own `role="tablist"` for the shared
+  `Segmented`. The row had missed the component's 44px target, and DESIGN.md's
+  "two consumers" was false until it landed. A live case walks You > My Orders.
+- `d233d60` — three DESIGN.md lines reconciled with the tree: the segment row
+  sits above the filter field, the `Segmented` entry names its two real
+  consumers, and the evidence pointer names `docs/ui-evidence/phase-1/`, the
+  folder that exists, not the phantom `telegram-pass/`.
+- `3ea07bd` — the run avatar above (found by re-deriving the pixel move, not by
+  the adjudicator).
+- The `205 executions over 14 batches` line is gone: the stamped TSV replaces
+  it. The `devicePrf` sentence above replaces the one that described the wrong
+  tripwire.
+
+What the adjudicator marked `[U]`, and what still stands unproven here:
+
+- No packet capture was taken, so "no relay reached" rests on the suite's
+  localhost-only setup and `relay-wall`'s interception, not on a measurement.
+- `run-context.setup.js` records the sha it built and refuses a bundle without
+  the seam, but cannot bind the served bytes to that sha. The claim above rests
+  on the runner rebuilding per run.
+- `DESIGN.md:230` asks for screenshots in `docs/ui-evidence/<phase>/` and is
+  silent on freshness. Nothing in the file sets a shelf life, so this folder is
+  as current as the sha in its title and no more.
