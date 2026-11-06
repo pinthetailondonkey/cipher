@@ -1,4 +1,5 @@
 import { groupSocketUrl } from './egress';
+import { useChatStore } from '../store/chatStore';
 
 let pools = {};
 
@@ -74,8 +75,14 @@ export function installAutoAuth(pool, signFor) {
     // armed after the first empty answer always finds the host eligible.
     noteEligible(pool, host);
     return (authEvent) => {
+      // sign may be async (the actor-key derivation imports + HKDFs). The
+      // "authed" mark must not fire before the signature EXISTS: a waiter
+      // released early would re-issue its read into a socket that has not sent
+      // its AUTH yet, unauthenticated. Resolve first, note after.
       const signed = sign(authEvent);
-      setTimeout(() => noteAuthed(pool, host), 0);
+      Promise.resolve(signed)
+        .then(() => setTimeout(() => noteAuthed(pool, host), 0))
+        .catch(() => {}); // a failed sign leaves the host unmarked; callers time out
       return signed;
     };
   };
@@ -135,9 +142,30 @@ export const getAuthenticatedPool = async (identity) => {
   // nothing, so no public host can harvest a kind 22242 naming this account.
   // The factory marks that host eligible and defers the note; this is the same
   // install the directory reader puts on its own pool.
+  // Step 2 slice 2b: the group-host auto-auth signs with this account's
+  // per-group actor key, never the account key. NIP-42 is relay-level, so any
+  // owned group's derivation opens the socket; the ACTIVE group's actor is
+  // picked for pseudonym stability (the same preference the raw session uses).
+  // None known or a locked tab: the challenge goes unanswered rather than
+  // leaking identity.sk — a relay that refuses reads then just gets no read.
   installAutoAuth(pool, (host) => {
     if (!groupHost || host !== groupHost) return null;
-    return (authEvent) => finalizeEvent(authEvent, identity.sk);
+    return async (authEvent) => {
+      const { actorForGroup, actorTag } = await import('./crypto/gmIdentity');
+      const { getMyGroups } = await import('./myGroups');
+      const groups = getMyGroups(identity.pk);
+      if (!groups.length) return null;
+      const active = useChatStore.getState().activeGroup?.id;
+      const gid = (active && groups.some((g) => g.id === active)) ? active : groups[groups.length - 1].id;
+      const actor = await actorForGroup(identity.pk, gid);
+      if (!actor) return null; // locked tab: no proof, never a fallback
+      // The pin rides alongside (same shape signActProof builds), so an
+      // observer of the box sees one pseudonym consistently across kinds.
+      return finalizeEvent(
+        { ...authEvent, tags: [...(authEvent.tags || []), ...actorTag(actor.pin)] },
+        actor.privateKeyBytes,
+      );
+    };
   });
 
   pools[identity.pk] = pool;

@@ -23,10 +23,30 @@ const REFUSED = 'auth';
 // An account that can prove itself to a relay, or null when there is no
 // secret key to sign with. The shape is nostr-tools' own: a kind-22242
 // template comes in and a signed event goes back.
+//
+// Step 2 slice 2b: the proof signs with the ACTIVE group's per-group actor
+// key, never identity.sk. The signer only ever reaches a group host (the
+// install gate below), so a capture there names this account's pseudonym for
+// one group, not the account itself.
 async function signerFor(identity) {
   if (!identity?.sk) return null;
-  const { finalizeEvent } = await import('nostr-tools');
-  return (authEvent) => finalizeEvent(authEvent, identity.sk);
+  return async (authEvent) => {
+    const { actorForGroup, actorTag } = await import('./crypto/gmIdentity');
+    const { getMyGroups } = await import('./myGroups');
+    const groups = getMyGroups(identity.pk);
+    if (!groups.length) return null; // nothing known to prove under: no answer
+    const { useChatStore } = await import('../store/chatStore');
+    const active = useChatStore.getState().activeGroup?.id;
+    const gid = (active && groups.some((g) => g.id === active)) ? active : groups[groups.length - 1].id;
+    const actor = await actorForGroup(identity.pk, gid);
+    if (!actor) return null; // locked tab: refuse rather than improvise
+    const { finalizeEvent } = await import('nostr-tools');
+    // The pin rides alongside, same shape every other act carries.
+    return finalizeEvent(
+      { ...authEvent, tags: [...(authEvent.tags || []), ...actorTag(actor.pin)] },
+      actor.privateKeyBytes,
+    );
+  };
 }
 
 function hostOf(url) {

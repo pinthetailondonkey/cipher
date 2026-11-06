@@ -15,6 +15,29 @@ const PK = getPublicKey(SK);
 const GROUP_RELAY = 'wss://groups.ciphertele.com';
 const PUBLIC_RELAY = 'wss://relay.damus.io';
 
+// Step 2 slice 2b: the auto-auth signer derives this account's per-group actor
+// key, which needs the session secret present and one known group id. Seeded
+// once at module load; getMyGroups writes through localStorage, which node
+// stubs below before anything reads it.
+if (typeof globalThis.localStorage === 'undefined') {
+  const lsStore = new Map();
+  globalThis.localStorage = {
+    getItem: (k) => (lsStore.has(k) ? lsStore.get(k) : null),
+    setItem: (k, v) => { lsStore.set(k, String(v)); },
+    removeItem: (k) => { lsStore.delete(k); },
+  };
+}
+import { setSessionKey } from './sessionKey.js';
+import { setMyGroups } from './myGroups.js';
+setSessionKey(SK);
+setMyGroups(PK, [{ id: 'pool-test-group' }]);
+
+// The actor pin the auto-auth signs under for the seeded group, computed once;
+// its x-only form is what lands on the wire as the AUTH event's pubkey.
+const { groupAuthorityKey } = await import('./crypto/groupAuthority.js');
+const { pin: ACTOR_PIN } = await groupAuthorityKey(SK, 'pool-test-group');
+const ACTOR_XONLY = ACTOR_PIN.slice(2);
+
 const groupEvent = finalizeEvent({
   kind: 39000, created_at: 1700000000, tags: [['d', 'room'], ['name', 'Room']], content: '',
 }, SK);
@@ -305,7 +328,9 @@ function makeRelayStub() {
     send(raw) {
       const msg = JSON.parse(raw);
       this.sent.push(msg);
-      if (msg[0] === 'AUTH' && msg[1]?.kind === 22242 && msg[1]?.pubkey === PK) {
+      // Step 2 slice 2b: the AUTH frame is signed by this account's per-group
+      // actor key, whose x-only form is the wire pubkey.
+      if (msg[0] === 'AUTH' && msg[1]?.kind === 22242 && msg[1]?.pubkey === ACTOR_XONLY) {
         this.authed = true;
         this.emit(['OK', msg[1].id, true, '']);
         return;
@@ -338,7 +363,7 @@ function makeRelayStub() {
   return { RelaySocket, sockets };
 }
 
-test('a challenged read through the account pool is answered with a signed AUTH', async () => {
+test('a challenged read through the account pool is answered with an ACTOR-signed AUTH', async () => {
   const { RelaySocket, sockets } = makeRelayStub();
   globalThis.WebSocket = RelaySocket;
 
@@ -348,12 +373,25 @@ test('a challenged read through the account pool is answered with a signed AUTH'
 
   assert.equal(pool.automaticallyAuth, pool.automaticallyAuth, 'sanity');
   try {
-    const events = await pool.querySync([GROUP_RELAY], { kinds: [39000], limit: 1 });
-    assert.equal(sockets.length, 1, 'the relay was dialled once');
-    const authFrame = sockets[0].sent.find((m) => m[0] === 'AUTH');
+    // Dial first: the signer derives asynchronously, so poll for the signed
+    // frame instead of assuming it landed before the first unauth'd answer.
+    await pool.querySync([GROUP_RELAY], { kinds: [39000], limit: 1 }).catch(() => []);
+    let authFrame = null;
+    for (let i = 0; i < 50 && !authFrame; i += 1) {
+      authFrame = sockets[0]?.sent.find((m) => m[0] === 'AUTH') || null;
+      if (!authFrame) await new Promise((r) => setTimeout(r, 20));
+    }
     assert.ok(authFrame, 'the pool answered the AUTH challenge');
     assert.equal(authFrame[1].kind, 22242);
-    assert.equal(authFrame[1].pubkey, PK);
+    assert.equal(authFrame[1].pubkey, ACTOR_XONLY,
+      'the proof names the actor pin\u2019s x-only form, never the account key');
+    const authorTag = authFrame[1].tags.find((t) => t[0] === 'author');
+    assert.deepEqual(authorTag, ['author', ACTOR_PIN], 'the compressed pin rides alongside');
+    // The first read was answered CLOSED (auth-required) while the signer
+    // derived; once the proof is on the wire and accepted, a fresh read
+    // returns the gated event. That re-read is what querySyncAfterAuth does
+    // in production; here it is explicit so the assertion names its cause.
+    const events = await pool.querySync([GROUP_RELAY], { kinds: [39000], limit: 1 });
     assert.equal(events.length, 1, 'the read returned the event the relay gates behind AUTH');
   } finally {
     clearPool();

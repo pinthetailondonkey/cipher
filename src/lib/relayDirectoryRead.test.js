@@ -7,6 +7,8 @@ const FILTER = { kinds: [39000, 9002], limit: 50 };
 const URL = 'wss://groups.example.test';
 const GROUP_URL = 'wss://groups.ciphertele.com';
 const STRANGER_URL = 'wss://relay.example';
+// The seeded group whose actor key the auto-auth proof signs under.
+const READER_TEST_GID = 'reader-test-group';
 
 // The shape a real pool has. `behaviour` says what the relay does.
 function fakePool(behaviour) {
@@ -283,15 +285,39 @@ test('a proof that never lands ends in the refusal sentence, quickly', async () 
 // The one-directional test would miss this: a host passed straight to
 // isGroupHost gives '' inside hostOf and refuses the group relay too, so a
 // pool that signs for nobody would still pass every "nothing leaked" check.
-test('the installed pool can answer the group host and only the group host', async () => {
+test('the installed pool can answer the group host and only the group host, under an actor key', async () => {
+  const lsStore = new Map();
+  globalThis.localStorage = globalThis.localStorage || {
+    getItem: (k) => (lsStore.has(k) ? lsStore.get(k) : null),
+    setItem: (k, v) => { lsStore.set(k, String(v)); },
+    removeItem: (k) => { lsStore.delete(k); },
+  };
   const { getPublicKey } = await import('nostr-tools');
+  const sessionMod = await import('./sessionKey.js');
+  const myGroupsMod = await import('./myGroups.js');
+  const authorityMod = await import('./crypto/groupAuthority.js');
   const sk = new Uint8Array(32).fill(9);
-  const pool = await defaultPool({ pk: getPublicKey(sk), sk });
+  const accountPk = getPublicKey(sk);
+  // The actor derivation needs an unlocked session and one known group.
+  sessionMod.setSessionKey(sk);
+  myGroupsMod.setMyGroups(accountPk, [{ id: READER_TEST_GID }]);
+  const { pin } = await authorityMod.groupAuthorityKey(sk, READER_TEST_GID);
+
+  // The store gate: the active group's id wins when it is one of ours.
+  try {
+    const { useChatStore } = await import('../store/chatStore.js');
+    useChatStore.setState({ activeGroup: null });
+  } catch { /* store shape irrelevant to this assertion */ }
+
+  const pool = await defaultPool({ pk: accountPk, sk });
   assert.equal(typeof pool.automaticallyAuth, 'function');
   const groupSigner = pool.automaticallyAuth(GROUP_URL);
   assert.equal(typeof groupSigner, 'function', 'the group host IS eligible');
-  const signed = groupSigner({ kind: 22242, created_at: 0, tags: [], content: '' });
-  assert.equal(signed.pubkey, getPublicKey(sk));
+  const signed = await groupSigner({ kind: 22242, created_at: 0, tags: [], content: '' });
+  // Step 2 slice 2b: the proof is actor-signed, never identity.sk.
+  assert.equal(signed.pubkey, pin.slice(2));
+  assert.deepEqual(signed.tags.find((t) => t[0] === 'author'), ['author', pin]);
+  assert.notEqual(signed.pubkey, accountPk, 'the account key never reaches a proof');
   assert.equal(pool.automaticallyAuth(STRANGER_URL), null, 'a stranger host gets no signer');
 });
 
@@ -385,18 +411,35 @@ test('an account with nothing to prove is read once, then answered', async () =>
 
 // nostr-tools 2.25 reads the signer from `automaticallyAuth`; it does not read
 // a constructor option spelled `onauth`. This pins the shape that works.
-test('the pool this reader builds can answer a relay challenge', async () => {
+test('the pool this reader builds can answer a relay challenge under the actor key', async () => {
+  const lsStore = new Map();
+  globalThis.localStorage = globalThis.localStorage || {
+    getItem: (k) => (lsStore.has(k) ? lsStore.get(k) : null),
+    setItem: (k, v) => { lsStore.set(k, String(v)); },
+    removeItem: (k) => { lsStore.delete(k); },
+  };
   const { getPublicKey } = await import('nostr-tools');
+  const sessionMod = await import('./sessionKey.js');
+  const myGroupsMod = await import('./myGroups.js');
+  const authorityMod = await import('./crypto/groupAuthority.js');
   const sk = new Uint8Array(32).fill(4);
-  const pool = await defaultPool({ pk: getPublicKey(sk), sk });
+  const accountPk = getPublicKey(sk);
+  sessionMod.setSessionKey(sk);
+  myGroupsMod.setMyGroups(accountPk, [{ id: READER_TEST_GID }]);
+  const { pin } = await authorityMod.groupAuthorityKey(sk, READER_TEST_GID);
+  const pool = await defaultPool({ pk: accountPk, sk });
   assert.equal(typeof pool.automaticallyAuth, 'function', 'a challenge has a signer to answer with');
-  // The proof names this account, so only the group host gets one. A relay we
-  // merely read from must not be able to ask who this person is.
+  // The proof names this account's pseudonym for one group, so only the group
+  // host gets one. A relay we merely read from must not be able to ask who
+  // this person is.
   assert.equal(pool.automaticallyAuth('wss://relay.example'), null, 'a stranger relay gets no signer');
-  const signed = pool.automaticallyAuth('wss://groups.ciphertele.com/')({ kind: 22242, created_at: 0, tags: [], content: '' });
+  const signed = await pool.automaticallyAuth('wss://groups.ciphertele.com/')({ kind: 22242, created_at: 0, tags: [], content: '' });
   assert.equal(signed.kind, 22242);
-  assert.equal(signed.pubkey, getPublicKey(sk));
+  // Step 2 slice 2b: actor-signed; the account key never reaches a proof.
+  assert.equal(signed.pubkey, pin.slice(2));
+  assert.deepEqual(signed.tags.find((t) => t[0] === 'author'), ['author', pin]);
   assert.ok(signed.sig);
+  assert.notEqual(signed.pubkey, accountPk);
   const bare = await defaultPool(null);
   assert.equal(bare.automaticallyAuth, undefined, 'no account, no claim to prove');
 });
