@@ -15,6 +15,7 @@ import { rumorTags, sealAndWrap, withBuzzLabel, wrapForGateway, buzzLabelFor, GI
 import { isGiftWrap, unwrapToRumor } from '../lib/giftUnwrap';
 import { storedGatewayPubkey as activeGatewayPubkey, rememberGatewayPubkey } from '../lib/pushGatewayStore';
 import { conversationKey } from '../lib/dmKeys';
+import { dmSubscriptionFilters } from '../lib/dmSubscription';
 import { noteFirstSeen } from '../lib/safetyNumber';
 import { clampedExpiresAt } from '../lib/disappearing';
 import { acceptPayment, rememberPublicView, receiptBindsOrder, sendCountersignOnce, stripArrivingReceiptMark } from '../lib/proofOfTrade';
@@ -217,10 +218,7 @@ export function useNIP44DM({ identity }) {
       const pool = await getAuthenticatedPool(identity);
       if (!mounted.current) return;
       publishOwnRelayList(identity).catch(() => {});
-      const dmFilters = [
-        { kinds: [4, GIFT_WRAP_KIND], '#p': [identity.pk], since },
-        { kinds: [4], authors: [identity.pk], since },
-      ];
+      const dmFilters = dmSubscriptionFilters(identity.pk, since);
       for (const filter of dmFilters) {
         if (!mounted.current) break;
         // The serving relay is the safety number's honest input (drill round

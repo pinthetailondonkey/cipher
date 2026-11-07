@@ -10,6 +10,14 @@ currently checked out on `security-ui-remediation`; external protocol
 comparisons link to the standards, protocol descriptions, and published audit
 reports used. Cipher has not received a professional external security review.
 
+R4 identity-compartment audit evidence is recorded in
+`docs/IDENTITY-COMPARTMENTS.md`. The audit confirms group-local actor
+signatures and sender-hidden outgoing DM wraps, and also confirms that DM
+recipient routing and public merchant identity still use the account key.
+Device credentials are not yet distributed to peers. Therefore R4's audit and
+stop conditions are defined, but identity separation is not complete and no
+claim of full cross-surface unlinkability is made.
+
 ## Scope and evidence labels
 
 - **[V] Verified:** directly supported by the implementation, protocol text, or
@@ -385,6 +393,12 @@ required by the build guard; the original file was restored after the run.
   are covered by integration tests.
 
 ### Phase 4 — privacy compartments
+
+Audit result: the measured wire behavior, public identity joins, ownership
+rules, and safe migration gates are in `docs/IDENTITY-COMPARTMENTS.md`. The
+remaining unchecked items are actual privacy migrations; do not mark Phase 4
+complete until they are implemented and exercised through independent relay
+captures.
 
 - [ ] Main account, DM-device, group actor, merchant and device identities have
   explicit ownership/rotation rules and no unnecessary shared wire key.
