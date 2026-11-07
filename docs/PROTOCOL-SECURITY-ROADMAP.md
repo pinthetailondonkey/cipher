@@ -149,9 +149,12 @@ The binding's provenance is now explicit in governance-document version 3.
 Version 1/2 documents still verify and decrypt, but any actor field they carry
 is treated as an unverified migration hint. The sealed group-message `by`
 field is not an account signature because every current member knows the group
-key; it is never used to create an authorization binding. An existing member
-with only an old actor pin must complete a fresh account-signed admission
-before actor-based moderation or control attribution is enabled. Wire control
+key; it is never used to create an authorization binding. When an existing
+governance signer publishes its next v3 update, it can bind its own account row
+to the actor derived from that unlocked account secret; this does not trust the
+legacy pin or relay. Other existing members whose pins came only from v1/v2
+documents need a fresh account-signed admission before actor-based control
+attribution is enabled. Wire control
 authorization reads only held, verified governance standing; stale local/UI
 rosters and relay-only snapshots cannot fill a missing document.
 
@@ -173,8 +176,9 @@ and the pending request remains for retry. Lost pending-queue storage means
 the applicant can resubmit a fresh ticket; it must not silently approve.
 Existing account-key members remain legacy-readable; moderation against a
 legacy member without a verified actor binding refuses instead of emitting an
-account-key target, until an authorized document or fresh invite handshake
-binds that actor.
+account-key target, until an authorized document update binds that actor. The
+current authority signer binds its own account by local key derivation during
+such an update; other members need a fresh invite handshake.
 
 **Relay compatibility:** NIP-29's join request includes optional free-form
 content and the requester's event pubkey. The inspected upstream relay queues

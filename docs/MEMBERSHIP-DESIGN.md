@@ -421,8 +421,10 @@ Nothing else needs deciding here.
   A decoded kind-9's sealed `by` is NOT proof: every current group member knows
   the message key and can forge that field. DOC_V 1/2 remains readable, but
   actor pins in those versions are migration hints and cannot authorize
-  actor-signed controls until the account completes a fresh admission. The
-  publisher writes proof-backed v3 bindings into the governance doc. Members receive docs
+  actor-signed controls. The governance signer binds its own account row from
+  its unlocked key derivation during the next v3 document update; other members
+  need fresh account-signed admission proofs. The publisher writes verified v3
+  bindings into the governance doc. Members receive docs
   through `ingestMemberDocEvent` (relay author checked against the held pin's
   x-only form before any AES work) at join, on every roster read, and live
   (the group subscription carries a kind-30079 filter keyed by the doc's

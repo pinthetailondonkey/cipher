@@ -1,4 +1,5 @@
 import { db as appDb } from '../../db';
+import { getPublicKey } from 'nostr-tools';
 import { refetchMembersCached, trustedGroupCreator } from './groupMembership';
 import { generateGroupKey, toHex } from './groupCipher';
 import { distributeGroupKey } from './groupKeyDistribution';
@@ -164,6 +165,15 @@ export async function publishMemberDocUpdate(groupId, pubkeys, { pins = null } =
   const verifiedPins = new Map(Object.entries(pins || {})
     .map(([pubkey, actor]) => [String(pubkey).toLowerCase(), String(actor || '').toLowerCase()])
     .filter(([pubkey, actor]) => /^[0-9a-f]{64}$/.test(pubkey) && /^0[23][0-9a-f]{64}$/.test(actor)));
+  // A document author can verify its own legacy actor binding locally: the
+  // authority signer was just derived from this unlocked account secret, and
+  // the public key check ensures the account row really belongs to it. This
+  // lets existing v1/v2 groups migrate to proof-backed v3 controls on their
+  // next signed document update without trusting old actor hints or a relay.
+  const signerAccount = getPublicKey(accountSk).toLowerCase();
+  if (signerAccount === String(owner).toLowerCase() && after.has(signerAccount)) {
+    verifiedPins.set(signerAccount, derivedPin.toLowerCase());
+  }
   const admit = [...after].filter((pubkey) => !before.has(pubkey)).map((pubkey) => {
     // Step 2 slice 3: an admit carries the member's actor pin when this
     // device has verified one (its own derivation, or an act-derived binding

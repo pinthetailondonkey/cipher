@@ -1,18 +1,20 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { getPublicKey } from 'nostr-tools';
 import { __setDocOpEnvForTests, __setMembershipDbForTests, publishMemberDocUpdate } from './groupKeyRotation.js';
 // publishDocOp runs through rememberMembers; drive it end to end here.
 import { rememberMembers } from './groupKeyRotation.js';
 import { setAtRestKeyProvider } from '../messageAtRest.js';
 import { __setGroupKeyStoreForTests, putDocKey } from './groupKeyStore.js';
 
-const OWNER = '41'.repeat(32);
+const ACCOUNT_SK = new Uint8Array(32).fill(41);
+const OWNER = getPublicKey(ACCOUNT_SK);
 const GID = 'pubop-test'.padEnd(64, '0');
 
 const PK = (n) => String(n).padStart(64, '0');
 
 async function setup() {
-  const accountSk = new Uint8Array(32).fill(41);
+  const accountSk = ACCOUNT_SK;
   const { groupAuthorityKey } = await import('./groupAuthority.js');
   const w = await import('./groupDocWire.js');
   const g = await import('./groupDoc.js');
@@ -111,6 +113,34 @@ test('a membership change folds onto the held doc and publishes gen+1', async ()
     // Rows store the signed wrapper; the body carries members.
     const standing = heads[0].body.members.map((row) => row.pubkey).sort();
     assert.deepEqual(standing, [PK(7), OWNER].sort());
+  } finally {
+    __setDocOpEnvForTests(null);
+    __setMembershipDbForTests(null);
+    __setGroupKeyStoreForTests(null);
+  }
+});
+
+test('a signed migration from v2 binds the current owner actor by derivation', async () => {
+  const env = await setup();
+  try {
+    // Historical v2 actor fields did not prove the account-to-actor link.
+    const legacy = await env.g.signDocEvent({
+      v: 2, t: 'gmemdoc', gid: GID, gen: 0, epoch: 1, parents: [],
+      members: [{ pubkey: OWNER, role: 'admin', gen: 0, actor: env.pin }],
+      removed: [],
+    }, env.privateKeyBytes);
+    await env.w.rememberVerifiedDoc({ groupId: GID, pin: env.pin, signed: legacy });
+
+    await publishMemberDocUpdate(GID, [OWNER, PK(7)], {
+      pins: { [PK(7)]: `02${'ab'.repeat(32)}` },
+    });
+    const heads = await waitForDocHeads(2);
+    const owner = heads[0].body.members.find((row) => row.pubkey === OWNER);
+    const admitted = heads[0].body.members.find((row) => row.pubkey === PK(7));
+    assert.equal(heads[0].body.v, 3);
+    assert.equal(owner?.actor, env.pin);
+    assert.equal(owner?.actorVerified, true);
+    assert.equal(admitted?.actorVerified, true);
   } finally {
     __setDocOpEnvForTests(null);
     __setMembershipDbForTests(null);
