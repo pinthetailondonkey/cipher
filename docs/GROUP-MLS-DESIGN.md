@@ -91,6 +91,21 @@ removal Commit. The native and browser checks invoke the same Rust flow in
 the pinned Libcrux provider in this narrow browser scenario, not a production
 adapter, storage, relay, or interoperability result.
 
+**Welcome failure/retry is reproduced and contained in the evaluation shim.**
+The shared flow first calls OpenMLS 0.9.2 `StagedWelcome::new_from_welcome`
+directly on a one-time KeyPackage with a Welcome whose group omits the ratchet
+tree. OpenMLS returns `MissingRatchetTree` after deleting the KeyPackage;
+retrying a later valid Welcome returns `NoMatchingKeyPackage`. The same flow
+then repeats with a copy-on-write provider: it snapshots the in-memory store,
+stages and stores the group against the candidate snapshot, and replaces the
+active store only on success. The failed attempt leaves the original key
+available, and the later valid Welcome succeeds. This reproduces the upstream
+[0.9.2 Welcome-consumption issue](https://github.com/openmls/openmls/issues/2316)
+and tests a safe retry pattern in the evaluation only. Cipher still needs an
+application-owned IndexedDB transaction that atomically commits the consumed
+KeyPackage, MLS group state, governance revision, and immutable outbox before
+using OpenMLS for production admission.
+
 The repository includes a pinned, isolated native behavior witness at
 `crypto/mls-eval`, run with
 `cargo test --manifest-path crypto/mls-eval/Cargo.toml --locked`. It creates Alice's group,

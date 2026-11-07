@@ -48,7 +48,12 @@ try {
     const mls = await import('/mls/cipher_mls_eval.js');
     await mls.default();
     if (!mls.private_add_commit_and_removal_flow()) throw new Error('The OpenMLS member add/remove flow returned false.');
-    return { implementation: 'openmls-0.9.2', browserRuntime: true, removedMemberRejected: true };
+    return {
+      implementation: 'openmls-0.9.2',
+      browserRuntime: true,
+      removedMemberRejected: true,
+      failedWelcomeRetryPreservedKey: true,
+    };
   });
   if (errors.length) throw new Error(`Browser errors: ${errors.join('; ')}`);
   console.log(`OpenMLS WASM browser integration passed: ${JSON.stringify(result)}`);

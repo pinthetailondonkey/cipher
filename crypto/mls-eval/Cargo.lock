@@ -193,6 +193,8 @@ dependencies = [
  "openmls",
  "openmls_basic_credential",
  "openmls_libcrux_crypto",
+ "openmls_memory_storage",
+ "openmls_traits",
  "wasm-bindgen",
 ]
 
@@ -646,6 +648,15 @@ dependencies = [
  "serde",
  "serde_json",
  "uuid",
+]
+
+[[package]]
+name = "hex"
+version = "0.4.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7f24254aa9a54b5c858eaee2f5bccdb46aaf0e486a595ed5fd8f86ba55232a70"
+dependencies = [
+ "serde",
 ]
 
 [[package]]
@@ -1260,6 +1271,7 @@ version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ce927945a16eaa19302ed5ccef052f01ba68f2ba7ae67e4ac4ff2fc661445364"
 dependencies = [
+ "hex",
  "log",
  "openmls_traits",
  "serde",
