@@ -10,8 +10,75 @@ import { keyRequestRecord } from './groupKeyRequest';
 import { nip59 } from 'nostr-tools';
 import { rumorTags, sealAndWrap } from '../giftWrap';
 import { markSafetyChange } from '../safetyNumber.js';
+import { secp256k1 } from '@noble/curves/secp256k1.js';
+import { bytesToHex } from '@noble/hashes/utils.js';
 
 const KEY_HEX = /^[0-9a-f]{64}$/i;
+
+function bytesFromHex(hex) {
+  const value = String(hex || '').toLowerCase();
+  if (!/^(?:[0-9a-f]{2})+$/.test(value)) throw new Error('Malformed key bootstrap value.');
+  return Uint8Array.from(value.match(/.{2}/g), (byte) => parseInt(byte, 16));
+}
+
+async function sha256Hex(value) {
+  return bytesToHex(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value))));
+}
+
+function bootstrapUnsigned({ groupId, recipient, sender, epoch, keyHash, docKeyHash, doc }) {
+  return { v: 1, gid: groupId, to: recipient, by: sender, ep: epoch, kh: keyHash, dkh: docKeyHash,
+    doc: { id: doc.id, sig: doc.sig, body: doc.body } };
+}
+
+async function signBootstrap(unsigned, authoritySk) {
+  const digest = await sha256Hex(JSON.stringify(unsigned));
+  const signature = secp256k1.sign(bytesFromHex(digest), authoritySk, { prehash: false });
+  return { ...unsigned, sig: bytesToHex(signature) };
+}
+
+/** A signed, one-recipient bootstrap grant for the first encrypted key bundle. */
+export async function createGroupKeyBootstrapGrant({ groupId, recipient, sender, epoch, keyHex, docKeyHex, authoritySk, doc }) {
+  if (!/^[0-9a-f]{64}$/i.test(String(recipient || '')) || !Number.isInteger(epoch) || epoch < 0) return null;
+  if (!/^[0-9a-f]{64}$/i.test(String(keyHex || '')) || !/^[0-9a-f]{64}$/i.test(String(docKeyHex || ''))) return null;
+  if (!doc?.id || !doc?.sig || !doc?.body || doc.body.gid !== groupId || doc.body.epoch !== epoch) return null;
+  const { resolveMembership } = await import('./groupDoc.js');
+  const row = resolveMembership(doc.body).find((member) => member.pubkey === recipient.toLowerCase());
+  if (!row || row.actorVerified !== true || !row.actor) return null;
+  const unsigned = bootstrapUnsigned({
+    groupId, recipient: recipient.toLowerCase(), sender: String(sender || '').toLowerCase(), epoch,
+    keyHash: await sha256Hex(String(keyHex).toLowerCase()),
+    docKeyHash: await sha256Hex(String(docKeyHex).toLowerCase()), doc,
+  });
+  return signBootstrap(unsigned, authoritySk);
+}
+
+/** Verify the grant and its embedded authority-signed membership head. */
+export async function verifyGroupKeyBootstrapGrant({ grant, groupId, recipient, sender, epoch, keyHex, docKeyHex, pin }) {
+  try {
+    if (!grant || grant.v !== 1 || grant.gid !== groupId
+      || grant.to !== String(recipient || '').toLowerCase()
+      || grant.by !== String(sender || '').toLowerCase()
+      || grant.ep !== epoch || !/^[0-9a-f]{128}$/i.test(grant.sig || '')) return null;
+    if (!/^[0-9a-f]{66}$/i.test(String(pin || ''))) return null;
+    const doc = grant.doc;
+    const { verifySignedDoc, resolveMembership } = await import('./groupDoc.js');
+    const opened = await verifySignedDoc({ signed: doc, pin });
+    if (!opened || opened.gid !== groupId || opened.epoch !== epoch || opened.id !== doc.id) return null;
+    const row = resolveMembership(opened).find((member) => member.pubkey === String(recipient).toLowerCase());
+    if (!row || row.actorVerified !== true || !row.actor) return null;
+    if (grant.kh !== await sha256Hex(String(keyHex).toLowerCase())
+      || grant.dkh !== await sha256Hex(String(docKeyHex).toLowerCase())) return null;
+    const unsigned = bootstrapUnsigned({
+      groupId, recipient: grant.to, sender: grant.by, epoch, keyHash: grant.kh,
+      docKeyHash: grant.dkh, doc,
+    });
+    const digest = bytesFromHex(await sha256Hex(JSON.stringify(unsigned)));
+    if (!secp256k1.verify(bytesFromHex(grant.sig), digest, bytesFromHex(pin), { prehash: false })) return null;
+    return { signedDoc: doc, opened };
+  } catch {
+    return null;
+  }
+}
 
 // A private group's real name and description ride the same sealed envelope
 // the group key rides. The envelope is NIP-44 to each recipient already; this
@@ -189,10 +256,17 @@ export function conflictingHeldEpoch(rows, held) {
 
 export async function senderMayInstallGroupKey({ sender, groupId, maxEpoch, offeredEpochs = null, allowCurrentEpochResync = false }) {
   if (!sender || !groupId) return false;
-  const snapshot = await loadMemberSnapshot(groupId);
+  const owner = currentOwner();
+  const { readAuthorityPin } = await import('./authorityPins.js');
+  const securedPin = readAuthorityPin(owner, groupId);
+  // A secured group never falls back to a relay roster when its signed doc is
+  // unavailable. Older groups with no out-of-band authority pin retain their
+  // legacy roster behavior until they migrate through an authenticated invite.
+  const snapshot = securedPin
+    ? await (await import('./groupKeyRotation.js')).loadVerifiedMemberSnapshot(groupId)
+    : await loadMemberSnapshot(groupId);
   if (!Array.isArray(snapshot)) return false;
   const current = await getCurrentGroupKey(groupId);
-  const owner = currentOwner();
   const claimed = (getMyGroups(owner).find((group) => group?.id === groupId) || {}).creator;
   const creator = trustedGroupCreator({ creator: claimed, identityPk: owner, snapshot });
   return senderAuthorizedForGroupKey({ snapshot, sender, maxEpoch, currentEpoch: current?.epoch, creator, offeredEpochs, allowCurrentEpochResync });
@@ -236,9 +310,36 @@ export async function installReceivedGroupKey(payload, sender = null) {
   }
   const allowCurrentEpochResync = payload?.resync === true && rows.length === 1;
   if (payload?.resync === true && !allowCurrentEpochResync) return false;
-  const authorized = await senderMayInstallGroupKey({
+  let authorized = await senderMayInstallGroupKey({
     sender, groupId, maxEpoch, offeredEpochs: rows.map((row) => row.epoch), allowCurrentEpochResync,
   });
+  const { readAuthorityPin } = await import('./authorityPins.js');
+  const pinnedAuthority = readAuthorityPin(currentOwner(), groupId);
+  // For a secured group, first-key adoption always needs a grant signed by
+  // the out-of-band authority pin. A partially persisted doc cannot turn a
+  // relay roster or a normal member into a bootstrap signer.
+  if (pinnedAuthority && !current) authorized = false;
+  let priorDocKey = await getDocKey(groupId);
+  const docKeyHex = typeof payload?.dk === 'string' ? payload.dk : '';
+  // Also restore a doc-key-lost returning device: the pinned owner grant can
+  // re-establish the current signed head even when an older chat key remains.
+  const singleEpochBootstrap = rows.length === 1
+    && Boolean(keyRequestRecord(currentOwner(), groupId))
+    && !isJoinDenied(groupId, currentOwner()) && /^[0-9a-f]{64}$/.test(docKeyHex);
+  if (!authorized && singleEpochBootstrap) {
+    const verified = await verifyGroupKeyBootstrapGrant({
+      grant: payload?.bootstrap, groupId, recipient: currentOwner(), sender,
+      epoch: maxEpoch, keyHex: rows[0].hex, docKeyHex, pin: pinnedAuthority,
+    });
+    if (verified) {
+      const { rememberVerifiedDoc } = await import('./groupDocWire.js');
+      const stored = await rememberVerifiedDoc({ groupId, pin: pinnedAuthority, signed: verified.signedDoc });
+      if (stored?.stored) {
+        priorDocKey = null;
+        authorized = true;
+      }
+    }
+  }
   if (!authorized) {
     console.warn('[group-key] A key bundle was not installed: sender is not authorized for this group.', { groupId, epoch: maxEpoch });
     return false;
@@ -263,13 +364,11 @@ export async function installReceivedGroupKey(payload, sender = null) {
   // New bundles always carry a valid governance secret. Adopt it BEFORE chat
   // epochs so a storage failure cannot leave this device with new chat keys
   // but no key for the corresponding authorization document.
-  const docKeyHex = typeof payload?.dk === 'string' ? payload.dk : '';
   const hasDocKeyField = Object.prototype.hasOwnProperty.call(payload || {}, 'dk');
   if (hasDocKeyField && !/^[0-9a-f]{64}$/.test(docKeyHex)) {
     console.warn('[group-key] A key bundle was not installed: its governance-doc key is malformed.', { groupId, epoch: maxEpoch });
     return false;
   }
-  const priorDocKey = await getDocKey(groupId);
   let adoptedDocKey = false;
   if (/^[0-9a-f]{64}$/.test(docKeyHex)) {
     if (docKeyAdoptionAllows({ heldEpoch: priorDocKey?.epoch, offeredEpoch: maxEpoch })) {
@@ -371,7 +470,7 @@ export function epochsToSend({ records, epoch, explicit = false, nowSec = Math.f
 
 const grantLedger = { getGrantRecords, recordGrant };
 
-export async function distributeGroupKey({ senderPrivkey, senderPubkey, groupId, epoch, keyBytes, recipients, publish, answerRequest = false, label = null, ledger = grantLedger, docKey }) {
+export async function distributeGroupKey({ senderPrivkey, senderPubkey, groupId, epoch, keyBytes, recipients, publish, answerRequest = false, label = null, ledger = grantLedger, docKey, bootstrapRecipient = null }) {
   const { nip44 } = await import('nostr-tools');
   // SEC-1: the governance-doc key rides every bundle this call ships. An
   // explicit `docKey` wins (rotation hands its freshly minted secret over);
@@ -384,6 +483,29 @@ export async function distributeGroupKey({ senderPrivkey, senderPubkey, groupId,
     resolvedDocKey = normalizeDocKey(held?.bytes);
   }
   if (!resolvedDocKey) throw new Error('A readable governance-doc key is required before distributing new group keys. Recover the shared key; do not generate a replacement.');
+  let bootstrapContext = null;
+  if (bootstrapRecipient) {
+    const owner = currentOwner();
+    const { getSessionKey } = await import('../sessionKey.js');
+    const { groupAuthorityKey } = await import('./groupAuthority.js');
+    const { readAuthorityPin } = await import('./authorityPins.js');
+    const { loadMemberDocHeads } = await import('./groupDocWire.js');
+    const accountSk = getSessionKey();
+    if (!owner || owner.toLowerCase() !== String(senderPubkey || '').toLowerCase()
+      || !accountSk || accountSk.length !== 32) {
+      throw new Error('A first key grant requires the unlocked group-authority account.');
+    }
+    const heldPin = readAuthorityPin(owner, groupId);
+    const authority = await groupAuthorityKey(accountSk, groupId);
+    if (!heldPin || authority.pin !== heldPin) {
+      throw new Error('A first key grant requires the pinned group-authority signing key.');
+    }
+    const head = (await loadMemberDocHeads(groupId))[0];
+    if (!head || head.body?.gid !== groupId || head.body?.epoch !== epoch) {
+      throw new Error(`A first key grant requires the current verified governance document (document epoch ${head?.body?.epoch ?? 'missing'}, key epoch ${epoch}).`);
+    }
+    bootstrapContext = { authoritySk: authority.privateKeyBytes, doc: head };
+  }
   const now = Math.floor(Date.now() / 1000);
   const results = await Promise.allSettled(recipients.map(async (recipientPubkey) => {
     const records = await ledger.getGrantRecords(groupId, recipientPubkey);
@@ -402,11 +524,21 @@ export async function distributeGroupKey({ senderPrivkey, senderPubkey, groupId,
     // bundle - grants, rotations, regrants and label rides all pass here,
     // so any accepted install adopts or rolls forward to exactly what the
     // sender holds now.
+    let bootstrap = null;
+    if (bootstrapContext && String(recipientPubkey).toLowerCase() === String(bootstrapRecipient).toLowerCase()) {
+      bootstrap = await createGroupKeyBootstrapGrant({
+        groupId, recipient: recipientPubkey, sender: senderPubkey, epoch,
+        keyHex: toHex(keyBytes), docKeyHex: toHex(resolvedDocKey),
+        authoritySk: bootstrapContext.authoritySk, doc: bootstrapContext.doc,
+      });
+      if (!bootstrap) throw new Error('The pinned authority could not authorize this first key grant from the current membership document.');
+    }
     const payload = {
       v: 1, t: 'gkey', gid: groupId, by: senderPubkey, at: now, keys: bundles,
       ...(answerRequest ? { resync: true } : {}),
       ...(label ? { name: label.name, about: label.about || '' } : {}),
       dk: toHex(resolvedDocKey),
+      ...(bootstrap ? { bootstrap } : {}),
     };
     const shared = nip44.v2.utils.getConversationKey(senderPrivkey, recipientPubkey);
     const wrapped = nip44.v2.encrypt(JSON.stringify(payload), shared);

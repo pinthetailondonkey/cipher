@@ -15,19 +15,19 @@ import { generateSecretKey, getPublicKey, nip44 } from 'nostr-tools';
 
 import { setAtRestKeyProvider } from '../messageAtRest.js';
 import {
-  __setGroupKeyStoreForTests, putGroupKey, getGroupKey, getCurrentGroupKey,
+  __setGroupKeyStoreForTests, putGroupKey, putDocKey, getDocKey, getGroupKey, getCurrentGroupKey,
 } from './groupKeyStore.js';
 import { generateGroupKey, toHex, fromHex } from './groupCipher.js';
 import { rotateGroupEpoch, __setMembershipDbForTests, isGroupRotationPending, grantKeyRequest } from './groupKeyRotation.js';
-import { parseGroupKeyBundle, distributeGroupKey, installReceivedGroupKey } from './groupKeyDistribution.js';
+import { parseGroupKeyBundle, distributeGroupKey, installReceivedGroupKey, createGroupKeyBootstrapGrant } from './groupKeyDistribution.js';
 import { unwrapToRumor } from '../giftUnwrap';
 import { encodeGroupPayload, decodeGroupEvent } from './groupMessageCodec.js';
-import { putDocKey, getDocKey } from './groupKeyStore.js';
 import { generateDocKey } from './groupDocKey.js';
 import { sealDocBody, openSealedDocBody, __setDocsDbForTests, rememberVerifiedDoc, ingestMemberDocEvent } from './groupDocWire.js';
 import { groupAuthorityKey } from './groupAuthority.js';
-import { rememberAuthorityPin } from './authorityPins.js';
-import { genesisDocBody, signDocEvent } from './groupDoc.js';
+import { authorityPinGetterFor, rememberAuthorityPin } from './authorityPins.js';
+import { bindMemberDocPins } from './memberDocStanding.js';
+import { applyDocOps, authorityPinOf, genesisDocBody, signDocEvent } from './groupDoc.js';
 import { setSessionKey } from '../sessionKey.js';
 import { __setDocOpEnvForTests } from './groupKeyRotation.js';
 import { rememberPendingKeyRequest } from './groupKeyRequest.js';
@@ -549,4 +549,59 @@ test('SEC-1: a kick rotates the doc key; remaining members receive only the new 
   // C's isolation is structural: C was stripped before the ride, so the
   // rotated secret is addressed only to B — nothing new ever travels to C.
   // (Envelope + ask-evidence guarantees; already witnessed above.)
+});
+
+test('a current-key device with a missing secured doc restores only from the pinned authority grant', async () => {
+  setAtRestKeyProvider(() => SESSION);
+  const GROUP_ID = 'audit-bootstrap-restore';
+  const A = generateSecretKey(); const aPk = getPublicKey(A);
+  const B = generateSecretKey(); const bPk = getPublicKey(B);
+  const bDevice = fakeDb();
+  await openDBFor(bPk);
+  setSessionKey(B);
+  __setGroupKeyStoreForTests({ db: bDevice.db, owner: () => bPk });
+  __setMembershipDbForTests(bDevice.db);
+  __setDocsDbForTests(fakeMemberDocs());
+  bindMemberDocPins(authorityPinGetterFor(bPk));
+
+  const { privateKeyBytes, pin } = await groupAuthorityKey(A, GROUP_ID);
+  rememberAuthorityPin(bPk, GROUP_ID, pin);
+  const actorPin = authorityPinOf(new Uint8Array(32).fill(11));
+  const genesis = await genesisDocBody({
+    gid: GROUP_ID, epoch: 2, creator: aPk, members: [aPk], actorPins: { [aPk]: pin },
+  });
+  const admitted = applyDocOps(genesis, { admit: [{ pubkey: bPk, pin: actorPin }], gen: 1 });
+  const signedDoc = await signDocEvent(admitted, privateKeyBytes);
+  const nextChatKey = generateGroupKey();
+  const nextDocKey = generateDocKey();
+  const bootstrap = await createGroupKeyBootstrapGrant({
+    groupId: GROUP_ID, recipient: bPk, sender: aPk, epoch: 2,
+    keyHex: toHex(nextChatKey), docKeyHex: toHex(nextDocKey),
+    authoritySk: privateKeyBytes, doc: signedDoc,
+  });
+  assert.ok(bootstrap);
+
+  // This device retained a pre-removal/current historical chat key but lost
+  // the governance secret and signed document. A normal member bundle cannot
+  // repair that trust gap; a pinned owner grant can restore the current head.
+  await putGroupKey(GROUP_ID, 1, generateGroupKey());
+  assert.equal(await getDocKey(GROUP_ID), null);
+  await rememberPendingKeyRequest(bPk, GROUP_ID);
+  const payload = {
+    t: 'gkey', gid: GROUP_ID, by: aPk, resync: true,
+    keys: [{ ep: 2, k: toHex(nextChatKey) }], dk: toHex(nextDocKey), bootstrap,
+  };
+  assert.equal(await installReceivedGroupKey({
+    ...payload, bootstrap: { ...bootstrap, to: aPk },
+  }, aPk), false, 'a recipient mismatch leaves the lost document/key state untouched');
+  assert.equal(await getDocKey(GROUP_ID), null);
+  assert.equal((await getCurrentGroupKey(GROUP_ID)).epoch, 1);
+
+  assert.equal(await installReceivedGroupKey(payload, aPk), true);
+  assert.equal((await getCurrentGroupKey(GROUP_ID)).epoch, 2);
+  assert.equal(toHex((await getDocKey(GROUP_ID)).bytes), toHex(nextDocKey));
+  __setGroupKeyStoreForTests(null);
+  __setMembershipDbForTests(null);
+  __setDocsDbForTests(null);
+  bindMemberDocPins(null);
 });

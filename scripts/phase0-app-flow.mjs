@@ -107,15 +107,50 @@ try {
   await ownerPage.evaluate(({ gid, account }) => window.__cipherPhase0.api.addMember(gid, account),
   { gid: groupId, account: identityB.pk });
 
-  const membershipDoc = await applicantPage.waitForFunction(async (gid) => {
-    await window.__cipherPhase0.api.refreshMemberDocs(window.__cipherPhase0.identity, gid).catch(() => {});
-    const { loadVerifiedMemberSnapshot } = await import('/src/lib/crypto/groupKeyRotation.js');
-    const rows = await loadVerifiedMemberSnapshot(gid).catch(() => null);
+  const standingChecks = await Promise.all([ownerPage, applicantPage].map((page) => page.evaluate(async (gid) => {
+    const rows = await window.__cipherPhase0.readMemberStanding(gid);
+    const keyState = await window.__cipherPhase0.readGroupKeyState(gid);
+    return Array.isArray(rows) ? {
+      count: rows.length,
+      includesCurrentIdentity: rows.some((row) => (typeof row === 'string' ? row : row.pubkey) === window.__cipherPhase0.identity.pk),
+      actorBoundRows: rows.filter((row) => typeof row === 'object' && row.actorVerified && row.actor).length,
+      roles: rows.map((row) => typeof row === 'string' ? 'legacy' : row.role).sort(),
+      keyState,
+    } : { keyState, standing: null };
+  }, groupId)));
+  console.log(`[phase0-app-flow] verified standings: ${JSON.stringify(standingChecks)}`);
+  const preBootstrap = await applicantPage.evaluate(async (gid) => ({
+    headCount: (await window.__cipherPhase0.readGroupKeyState(gid)).headCount,
+    hasChatKey: Boolean(await window.__cipherPhase0.getCurrentGroupKey(gid).catch(() => null)),
+    hasDocKey: Boolean(await window.__cipherPhase0.getDocKey(gid).catch(() => null)),
+  }), groupId);
+  assert.deepEqual(preBootstrap, { headCount: 0, hasChatKey: false, hasDocKey: false },
+    'approval alone does not give the applicant a key or a readable governance document');
+
+  await applicantPage.evaluate((gid) => window.__cipherPhase0.api.requestGroupKey(gid), groupId);
+  const installedKey = await applicantPage.waitForFunction(async (gid) => {
+    const current = await window.__cipherPhase0.getCurrentGroupKey(gid).catch(() => null);
+    return current?.bytes?.length === 32 ? current : false;
+  }, groupId, { timeout: 20000 });
+  assert.ok(installedKey, 'the approved applicant receives and installs the current group key over the DM path');
+  const installedStanding = await applicantPage.waitForFunction(async (gid) => {
+    const rows = await window.__cipherPhase0.readMemberStanding(gid);
     return Array.isArray(rows) && rows.some((row) => (typeof row === 'string' ? row : row.pubkey) === window.__cipherPhase0.identity.pk)
       ? rows
       : false;
-  }, groupId, { timeout: 20000 });
-  assert.ok(membershipDoc, 'the applicant ingests the authority-signed membership document after approval');
+  }, groupId, { timeout: 10000 });
+  assert.ok(installedStanding, 'the authority-signed bootstrap restores the applicant governance head');
+
+  await applicantPage.evaluate((gid) => window.__cipherPhase0.api.subscribeToGroups([gid]), groupId);
+  const sentMessage = await applicantPage.evaluate((gid) => window.__cipherPhase0.api.sendGroupMessage(
+    gid, { type: 'text', message: 'approved member can send' },
+  ), groupId);
+  assert.equal(sentMessage.success, true, `the approved applicant sends after key delivery: ${sentMessage.error || ''}`);
+  const receivedMessage = await ownerPage.waitForFunction((gid) =>
+    window.__cipherPhase0.readGroupMessages(gid).some((message) => {
+      try { return JSON.parse(message.rawContent || '').message === 'approved member can send'; } catch { return false; }
+    }), groupId, { timeout: 15000 });
+  assert.ok(receivedMessage, 'the owner decrypts the approved applicant\'s group message through the real receive hook');
 
   const captured = await Promise.all([
     ownerPage.evaluate(() => window.__cipherPhase0Frames),
@@ -130,18 +165,23 @@ try {
   const outgoing = relayFrames.filter((frame) => frame.direction === 'out').map((frame) => JSON.parse(frame.text));
   const events = outgoing.filter((frame) => frame[0] === 'EVENT').map((frame) => frame[1]);
   const auth = outgoing.filter((frame) => frame[0] === 'AUTH').map((frame) => frame[1]);
+  const reqs = outgoing.filter((frame) => frame[0] === 'REQ');
   assert.ok(events.some((event) => event.kind === 9007), 'actual createGroup publishes its kind-9007 event');
   assert.ok(events.some((event) => event.kind === 9021), 'actual joinGroup publishes its encrypted admission request');
   assert.ok(events.some((event) => event.kind === 30079), 'actual create/approve flow publishes a sealed governance document');
   assert.ok(auth.length >= 2, 'both application identities authenticate as group actors');
+  assert.ok(reqs.length > 0, 'the real app subscribes with relay REQ filters');
+  assert.ok(reqs.every((frame) => !JSON.stringify(frame.slice(2)).includes(identityA.pk)
+    && !JSON.stringify(frame.slice(2)).includes(identityB.pk)),
+  'group relay REQ filters do not expose either account key');
   assert.ok(events.every((event) => event.pubkey !== identityA.pk && event.pubkey !== identityB.pk),
     'application EVENT authors use group/authority keys rather than account keys');
   console.log(JSON.stringify({
     result: 'PASS', relay: relayUrl, groupId,
-    applicationCalls: ['useNIP29Group.createGroup', 'groupJoin.joinGroup', 'useNIP29Group.subscribeToGroups', 'useNIP29Group.addMember', 'refreshMemberDocs'],
+    applicationCalls: ['useNIP29Group.createGroup', 'groupJoin.joinGroup', 'useNIP29Group.subscribeToGroups', 'useNIP29Group.addMember', 'useNIP29Group.requestGroupKey', 'groupKeyDistribution.installReceivedGroupKey'],
     independentAccounts: 2, capturedRelayFrames: relayFrames.length,
     eventKinds: [...new Set(events.map((event) => event.kind))].sort((a, b) => a - b),
-    authFrames: auth.length, accountKeysPresentInRelayFrames: false,
+    authFrames: auth.length, keyDeliveryAndGroupMessage: true, accountKeysPresentInRelayFrames: false,
   }, null, 2));
 } finally {
   await applicantPage?.close().catch(() => {});

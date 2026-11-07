@@ -1750,6 +1750,11 @@ export function useNIP29Group({ identity }) {
                 // was sent before, but only for the current epoch. New members
                 // and returning devices do not receive automatic history.
                 answerRequest: true,
+                // A first-time approved member has no local governance doc
+                // yet, so the owner includes an authority-signed bootstrap
+                // head in this one-recipient key response. The receiver still
+                // verifies its invite pin and exact account binding.
+                bootstrapRecipient: requester,
                 publish: (dmEvent) => publishKeyDm(identity, dmEvent),
               });
             }

@@ -1,11 +1,13 @@
 import React, { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { useNIP29Group } from '../src/hooks/useNIP29Group.js';
+import { useNIP44DM } from '../src/hooks/useNIP44DM.js';
+import { useChatStore } from '../src/store/chatStore.js';
 import { setSessionKey } from '../src/lib/sessionKey.js';
 import { getSessionKey } from '../src/lib/sessionKey.js';
 import { openDBFor } from '../src/db.js';
 import { currentOwner } from '../src/db.js';
-import { getDocKey, putDocKey } from '../src/lib/crypto/groupKeyStore.js';
+import { getCurrentGroupKey, getDocKey, putDocKey } from '../src/lib/crypto/groupKeyStore.js';
 import { pendingJoinsFor } from '../src/lib/groupJoinQueue.js';
 import { readAuthorityPin, rememberAuthorityPin } from '../src/lib/crypto/authorityPins.js';
 import { authorityPinGetterFor } from '../src/lib/crypto/authorityPins.js';
@@ -24,6 +26,8 @@ bindMemberDocPins(authorityPinGetterFor(identity.pk));
 function Harness() {
   const [, setGroups] = useState([]);
   const api = useNIP29Group({ identity });
+  const dm = useNIP44DM({ identity });
+  const subscribeToDMs = dm.subscribeToDMs;
   useEffect(() => {
     window.__cipherPhase0 = {
       identity,
@@ -37,11 +41,32 @@ function Harness() {
       rememberAuthorityPin,
       getDocKey,
       putDocKey,
+      getCurrentGroupKey,
+      readMemberStanding: async (groupId) => {
+        const { loadVerifiedMemberSnapshot } = await import('../src/lib/crypto/groupKeyRotation.js');
+        return loadVerifiedMemberSnapshot(groupId);
+      },
+      readGroupKeyState: async (groupId) => {
+        const { loadMemberDocHeads } = await import('../src/lib/crypto/groupDocWire.js');
+        const heads = await loadMemberDocHeads(groupId);
+        const current = await getCurrentGroupKey(groupId);
+        const body = heads[0]?.body;
+        return { headCount: heads.length, head: body ? { gid: body.gid, epoch: body.epoch, gen: body.gen } : null, keyEpoch: current?.epoch ?? null };
+      },
+      readGroupMessages: (groupId) => useChatStore.getState().groupMessages?.[groupId] || [],
     };
   }, [api, setGroups]);
+  useEffect(() => subscribeToDMs(), [subscribeToDMs]);
   return <p>Phase 0 application hook ready</p>;
 }
 
-createRoot(document.getElementById('root')).render(<Harness />);
+function HarnessRoot() {
+  useEffect(() => {
+    return useChatStore.subscribe((state) => { window.__cipherPhase0Store = state; });
+  }, []);
+  return <Harness />;
+}
 
-export default Harness;
+createRoot(document.getElementById('root')).render(<HarnessRoot />);
+
+export default HarnessRoot;

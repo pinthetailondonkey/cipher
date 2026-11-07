@@ -6,7 +6,10 @@ import {
   applySealedLabel,
   parseSealedLabel,
   senderMaySetGroupLabel,
+  createGroupKeyBootstrapGrant,
+  verifyGroupKeyBootstrapGrant,
 } from './groupKeyDistribution.js';
+import { applyDocOps, authorityPinOf, genesisDocBody, signDocEvent } from './groupDoc.js';
 import { getMyGroups, setMyGroups } from '../myGroups';
 import { heldGroupRow } from '../groupJoin';
 import { SEALED_ABOUT, SEALED_LABEL, heldSealedFields } from '../groupCreate';
@@ -156,4 +159,48 @@ test('applying a label twice is a no-op, and an unchanged label writes nothing n
   resetRecord([{ id: 'g1', name: 'Thursday', about: 'moved', access: 'private', labelSealed: true }]);
   assert.equal(applySealedLabel('g1', { name: 'Thursday', about: 'moved' }, OWNER), true);
   assert.equal(getMyGroups(OWNER)[0].name, 'Thursday');
+});
+
+test('first key bootstrap is pinned, account-bound, epoch-bound, and backed by the signed member doc', async () => {
+  const authoritySk = new Uint8Array(32).fill(9);
+  const pin = authorityPinOf(authoritySk);
+  const groupId = 'bootstrap-group';
+  const recipient = 'b'.repeat(64);
+  const sender = 'c'.repeat(64);
+  const keyHex = '1'.repeat(64);
+  const docKeyHex = '2'.repeat(64);
+  const genesis = await genesisDocBody({
+    gid: groupId,
+    epoch: 7,
+    creator: sender,
+    members: [sender],
+    actorPins: { [sender]: pin },
+  });
+  const admitted = applyDocOps(genesis, { admit: [{ pubkey: recipient, pin }], gen: 1 });
+  const signedDoc = await signDocEvent(admitted, authoritySk);
+  assert.ok(signedDoc);
+  const grant = await createGroupKeyBootstrapGrant({
+    groupId, recipient, sender, epoch: 7, keyHex, docKeyHex, authoritySk,
+    doc: signedDoc,
+  });
+  assert.ok(grant);
+  assert.ok(await verifyGroupKeyBootstrapGrant({
+    grant, groupId, recipient, sender, epoch: 7, keyHex, docKeyHex, pin,
+  }));
+  assert.equal(await verifyGroupKeyBootstrapGrant({
+    grant, groupId, recipient: 'd'.repeat(64), sender, epoch: 7, keyHex, docKeyHex, pin,
+  }), null, 'a grant for another account cannot bootstrap');
+  assert.equal(await verifyGroupKeyBootstrapGrant({
+    grant, groupId, recipient, sender, epoch: 8, keyHex, docKeyHex, pin,
+  }), null, 'a grant cannot be replayed at a different epoch');
+  assert.equal(await verifyGroupKeyBootstrapGrant({
+    grant, groupId, recipient, sender, epoch: 7, keyHex: '3'.repeat(64), docKeyHex, pin,
+  }), null, 'the authority signature binds the exact group key');
+  assert.equal(await verifyGroupKeyBootstrapGrant({
+    grant, groupId, recipient, sender, epoch: 7, keyHex, docKeyHex, pin: authorityPinOf(new Uint8Array(32).fill(10)),
+  }), null, 'a different authority pin cannot authorize bootstrap');
+  assert.equal(await createGroupKeyBootstrapGrant({
+    groupId, recipient: 'd'.repeat(64), sender, epoch: 7, keyHex, docKeyHex, authoritySk,
+    doc: signedDoc,
+  }), null, 'a relay-only roster row cannot be added to the authority-signed document');
 });
