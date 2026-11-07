@@ -23,11 +23,12 @@ import { parseGroupKeyBundle, distributeGroupKey, installReceivedGroupKey, creat
 import { unwrapToRumor } from '../giftUnwrap';
 import { encodeGroupPayload, decodeGroupEvent } from './groupMessageCodec.js';
 import { generateDocKey } from './groupDocKey.js';
-import { sealDocBody, openSealedDocBody, __setDocsDbForTests, rememberVerifiedDoc, ingestMemberDocEvent } from './groupDocWire.js';
+import { sealDocBody, openSealedDocBody, __setDocsDbForTests, rememberVerifiedDoc, ingestMemberDocEvent, loadMemberDocHeads } from './groupDocWire.js';
 import { groupAuthorityKey } from './groupAuthority.js';
+import { resolveActorSigner } from './gmIdentityWire.js';
 import { authorityPinGetterFor, rememberAuthorityPin } from './authorityPins.js';
 import { bindMemberDocPins } from './memberDocStanding.js';
-import { applyDocOps, authorityPinOf, genesisDocBody, signDocEvent } from './groupDoc.js';
+import { applyDocOps, authorityPinOf, genesisDocBody, resolveMembership, signDocEvent } from './groupDoc.js';
 import { setSessionKey } from '../sessionKey.js';
 import { __setDocOpEnvForTests } from './groupKeyRotation.js';
 import { rememberPendingKeyRequest } from './groupKeyRequest.js';
@@ -193,6 +194,13 @@ test('a removed member cannot read a post-removal message; a remaining member ca
   assert.equal(rotate.epoch, 1);
   assert.equal(genesis.publishedDocs.length, 1, 'the removal governance document was published');
   assert.equal(JSON.parse(genesis.publishedDocs[0].content).v, 2, 'the post-removal document is v2');
+  asMember('A');
+  const rotatedDocKey = await getDocKey(GROUP);
+  const rotatedDoc = await openSealedDocBody(genesis.publishedDocs[0].content, genesis.pin, GROUP, rotatedDocKey.bytes);
+  assert.equal(rotatedDoc?.body.epoch, rotate.epoch,
+    'the authority-signed removal document advances to the same epoch as the new group key');
+  assert.deepEqual(resolveMembership(rotatedDoc.body).map((row) => row.pubkey), [bPk],
+    'the rotation document reflects exactly the caller’s authorized recipient set');
 
   // The new key reached exactly one member, and it is not C.
   assert.equal(published.length, 1, 'one bundle was published');
@@ -271,6 +279,7 @@ test('a removed member cannot read a post-removal message; a remaining member ca
   const bDocKey = await getDocKey(GROUP);
   const bDoc = await openSealedDocBody(genesis.publishedDocs[0].content, genesis.pin, GROUP, bDocKey?.bytes);
   assert.ok(bDoc, 'an authorized remaining member decrypts the rotated governance document');
+  assert.equal(bDoc.body.epoch, bNow.epoch, 'the remaining member’s governance and chat key epochs agree');
   __setDocsDbForTests(fakeMemberDocs());
   assert.ok(await ingestMemberDocEvent(genesis.publishedDocs[0], { pin: genesis.pin, groupId: GROUP, docKey: bDocKey.bytes }));
   __setDocOpEnvForTests(null);
@@ -436,6 +445,9 @@ test('partial key distribution keeps removal fail-closed and a retry recovers re
   assert.equal((await getCurrentGroupKey(gid)).epoch, 1, 'the new local epoch is recoverable');
   const removedDoc = docs.publishedDocs.at(-1);
   assert.equal(JSON.parse(removedDoc.content).v, 2);
+  const openHeldDoc = await openSealedDocBody(removedDoc.content, docs.pin, gid, heldAfterFailure.bytes);
+  assert.equal(openHeldDoc?.body.epoch, (await getCurrentGroupKey(gid)).epoch,
+    'the recoverable signed removal document is tied to the held rotated chat epoch');
   assert.equal(await openSealedDocBody(removedDoc.content, docs.pin, gid, docKey0), null, 'removed member key cannot open the removal doc');
 
   // Retry on the same device. The held doc already excludes C, so the retry
@@ -600,6 +612,68 @@ test('a current-key device with a missing secured doc restores only from the pin
   assert.equal(await installReceivedGroupKey(payload, aPk), true);
   assert.equal((await getCurrentGroupKey(GROUP_ID)).epoch, 2);
   assert.equal(toHex((await getDocKey(GROUP_ID)).bytes), toHex(nextDocKey));
+  __setGroupKeyStoreForTests(null);
+  __setMembershipDbForTests(null);
+  __setDocsDbForTests(null);
+  bindMemberDocPins(null);
+});
+
+test('a stale member snapshot cannot bypass an authority bootstrap on a rotated key grant', async () => {
+  setAtRestKeyProvider(() => SESSION);
+  const GROUP_ID = 'stale-doc-bootstrap';
+  const A = generateSecretKey(); const aPk = getPublicKey(A);
+  const B = generateSecretKey(); const bPk = getPublicKey(B);
+  const bDevice = fakeDb();
+  await openDBFor(bPk);
+  setSessionKey(A);
+  const authority = await groupAuthorityKey(A, GROUP_ID);
+  const actorA = await resolveActorSigner({ identity: { pk: aPk, sk: A }, groupId: GROUP_ID });
+  setSessionKey(B);
+  __setGroupKeyStoreForTests({ db: bDevice.db, owner: () => bPk });
+  __setMembershipDbForTests(bDevice.db);
+  __setDocsDbForTests(fakeMemberDocs());
+  bindMemberDocPins(authorityPinGetterFor(bPk));
+  rememberAuthorityPin(bPk, GROUP_ID, authority.pin);
+  const actorB = await resolveActorSigner({ identity: { pk: bPk, sk: B }, groupId: GROUP_ID });
+  const oldDoc = await signDocEvent(await genesisDocBody({
+    gid: GROUP_ID, epoch: 1, creator: aPk, members: [aPk, bPk],
+    actorPins: { [aPk]: actorA.pin, [bPk]: actorB.pin },
+  }), authority.privateKeyBytes);
+  assert.ok(await rememberVerifiedDoc({ groupId: GROUP_ID, pin: authority.pin, signed: oldDoc }));
+  const oldChatKey = generateGroupKey();
+  const oldDocKey = generateDocKey();
+  await putGroupKey(GROUP_ID, 1, oldChatKey);
+  await putDocKey(GROUP_ID, 1, oldDocKey);
+  await rememberPendingKeyRequest(bPk, GROUP_ID);
+
+  const newChatKey = generateGroupKey();
+  const newDocKey = generateDocKey();
+  const nextBody = applyDocOps(oldDoc.body, { gen: 1, epoch: 2 });
+  const nextDoc = await signDocEvent(nextBody, authority.privateKeyBytes);
+  const bootstrap = await createGroupKeyBootstrapGrant({
+    groupId: GROUP_ID, recipient: bPk, sender: aPk, epoch: 2,
+    keyHex: toHex(newChatKey), docKeyHex: toHex(newDocKey),
+    authoritySk: authority.privateKeyBytes, doc: nextDoc,
+  });
+  assert.ok(bootstrap);
+  const payload = {
+    t: 'gkey', gid: GROUP_ID, by: aPk,
+    keys: [{ ep: 2, k: toHex(newChatKey) }], dk: toHex(newDocKey), bootstrap,
+  };
+
+  assert.equal(await installReceivedGroupKey({
+    ...payload, bootstrap: { ...bootstrap, sig: '0'.repeat(128) },
+  }, aPk), false,
+  'a stale document that still names the recipient cannot bypass an invalid rotation proof');
+  assert.equal((await getCurrentGroupKey(GROUP_ID)).epoch, 1, 'invalid bootstrap does not advance chat keys');
+  assert.equal(toHex((await getDocKey(GROUP_ID)).bytes), toHex(oldDocKey), 'invalid bootstrap preserves the old governance secret');
+  assert.equal((await loadMemberDocHeads(GROUP_ID))[0].body.epoch, 1, 'invalid bootstrap cannot replace the verified document head');
+
+  assert.equal(await installReceivedGroupKey(payload, aPk), true, 'the genuine pinned authority proof installs the rotation');
+  assert.equal((await getCurrentGroupKey(GROUP_ID)).epoch, 2);
+  assert.equal((await loadMemberDocHeads(GROUP_ID))[0].body.epoch, 2,
+    'the accepted bootstrap advances the stale device to the signed governance head');
+  assert.equal(toHex((await getDocKey(GROUP_ID)).bytes), toHex(newDocKey));
   __setGroupKeyStoreForTests(null);
   __setMembershipDbForTests(null);
   __setDocsDbForTests(null);

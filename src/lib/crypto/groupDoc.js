@@ -219,9 +219,11 @@ export async function genesisDocBody({ gid, epoch, members, creator = '', actorP
 // the higher gen and the standing role), clear the tombstones this doc's
 // members re-admit at or above their removal gen, add new admits at the new
 // gen. Deterministic because the ops are deterministic (H9 merge note).
-export function applyDocOps(headCanonical, { admit = [], bind = [], remove = [], demote = [], promote = [], gen }) {
+export function applyDocOps(headCanonical, { admit = [], bind = [], remove = [], demote = [], promote = [], gen, epoch = null }) {
   const head = canonicalBody(headCanonical);
   if (!head || !Number.isInteger(gen) || gen <= head.gen) return null;
+  const nextEpoch = epoch === null || epoch === undefined ? head.epoch : epoch;
+  if (!Number.isInteger(nextEpoch) || nextEpoch < head.epoch) return null;
   const membersByKey = new Map(head.members.map((row) => [row.pubkey, { ...row }]));
   const removedByKey = new Map(head.removed.map((row) => ({ ...row })).map((row) => [row.pubkey, row]));
   for (const entry of admit) {
@@ -270,7 +272,7 @@ export function applyDocOps(headCanonical, { admit = [], bind = [], remove = [],
     v: DOC_V,
     gid: head.gid,
     gen,
-    epoch: head.epoch,
+    epoch: nextEpoch,
     parents: [head.id || ''].filter(Boolean),
     members: [...membersByKey.values()],
     removed: [...removedByKey.values()],

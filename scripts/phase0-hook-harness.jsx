@@ -8,7 +8,7 @@ import { getSessionKey } from '../src/lib/sessionKey.js';
 import { openDBFor } from '../src/db.js';
 import { currentOwner } from '../src/db.js';
 import { getCurrentGroupKey, getDocKey, putDocKey } from '../src/lib/crypto/groupKeyStore.js';
-import { pendingJoinsFor } from '../src/lib/groupJoinQueue.js';
+import { isJoinDenied, pendingJoinsFor } from '../src/lib/groupJoinQueue.js';
 import { readAuthorityPin, rememberAuthorityPin } from '../src/lib/crypto/authorityPins.js';
 import { authorityPinGetterFor } from '../src/lib/crypto/authorityPins.js';
 import { bindMemberDocPins } from '../src/lib/crypto/memberDocStanding.js';
@@ -36,6 +36,7 @@ function Harness() {
       databaseOwner: currentOwner(),
       setGroups,
       pendingJoinsFor,
+      isDenied: (groupId, account) => isJoinDenied(groupId, account),
       joinGroup,
       readAuthorityPin,
       rememberAuthorityPin,
@@ -45,6 +46,24 @@ function Harness() {
       readMemberStanding: async (groupId) => {
         const { loadVerifiedMemberSnapshot } = await import('../src/lib/crypto/groupKeyRotation.js');
         return loadVerifiedMemberSnapshot(groupId);
+      },
+      debugGrantDecision: async (groupId, requester) => {
+        const { grantKeyRequest, loadMemberSnapshotRecord, isGroupRotationPending } = await import('../src/lib/crypto/groupKeyRotation.js');
+        const snapshot = await window.__cipherPhase0.readMemberStanding(groupId);
+        const record = await loadMemberSnapshotRecord(groupId);
+        const current = await getCurrentGroupKey(groupId);
+        return {
+          rotationPending: await isGroupRotationPending(groupId),
+          denied: isJoinDenied(groupId, requester),
+          pendingJoin: pendingJoinsFor(groupId).some((row) => row.pubkey === requester),
+          snapshotIncludesRequester: Array.isArray(snapshot) && snapshot.some((row) => row.pubkey === requester),
+          recordUpdatedAt: record?.updatedAt ?? null,
+          keyObtainedAt: current?.obtainedAt ?? null,
+          decision: await grantKeyRequest({
+            groupId, requester, creator: identity.pk, snapshot, updatedAt: record?.updatedAt,
+            keyObtainedAt: current?.obtainedAt, selfCreated: true, fetchMembers: async () => snapshot,
+          }),
+        };
       },
       readGroupKeyState: async (groupId) => {
         const { loadMemberDocHeads } = await import('../src/lib/crypto/groupDocWire.js');

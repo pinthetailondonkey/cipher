@@ -6,7 +6,8 @@
 import assert from 'node:assert/strict';
 import { createServer } from 'vite';
 import { chromium } from 'playwright';
-import { generateSecretKey, getPublicKey } from 'nostr-tools';
+import { generateSecretKey, getPublicKey, nip44 } from 'nostr-tools';
+import { unwrapToRumor } from '../src/lib/giftUnwrap.js';
 
 const relayUrl = process.env.CIPHER_TEST_NIP29_RELAY_URL || 'ws://127.0.0.1:18888';
 const secretA = generateSecretKey();
@@ -152,6 +153,137 @@ try {
     }), groupId, { timeout: 15000 });
   assert.ok(receivedMessage, 'the owner decrypts the approved applicant\'s group message through the real receive hook');
 
+  // Exercise signed governance role changes through the application hook, and
+  // confirm they converge on a second independently unlocked device.
+  await ownerPage.evaluate(({ gid, account }) =>
+    window.__cipherPhase0.api.promoteMember(gid, account, false),
+  { gid: groupId, account: identityB.pk });
+  const promoted = await applicantPage.waitForFunction(async (gid) => {
+    await window.__cipherPhase0.api.refreshMemberDocs(gid);
+    const rows = await window.__cipherPhase0.readMemberStanding(gid);
+    const row = Array.isArray(rows) && rows.find((entry) => (typeof entry === 'string' ? entry : entry.pubkey) === window.__cipherPhase0.identity.pk);
+    return row && typeof row === 'object' && row.role === 'admin' ? row : false;
+  }, groupId, { timeout: 15000 });
+  assert.ok(promoted, 'a second member device reads the authority-signed promotion');
+  await ownerPage.evaluate(({ gid, account }) =>
+    window.__cipherPhase0.api.promoteMember(gid, account, true),
+  { gid: groupId, account: identityB.pk });
+  const demoted = await applicantPage.waitForFunction(async (gid) => {
+    await window.__cipherPhase0.api.refreshMemberDocs(gid);
+    const rows = await window.__cipherPhase0.readMemberStanding(gid);
+    const row = Array.isArray(rows) && rows.find((entry) => (typeof entry === 'string' ? entry : entry.pubkey) === window.__cipherPhase0.identity.pk);
+    return row && typeof row === 'object' && row.role === 'member' ? row : false;
+  }, groupId, { timeout: 15000 });
+  assert.ok(demoted, 'a second member device reads the authority-signed demotion');
+
+  const preRemovalEpoch = await ownerPage.evaluate(async (gid) =>
+    (await window.__cipherPhase0.getCurrentGroupKey(gid))?.epoch, groupId);
+  await ownerPage.evaluate(({ gid, account }) => window.__cipherPhase0.api.kickMember(gid, account),
+    { gid: groupId, account: identityB.pk });
+  const ownerAfterKick = await ownerPage.evaluate(async (gid) => ({
+    current: (await window.__cipherPhase0.getCurrentGroupKey(gid).catch(() => null))?.epoch ?? null,
+    members: await window.__cipherPhase0.readMemberStanding(gid),
+    docState: await window.__cipherPhase0.readGroupKeyState(gid),
+  }), groupId);
+  const ownerRotated = { epoch: ownerAfterKick.current, gen: ownerAfterKick.docState.head?.gen };
+  assert.ok(ownerAfterKick.current > preRemovalEpoch
+    && Array.isArray(ownerAfterKick.members)
+    && !ownerAfterKick.members.some((entry) => (typeof entry === 'string' ? entry : entry.pubkey) === identityB.pk),
+  `the application removal rotates the owner to a new key and removes the applicant from signed standing: ${JSON.stringify(ownerAfterKick)}`);
+  assert.equal(ownerAfterKick.docState.head?.epoch, ownerAfterKick.current,
+    `the owner’s new governance document must authorize the same epoch as its chat key: ${JSON.stringify(ownerAfterKick)}`);
+  const removedKeyState = await applicantPage.evaluate(async (gid) => ({
+    current: (await window.__cipherPhase0.getCurrentGroupKey(gid).catch(() => null))?.epoch ?? null,
+    standing: await window.__cipherPhase0.readMemberStanding(gid),
+  }), groupId);
+  assert.equal(removedKeyState.current, preRemovalEpoch,
+    'the removed applicant does not receive the post-removal epoch through the real key-delivery path');
+  const removedDocState = await applicantPage.evaluate(async (gid) => ({
+    head: (await window.__cipherPhase0.readGroupKeyState(gid)).head,
+    denied: window.__cipherPhase0.isDenied(gid, window.__cipherPhase0.identity.pk),
+  }), groupId);
+  assert.ok(removedDocState.head?.epoch < ownerRotated.epoch,
+    `the removed applicant retains only its prior governance epoch (${JSON.stringify({ removed: removedDocState.head, owner: ownerRotated })})`);
+  const ownerDenied = await ownerPage.evaluate((args) =>
+    window.__cipherPhase0.isDenied(args.gid, args.account), { gid: groupId, account: identityB.pk });
+  assert.equal(ownerDenied, true, 'the owner keeps the removed account blocked from automatic key grants');
+
+  const retry = await applicantPage.evaluate(({ gid, pin }) => {
+    window.__cipherPhase0.rememberAuthorityPin(window.__cipherPhase0.identity.pk, gid, pin);
+    return window.__cipherPhase0.joinGroup(window.__cipherPhase0.identity, gid);
+  }, { gid: groupId, pin: ownerPin });
+  assert.equal(retry.membership, 'pending', 'the removed applicant starts a fresh encrypted rejoin request');
+  const retryRequest = await ownerPage.waitForFunction(({ gid, account }) =>
+    window.__cipherPhase0.pendingJoinsFor(gid).some((entry) => entry.pubkey === account),
+  { gid: groupId, account: identityB.pk }, { timeout: 15000 });
+  assert.ok(retryRequest, 'a fresh private request reaches the owner while the owner-side key-grant denial remains in force');
+  assert.equal(await ownerPage.evaluate((args) => window.__cipherPhase0.isDenied(args.gid, args.account),
+    { gid: groupId, account: identityB.pk }), true,
+  'receiving a retry request does not clear the key-grant denial');
+  await ownerPage.evaluate(({ gid, account }) => window.__cipherPhase0.api.addMember(gid, account),
+    { gid: groupId, account: identityB.pk });
+  assert.equal(await ownerPage.evaluate((args) => window.__cipherPhase0.isDenied(args.gid, args.account),
+    { gid: groupId, account: identityB.pk }), false,
+  'only explicit signed reapproval clears the denial');
+  await applicantPage.evaluate((gid) => window.__cipherPhase0.api.requestGroupKey(gid), groupId);
+  let applicantAfterRejoin = null;
+  const rejoinDeadline = Date.now() + 20000;
+  while (Date.now() < rejoinDeadline) {
+    applicantAfterRejoin = await applicantPage.evaluate(async (gid) => ({
+      current: (await window.__cipherPhase0.getCurrentGroupKey(gid).catch(() => null))?.epoch ?? null,
+      docState: await window.__cipherPhase0.readGroupKeyState(gid),
+    }), groupId);
+    if (applicantAfterRejoin.current === ownerAfterKick.current
+      && applicantAfterRejoin.docState.head?.epoch === ownerAfterKick.current) break;
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+  assert.equal(applicantAfterRejoin.current, ownerAfterKick.current,
+    `an explicitly reapproved member receives the new epoch over the encrypted key-delivery path: ${JSON.stringify(applicantAfterRejoin)}`);
+  const ownerGrantState = await ownerPage.evaluate((args) =>
+    window.__cipherPhase0.debugGrantDecision(args.gid, args.requester),
+  { gid: groupId, requester: identityB.pk });
+  const rejoinWireSummary = await Promise.all([ownerPage, applicantPage].map((page) => page.evaluate(() =>
+    window.__cipherPhase0Frames.map((frame) => {
+      try {
+        const message = JSON.parse(frame.text);
+        const event = message[0] === 'EVENT' ? message.at(-1) : null;
+        let payloadType = '';
+        try { payloadType = JSON.parse(event?.content || '').type || ''; } catch { /* ciphertext */ }
+        return { direction: frame.direction, port: new URL(frame.url).port, command: message[0], kind: event?.kind, payloadType };
+      } catch { return null; }
+    }).filter((row) => row && (row.kind === 9 || row.kind === 1059 || row.command === 'AUTH')),
+  )));
+  const applicantDmFrames = await applicantPage.evaluate(() => window.__cipherPhase0Frames
+    .filter((frame) => frame.direction === 'in' && new URL(frame.url).port === '18889')
+    .flatMap((frame) => {
+      try {
+        const message = JSON.parse(frame.text);
+        return message[0] === 'EVENT' && message.at(-1)?.kind === 1059 ? [message.at(-1)] : [];
+      } catch { return []; }
+    }));
+  const decryptedGroupGrants = applicantDmFrames.flatMap((wrap) => {
+    const opened = unwrapToRumor(wrap, secretB);
+    if (!opened) return [];
+    try {
+      const shared = nip44.v2.utils.getConversationKey(secretB, identityA.pk);
+      const payload = JSON.parse(nip44.v2.decrypt(opened.rumor.content, shared));
+      return payload?.gid === groupId ? [{ epochs: payload.keys?.map((row) => row.ep), hasBootstrap: Boolean(payload.bootstrap), sender: opened.rumor.pubkey }] : [];
+    } catch { return []; }
+  });
+  assert.equal(applicantAfterRejoin.current, ownerAfterKick.current,
+    `the reapproved device must receive the owner’s current epoch: ${JSON.stringify({ applicantAfterRejoin, ownerAfterKick, ownerGrantState, rejoinWireSummary, decryptedGroupGrants })}`);
+  assert.equal(applicantAfterRejoin.docState.head?.epoch, applicantAfterRejoin.current,
+    `the bootstrap document and delivered key must share an epoch: ${JSON.stringify(applicantAfterRejoin)}`);
+  assert.ok(decryptedGroupGrants.some((grant) => grant.epochs?.includes(ownerAfterKick.current) && grant.hasBootstrap),
+    `the rejoin DM carries a current-epoch authority bootstrap: ${JSON.stringify(decryptedGroupGrants)}`);
+  const rejoinedStanding = await applicantPage.waitForFunction(async (gid) => {
+    await window.__cipherPhase0.api.refreshMemberDocs(gid);
+    const rows = await window.__cipherPhase0.readMemberStanding(gid);
+    return Array.isArray(rows) && rows.some((entry) => (typeof entry === 'string' ? entry : entry.pubkey) === window.__cipherPhase0.identity.pk)
+      ? rows : false;
+  }, groupId, { timeout: 15000 });
+  assert.ok(rejoinedStanding, 'rejoin restores verified signed membership on the applicant device');
+
   const captured = await Promise.all([
     ownerPage.evaluate(() => window.__cipherPhase0Frames),
     applicantPage.evaluate(() => window.__cipherPhase0Frames),
@@ -178,10 +310,12 @@ try {
     'application EVENT authors use group/authority keys rather than account keys');
   console.log(JSON.stringify({
     result: 'PASS', relay: relayUrl, groupId,
-    applicationCalls: ['useNIP29Group.createGroup', 'groupJoin.joinGroup', 'useNIP29Group.subscribeToGroups', 'useNIP29Group.addMember', 'useNIP29Group.requestGroupKey', 'groupKeyDistribution.installReceivedGroupKey'],
+    applicationCalls: ['useNIP29Group.createGroup', 'groupJoin.joinGroup', 'useNIP29Group.subscribeToGroups', 'useNIP29Group.addMember', 'useNIP29Group.requestGroupKey', 'useNIP29Group.promoteMember', 'useNIP29Group.kickMember', 'groupKeyDistribution.installReceivedGroupKey'],
     independentAccounts: 2, capturedRelayFrames: relayFrames.length,
     eventKinds: [...new Set(events.map((event) => event.kind))].sort((a, b) => a - b),
-    authFrames: auth.length, keyDeliveryAndGroupMessage: true, accountKeysPresentInRelayFrames: false,
+    authFrames: auth.length, keyDeliveryAndGroupMessage: true,
+    roleChangesRemovalAndRejoin: true, removedMemberMissedCurrentKey: true,
+    accountKeysPresentInRelayFrames: false,
   }, null, 2));
 } finally {
   await applicantPage?.close().catch(() => {});

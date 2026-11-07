@@ -74,6 +74,21 @@ test('a denied sender stays denied: the 9021 replay cannot re-queue them', () =>
   });
 });
 
+test('a privately verified new request can be reviewed after removal without clearing key denial', () => {
+  withStorage(() => {
+    denyPendingJoin(GROUP, PK);
+    assert.equal(isJoinDenied(GROUP, PK), true);
+    assert.equal(queuePendingJoin(GROUP, { pubkey: PK, eventId: 'replayed-old-event' }), false,
+      'ordinary and replayed queue writes remain blocked');
+    assert.equal(queuePendingJoin(GROUP, {
+      pubkey: PK, eventId: 'fresh-proof-event', nonce: 'f'.repeat(64), allowDeniedReview: true,
+    }), true, 'only the verified admission path opts into owner review');
+    assert.equal(isJoinDenied(GROUP, PK), true,
+      'the pending review does not clear denial or authorize key delivery');
+    assert.deepEqual(pendingJoinsFor(GROUP).map((row) => row.eventId), ['fresh-proof-event']);
+  });
+});
+
 test('nothing is queued without a pubkey worth reading, and drop removes exactly one row', () => {
   withStorage(() => {
     assert.equal(queuePendingJoin(GROUP, { pubkey: 'not-a-key' }), false);

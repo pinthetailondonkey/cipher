@@ -1482,7 +1482,7 @@ export function useNIP29Group({ identity }) {
               event,
               seenNonces: new Set(queued.map((row) => row.nonce).filter(Boolean)),
             });
-            if (opened.accountPubkey === identity.pk || isJoinDenied(groupId, opened.accountPubkey)) return;
+            if (opened.accountPubkey === identity.pk) return;
             if (!allowsGroupJoins()) {
               denyPendingJoin(groupId, opened.accountPubkey);
               return;
@@ -1494,6 +1494,7 @@ export function useNIP29Group({ identity }) {
               eventId: event.id,
               at: event.created_at,
               requestEvent: event,
+              allowDeniedReview: true,
             });
             if (added) {
               const owned = useChatStore.getState().groups.some((g) => g.id === groupId && g.creator === identity.pk);

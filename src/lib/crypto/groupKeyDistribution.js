@@ -326,19 +326,34 @@ export async function installReceivedGroupKey(payload, sender = null) {
   const singleEpochBootstrap = rows.length === 1
     && Boolean(keyRequestRecord(currentOwner(), groupId))
     && !isJoinDenied(groupId, currentOwner()) && /^[0-9a-f]{64}$/.test(docKeyHex);
-  if (!authorized && singleEpochBootstrap) {
+  // A locally held older document may still name the recipient after they
+  // have been removed, so it cannot bypass a bootstrap that the sender chose
+  // to include. Verify and persist every supplied authority proof before
+  // accepting its key. In particular, do not treat an invalid proof as an
+  // optional hint merely because the stale snapshot authorizes the sender.
+  if (payload?.bootstrap !== undefined) {
+    if (!singleEpochBootstrap || !pinnedAuthority) {
+      console.warn('[group-key] A key bundle was not installed: its authority bootstrap is not valid for this device.');
+      return false;
+    }
     const verified = await verifyGroupKeyBootstrapGrant({
       grant: payload?.bootstrap, groupId, recipient: currentOwner(), sender,
       epoch: maxEpoch, keyHex: rows[0].hex, docKeyHex, pin: pinnedAuthority,
     });
-    if (verified) {
-      const { rememberVerifiedDoc } = await import('./groupDocWire.js');
-      const stored = await rememberVerifiedDoc({ groupId, pin: pinnedAuthority, signed: verified.signedDoc });
-      if (stored?.stored) {
-        priorDocKey = null;
-        authorized = true;
-      }
+    if (!verified) {
+      console.warn('[group-key] A key bundle was not installed: its authority bootstrap failed verification.', { groupId, epoch: maxEpoch });
+      return false;
     }
+    const { rememberVerifiedDoc } = await import('./groupDocWire.js');
+    const stored = await rememberVerifiedDoc({ groupId, pin: pinnedAuthority, signed: verified.signedDoc });
+    if (!stored?.stored) {
+      console.warn('[group-key] A key bundle was not installed: its verified governance document could not be stored.', { groupId, epoch: maxEpoch });
+      return false;
+    }
+    // Keep the prior secret available for rollback if at-rest storage fails
+    // below. The verified new head is persisted, while the rotation barrier
+    // on the sender prevents grants until a failed local install is retried.
+    authorized = true;
   }
   if (!authorized) {
     console.warn('[group-key] A key bundle was not installed: sender is not authorized for this group.', { groupId, epoch: maxEpoch });

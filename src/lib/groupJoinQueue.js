@@ -75,11 +75,15 @@ export function pendingJoinsFor(groupId) {
 
 // True the first time this pubkey is queued for the group; false on a repeat,
 // so one sender reissuing 9021 cannot stack rows.
-export function queuePendingJoin(groupId, { pubkey, actor, nonce, eventId, at, requestEvent } = {}) {
+export function queuePendingJoin(groupId, { pubkey, actor, nonce, eventId, at, requestEvent, allowDeniedReview = false } = {}) {
   const id = String(groupId || '').trim();
   const who = String(pubkey || '').toLowerCase();
   if (!id || !HEX_PUBKEY.test(who)) return false;
-  if (isJoinDenied(id, who)) return false;
+  // A fresh, privately authenticated admission request may be shown to the
+  // owner after a prior removal. The denial remains authoritative for key
+  // grants until the owner explicitly approves; this flag only opens a review
+  // row and is used by the proof-verifying 9021 path.
+  if (isJoinDenied(id, who) && allowDeniedReview !== true) return false;
   const all = loadPendingJoins();
   const rows = Array.isArray(all[id]) ? all[id] : [];
   if (rows.some((row) => row.pubkey === who)) return false;

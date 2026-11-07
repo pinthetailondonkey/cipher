@@ -173,7 +173,7 @@ async function docPool(identity) {
   if (docOpEnv?.publish) return { publish: docOpEnv.publish };
   return getAuthenticatedPool(identity);
 }
-export async function publishMemberDocUpdate(groupId, pubkeys, { pins = null, roleChanges = null } = {}) {
+export async function publishMemberDocUpdate(groupId, pubkeys, { pins = null, roleChanges = null, epoch = null } = {}) {
   const owner = docOwner();
   if (!owner) throw new Error('No account open.');
   const { readAuthorityPin } = await import('./authorityPins.js');
@@ -208,6 +208,11 @@ export async function publishMemberDocUpdate(groupId, pubkeys, { pins = null, ro
   if (!docKeyForSeal) throw new Error('No readable governance-doc key is held; document publication is blocked until the key is recovered.');
 
   const before = new Set(resolveMembership(head).map((row) => row.pubkey));
+  const headEpoch = canonicalBody(head).epoch;
+  const nextEpoch = epoch === null || epoch === undefined ? headEpoch : epoch;
+  if (!Number.isInteger(nextEpoch) || nextEpoch < headEpoch) {
+    throw new Error('A governance document cannot move to an invalid or older group epoch.');
+  }
   const after = new Set(normalizeMembers(pubkeys).map(memberKey)
     .filter((pubkey) => /^[0-9a-f]{64}$/.test(pubkey)));
   const verifiedPins = new Map(Object.entries(pins || {})
@@ -258,9 +263,9 @@ export async function publishMemberDocUpdate(groupId, pubkeys, { pins = null, ro
   }
   const remove = [...before].filter((pubkey) => !after.has(pubkey));
   let signed = head;
-  if (admit.length || bind.length || remove.length || promote.length || demote.length) {
+  if (admit.length || bind.length || remove.length || promote.length || demote.length || nextEpoch !== headEpoch) {
     const nextGen = canonicalBody(head).gen + 1;
-    const body = applyDocOps(head, { admit, bind, remove, promote, demote, gen: nextGen });
+    const body = applyDocOps(head, { admit, bind, remove, promote, demote, gen: nextGen, epoch: nextEpoch });
     if (!body) throw new Error('Could not fold membership ops onto the held head.');
     signed = await signDocEvent(body, privateKeyBytes);
   }
@@ -594,7 +599,7 @@ export async function rotateGroupEpoch({ identity, groupId, remainingPubkeys, pu
   // to roll back; an accepted event whose local persistence failed keeps the
   // barrier and new key so relay refresh can recover it.
   try {
-    await publishMemberDocUpdate(groupId, recipients);
+    await publishMemberDocUpdate(groupId, recipients, { epoch: nextEpoch });
   } catch (error) {
     if (error?.published === false) {
       if (docMembershipChanges) {

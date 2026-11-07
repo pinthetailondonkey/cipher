@@ -49,6 +49,16 @@ test('sign + verify and healing both fold over signed wrappers', async () => {
   assert.deepEqual(canonicalBody(head), canonicalBody(head.body));
 });
 
+test('membership operations may advance but never roll back the authorized key epoch', () => {
+  const head = canonicalBody({ gid: GID, gen: 4, epoch: 2, parents: [], members: [row(PK(1))], removed: [] });
+  const next = applyDocOps(head, { gen: 5, epoch: 3, members: [] });
+  assert.equal(next.epoch, 3);
+  assert.equal(applyDocOps(head, { gen: 5, epoch: 1 }), null,
+    'an old epoch cannot be written back into a newer governance generation');
+  assert.equal(applyDocOps(head, { gen: 5, epoch: 2.5 }), null,
+    'fractional epochs are not accepted');
+});
+
 test('older generation loses under compareDocs regardless of created_at (H2)', async () => {
   const old = { ...canonicalBody({ gid: GID, gen: 2, epoch: 1, parents: [], members: [], removed: [] }), id: 'x-old' };
   const newer = { ...canonicalBody({ gid: GID, gen: 7, epoch: 2, parents: [], members: [], removed: [] }), id: 'x-new' };
