@@ -16,6 +16,7 @@ import path from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { chromium } from 'playwright';
 import { finalizeEvent, generateSecretKey } from 'nostr-tools';
+import { noteAnswer, orderByHealth } from '../src/lib/relayRace.js';
 
 const relayBin = process.env.CIPHER_TEST_RELAY_BIN;
 const settingsTemplate = process.env.CIPHER_TEST_RELAY_SETTINGS;
@@ -37,6 +38,7 @@ const ports = [await freePort(), await freePort()];
 const relayUrls = ports.map((port) => `ws://127.0.0.1:${port}`);
 const configDirs = [];
 const children = new Map();
+let relayHealth = {};
 let browser;
 let browserPage;
 const phase = (name) => console.log(`[ordinary-relay-chaos] ${name}`);
@@ -204,17 +206,24 @@ try {
 
   phase('stop relay A and verify B remains available');
   await stopRelay(0);
-  const duringOutage = makeEvent(sender, 'queued while relay A is down');
-  await publish('b-online', duringOutage);
-  assert.equal((await query('b-online', 'outage-b', duringOutage.id)).length, 1, 'relay B remains available during A outage');
   let unavailable = false;
   try { await waitForRelay(0, 800); } catch { unavailable = true; }
   assert.ok(unavailable, 'relay A outage is observable and bounded');
+  relayHealth = noteAnswer(relayHealth, relayUrls[0], { ok: false });
+  const automaticallySelected = orderByHealth(relayUrls, relayHealth)[0];
+  assert.equal(automaticallySelected, relayUrls[1], 'Cipher health ordering selects the live relay after A refuses');
+  const automaticallySelectedName = automaticallySelected === relayUrls[0] ? 'a-online' : 'b-online';
+  const duringOutage = makeEvent(sender, 'queued while relay A is down');
+  await publish(automaticallySelectedName, duringOutage);
+  assert.equal((await query(automaticallySelectedName, 'outage-b', duringOutage.id)).length, 1,
+    'automatic selection keeps transport on the available relay during A outage');
 
   phase('restart A and explicitly replay the missing event');
   startRelay(0);
   await waitForRelay(0);
   await connect(0, 'a-recovered');
+  relayHealth = noteAnswer(relayHealth, relayUrls[0], { ms: 20, ok: true });
+  assert.equal(orderByHealth(relayUrls, relayHealth)[0], relayUrls[0], 'a recovered relay returns to automatic selection');
   assert.equal((await query('a-recovered', 'pre-sync-a', duringOutage.id)).length, 0,
     'independent relays do not magically synchronize an event received during outage');
   await publish('a-recovered', duringOutage);
@@ -227,9 +236,9 @@ try {
     result: 'PASS',
     transport: 'NIP-01 kind:1 over captured browser WebSocket frames',
     independentRelays: 2,
-    cases: ['dual publish/read', 'relay-specific withheld event', 'single-relay outage', 'other-relay availability', 'explicit recovery replay'],
+    cases: ['dual publish/read', 'relay-specific withheld event', 'automatic healthy-relay selection', 'single-relay outage', 'explicit recovery replay'],
     eventIds: { common: common.id, withheldByB: withheldByB.id, recovered: duringOutage.id },
-    automaticRelaySelection: 'not exercised; production relay selection remains fixed separately',
+    automaticRelaySelection: 'Cipher health-based ordering exercised with two local relays',
   }, null, 2));
 } finally {
   await browserPage?.close().catch(() => {});
