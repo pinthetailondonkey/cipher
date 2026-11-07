@@ -67,10 +67,16 @@ export async function decodeGroupEvent({ event, groupId, store = groupKeyStore, 
     if (!event || event.kind !== 9 || !verifyEvent(event)) {
       return { error: 'invalid-sender-event', refused: true };
     }
+    const groupTags = event.tags.filter((tag) => tag[0] === 'h');
+    if (groupTags.length !== 1 || groupTags[0][1] !== groupId) {
+      return { error: 'invalid-group-binding', refused: true };
+    }
     sender = resolveControlSender({ wirePubkey: event.pubkey, members });
     if (!sender) return { error: 'sender-not-in-current-membership', refused: true };
   }
-  const epTag = event.tags.find(t => t[0] === 'ep');
+  const epTags = event.tags.filter((tag) => tag[0] === 'ep');
+  if (epTags.length > 1) return { error: 'decrypt-failed', reason: 'ambiguous epoch tags' };
+  const epTag = epTags[0];
   if (!epTag) {
     const parsed = parseBody(event.content);
     if (parsed.type === 'gkey_req') return { plaintext: event.content, parsed, legacy: true, ...(sender ? { sender } : {}) };

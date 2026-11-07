@@ -132,6 +132,65 @@ test('a group-key holder outside current governance standing cannot inject or re
   assert.equal(historical.parsed.message, 'legitimate old history');
 });
 
+test('signed group messages bind one exact group id and reject ambiguous epoch tags', async () => {
+  const key = generateGroupKey();
+  const senderSk = generateSecretKey();
+  const sender = getPublicKey(senderSk);
+  const store = storeHolding(new Map([[3, key]]));
+  const envelope = await encryptGroupMessage({
+    rawKey: key,
+    plaintext: JSON.stringify({ type: 'text', message: 'bound group' }),
+    groupId: GROUP,
+    epoch: 3,
+    senderPubkey: sender,
+  });
+  const members = [{ pubkey: sender, role: 'member' }];
+  const eventFor = (tags) => finalizeEvent({
+    kind: 9,
+    created_at: 10,
+    tags,
+    content: JSON.stringify(envelope),
+  }, senderSk);
+
+  const valid = await decodeGroupEvent({
+    event: eventFor([['h', GROUP], ['ep', '3']]),
+    groupId: GROUP,
+    store,
+    members,
+    requireMember: true,
+  });
+  assert.equal(valid.parsed.message, 'bound group');
+
+  const wrongGroup = await decodeGroupEvent({
+    event: eventFor([['h', 'another-group'], ['ep', '3']]),
+    groupId: GROUP,
+    store,
+    members,
+    requireMember: true,
+  });
+  assert.equal(wrongGroup.refused, true);
+  assert.equal(wrongGroup.error, 'invalid-group-binding');
+
+  const duplicateGroup = await decodeGroupEvent({
+    event: eventFor([['h', GROUP], ['h', GROUP], ['ep', '3']]),
+    groupId: GROUP,
+    store,
+    members,
+    requireMember: true,
+  });
+  assert.equal(duplicateGroup.refused, true);
+
+  const ambiguousEpoch = await decodeGroupEvent({
+    event: eventFor([['h', GROUP], ['ep', '3'], ['ep', '4']]),
+    groupId: GROUP,
+    store,
+    members,
+    requireMember: true,
+  });
+  assert.equal(ambiguousEpoch.error, 'decrypt-failed');
+  assert.equal(ambiguousEpoch.plaintext, undefined);
+});
+
 test('JSON bodies that are not objects become text bodies, on both paths', async () => {
   const key = generateGroupKey();
   const keyed = storeHolding(new Map([[1, key]]));

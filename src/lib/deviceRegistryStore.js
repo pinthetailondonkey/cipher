@@ -27,6 +27,63 @@ export async function loadDeviceRegistry(owner, now = Math.floor(Date.now() / 10
   return { version: row.version, generation: row.generation, event, registry };
 }
 
+// A peer registry is accepted only after the caller has opened its private
+// DM envelope. The signer is the peer account itself; generation checkpoints
+// and equivocation checks mirror the local registry, while the event remains
+// sealed under this account's at-rest key.
+export async function acceptPeerDeviceRegistry(owner, event, now = Math.floor(Date.now() / 1000)) {
+  assertOwner(owner);
+  const peerPubkey = String(event?.pubkey || '').toLowerCase();
+  const verified = verifyDeviceRegistryEvent(event, peerPubkey, now);
+  if (!verified) throw new Error('The peer device registry signature, identity, or freshness is invalid.');
+  const sealed = await sealRatchetState({
+    owner,
+    collection: 'peer-device-registry',
+    id: peerPubkey,
+    value: event,
+  });
+  let version = 0;
+  await db.transaction('rw', 'peerDeviceAuth', async () => {
+    assertOwner(owner);
+    const existing = await db.peerDeviceAuth.get(peerPubkey);
+    if (existing && verified.generation < existing.generation) throw new DeviceRegistryConflict(peerPubkey);
+    if (existing && verified.generation === existing.generation) {
+      if (existing.eventId !== event.id) throw new DeviceRegistryConflict(peerPubkey);
+      version = existing.version;
+      return;
+    }
+    version = (existing?.version ?? -1) + 1;
+    await db.peerDeviceAuth.put({
+      peerPubkey,
+      generation: verified.generation,
+      eventId: event.id,
+      version,
+      updatedAt: Date.now(),
+      sealed,
+    });
+  });
+  return version;
+}
+
+export async function loadPeerDeviceRegistry(owner, peerPubkey, now = Math.floor(Date.now() / 1000)) {
+  assertOwner(owner);
+  const peer = String(peerPubkey || '').toLowerCase();
+  if (!/^[0-9a-f]{64}$/.test(peer)) throw new Error('A valid peer account is required.');
+  const row = await db.peerDeviceAuth.get(peer);
+  if (!row) return null;
+  const event = await openRatchetState({
+    owner,
+    collection: 'peer-device-registry',
+    id: peer,
+    sealed: row.sealed,
+  });
+  const registry = verifyDeviceRegistryEvent(event, peer, now, { minimumGeneration: row.generation });
+  if (!registry || registry.generation !== row.generation || event.id !== row.eventId) {
+    throw new Error('The stored peer device registry failed authentication.');
+  }
+  return { version: row.version, generation: row.generation, event, registry };
+}
+
 export async function acceptDeviceRegistry(owner, event, now = Math.floor(Date.now() / 1000)) {
   assertOwner(owner);
   const verified = verifyDeviceRegistryEvent(event, owner, now);

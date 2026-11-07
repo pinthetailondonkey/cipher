@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { generateSecretKey, getPublicKey, nip44, nip59 } from 'nostr-tools';
+import { finalizeEvent } from 'nostr-tools/pure';
 import {
   GIFT_WRAP_KIND,
   SEAL_KIND,
@@ -10,7 +11,7 @@ import {
   withBuzzLabel,
   wrapForGateway,
 } from './giftWrap.js';
-import { isGiftWrap, isSeal, unwrapToRumor, labelFromPayload } from './giftUnwrap.js';
+import { isGiftWrap, isSeal, openDmTransportEvent, unwrapToRumor, labelFromPayload } from './giftUnwrap.js';
 
 const hex = (bytes) => Buffer.from(bytes).toString('hex');
 
@@ -137,6 +138,67 @@ test('a stranger cannot open the wrap, and garbage never throws', () => {
   assert.equal(unwrapToRumor({ kind: 4 }, recipientSk), null);
   assert.equal(isGiftWrap({ kind: 1059 }), true);
   assert.equal(isSeal({ kind: 13 }), true);
+});
+
+test('a recipient rejects a wrap whose signed routing identity was changed', () => {
+  const { senderSk, recipientSk, recipientPk } = buildPair();
+  const otherRecipient = getPublicKey(generateSecretKey());
+  const rumor = nip59.createRumor({
+    kind: 4,
+    created_at: Math.floor(Date.now() / 1000),
+    tags: rumorTags({ recipient: recipientPk }),
+    content: encryptFor(sharedKeyOf(senderSk, recipientPk), { type: 'text', message: 'bound' }),
+  }, senderSk);
+  const { wrap } = sealAndWrap(rumor, { senderSk, recipientPubkey: recipientPk });
+  const forged = {
+    ...wrap,
+    tags: wrap.tags.map((tag) => tag[0] === 'p' ? ['p', otherRecipient] : tag),
+  };
+  assert.equal(unwrapToRumor(forged, recipientSk), null,
+    'valid ciphertext cannot be relabeled as addressed to another account');
+});
+
+test('live and history delivery share the verified rumor id across wrapper replays', () => {
+  const { senderSk, recipientSk, recipientPk } = buildPair();
+  const rumor = nip59.createRumor({
+    kind: 4,
+    created_at: Math.floor(Date.now() / 1000),
+    tags: rumorTags({ recipient: recipientPk, clientId: 'stable-client-id' }),
+    content: encryptFor(sharedKeyOf(senderSk, recipientPk), { type: 'text', message: 'once' }),
+  }, senderSk);
+  const first = sealAndWrap(rumor, { senderSk, recipientPubkey: recipientPk }).wrap;
+  const replay = sealAndWrap(rumor, { senderSk, recipientPubkey: recipientPk }).wrap;
+  const liveEvent = openDmTransportEvent(first, recipientSk);
+  const historyEvent = openDmTransportEvent(replay, recipientSk);
+  assert.notEqual(first.id, replay.id, 'the relay envelopes are independently randomized');
+  assert.equal(liveEvent?.id, rumor.id);
+  assert.equal(historyEvent?.id, rumor.id, 'history uses the same canonical message id as live ingestion');
+  assert.equal(historyEvent?.tags.find(([name]) => name === 'client')?.[1], 'stable-client-id');
+});
+
+test('DM transport refuses altered wrap signatures and forged legacy events', () => {
+  const { senderSk, recipientSk, recipientPk } = buildPair();
+  const rumor = nip59.createRumor({
+    kind: 4,
+    created_at: Math.floor(Date.now() / 1000),
+    tags: rumorTags({ recipient: recipientPk }),
+    content: encryptFor(sharedKeyOf(senderSk, recipientPk), { type: 'text', message: 'signed' }),
+  }, senderSk);
+  const wrap = sealAndWrap(rumor, { senderSk, recipientPubkey: recipientPk }).wrap;
+  const alteredClock = { ...wrap, created_at: wrap.created_at + 1 };
+  assert.equal(openDmTransportEvent(alteredClock, recipientSk), null);
+  assert.equal(openDmTransportEvent({ ...wrap, sig: '0'.repeat(128) }, recipientSk), null);
+
+  const bare = finalizeEvent({
+    kind: 4,
+    created_at: Math.floor(Date.now() / 1000),
+    tags: rumorTags({ recipient: recipientPk }),
+    content: encryptFor(sharedKeyOf(senderSk, recipientPk), { type: 'text', message: 'legacy' }),
+  }, senderSk);
+  assert.ok(openDmTransportEvent(bare, recipientSk), 'historical signed kind-4 events remain readable');
+  // Changing a signed legacy event without a sender signature is refused.
+  const forgedBare = { ...bare, content: 'altered' };
+  assert.equal(openDmTransportEvent(forgedBare, recipientSk), null);
 });
 
 test('withBuzzLabel leaves silent payloads untouched and stamps buzzable ones once', () => {

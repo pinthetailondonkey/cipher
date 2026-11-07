@@ -38,6 +38,9 @@ try {
   await first.goto(url, { waitUntil: 'domcontentloaded' });
   const accountSecret = generateSecretKey();
   const owner = getPublicKey(accountSecret);
+const peerAccountSecret = generateSecretKey();
+const peerOwner = getPublicKey(peerAccountSecret);
+if (peerOwner === owner) throw new Error('Peer device-registry flow requires independent accounts.');
   const registryNow = Math.floor(Date.now() / 1000);
   const baseDevice = { deviceId: 'a'.repeat(32), pubkey: owner, status: 'active', enrolledAt: registryNow - 10 };
   const registryOne = buildDeviceRegistryEvent({
@@ -49,7 +52,7 @@ try {
   const registryTwoB = buildDeviceRegistryEvent({
     accountSecret, generation: 2, devices: [baseDevice, { deviceId: 'c'.repeat(32), pubkey: '2'.repeat(64), status: 'active', enrolledAt: registryNow }],
   }, registryNow - 1);
-  const setup = async (page) => page.evaluate(async (pk) => {
+  const setup = async (page, account = owner) => page.evaluate(async (pk) => {
     const [{ openDBFor, db }, { setAtRestKeyProvider }] = await Promise.all([
       import('/src/db.js'),
       import('/src/lib/messageAtRest.js'),
@@ -59,7 +62,7 @@ try {
     openDBFor(pk);
     await db.open();
     return { ready: true };
-  }, owner);
+  }, account);
   await setup(first);
   await first.evaluate(async (event) => {
     const { acceptDeviceRegistry } = await import('/src/lib/deviceRegistryStore.js');
@@ -108,6 +111,58 @@ try {
   const second = await context.newPage();
   await second.goto(url, { waitUntil: 'domcontentloaded' });
   await setup(second);
+
+  // Exercise registry transport with two independent browser accounts. The
+  // relay-visible object is the actual kind-1059 event produced in Chromium;
+  // the receiving account verifies it and persists the peer checkpoint in
+  // native browser IndexedDB under its own at-rest key.
+  const peerContext = await browser.newContext();
+  const peerPage = await peerContext.newPage();
+  await peerPage.goto(url, { waitUntil: 'domcontentloaded' });
+  await setup(peerPage, peerOwner);
+  const peerDeviceSecret = generateSecretKey();
+  const peerDevicePubkey = getPublicKey(peerDeviceSecret);
+  const peerRegistryOne = buildDeviceRegistryEvent({
+    accountSecret,
+    generation: 1,
+    devices: [{ deviceId: 'e'.repeat(32), pubkey: peerDevicePubkey, status: 'active', enrolledAt: registryNow - 1 }],
+  }, registryNow - 1);
+  const privateRegistryWrap = await first.evaluate(async ({ registryEvent, senderSecret, recipientPubkey }) => {
+    const { buildPrivateDeviceRegistryWrap } = await import('/src/lib/deviceRegistryWire.js');
+    return buildPrivateDeviceRegistryWrap({
+      registryEvent,
+      senderSecret: Uint8Array.from(senderSecret),
+      recipientPubkey,
+      now: Math.floor(Date.now() / 1000),
+    });
+  }, { registryEvent: peerRegistryOne, senderSecret: Array.from(accountSecret), recipientPubkey: peerOwner });
+  const publicWrapJson = JSON.stringify(privateRegistryWrap);
+  if (privateRegistryWrap.kind !== 1059 || !publicWrapJson.includes(peerOwner)
+    || publicWrapJson.includes(owner) || publicWrapJson.includes(peerDevicePubkey)
+    || publicWrapJson.includes(peerRegistryOne.id)) {
+    throw new Error('The browser relay-visible registry wrap exposed sender/device registry identifiers.');
+  }
+  const acceptedPeerRegistry = await peerPage.evaluate(async ({ wrap, recipientSecret }) => {
+    const { openPrivateDeviceRegistryWrap } = await import('/src/lib/deviceRegistryWire.js');
+    const { acceptPeerDeviceRegistry, loadPeerDeviceRegistry } = await import('/src/lib/deviceRegistryStore.js');
+    const ownerId = localStorage.getItem('cipher_db_owner');
+    const opened = openPrivateDeviceRegistryWrap({ wrap, recipientSecret: Uint8Array.from(recipientSecret) });
+    if (!opened) throw new Error('The independent recipient browser could not open the registry DM.');
+    await acceptPeerDeviceRegistry(ownerId, opened.event);
+    const raw = await (await import('/src/db.js')).db.peerDeviceAuth.get(opened.senderPubkey);
+    const restored = await loadPeerDeviceRegistry(ownerId, opened.senderPubkey);
+    return {
+      senderPubkey: opened.senderPubkey,
+      generation: restored.generation,
+      registryEventId: restored.event.id,
+      storedContentVisible: JSON.stringify(raw).includes(restored.event.content),
+    };
+  }, { wrap: privateRegistryWrap, recipientSecret: Array.from(peerAccountSecret) });
+  if (acceptedPeerRegistry.senderPubkey !== owner || acceptedPeerRegistry.generation !== 1
+    || acceptedPeerRegistry.registryEventId !== peerRegistryOne.id || acceptedPeerRegistry.storedContentVisible) {
+    throw new Error(`Private peer registry did not verify and persist safely: ${JSON.stringify(acceptedPeerRegistry)}`);
+  }
+  await peerContext.close();
 
   const registryRace = await Promise.all([registryTwoA, registryTwoB].map((event, index) => [first, second][index].evaluate(async (candidate) => {
     const { acceptDeviceRegistry } = await import('/src/lib/deviceRegistryStore.js');
@@ -261,6 +316,7 @@ try {
     concurrentTabs: race,
     concurrentRatchetTabs: ratchetRace,
     concurrentDeviceRegistryTabs: registryRace,
+    privatePeerRegistryAcrossIndependentAccounts: acceptedPeerRegistry,
     sealedDeviceCredentialRestoreAndRevocation: revokedDevice,
     outboxRetriesRemainDurable: true,
     reloadRestoredMlsSnapshot: true,

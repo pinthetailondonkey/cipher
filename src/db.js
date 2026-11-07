@@ -118,6 +118,11 @@ function makeDB(name) {
     mlsGroups: '&groupId, version, updatedAt',
     mlsInbox: '&eventId, groupId, status, receivedAt',
   });
+  // v17 stores each contact's latest authenticated device registry. Registry
+  // payloads are sealed at rest and arrive through a private DM envelope.
+  d.version(17).stores({
+    peerDeviceAuth: '&peerPubkey, generation, updatedAt',
+  });
   return d;
 }
 
@@ -354,7 +359,7 @@ export const db = new Proxy({}, {
         _warnedOnce = true;
         console.warn('[db] accessed before openDBFor — returning empty stubs');
       }
-      if (['messages', 'chatReads', 'profiles', 'groups', 'groupKeys', 'groupKeyGrants', 'groupMemberSigs', 'outbox', 'tombstones', 'vendorReviews', 'groupMemberDocs', 'ratchetDevices', 'ratchetSessions', 'ratchetInbox', 'mlsGroups', 'mlsInbox', 'deviceAuth'].includes(prop)) {
+      if (['messages', 'chatReads', 'profiles', 'groups', 'groupKeys', 'groupKeyGrants', 'groupMemberSigs', 'outbox', 'tombstones', 'vendorReviews', 'groupMemberDocs', 'ratchetDevices', 'ratchetSessions', 'ratchetInbox', 'mlsGroups', 'mlsInbox', 'deviceAuth', 'peerDeviceAuth'].includes(prop)) {
         return stubTable(prop);
       }
       return () => Promise.resolve();

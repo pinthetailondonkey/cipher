@@ -12,7 +12,7 @@ import { allowsTyping } from '../lib/privacy';
 import { publishOwnRelayList, relaysForPeer } from '../lib/dmRelays';
 import { sortMessages, stampArrival } from '../features/chat/media';
 import { rumorTags, sealAndWrap, withBuzzLabel, wrapForGateway, buzzLabelFor, GIFT_WRAP_KIND, padRumorContent, unpadRumorBody } from '../lib/giftWrap';
-import { isGiftWrap, unwrapToRumor } from '../lib/giftUnwrap';
+import { openDmTransportEvent } from '../lib/giftUnwrap';
 import { storedGatewayPubkey as activeGatewayPubkey, rememberGatewayPubkey } from '../lib/pushGatewayStore';
 import { conversationKey } from '../lib/dmKeys';
 import { dmSubscriptionFilters } from '../lib/dmSubscription';
@@ -242,13 +242,8 @@ export function useNIP44DM({ identity }) {
               // NIP-59 transition: a wrapped DM (kind 1059) opens here before
               // anything downstream reads it; a legacy bare kind-4 keeps its
               // old shape and goes through unchanged.
-              let event = incoming;
-              let unwrappedSeal = null;
-              const opened = unwrapToRumor(incoming, identity.sk);
-              if (opened) {
-                event = opened.rumor;
-                unwrappedSeal = opened.seal;
-              } else if (isGiftWrap(incoming)) return;
+              const event = openDmTransportEvent(incoming, identity.sk);
+              if (!event) return;
               const isSender = event.pubkey === identity.pk;
               const counterparty = isSender ? event.tags.find(t => t[0] === 'p')?.[1] : event.pubkey;
               if (!counterparty) return;
@@ -269,6 +264,16 @@ export function useNIP44DM({ identity }) {
               catch (e) { return; }
               let data = {};
               try { data = unpadRumorBody(JSON.parse(text)); } catch (e) { data = { type: 'text', message: text }; }
+
+              // The inner rumor id is canonical across live and history
+              // delivery, even if a sender or relay gives it a fresh outer
+              // wrap. Never rerun application actions for a stored or deleted
+              // event. Receipt updates remain eligible for their explicit
+              // durable countersign retry path.
+              const alreadyStored = !isSender && !!(await db.messages.get(event.id));
+              const tombstoned = !isSender && !!(await db.tombstones.get(event.id));
+              if (tombstoned) return;
+              if (alreadyStored && !(data.type === 'order_update' && data.receipt)) return;
 
               if (data.type === 'call') {
                 if (!isSender) {
@@ -371,8 +376,6 @@ export function useNIP44DM({ identity }) {
               }
               // Read before the save: whether this id is already stored, was
               // deleted here, and where the chat's read marker stands.
-              const alreadyStored = !isSender && !!(await db.messages.get(event.id));
-              const tombstoned = !isSender && !!(await db.tombstones.get(event.id));
               const lastRead = isSender ? 0 : ((await db.chatReads.get(counterparty))?.lastRead || 0);
               await saveMessage(counterparty, newMsg);
               if (!isSender) {
@@ -428,12 +431,8 @@ export function useNIP44DM({ identity }) {
     // own envelope, so an old message still opens.
     const openedInbox = [];
     for (const incoming of [...sentDms, ...recvDms]) {
-      if (isGiftWrap(incoming)) {
-        const opened = unwrapToRumor(incoming, identity.sk);
-        if (opened) openedInbox.push({ ...opened.rumor, id: incoming.id });
-        continue;
-      }
-      openedInbox.push(incoming);
+      const opened = openDmTransportEvent(incoming, identity.sk);
+      if (opened) openedInbox.push(opened);
     }
     const allDms = Array.from(new Map(openedInbox.map(ev => [ev.id, ev])).values());
     const readUpTo = new Map();
@@ -442,6 +441,9 @@ export function useNIP44DM({ identity }) {
         const isSender = ev.pubkey === identity.pk;
         const counterparty = isSender ? ev.tags.find(t => t[0] === 'p')?.[1] : ev.pubkey;
         if (!counterparty) continue;
+        const existingMessage = await db.messages.get(ev.id);
+        const deletedMessage = await db.tombstones.get(ev.id);
+        if (deletedMessage) continue;
         // Safety numbers: same first-seen freeze on the history path. A
         // merged history fetch has no per-event attribution, so the honest
         // first-seen answer here is the set the query itself ran on.
@@ -454,6 +456,7 @@ export function useNIP44DM({ identity }) {
         catch (e) { continue; }
         let data = {};
         try { data = JSON.parse(text); } catch (e) { data = { type: 'text', message: text }; }
+        if (existingMessage && !(data.type === 'order_update' && data.receipt)) continue;
         // Audit H9, moved ahead of the engines (drill round three): same
         // ordering as the live arm — an expired message runs no key install
         // and countersigns no receipt, and it saves nowhere.

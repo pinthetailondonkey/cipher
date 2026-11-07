@@ -1703,6 +1703,14 @@ export function useNIP29Group({ identity }) {
       }
       const actBy = decoded.sender;
 
+      // Accepted, stored group messages are keyed by their signed event id.
+      // This skips duplicate ordinary-message actions; key requests are not
+      // stored as messages and remain governed by grantKeyRequest's durable
+      // current-epoch rate limit below. Pending ciphertext is the exception:
+      // when its epoch key arrives, history must retry decryption.
+      const storedMessage = await db.messages.get(event.id);
+      if (storedMessage && !storedMessage.pending) return;
+
       const blocked = useChatStore.getState().blockedUsers || [];
       if (blocked.includes(actBy) && actBy !== identity.pk) return;
 
@@ -1899,6 +1907,8 @@ export function useNIP29Group({ identity }) {
             event, groupId: gid, members: standingMembers, requireMember: true,
           });
           if (decoded.refused || decoded.pending || decoded.error) continue;
+          const storedMessage = await db.messages.get(event.id);
+          if (storedMessage && !storedMessage.pending) continue;
           const parsed = decoded.parsed || {};
           if (parsed.type === 'typing') continue;
           // A row unwrapped now is a row arriving now: a stamp already

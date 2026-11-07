@@ -9,7 +9,9 @@ import {
   acceptDeviceRegistry,
   commitEnrolledDevice,
   DeviceRegistryConflict,
+  acceptPeerDeviceRegistry,
   loadDeviceCredential,
+  loadPeerDeviceRegistry,
   loadDeviceRegistry,
 } from './deviceRegistryStore.js';
 
@@ -80,4 +82,65 @@ test('device secret and authorization checkpoint commit together; revocation rem
   await acceptDeviceRegistry(owner, revoked, now + 5);
   assert.equal(await db.ratchetDevices.get(deviceId), undefined);
   await assert.rejects(loadDeviceCredential(owner, deviceId, now + 5), /unavailable|revoked/i);
+});
+
+test('peer registries are authenticated, sealed at rest, and reject replay or same-generation equivocation', async () => {
+  const peerSecret = generateSecretKey();
+  const peer = getPublicKey(peerSecret);
+  const peerDevice = generateSecretKey();
+  const makePeerEvent = (generation, deviceSecret = peerDevice) => buildDeviceRegistryEvent({
+    accountSecret: peerSecret,
+    generation,
+    devices: [{
+      deviceId: '9'.repeat(32),
+      pubkey: getPublicKey(deviceSecret),
+      status: 'active',
+      enrolledAt: now - 3,
+    }],
+  }, now - 2);
+  const first = makePeerEvent(1);
+  await acceptPeerDeviceRegistry(owner, first, now);
+  const stored = await db.peerDeviceAuth.get(peer);
+  assert.equal(JSON.stringify(stored).includes(first.content), false,
+    'the peer registry content must be encrypted in IndexedDB');
+  assert.equal((await loadPeerDeviceRegistry(owner, peer, now)).event.id, first.id);
+
+  const next = makePeerEvent(2);
+  await acceptPeerDeviceRegistry(owner, next, now);
+  assert.equal((await loadPeerDeviceRegistry(owner, peer, now)).generation, 2);
+  await assert.rejects(acceptPeerDeviceRegistry(owner, first, now), DeviceRegistryConflict,
+    'an old signed registry cannot roll back a peer checkpoint');
+
+  const equivocation = makePeerEvent(2, generateSecretKey());
+  await assert.rejects(acceptPeerDeviceRegistry(owner, equivocation, now), DeviceRegistryConflict,
+    'a second signed registry at the same generation is not silently selected');
+  assert.equal((await loadPeerDeviceRegistry(owner, peer, now)).event.id, next.id);
+});
+
+test('peer registry verification and persistence failures never replace the last accepted checkpoint', async () => {
+  const peerSecret = generateSecretKey();
+  const peer = getPublicKey(peerSecret);
+  const makePeerEvent = (generation) => buildDeviceRegistryEvent({
+    accountSecret: peerSecret,
+    generation,
+    devices: [{ deviceId: '8'.repeat(32), pubkey: peer, status: 'active', enrolledAt: now - 3 }],
+  }, now - 2);
+  const first = makePeerEvent(1);
+  const next = makePeerEvent(2);
+  await acceptPeerDeviceRegistry(owner, first, now);
+  const before = await loadPeerDeviceRegistry(owner, peer, now);
+
+  const forged = { ...next, pubkey: owner };
+  await assert.rejects(acceptPeerDeviceRegistry(owner, forged, now), /signature|invalid/i);
+
+  const originalPut = db.peerDeviceAuth.put;
+  db.peerDeviceAuth.put = async () => { throw new Error('peer registry storage failed'); };
+  try {
+    await assert.rejects(acceptPeerDeviceRegistry(owner, next, now), /peer registry storage failed/);
+  } finally {
+    db.peerDeviceAuth.put = originalPut;
+  }
+  const after = await loadPeerDeviceRegistry(owner, peer, now);
+  assert.equal(after.event.id, before.event.id);
+  assert.equal(after.generation, before.generation);
 });
