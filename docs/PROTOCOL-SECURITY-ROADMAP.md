@@ -348,7 +348,8 @@ OpenMLS 0.9.2 WASM module, using the same add/commit/remove and Welcome
 failure/retry flow as the native test, including duplicate removal-commit
 rejection. Direct OpenMLS Welcome processing reproduced KeyPackage loss on a
 failed stage; the evaluation's copy-on-write retry preserved the key and
-accepted a later valid Welcome.
+accepted a later valid Welcome. Two commits built from the same epoch also
+demonstrated that a client rejects the competing stale branch it receives.
 The MLS evaluation crate passed `cargo fmt --manifest-path
 crypto/mls-eval/Cargo.toml --check` and `cargo check --manifest-path
 crypto/mls-eval/Cargo.toml --locked --target wasm32-unknown-unknown`. The

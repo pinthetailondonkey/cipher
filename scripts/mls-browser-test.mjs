@@ -53,6 +53,7 @@ try {
       browserRuntime: true,
       removedMemberRejected: true,
       failedWelcomeRetryPreservedKey: true,
+      staleForkRejected: true,
     };
   });
   if (errors.length) throw new Error(`Browser errors: ${errors.join('; ')}`);

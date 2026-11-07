@@ -191,6 +191,71 @@ fn failed_welcome_retry_preserves_one_time_key() -> bool {
     true
 }
 
+fn conflicting_commit_from_stale_epoch_is_rejected(
+    alice_provider: &EvalProvider,
+    alice_signer: &SignatureKeyPair,
+    alice: &MlsGroup,
+    carol_provider: &EvalProvider,
+) -> bool {
+    let group_id = alice.group_id().clone();
+    let branch_a_provider = alice_provider.fork();
+    let branch_b_provider = alice_provider.fork();
+    let mut branch_a = MlsGroup::load(branch_a_provider.storage(), &group_id)
+        .unwrap()
+        .unwrap();
+    let mut branch_b = MlsGroup::load(branch_b_provider.storage(), &group_id)
+        .unwrap()
+        .unwrap();
+
+    let bob_index = branch_a
+        .members()
+        .find(|member| member.credential.serialized_content() == b"group-actor-bob")
+        .unwrap()
+        .index;
+    let (remove_bob, _, _) = branch_a
+        .remove_members(&branch_a_provider, alice_signer, &[bob_index])
+        .unwrap();
+    branch_a.merge_pending_commit(&branch_a_provider).unwrap();
+
+    let eve_provider = EvalProvider::new();
+    let (eve_key_package, _) = key_package(&eve_provider, b"group-actor-eve");
+    let (add_eve, _, _) = branch_b
+        .add_members(
+            &branch_b_provider,
+            alice_signer,
+            &[eve_key_package.key_package().clone()],
+        )
+        .unwrap();
+    branch_b.merge_pending_commit(&branch_b_provider).unwrap();
+
+    // Carol accepts one of the two commits built from the same stored epoch.
+    // When the relay later presents the competing branch, its prior epoch no
+    // longer matches and OpenMLS refuses the message.
+    let reader_provider = carol_provider.fork();
+    let mut reader = MlsGroup::load(reader_provider.storage(), &group_id)
+        .unwrap()
+        .unwrap();
+    let add_eve: MlsMessageIn = add_eve.into();
+    let add_eve = add_eve.try_into_protocol_message().unwrap();
+    let staged = reader.process_message(&reader_provider, add_eve).unwrap();
+    let ProcessedMessageContent::StagedCommitMessage(staged) = staged.into_content() else {
+        panic!("expected the first concurrent commit to stage");
+    };
+    reader
+        .merge_staged_commit(&reader_provider, *staged)
+        .unwrap();
+
+    let remove_bob: MlsMessageIn = remove_bob.into();
+    let remove_bob = remove_bob.try_into_protocol_message().unwrap();
+    assert!(
+        reader
+            .process_message(&reader_provider, remove_bob)
+            .is_err(),
+        "a conflicting commit from a stale epoch must not roll back the accepted branch"
+    );
+    true
+}
+
 #[wasm_bindgen::prelude::wasm_bindgen]
 pub fn private_add_commit_and_removal_flow() -> bool {
     assert!(failed_welcome_retry_preserves_one_time_key());
@@ -263,6 +328,12 @@ pub fn private_add_commit_and_removal_flow() -> bool {
         panic!("expected Bob to stage Carol's add commit");
     };
     bob.merge_staged_commit(&bob_provider, *bob_add).unwrap();
+    assert!(conflicting_commit_from_stale_epoch_is_rejected(
+        &alice_provider,
+        &alice_signer,
+        &alice,
+        &carol_provider,
+    ));
 
     let before = alice
         .create_message(&alice_provider, &alice_signer, b"before removal")

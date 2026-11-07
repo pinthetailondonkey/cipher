@@ -106,6 +106,13 @@ application-owned IndexedDB transaction that atomically commits the consumed
 KeyPackage, MLS group state, governance revision, and immutable outbox before
 using OpenMLS for production admission.
 
+The shared flow also makes two commits from independent copies of the same
+accepted epoch: one removes Bob and the other adds Eve. Carol accepts the add
+branch, then rejects the competing removal commit from the stale epoch. This
+is a narrow fork-replay witness, not equivocation detection: a relay that
+withholds the other branch from a device remains undetectable without an
+independent authenticated view or cross-relay comparison.
+
 The repository includes a pinned, isolated native behavior witness at
 `crypto/mls-eval`, run with
 `cargo test --manifest-path crypto/mls-eval/Cargo.toml --locked`. It creates Alice's group,
