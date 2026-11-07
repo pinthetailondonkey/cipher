@@ -230,9 +230,21 @@ two-account live test are required before making a deployment claim.
   duplicate, denial, relay refusal and retry cases are tested.
 - [ ] Existing groups and unpinned links follow explicit legacy/refusal behavior;
   no relay-derived pin is treated as trusted.
-- [ ] `npm run lint`, `npm test`, `npm run build`, targeted integration and
-  browser checks are run; exact skips are reported.
-- [ ] Commit locally on `security-ui-remediation`; no push or deploy.
+- [x] `npm run lint`, `npm test`, `npm run build`, targeted crypto/membership
+  tests and browser checks are run; exact counts and skips are reported below.
+- [ ] A two-account run against a locally run compatible NIP-29 relay verifies
+  the real admission path and captured traffic; this remains open.
+- [x] Verified changes are committed locally on `security-ui-remediation`; no
+  push or deploy.
+
+Phase 0 verification snapshot (2026-11-06): `npm test` — 1,115 passed, 0
+failed, 0 skipped; `npm run lint` — exit 0 with existing warnings;
+`npm run build` — exit 0, 2,635 modules transformed and 65 assets listed;
+`npm run test:ui` — 184 passed. Targeted membership/crypto runs passed (60/60
+for the initial phase and 57/57 for the legacy-owner migration follow-up).
+The upstream NIP-29 relay source test is not included in these counts and was
+still compiling in the local harness at this snapshot. No two-account relay
+or real network-frame run has yet been completed.
 
 ### Phase 1 — DM forward secrecy
 
