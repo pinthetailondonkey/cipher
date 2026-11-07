@@ -4,6 +4,7 @@ use openmls_libcrux_crypto::CryptoProvider;
 use openmls_memory_storage::MemoryStorage;
 use openmls_traits::OpenMlsProvider;
 use openmls_traits::storage::StorageProvider;
+use serde::{Deserialize, Serialize};
 use std::io::Cursor;
 
 const SUITE: Ciphersuite = Ciphersuite::MLS_128_DHKEMX25519_AES128GCM_SHA256_Ed25519;
@@ -257,6 +258,54 @@ fn conflicting_commit_from_stale_epoch_is_rejected(
 }
 
 const GOVERNANCE_BINDING_EXTENSION: u16 = 0xffca;
+
+#[derive(Serialize, Deserialize)]
+struct PersistedEvalSnapshot {
+    group_id: Vec<u8>,
+    provider_storage: Vec<u8>,
+}
+
+#[wasm_bindgen::prelude::wasm_bindgen]
+pub fn create_persisted_group_snapshot() -> String {
+    let provider = EvalProvider::new();
+    let (credential, signer) = credential(&provider, b"persisted-browser-actor");
+    let group = MlsGroup::builder()
+        .ciphersuite(SUITE)
+        .use_ratchet_tree_extension(true)
+        .build(
+            &provider,
+            &signer,
+            CredentialWithKey {
+                credential: credential.into(),
+                signature_key: signer.public().into(),
+            },
+        )
+        .unwrap();
+    let mut provider_storage = Vec::new();
+    provider.storage.serialize(&mut provider_storage).unwrap();
+    serde_json::to_string(&PersistedEvalSnapshot {
+        group_id: group.group_id().as_slice().to_vec(),
+        provider_storage,
+    })
+    .unwrap()
+}
+
+#[wasm_bindgen::prelude::wasm_bindgen]
+pub fn persisted_group_snapshot_restores(snapshot_json: &str) -> bool {
+    let Ok(snapshot) = serde_json::from_str::<PersistedEvalSnapshot>(snapshot_json) else {
+        return false;
+    };
+    let Ok(storage) = MemoryStorage::deserialize(&mut Cursor::new(snapshot.provider_storage))
+    else {
+        return false;
+    };
+    let provider = EvalProvider {
+        crypto: CryptoProvider::new().unwrap(),
+        storage,
+    };
+    let group_id = GroupId::from_slice(&snapshot.group_id);
+    matches!(MlsGroup::load(provider.storage(), &group_id), Ok(Some(group)) if group.group_id().as_slice() == snapshot.group_id)
+}
 
 fn governance_binding(revision: u64, document_hash: [u8; 32]) -> Vec<u8> {
     let mut payload = b"cipher-mls-governance-binding-v1".to_vec();

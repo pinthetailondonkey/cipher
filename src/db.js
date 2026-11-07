@@ -108,6 +108,16 @@ function makeDB(name) {
     ratchetSessions: '&sessionId, peerPubkey, peerDeviceId, updatedAt',
     ratchetInbox: '&eventId, chatId, status, receivedAt',
   });
+  // v15 stores the latest locally authenticated device-authority checkpoint.
+  d.version(15).stores({
+    deviceAuth: '&accountPubkey, generation, updatedAt',
+  });
+  // v16 adds isolated OpenMLS prototype snapshots and inbox journals. State
+  // rows are encrypted by mlsStateTransactions.js before reaching IndexedDB.
+  d.version(16).stores({
+    mlsGroups: '&groupId, version, updatedAt',
+    mlsInbox: '&eventId, groupId, status, receivedAt',
+  });
   return d;
 }
 
@@ -344,7 +354,7 @@ export const db = new Proxy({}, {
         _warnedOnce = true;
         console.warn('[db] accessed before openDBFor — returning empty stubs');
       }
-      if (['messages', 'chatReads', 'profiles', 'groups', 'groupKeys', 'groupKeyGrants', 'groupMemberSigs', 'outbox', 'tombstones', 'vendorReviews', 'groupMemberDocs', 'ratchetDevices', 'ratchetSessions', 'ratchetInbox'].includes(prop)) {
+      if (['messages', 'chatReads', 'profiles', 'groups', 'groupKeys', 'groupKeyGrants', 'groupMemberSigs', 'outbox', 'tombstones', 'vendorReviews', 'groupMemberDocs', 'ratchetDevices', 'ratchetSessions', 'ratchetInbox', 'mlsGroups', 'mlsInbox', 'deviceAuth'].includes(prop)) {
         return stubTable(prop);
       }
       return () => Promise.resolve();

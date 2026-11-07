@@ -1,18 +1,26 @@
 // Signed, public prekey directory records for Nostr-delivered DM ratchets.
 // The relay may replay/withhold these records, but cannot alter or forge one.
 import { finalizeEvent, getEventHash, verifyEvent } from 'nostr-tools/pure';
+import { getPublicKey } from 'nostr-tools/pure';
+import { verifyDeviceRegistryEvent } from './deviceEnrollment.js';
 
 export const DM_RATCHET_BUNDLE_KIND = 30078;
 export const DM_RATCHET_PROTOCOL = 'cipher-olm-ratchet';
-export const DM_RATCHET_VERSION = 2;
+export const DM_RATCHET_VERSION = 3;
+export const LEGACY_DM_RATCHET_VERSION = 2;
 export const DM_RATCHET_BUNDLE_TTL_SECONDS = 7 * 24 * 60 * 60;
-export const DM_RATCHET_BUNDLE_D_TAG_PREFIX = 'cipher-dm-ratchet-v2:';
+export const DM_RATCHET_BUNDLE_D_TAG_PREFIX = 'cipher-dm-ratchet-v3:';
+const LEGACY_D_TAG_PREFIX = 'cipher-dm-ratchet-v2:';
 
 const DEVICE_ID_RE = /^[0-9a-f]{32}$/;
 const PUBLIC_KEY_RE = /^[A-Za-z0-9+/]{43}$/;
 
 function deviceTag(deviceId) {
   return `${DM_RATCHET_BUNDLE_D_TAG_PREFIX}${deviceId}`;
+}
+
+function legacyDeviceTag(deviceId) {
+  return `${LEGACY_D_TAG_PREFIX}${deviceId}`;
 }
 
 function parseJson(value) {
@@ -41,8 +49,15 @@ export function makeDmRatchetBundle({
   };
 }
 
-export function buildDmRatchetBundleEvent(bundle, accountSecret, now = Math.floor(Date.now() / 1000)) {
-  validateBundleShape(bundle, now, { allowExpired: true });
+export function buildDmRatchetBundleEvent(bundle, deviceSecret, registryEvent, expectedAccount, now = Math.floor(Date.now() / 1000)) {
+  if (bundle?.version !== DM_RATCHET_VERSION) throw new Error('New ratchet bundles require the enrolled device format.');
+  if (!validateBundleShape(bundle, now)) throw new Error('Ratchet bundle is malformed or expired.');
+  const devicePubkey = getPublicKey(deviceSecret);
+  const registry = verifyDeviceRegistryEvent(registryEvent, expectedAccount, now);
+  if (!registry || !registry.devices.some((row) => row.deviceId === bundle.deviceId
+    && row.pubkey === devicePubkey && row.status === 'active')) {
+    throw new Error('The device is not authorized by a valid account-signed registry.');
+  }
   return finalizeEvent({
     kind: DM_RATCHET_BUNDLE_KIND,
     created_at: now,
@@ -51,12 +66,12 @@ export function buildDmRatchetBundleEvent(bundle, accountSecret, now = Math.floo
       ['expiration', String(bundle.expiresAt)],
     ],
     content: JSON.stringify(bundle),
-  }, accountSecret);
+  }, deviceSecret);
 }
 
 function validateBundleShape(bundle, now, { allowExpired = false } = {}) {
   if (!bundle || typeof bundle !== 'object' || Array.isArray(bundle)) return false;
-  if (bundle.protocol !== DM_RATCHET_PROTOCOL || bundle.version !== DM_RATCHET_VERSION) return false;
+  if (bundle.protocol !== DM_RATCHET_PROTOCOL || ![LEGACY_DM_RATCHET_VERSION, DM_RATCHET_VERSION].includes(bundle.version)) return false;
   if (typeof bundle.deviceId !== 'string' || !DEVICE_ID_RE.test(bundle.deviceId)) return false;
   if (!Number.isSafeInteger(bundle.generation) || bundle.generation < 1) return false;
   if (!PUBLIC_KEY_RE.test(bundle.ed25519 || '') || !PUBLIC_KEY_RE.test(bundle.curve25519 || '')) return false;
@@ -70,9 +85,12 @@ function validateBundleShape(bundle, now, { allowExpired = false } = {}) {
   return true;
 }
 
-export function verifyDmRatchetBundleEvent(event, expectedAccount, now = Math.floor(Date.now() / 1000)) {
+export function verifyDmRatchetBundleEvent(event, expectedAccount, now = Math.floor(Date.now() / 1000), {
+  registryEvent = null,
+  minimumRegistryGeneration = 1,
+} = {}) {
   try {
-    if (!event || event.kind !== DM_RATCHET_BUNDLE_KIND || event.pubkey !== expectedAccount) return null;
+    if (!event || event.kind !== DM_RATCHET_BUNDLE_KIND) return null;
     if (getEventHash(event) !== event.id || !verifyEvent(event)) return null;
     if (!Number.isSafeInteger(event.created_at) || event.created_at > now + 300) return null;
     const dTags = event.tags.filter((tag) => tag[0] === 'd');
@@ -81,7 +99,16 @@ export function verifyDmRatchetBundleEvent(event, expectedAccount, now = Math.fl
     const bundle = parseJson(event.content);
     if (!validateBundleShape(bundle, now)) return null;
     if (bundle.expiresAt <= event.created_at) return null;
-    if (dTags[0][1] !== deviceTag(bundle.deviceId)) return null;
+    if (bundle.version === DM_RATCHET_VERSION) {
+      // A v3 record is device-signed. Callers must provide the latest registry
+      // they have authenticated; a bundle cannot authorize its own signer.
+      const registry = verifyDeviceRegistryEvent(registryEvent, expectedAccount, now, { minimumGeneration: minimumRegistryGeneration });
+      if (!registry || !registry.devices.some((row) => row.deviceId === bundle.deviceId
+        && row.pubkey === event.pubkey && row.status === 'active')) return null;
+      if (dTags[0][1] !== deviceTag(bundle.deviceId)) return null;
+    } else {
+      if (event.pubkey !== expectedAccount || dTags[0][1] !== legacyDeviceTag(bundle.deviceId)) return null;
+    }
     if (Number(expirationTags[0][1]) !== bundle.expiresAt) return null;
     return bundle;
   } catch {
