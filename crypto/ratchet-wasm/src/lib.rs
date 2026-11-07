@@ -291,6 +291,130 @@ mod tests {
     }
 
     #[test]
+    fn excessive_message_gap_is_refused_without_advancing_receive_state() {
+        const MAX_GAP: usize = 2_000;
+
+        let alice = Account::new();
+        let mut bob = Account::new();
+        let bob_otk = one_key(&mut bob);
+        let mut alice_session = alice
+            .create_outbound_session(SessionConfig::version_2(), bob.curve25519_key(), bob_otk)
+            .expect("create outbound session");
+        let initial = alice_session
+            .encrypt("initial")
+            .expect("encrypt initial message");
+        let OlmMessage::PreKey(prekey) = initial else {
+            panic!("expected initial pre-key message");
+        };
+        let accepted = bob
+            .create_inbound_session(SessionConfig::version_2(), alice.curve25519_key(), &prekey)
+            .expect("accept initial message");
+        let mut bob_session = accepted.session;
+
+        let messages = (0..=MAX_GAP + 1)
+            .map(|index| {
+                alice_session
+                    .encrypt(&format!("message-{index}"))
+                    .expect("encrypt sequential message")
+            })
+            .collect::<Vec<_>>();
+        assert!(
+            bob_session.decrypt(&messages[MAX_GAP + 1]).is_err(),
+            "a message beyond the library's configured gap must be rejected"
+        );
+        assert_eq!(
+            bob_session
+                .decrypt(&messages[0])
+                .expect("receive state remains usable after gap refusal"),
+            b"message-0"
+        );
+    }
+
+    #[test]
+    fn stolen_current_state_stops_opening_messages_after_peer_dh_contribution() {
+        let alice = Account::new();
+        let mut bob = Account::new();
+        let bob_otk = one_key(&mut bob);
+        let mut alice_session = alice
+            .create_outbound_session(SessionConfig::version_2(), bob.curve25519_key(), bob_otk)
+            .expect("create outbound session");
+        let initial = alice_session
+            .encrypt("initial")
+            .expect("encrypt initial message");
+        let OlmMessage::PreKey(prekey) = initial else {
+            panic!("expected initial pre-key message");
+        };
+        let accepted = bob
+            .create_inbound_session(SessionConfig::version_2(), alice.curve25519_key(), &prekey)
+            .expect("accept initial message");
+        let mut bob_session = accepted.session;
+        assert_eq!(accepted.plaintext, b"initial");
+
+        let historical = alice_session
+            .encrypt("message before compromise")
+            .expect("encrypt historical message");
+        assert_eq!(
+            bob_session
+                .decrypt(&historical)
+                .expect("Bob decrypts historical message"),
+            b"message before compromise"
+        );
+
+        // Model an attacker copying the recipient's complete current session
+        // state, then losing access to the live endpoint.
+        let storage_key = [73u8; 32];
+        let stolen = bob_session.pickle().encrypt(&storage_key);
+        let mut attacker_session = OlmSession::from_pickle(
+            SessionPickle::from_encrypted(&stolen, &storage_key).expect("open stolen state"),
+        );
+        assert!(
+            attacker_session.decrypt(&historical).is_err(),
+            "a current-state copy must not recover the consumed historical message key"
+        );
+
+        let exposed = alice_session
+            .encrypt("message during compromise")
+            .expect("encrypt compromise-window message");
+        assert_eq!(
+            bob_session
+                .decrypt(&exposed)
+                .expect("Bob decrypts exposed message"),
+            b"message during compromise"
+        );
+        assert_eq!(
+            attacker_session
+                .decrypt(&exposed)
+                .expect("stolen current state decrypts before recovery"),
+            b"message during compromise"
+        );
+
+        // Bob's fresh DH contribution is visible as ciphertext but its private
+        // ratchet key never leaves Bob. Alice mixes it into the next epoch.
+        let contribution = bob_session
+            .encrypt("fresh peer contribution")
+            .expect("Bob encrypts fresh contribution");
+        assert_eq!(
+            alice_session
+                .decrypt(&contribution)
+                .expect("Alice accepts peer contribution"),
+            b"fresh peer contribution"
+        );
+        let recovered = alice_session
+            .encrypt("message after recovery")
+            .expect("encrypt after recovery");
+        assert_eq!(
+            bob_session
+                .decrypt(&recovered)
+                .expect("live Bob state decrypts after recovery"),
+            b"message after recovery"
+        );
+        assert!(
+            attacker_session.decrypt(&recovered).is_err(),
+            "the stolen pre-contribution state must not decrypt post-recovery traffic"
+        );
+    }
+
+    #[test]
     fn v2_configuration_is_not_compatible_with_truncated_mac_mode() {
         let mut bob = Account::new();
         let alice = Account::new();

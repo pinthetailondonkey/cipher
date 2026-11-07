@@ -82,6 +82,37 @@ try {
     const next = session.encrypt('next-secret');
     if (bobSession.decrypt(next) !== 'next-secret') throw new Error('The ratcheted follow-up failed to decrypt.');
 
+    // Copy a recipient's current session state, then let its real peer perform
+    // a fresh DH step. The stolen copy should decrypt before recovery, but not
+    // after it loses the peer's new private ratchet key.
+    const recoveryAlice = new wasm.DeviceAccount();
+    const recoveryBob = new wasm.DeviceAccount();
+    const recoveryIdentity = JSON.parse(recoveryAlice.identity_json());
+    const recoveryBobIdentity = JSON.parse(recoveryBob.identity_json());
+    const recoveryKeys = JSON.parse(recoveryBob.generate_one_time_keys_json(1));
+    const recoverySession = recoveryAlice.create_outbound_session(recoveryBobIdentity.curve25519, recoveryKeys[0]);
+    const recoveryInitialMessage = recoverySession.encrypt('recovery-initial');
+    const recoveryAccepted = recoveryBob.accept_initial_message(recoveryIdentity.curve25519, recoveryInitialMessage);
+    const liveBobSession = recoveryAccepted.into_session();
+    const historical = recoverySession.encrypt('before-compromise');
+    if (liveBobSession.decrypt(historical) !== 'before-compromise') throw new Error('The live peer failed to read the pre-compromise message.');
+    const stolenKey = crypto.getRandomValues(new Uint8Array(32));
+    const stolenState = liveBobSession.encrypt_state(stolenKey);
+    const attackerSession = wasm.RatchetSession.restore(stolenState, stolenKey);
+    let oldMessageRejected = false;
+    try { attackerSession.decrypt(historical); } catch { oldMessageRejected = true; }
+    if (!oldMessageRejected) throw new Error('The copied current state recovered a consumed historical message key.');
+    const exposed = recoverySession.encrypt('during-compromise');
+    if (liveBobSession.decrypt(exposed) !== 'during-compromise') throw new Error('The live peer rejected the compromise-window message.');
+    if (attackerSession.decrypt(exposed) !== 'during-compromise') throw new Error('The copied current state did not reproduce the compromise window.');
+    const peerContribution = liveBobSession.encrypt('fresh-peer-contribution');
+    if (recoverySession.decrypt(peerContribution) !== 'fresh-peer-contribution') throw new Error('The sender did not accept the fresh peer DH contribution.');
+    const afterRecovery = recoverySession.encrypt('after-compromise-recovery');
+    if (liveBobSession.decrypt(afterRecovery) !== 'after-compromise-recovery') throw new Error('The live peer failed after ratchet recovery.');
+    let stolenStateRejected = false;
+    try { attackerSession.decrypt(afterRecovery); } catch { stolenStateRejected = true; }
+    if (!stolenStateRejected) throw new Error('The stolen pre-contribution state decrypted after recovery.');
+
     const pickleKey = crypto.getRandomValues(new Uint8Array(32));
     const pickle = session.encrypt_state(pickleKey);
     const restored = wasm.RatchetSession.restore(pickle, pickleKey);
@@ -90,7 +121,7 @@ try {
     let wrongPickleKeyRejected = false;
     try { wasm.RatchetSession.restore(pickle, badKey); } catch { wrongPickleKeyRejected = true; }
     if (!wrongPickleKeyRejected) throw new Error('A session pickle opened with the wrong storage key.');
-    return { protocol: aliceIdentity.protocol, version: aliceIdentity.version, sessionId: session.session_id() };
+    return { protocol: aliceIdentity.protocol, version: aliceIdentity.version, postCompromiseRecovery: true, sessionId: session.session_id() };
   });
   if (errors.length) throw new Error(`Browser errors: ${errors.join('; ')}`);
   console.log(`Ratchet WASM browser integration passed: ${JSON.stringify(result)}`);

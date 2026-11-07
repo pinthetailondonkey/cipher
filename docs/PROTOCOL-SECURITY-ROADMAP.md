@@ -298,18 +298,20 @@ not treated as audited just because the library's older core was audited; the
 bindings, and left the 8-byte v1 MAC concern unresolved. The mode requires a
 separate protocol and implementation review before production selection.
 
-The prototype currently has: 5 native Rust tests for V2 setup, bidirectional
+The prototype currently has: 7 native Rust tests for V2 setup, bidirectional
 ratchet operation, refusal of V1 sessions, one-time-key consumption, encrypted
-account-pickle restoration, and one-use out-of-order message keys; JS tests for
-encrypted local state, authenticated prekey bundles and IndexedDB CAS/outbox
-behavior. The WASM release module builds, and its two-account browser exercise
-passes initial delivery, wrong-recipient rejection, out-of-order delivery,
-replay rejection, replies and sealed-state restore. The exercise tests the
-library adapter only: no DM production send or receive path has changed, and no
-forward-secrecy claim is enabled for users. `docs/DM-RATCHET-DESIGN.md` records
-the storage and migration gates. **Production implementation choice remains
-unresolved** pending review of the V2 mode or a better-supported
-browser-capable implementation.
+account-pickle restoration, one-use out-of-order message keys, rejection of a
+consumed historical key from current state, and stale-state rejection after a
+fresh peer DH contribution; JS tests cover encrypted local
+state, authenticated prekey bundles and IndexedDB CAS/outbox behavior. The WASM
+release module builds, and its Chromium exercise passes initial delivery,
+wrong-recipient rejection, out-of-order delivery, replay rejection, encrypted
+state restore and the same compromise-recovery sequence. These tests exercise
+the library adapter only: no DM production send or receive path has changed,
+and no forward-secrecy claim is enabled for users. `docs/DM-RATCHET-DESIGN.md`
+records the storage and migration gates. **Production implementation choice
+remains unresolved** pending review of the experimental V2 mode or a
+better-supported browser-capable implementation.
 
 #### Phase 2 implementation evaluation
 
@@ -336,7 +338,7 @@ unavailable through the new client until a distinct, explicit owner-authorized
 grant policy exists.
 
 Verification snapshot (2026-11-07): `npm test` — 1,133 tests, 1,129 passed,
-0 failed, 4 skipped; `npm run test:ratchet` — 5 passed; `npm run lint` — exit
+0 failed, 4 skipped; `npm run test:ratchet` — 7 passed; `npm run lint` — exit
 0 with 103 warnings and no errors; `npm run lint:ratchet` — exit 0;
 `npm run test:ratchet-browser` — passed in a real browser; targeted
 group-key/removal suite — 29 passed; `cargo test --manifest-path

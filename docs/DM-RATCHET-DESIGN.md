@@ -76,9 +76,31 @@ cover language bindings and listed findings, including the short MAC. That is
 not a current independent review of the library release, the proposed adapter,
 or Cipher. The experimental v2 mode is an explicit release gate: pin the crate,
 verify both peers negotiate only that mode, inspect the wire/MAC behavior with
-tests, and do not silently accept compatibility-mode sessions. If the v2 API
-or cross-platform build cannot be maintained safely, stop and reassess instead
-of shipping the 8-byte compatibility mode.
+tests, and do not silently accept compatibility-mode sessions. The current
+native and browser witnesses exercise this mode, including compromise recovery
+after an authenticated fresh peer DH contribution. This is behavioral evidence
+for the pinned library configuration, not evidence that the experimental mode
+has been independently audited or is suitable for production. If the v2 API or
+cross-platform build cannot be maintained safely, stop and reassess instead of
+shipping the 8-byte compatibility mode.
+
+### Current ratchet experiment results
+
+`npm run test:ratchet` has seven native tests, including an excessive-gap refusal
+that verifies the receive state remains usable afterward. The
+compromise-recovery test copies
+the recipient's encrypted current session state, confirms that the copy can
+reject an already-consumed historical message key, then decrypt a message
+while that state remains current. The live peer sends a fresh DH contribution;
+the live pair continues, while the stale copied state cannot decrypt the next
+message. `npm run test:ratchet-browser` repeats that scenario through the
+generated WASM adapter in Chromium, alongside initial-session authentication,
+duplicate rejection, skipped-message delivery and encrypted state restore.
+This demonstrates historical-key rejection and recovery for this Olm v2 path
+after the peer's fresh ratchet key arrives. It does not demonstrate recovery
+while an attacker retains endpoint control, after account identity-key theft,
+or through Cipher's NIP-59 transport, because the app send/receive path is not
+integrated.
 
 References: [vodozemac](https://github.com/matrix-org/vodozemac),
 [vodozemac audit (2022)](https://matrix.org/media/Least%20Authority%20-%20Matrix%20vodozemac%20Final%20Audit%20Report.pdf),
