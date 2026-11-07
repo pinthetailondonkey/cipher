@@ -3,3 +3,7 @@
 
 pub use openmls;
 pub use openmls_libcrux_crypto;
+
+mod group_flow;
+
+pub use group_flow::private_add_commit_and_removal_flow;

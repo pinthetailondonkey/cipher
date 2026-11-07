@@ -343,6 +343,9 @@ Verification snapshot (2026-11-07): `npm test` — 1,133 tests, 1,129 passed,
 `npm run test:ratchet-browser` — passed in a real browser; targeted
 group-key/removal suite — 29 passed; `cargo test --manifest-path
 crypto/mls-eval/Cargo.toml --locked` — 1 passed; `npm run build` — passed.
+`npm run test:mls-browser` — passed in headless Chromium against the actual
+OpenMLS 0.9.2 WASM module, using the same add/commit/remove flow as the native
+test.
 The MLS evaluation crate passed `cargo fmt --manifest-path
 crypto/mls-eval/Cargo.toml --check` and `cargo check --manifest-path
 crypto/mls-eval/Cargo.toml --locked --target wasm32-unknown-unknown`. The

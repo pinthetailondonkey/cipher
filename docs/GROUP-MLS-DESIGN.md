@@ -79,9 +79,16 @@ for MLS credentials as well: `openmls_basic_credential` 0.6.0 pulls
 in addition to OpenMLS 0.9.2's `js` feature and the Libcrux provider. The
 repository command
 `cargo check --manifest-path crypto/mls-eval/Cargo.toml --locked --target
-wasm32-unknown-unknown` passed on 2026-11-07. This remains compile evidence;
-the browser-executed test currently covers the separate vodozemac DM adapter,
-not OpenMLS runtime behavior.
+wasm32-unknown-unknown` passed on 2026-11-07. On 2026-11-07, the exact
+OpenMLS add/Welcome/commit/removal witness was also built with the pinned
+`wasm-bindgen` CLI and executed in headless Chromium via `npm run
+test:mls-browser`. It passed provider initialization, Alice adding Bob and
+Carol, both members processing the current epoch, delivery of an application
+message to the remaining members, and rejection of a post-removal application
+message by Bob. The native and browser checks invoke the same Rust flow in
+`crypto/mls-eval/src/group_flow.rs`. This is evidence for OpenMLS 0.9.2 plus
+the pinned Libcrux provider in this narrow browser scenario, not a production
+adapter, storage, relay, or interoperability result.
 
 The repository includes a pinned, isolated native behavior witness at
 `crypto/mls-eval`, run with
@@ -95,8 +102,8 @@ storage. It is evidence for the library's basic epoch/key behavior only. The
 test also exposed that incoming staged Commit messages must be applied with
 `merge_staged_commit`; `merge_pending_commit` does not advance an incoming
 member's state. The pinned native witness passed on 2026-11-07 (1 test, 0
-failed); it is intentionally an explicit evaluation check and is not folded
-into `npm test`.
+failed); the same flow passed in headless Chromium using the actual WASM build.
+These are explicit evaluation commands and are not folded into `npm test`.
 
 The candidate source review also found current release-specific limitations
 that must shape any prototype. OpenMLS issue #2308 reports an unbounded allocation path
