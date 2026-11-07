@@ -410,7 +410,7 @@ test('a failed member re-read is cached briefly and still refuses a pre-rotation
   resetMemberRereadCache();
 });
 
-test('a joiner missing from the cached list is re-read, and a failed re-read stays quiet for 45s', async () => {
+test('a missing verified governance document blocks key grants without consulting the relay', async () => {
   resetMemberRereadCache();
   let calls = 0;
   const now = 20_000;
@@ -430,8 +430,8 @@ test('a joiner missing from the cached list is re-read, and a failed re-read sta
       return [member, { pubkey: stranger, role: 'member' }];
     },
   });
-  assert.equal(first, 'allow');
-  assert.equal(calls, 1);
+  assert.equal(first, 'deny');
+  assert.equal(calls, 0);
   const second = await grantKeyRequest({
     ...base,
     now: now + 1_000,
@@ -440,8 +440,8 @@ test('a joiner missing from the cached list is re-read, and a failed re-read sta
       return [member];
     },
   });
-  assert.equal(second, 'allow');
-  assert.equal(calls, 1);
+  assert.equal(second, 'deny');
+  assert.equal(calls, 0);
 
   resetMemberRereadCache();
   let fails = 0;
@@ -470,7 +470,7 @@ test('a joiner missing from the cached list is re-read, and a failed re-read sta
       return [member];
     },
   }), 'deny');
-  assert.equal(fails, 1);
+  assert.equal(fails, 0);
   assert.equal(await grantKeyRequest({
     ...down,
     now: now + MEMBER_REREAD_NEGATIVE_TTL_MS,
@@ -478,8 +478,8 @@ test('a joiner missing from the cached list is re-read, and a failed re-read sta
       fails += 1;
       return [member, { pubkey: stranger, role: 'member' }];
     },
-  }), 'allow');
-  assert.equal(fails, 2);
+  }), 'deny');
+  assert.equal(fails, 0);
   resetMemberRereadCache();
 });
 
@@ -835,8 +835,9 @@ test('grantKeyRequest reads the held doc and a relay cannot mint a recipient', a
     // Doc held: the relay list agrees with itself and still loses.
     assert.equal(await grantKeyRequest({ ...base, groupId: GID_DOC }), 'deny',
       'the held doc reaches the decision and refuses the relay-minted row');
-    // No doc: the old relay-trust answer, unchanged.
-    assert.equal(await grantKeyRequest({ ...base, groupId: GID_PLAIN }), 'allow');
+    // No doc is not treated as legacy migration mode. The relay cannot
+    // become the authority while a signed document is absent or unreadable.
+    assert.equal(await grantKeyRequest({ ...base, groupId: GID_PLAIN }), 'deny');
     // The doc also carries the honest member past a relay outage.
     assert.equal(await grantKeyRequest({
       ...base, groupId: GID_DOC, requester: docMember,
@@ -936,6 +937,40 @@ test('actor-only relay rosters map through the verified governance document and 
     { pubkey: 'e'.repeat(64), role: 'member' },
   ], [known, legacy]);
   assert.deepEqual(mapped, [known, legacy]);
+});
+
+test('a verified v3 account remains compatible with an older direct-account relay roster row', () => {
+  const standing = {
+    pubkey: admin,
+    role: 'member',
+    actor: `02${'d'.repeat(64)}`,
+    actorVerified: true,
+  };
+  assert.deepEqual(mapRelayRosterToAccounts([{ pubkey: admin, role: 'member' }], [standing]), [standing]);
+});
+
+test('a temporary governance-document read failure cannot authorize a relay-minted key recipient', async () => {
+  const wire = await import('./groupDocWire.js');
+  wire.__setDocsDbForTests({
+    groupMemberDocs: {
+      where() { return { equals() { return { async toArray() { throw new Error('temporary IndexedDB read failure'); } }; } }; },
+    },
+  });
+  try {
+    const now = Date.now();
+    assert.equal(await grantKeyRequest({
+      groupId: 'secured-v3-transient-read',
+      requester: stranger,
+      creator,
+      snapshot: [creator, stranger],
+      updatedAt: Math.floor(now / 1000) - 1,
+      keyObtainedAt: Math.floor(now / 1000) - 2,
+      now,
+      fetchMembers: async () => [creator, stranger],
+    }), 'deny');
+  } finally {
+    wire.__setDocsDbForTests(null);
+  }
 });
 
 test('a resolved actor sender then authorizes exactly as that account would', async () => {

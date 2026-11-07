@@ -189,7 +189,7 @@ export async function verifySignedDoc({ signed, pin }) {
 }
 
 // Genesis: first doc of a group, no parent, generation 0.
-export async function genesisDocBody({ gid, epoch, members, actorPins = null }) {
+export async function genesisDocBody({ gid, epoch, members, creator = '', actorPins = null }) {
   // The creator stamps its own actor pin at genesis when it knows the
   // derivation (it just derived it). Later members stamp theirs through the
   // admit path (applyDocOps), so a join is what puts a pin beside a name.
@@ -199,14 +199,17 @@ export async function genesisDocBody({ gid, epoch, members, actorPins = null }) 
     gen: 0,
     epoch,
     parents: [],
-    members: (members || []).map((pubkey) => ({
-      pubkey,
-      role: 'member',
-      gen: 0,
-      ...(pinsByKey.has(String(pubkey).toLowerCase()) && pinsByKey.get(String(pubkey).toLowerCase())
-        ? { actor: pinsByKey.get(String(pubkey).toLowerCase()), actorVerified: true }
-        : {}),
-    })),
+    members: (members || []).map((pubkey) => {
+      const account = String(pubkey).toLowerCase();
+      return {
+        pubkey: account,
+        role: account === String(creator).toLowerCase() ? 'admin' : 'member',
+        gen: 0,
+        ...(pinsByKey.has(account) && pinsByKey.get(account)
+          ? { actor: pinsByKey.get(account), actorVerified: true }
+          : {}),
+      };
+    }),
     removed: [],
   });
 }

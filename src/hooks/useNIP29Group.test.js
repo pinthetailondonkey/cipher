@@ -199,8 +199,10 @@ test('SEC-2: the gkey arm resolves the requester through verified bindings, not 
     'the body claim is still available, but only as the helper\'s fallback');
   assert.doesNotMatch(block, /const requesterAccount = actBy !== event\.pubkey/,
     'the raw-claim derivation is gone');
-  assert.match(block, /loadMemberSnapshot\(groupId\)/,
-    'the verified standing (doc-first) feeds the resolution');
+  assert.match(SOURCE, /const messageMembers = await loadVerifiedMemberSnapshot\(groupId\)/,
+    'only signed governance standing feeds sender and requester resolution');
+  assert.match(block, /snapshot: requesterMembers,/,
+    'the live grant request does not fall back to relay or cached roster data');
   assert.match(block, /recipients: \[requester\]/,
     'the bundle is addressed to the resolved account, not the actor pin');
 });

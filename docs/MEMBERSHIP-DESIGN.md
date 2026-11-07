@@ -522,3 +522,59 @@ removal rotation; it does not guess a new key. The group needs an explicit,
 out-of-band membership recovery and rekey, or recreation. V1 events already
 published remain decryptable by relay observers; no client change can retract
 those copies.
+
+## 12. Phase 0 trust-edge audit follow-up (2026-11)
+
+The 2026-11 Phase 0 review confirmed and repaired six issues in the current
+implementation:
+
+- Governance-row objects are normalized by account key at the publisher edge,
+  so admitting another member cannot turn existing rows into
+  `[object Object]` or tombstone them.
+- New genesis documents give the account that created the group the signed
+  `admin` role. Promotion and demotion publish that role change in the signed
+  document before emitting the relay-facing kind-9000 control event. Other
+  devices authorize from the document. If the relay refuses the follow-up
+  event, the signed role remains authoritative and the UI reports that the
+  relay roster update must be retried. An authority signer cannot demote its
+  own account. Older signed documents are upgraded on the creator's next
+  successful document update; until then, remote devices that do not see an
+  admin row fail closed for creator controls.
+- Relay 39002 snapshots update display/cache state only. They do not write
+  signed membership documents. Background key reconciliation now derives its
+  recipients from a verified governance document, not a relay snapshot.
+- Incoming live, catch-up, and bootstrap-history kind-9 events require a valid
+  signature and an active account or verified group-actor binding in current
+  governance standing before decryption or display. An old epoch key alone is
+  not sender authorization. Locally saved history remains available, but a
+  late relay delivery authored by a removed account is rejected: its
+  sender-controlled timestamp cannot safely distinguish a pre-removal message
+  from a forged post-removal one.
+- Mixed legacy account-key and actor-key relay rosters remain mappable only
+  through accounts present in a verified signed document. An unverified actor
+  hint never creates an account binding.
+- A missing or unreadable governance document blocks key grants. This also
+  applies to pre-document groups: a relay roster is not an implicit migration
+  authority. Recover a signed document from an authorized device or perform an
+  explicit out-of-band recovery/re-admission; do not mint a replacement
+  authority or document secret from relay data.
+
+Rotation still has an unavoidable multi-relay commit boundary. Before any
+relay accepts a rotated-key document, a publication refusal restores the
+previous shared document key and leaves the chat epoch unchanged. Once a relay
+accepts the new document, the new secret is retained so it can recover that
+head; local persistence or later key-delivery failure is surfaced, and retry
+uses the held head/key rather than inventing another secret. In the latter
+case, members may temporarily be unable to decrypt the new document or send
+under the new epoch until an authorized device refreshes the accepted head and
+retries delivery. Existing recipients and the removed member are not widened
+to make recovery appear successful.
+
+The repeatable local relay exercise is `npm run test:phase0-relay` with
+`CIPHER_TEST_NIP29_RELAY_URL` set to a compatible NIP-29 relay. It uses two
+independently generated account secrets, captures incoming and outgoing
+WebSocket frames, and checks actor-only EVENT/AUTH identity, account-key
+absence, group-scoped REQ filters, admission/approval, messaging, moderation,
+removal, refusal, and rejoin retry. This is protocol behavior evidence against
+the tested relay implementation, not an external cryptographic audit or a
+claim that every NIP-29 relay has identical behavior.

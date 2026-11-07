@@ -18,7 +18,7 @@ import {
   __setGroupKeyStoreForTests, putGroupKey, getGroupKey, getCurrentGroupKey,
 } from './groupKeyStore.js';
 import { generateGroupKey, toHex, fromHex } from './groupCipher.js';
-import { rotateGroupEpoch, __setMembershipDbForTests } from './groupKeyRotation.js';
+import { rotateGroupEpoch, __setMembershipDbForTests, isGroupRotationPending, grantKeyRequest } from './groupKeyRotation.js';
 import { parseGroupKeyBundle, distributeGroupKey, installReceivedGroupKey } from './groupKeyDistribution.js';
 import { unwrapToRumor } from '../giftUnwrap';
 import { encodeGroupPayload, decodeGroupEvent } from './groupMessageCodec.js';
@@ -56,6 +56,18 @@ function fakeDb() {
     toArray: async () => rows.filter(match).map((r) => structuredClone(r)),
     modify: async (fn) => { rows.filter(match).forEach((r) => fn(r)); },
   });
+  const memberRows = [];
+  const groupMemberSigs = {
+    get: async (groupId) => {
+      const row = memberRows.find((item) => item.groupId === groupId);
+      return row ? structuredClone(row) : undefined;
+    },
+    put: async (row) => {
+      const at = memberRows.findIndex((item) => item.groupId === row.groupId);
+      if (at >= 0) memberRows[at] = structuredClone(row);
+      else memberRows.push(structuredClone(row));
+    },
+  };
   const table = {
     where: (index) => ({
       equals: (v) => collection(index === 'groupId' ? (r) => r.groupId === v : (r) => r.groupId === v[0] && r.epoch === v[1]),
@@ -72,6 +84,7 @@ function fakeDb() {
   };
   return { rows, db: {
     groupKeys: table,
+    groupMemberSigs,
     groupDocKeys: {
       get: async (key) => {
         const gid = Array.isArray(key) ? key[0] : key;
@@ -109,6 +122,7 @@ function asMember(name) {
   if (!devices.has(name)) devices.set(name, fakeDb());
   const fake = devices.get(name);
   __setGroupKeyStoreForTests({ db: fake.db, owner: () => name });
+  __setMembershipDbForTests(fake.db);
   return fake;
 }
 
@@ -224,14 +238,14 @@ test('a removed member cannot read a post-removal message; a remaining member ca
 
   // The remaining member reads it.
   asMember('B');
-  const bRead = await decodeGroupEvent({ event: afterEvent, groupId: GROUP });
+  const bRead = await decodeGroupEvent({ event: afterEvent, groupId: GROUP, requireMember: false });
   assert.equal(bRead.error, undefined, `B failed: ${bRead.error} — ${bRead.reason}`);
   assert.equal(bRead.epoch, 1);
   assert.equal(bRead.parsed.message, 'after the kick');
 
   // The removed member, holding every key it ever had, does not.
   asMember('C');
-  const cRead = await decodeGroupEvent({ event: afterEvent, groupId: GROUP });
+  const cRead = await decodeGroupEvent({ event: afterEvent, groupId: GROUP, requireMember: false });
   assert.equal(cRead.plaintext, undefined, 'the removed member read the post-removal message');
   assert.equal(cRead.parsed, undefined, 'the removed member parsed the post-removal message');
   assert.equal(cRead.pending, true, 'C has no epoch-1 key at all, so the message waits');
@@ -241,14 +255,14 @@ test('a removed member cannot read a post-removal message; a remaining member ca
   // hand C some other epoch-1 key and the AES-GCM open still fails.
   asMember('C');
   await putGroupKey(GROUP, 1, generateGroupKey());
-  const cWrong = await decodeGroupEvent({ event: afterEvent, groupId: GROUP });
+  const cWrong = await decodeGroupEvent({ event: afterEvent, groupId: GROUP, requireMember: false });
   assert.equal(cWrong.plaintext, undefined);
   assert.equal(cWrong.error, 'decrypt-failed');
   assert.equal(cWrong.epoch, 1);
 
   // The limit, stated: removal does not take back what C could already read.
   asMember('C');
-  const cOld = await decodeGroupEvent({ event: beforeEvent, groupId: GROUP });
+  const cOld = await decodeGroupEvent({ event: beforeEvent, groupId: GROUP, requireMember: false });
   assert.equal(cOld.parsed.message, 'before the kick', 'history stays readable to a former member');
   asMember('C');
   const cDoc = await openSealedDocBody(genesis.publishedDocs[0].content, genesis.pin, GROUP, docKey0);
@@ -324,11 +338,10 @@ test('a removal whose membership strip cannot be written aborts before the new e
   assert.equal(fake.rows.some((r) => r.groupId === STRIP_GROUP && r.epoch === 1), false, 'no epoch 1 stored');
   assert.equal((await getCurrentGroupKey(STRIP_GROUP)).epoch, 0, 'still on epoch 0');
   assert.equal(published.length, 0, 'no key bundle published');
-  assert.equal(stripDocs.publishedDocs.length, 1, 'the v2 governance state is safely published before the strip gate');
-  assert.equal(JSON.parse(stripDocs.publishedDocs[0].content).v, 2, 'the partial state never downgrades encryption');
+  assert.equal(stripDocs.publishedDocs.length, 0, 'a failed durable barrier prevents governance publication');
+  assert.equal(await isGroupRotationPending(STRIP_GROUP), false, 'no unpublished rotation was left half-staged');
   const heldStripDocKey = await getDocKey(STRIP_GROUP);
-  assert.equal((await openSealedDocBody(stripDocs.publishedDocs[0].content, stripDocs.pin, STRIP_GROUP, heldStripDocKey.bytes)).body.members.some((row) => row.pubkey === aPk), false,
-    'doc-first authorization already excludes the removed member');
+  assert.equal(toHex(heldStripDocKey.bytes), toHex(stripDocKey), 'the shared governance key remains unchanged');
 });
 
 test('a missing governance key blocks a legacy-group rotation without minting a replacement', async () => {
@@ -370,6 +383,31 @@ test('governance-key storage failure aborts rotation before publishing or changi
   __setDocsDbForTests(null);
 });
 
+test('a relay refusal restores the previously shared governance key for a safe retry', async () => {
+  setAtRestKeyProvider(() => SESSION);
+  const A = generateSecretKey(); const aPk = getPublicKey(A);
+  const B = generateSecretKey(); const bPk = getPublicKey(B);
+  const gid = 'doc-publish-refusal-group';
+  asMember('A');
+  const oldChatKey = generateGroupKey();
+  const oldDocKey = generateDocKey();
+  await putGroupKey(gid, 0, oldChatKey);
+  await putDocKey(gid, 0, oldDocKey);
+  const docs = await installGenesisMemberDoc({ ownerPubkey: aPk, ownerSecret: A, groupId: gid, members: [aPk, bPk], docKey: oldDocKey });
+  __setDocOpEnvForTests({
+    owner: aPk,
+    publish: () => [Promise.reject(new Error('relay refused'))],
+  });
+  await assert.rejects(rotateGroupEpoch({
+    identity: { sk: A, pk: aPk }, groupId: gid, remainingPubkeys: [aPk], publish: async () => {},
+  }), /Relays rejected the member-set doc update/);
+  assert.equal(toHex((await getDocKey(gid)).bytes), toHex(oldDocKey), 'unpublished secret is discarded and shared key restored');
+  assert.equal((await getCurrentGroupKey(gid)).epoch, 0, 'chat epoch did not advance');
+  assert.equal(docs.publishedDocs.length, 0, 'a refusal stored no new governance head');
+  __setDocOpEnvForTests(null);
+  __setDocsDbForTests(null);
+});
+
 test('partial key distribution keeps removal fail-closed and a retry recovers remaining members', async () => {
   setAtRestKeyProvider(() => SESSION);
   const A = generateSecretKey(); const aPk = getPublicKey(A);
@@ -388,6 +426,11 @@ test('partial key distribution keeps removal fail-closed and a retry recovers re
   await assert.rejects(rotateGroupEpoch({
     identity: { sk: A, pk: aPk }, groupId: gid, remainingPubkeys: [aPk, bPk], publish: rejectPublish,
   }), /Could not distribute group keys/);
+  assert.equal(await isGroupRotationPending(gid), true, 'failed delivery leaves sends and grants paused');
+  assert.equal(await grantKeyRequest({
+    groupId: gid, requester: bPk, creator: aPk, snapshot: [aPk, bPk],
+    updatedAt: Math.floor(Date.now() / 1000), selfCreated: true,
+  }), 'deny', 'a pending partial rotation cannot grant while key distribution is incomplete');
   const heldAfterFailure = await getDocKey(gid);
   assert.notEqual(toHex(heldAfterFailure.bytes), toHex(docKey0), 'the rotated secret remains available for retry');
   assert.equal((await getCurrentGroupKey(gid)).epoch, 1, 'the new local epoch is recoverable');
@@ -397,12 +440,22 @@ test('partial key distribution keeps removal fail-closed and a retry recovers re
 
   // Retry on the same device. The held doc already excludes C, so the retry
   // must reuse its key and resend current plus prior chat epochs to B.
+  __setDocOpEnvForTests({ owner: aPk, publish: () => [Promise.reject(new Error('relay refused retry'))] });
+  await assert.rejects(rotateGroupEpoch({
+    identity: { sk: A, pk: aPk }, groupId: gid, remainingPubkeys: [aPk, bPk], publish: async () => {},
+  }), /Relays rejected the member-set doc update/);
+  assert.equal(await isGroupRotationPending(gid), true, 'a retry refusal cannot release an earlier partial-delivery barrier');
+  __setDocOpEnvForTests({
+    owner: aPk,
+    publish: async (_relays, event) => { docs.publishedDocs.push(event); return [Promise.resolve([null, event])]; },
+  });
   const delivered = [];
   const retry = await rotateGroupEpoch({
     identity: { sk: A, pk: aPk }, groupId: gid, remainingPubkeys: [aPk, bPk],
     publish: async (event) => { delivered.push(event); },
   });
   assert.equal(retry.rotated, true);
+  assert.equal(await isGroupRotationPending(gid), false, 'successful retry releases the durable barrier');
   assert.equal(delivered.length, 2, 'both authorized remaining members receive their retry bundles');
   assert.equal(delivered.some((event) => event.tags.some((tag) => tag[0] === 'p' && tag[1] === cPk)), false);
   const rumorB = unwrapToRumor(delivered.find((event) => event.tags.some((tag) => tag[0] === 'p' && tag[1] === bPk)), B).rumor;

@@ -7,7 +7,7 @@ import { getAuthenticatedPool } from '../lib/pool';
 import { generalRelays, queryWithTimeout } from '../lib/relays';
 import { relaysForPeer } from '../lib/dmRelays';
 import { currentOwner } from '../db';
-import { rememberMembers, publishMemberDocUpdate, loadMemberSnapshot, reconcileRunKey } from '../lib/crypto/groupKeyRotation';
+import { rememberMembers, publishMemberDocUpdate, loadMemberSnapshot, loadVerifiedMemberSnapshot, setGroupRotationPending, isGroupRotationPending, reconcileRunKey } from '../lib/crypto/groupKeyRotation';
 import { decryptMemberBaselines, MEMBER_BASELINE_KIND, memberBaselineTag } from '../lib/crypto/memberBaseline';
 const completedRuns = new Map();
 const inFlightRuns = new Map();
@@ -19,10 +19,8 @@ const memberPubkeys = (members) => Array.from(new Set(
 
 export function useGroupKeyReconciler({
   groupId,
-  members,
   isOwner,
   groups,
-  fetchGroupMembers,
   syncGroupMessages,
   identity,
   enabled = true,
@@ -53,10 +51,10 @@ export function useGroupKeyReconciler({
     };
 
     const syncGroup = async (group) => {
-      let groupMembers = group.id === groupId && Array.isArray(members) ? members : null;
-      if (!groupMembers && fetchGroupMembers) {
-        groupMembers = await fetchGroupMembers(group.id);
-      }
+      // Reconciliation may rotate and distribute keys. Its recipient set
+      // must come from signed governance standing, never a relay roster that
+      // can omit or add members.
+      const groupMembers = await loadVerifiedMemberSnapshot(group.id);
       if (!active) return;
       if (Array.isArray(groupMembers) && groupMembers.length > 0 && group.creator === stableIdentity.pk) {
         await reconcileGroupKeys({
@@ -105,10 +103,8 @@ export function useGroupKeyReconciler({
     };
   }, [
     groupId,
-    members,
     isOwner,
     groups,
-    fetchGroupMembers,
     syncGroupMessages,
     stableIdentity,
     enabled,
@@ -165,6 +161,7 @@ async function reconcile({ groupId, members, isOwner, identity }) {
   const currentSet = new Set(members);
   const removed = [...prevSet].filter(pk => !currentSet.has(pk));
   if (removed.length > 0) {
+    const rotationWasPending = await isGroupRotationPending(groupId);
     // The strip is the removal guarantee: the removed member must be off the
     // snapshot before the new epoch exists, or a failed snapshot write leaves
     // them on the record while the rotation reports success (the same gap
@@ -177,7 +174,8 @@ async function reconcile({ groupId, members, isOwner, identity }) {
     const { resolveMembership } = await import('../lib/crypto/groupDoc.js');
     const docHeads = await loadMemberDocHeads(groupId);
     if (!docHeads.length) throw new Error('No verified member-set document is held; removal rotation is blocked until it is recovered.');
-    const heldMembers = resolveMembership(docHeads[0]).map((row) => row.pubkey).sort();
+    const heldRows = resolveMembership(docHeads[0]);
+    const heldMembers = heldRows.map((row) => row.pubkey).sort();
     const nextMembers = [...members].sort();
     const docMembershipChanges = heldMembers.length !== nextMembers.length
       || heldMembers.some((pubkey, index) => pubkey !== nextMembers[index]);
@@ -188,14 +186,41 @@ async function reconcile({ groupId, members, isOwner, identity }) {
         throw new Error('Could not store the rotated governance-doc key; no membership or chat-key change was made.');
       }
     }
-    await publishMemberDocUpdate(groupId, members);
-    await rememberMembers(groupId, members, { strict: true, publishDoc: false });
+    try {
+      await setGroupRotationPending(groupId, true);
+      await rememberMembers(groupId, members, { strict: true, publishDoc: false });
+    } catch (error) {
+      if (docMembershipChanges) {
+        const restored = await putDocKey(groupId, Number.isInteger(priorDoc?.epoch) ? priorDoc.epoch : 0, priorDocKey);
+        if (!restored) throw new Error('Rotation staging failed and the prior governance key could not be restored. Sending and key grants remain paused.', { cause: error });
+      }
+      if (!rotationWasPending) await setGroupRotationPending(groupId, false).catch(() => {});
+      throw error;
+    }
+    try {
+      await publishMemberDocUpdate(groupId, members);
+    } catch (error) {
+      if (docMembershipChanges && error?.published === false) {
+        const restored = await putDocKey(groupId, Number.isInteger(priorDoc?.epoch) ? priorDoc.epoch : 0, priorDocKey);
+        if (!restored) throw new Error('The update was refused and the prior governance key could not be restored. Recover the held key before retrying.', { cause: error });
+      }
+      if (error?.published === false) {
+        try {
+          await rememberMembers(groupId, heldRows, { strict: true, publishDoc: false });
+          if (!rotationWasPending) await setGroupRotationPending(groupId, false);
+        } catch (restoreError) {
+          throw new Error('The relay refused the governance update, but local rotation state could not be restored. Sending and key grants remain paused until recovery.', { cause: restoreError });
+        }
+      }
+      throw error;
+    }
     const nextEpoch = current.epoch + 1;
     const newKey = generateGroupKey();
     await putGroupKey(groupId, nextEpoch, newKey);
     const priorEpochs = (await getAllGroupKeys(groupId)).filter(e => e.epoch !== nextEpoch);
     await distributeGroupKey({ senderPrivkey: identity.sk, senderPubkey: identity.pk, groupId, epoch: nextEpoch, keyBytes: newKey, recipients: dedupe([...members, identity.pk]), extraEpochs: priorEpochs, docKey: reconcilerRotatedDocKey, publish });
     await safePutSnapshot(groupId, members);
+    await setGroupRotationPending(groupId, false);
     return { epoch: nextEpoch };
   }
   await safePutSnapshot(groupId, members);

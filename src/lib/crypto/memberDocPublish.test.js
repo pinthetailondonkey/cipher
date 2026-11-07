@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { getPublicKey } from 'nostr-tools';
+import { getPublicKey, verifyEvent } from 'nostr-tools';
 import { __setDocOpEnvForTests, __setMembershipDbForTests, publishMemberDocUpdate } from './groupKeyRotation.js';
 // publishDocOp runs through rememberMembers; drive it end to end here.
 import { rememberMembers } from './groupKeyRotation.js';
@@ -107,12 +107,65 @@ test('a membership change folds onto the held doc and publishes gen+1', async ()
       env.privateKeyBytes,
     );
     await env.w.rememberVerifiedDoc({ groupId: GID, pin: env.pin, signed: genesis });
-    await rememberMembers(GID, [OWNER, PK(7)]);
+    await rememberMembers(GID, [OWNER, PK(7)], { publishDoc: true });
     const heads = await waitForDocHeads(2);
     assert.equal(heads[0]._gen, 1); // gen rolled forward
     // Rows store the signed wrapper; the body carries members.
     const standing = heads[0].body.members.map((row) => row.pubkey).sort();
     assert.deepEqual(standing, [PK(7), OWNER].sort());
+  } finally {
+    __setDocOpEnvForTests(null);
+    __setMembershipDbForTests(null);
+    __setGroupKeyStoreForTests(null);
+  }
+});
+
+test('approving a fourth member from object-shaped governance rows preserves the existing three', async () => {
+  const env = await setup();
+  try {
+    const existing = [OWNER, PK(3), PK(4)];
+    const genesis = await env.g.signDocEvent(
+      await env.g.genesisDocBody({ gid: GID, epoch: 1, members: existing }),
+      env.privateKeyBytes,
+    );
+    await env.w.rememberVerifiedDoc({ groupId: GID, pin: env.pin, signed: genesis });
+    // loadMemberSnapshot returns object rows when its source is the verified
+    // document. addMember spreads these rows alongside the incoming account.
+    const admissionSnapshot = [
+      { pubkey: OWNER, role: 'admin' },
+      { pubkey: PK(3), role: 'member' },
+      { pubkey: PK(4), role: 'member' },
+      PK(8),
+    ];
+    await publishMemberDocUpdate(GID, admissionSnapshot, {
+      pins: { [PK(8)]: `02${'c8'.repeat(32)}` },
+    });
+    const heads = await waitForDocHeads(2);
+    const standing = env.g.resolveMembership(heads[0]).map((row) => row.pubkey).sort();
+    assert.deepEqual(standing, [...existing, PK(8)].sort(), 'approving a join adds one account without tombstoning existing members');
+  } finally {
+    __setDocOpEnvForTests(null);
+    __setMembershipDbForTests(null);
+    __setGroupKeyStoreForTests(null);
+  }
+});
+
+test('a relay roster omission cannot publish governance removals', async () => {
+  const env = await setup();
+  try {
+    const existing = [OWNER, PK(3), PK(4)];
+    const genesis = await env.g.signDocEvent(
+      await env.g.genesisDocBody({ gid: GID, epoch: 1, members: existing }),
+      env.privateKeyBytes,
+    );
+    await env.w.rememberVerifiedDoc({ groupId: GID, pin: env.pin, signed: genesis });
+    await rememberMembers(GID, existing, { publishDoc: false });
+    // Simulate a validly relay-signed 39002 that omits two existing members.
+    await rememberMembers(GID, [OWNER]);
+    const heads = await waitForDocHeads(2);
+    assert.equal(env.publishedDocs.length, 0, 'relay reconciliation emits no authority-signed document');
+    assert.equal(heads.length, 1, 'the verified governance head remains unchanged');
+    assert.deepEqual(env.g.resolveMembership(heads[0]).map((row) => row.pubkey).sort(), existing.sort());
   } finally {
     __setDocOpEnvForTests(null);
     __setMembershipDbForTests(null);
@@ -148,6 +201,67 @@ test('a signed migration from v2 binds the current owner actor by derivation', a
   }
 });
 
+test('signed promotion and demotion govern control authorization on another member device', async () => {
+  const env = await setup();
+  try {
+    const { resolveControlSender, authorizeGroupControl, trustedGroupCreator } = await import('./groupMembership.js');
+    const ownerActor = env.pin;
+    const memberActor = `03${'37'.repeat(32)}`;
+    const genesis = await env.g.signDocEvent(
+      await env.g.genesisDocBody({
+        gid: GID,
+        epoch: 1,
+        creator: OWNER,
+        members: [OWNER, PK(3)],
+        actorPins: { [OWNER]: ownerActor, [PK(3)]: memberActor },
+      }),
+      env.privateKeyBytes,
+    );
+    await env.w.rememberVerifiedDoc({ groupId: GID, pin: env.pin, signed: genesis });
+    const genesisWire = await env.w.buildMemberDocEvent({
+      signedDoc: genesis, authoritySk: env.privateKeyBytes, pin: env.pin, groupId: GID,
+      createdAt: 1, docKey: new Uint8Array(32).fill(88),
+    });
+    env.publishedDocs.push(genesisWire);
+
+    async function receiverStanding() {
+      // Model an independent member device: it receives only a relay event,
+      // its separately provisioned random doc key, and the authority pin.
+      // It has no access to the writer's verified-head Dexie table.
+      const event = env.publishedDocs.at(-1);
+      assert.ok(verifyEvent(event), 'the relay event signature is valid');
+      const sealed = await env.w.openSealedDocBody(event.content, env.pin, GID, new Uint8Array(32).fill(88));
+      assert.ok(sealed, 'the independent device opens the event with its held governance secret');
+      const opened = await env.g.verifySignedDoc({ signed: sealed, pin: env.pin });
+      const members = env.g.resolveMembership(opened);
+      const creator = trustedGroupCreator({ creator: OWNER, identityPk: PK(90), snapshot: members });
+      return { members, creator };
+    }
+    async function canMemberModerate() {
+      const { members, creator } = await receiverStanding();
+      const sender = resolveControlSender({ wirePubkey: memberActor.slice(2), members });
+      return authorizeGroupControl({ kind: 9001, sender, subject: PK(4), members, creator });
+    }
+
+    const { members: genesisMembers, creator } = await receiverStanding();
+    const ownerSender = resolveControlSender({ wirePubkey: ownerActor.slice(2), members: genesisMembers });
+    assert.equal(creator, OWNER, 'a separate device recognizes the creator from the signed admin row');
+    assert.equal(authorizeGroupControl({ kind: 9002, sender: ownerSender, members: genesisMembers, creator }), true,
+      'the owner can edit from a different account/device context');
+    assert.equal(await canMemberModerate(), false, 'a member cannot moderate before promotion');
+
+    await publishMemberDocUpdate(GID, [OWNER, PK(3)], { roleChanges: { [PK(3)]: 'admin' } });
+    assert.equal(await canMemberModerate(), true, 'the signed promotion authorizes the member on a separate reader');
+
+    await publishMemberDocUpdate(GID, [OWNER, PK(3)], { roleChanges: { [PK(3)]: 'member' } });
+    assert.equal(await canMemberModerate(), false, 'the signed demotion removes control standing on a separate reader');
+  } finally {
+    __setDocOpEnvForTests(null);
+    __setMembershipDbForTests(null);
+    __setGroupKeyStoreForTests(null);
+  }
+});
+
 test('removal rides the same publisher and lands as a tombstone', async () => {
   const env = await setup();
   try {
@@ -156,7 +270,7 @@ test('removal rides the same publisher and lands as a tombstone', async () => {
       env.privateKeyBytes,
     );
     await env.w.rememberVerifiedDoc({ groupId: GID, pin: env.pin, signed: genesis });
-    await rememberMembers(GID, [OWNER]); // PK(3) kicked
+    await rememberMembers(GID, [OWNER], { publishDoc: true }); // explicit authority writer
     const heads = await waitForDocHeads(2);
     const top = heads[0];
     assert.equal(top._gen, 1);

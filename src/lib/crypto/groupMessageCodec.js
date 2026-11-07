@@ -1,5 +1,7 @@
 import * as groupKeyStore from './groupKeyStore';
+import { verifyEvent } from 'nostr-tools';
 import { encryptGroupMessage, decryptGroupMessage } from './groupCipher';
+import { resolveControlSender } from './groupMembership';
 const KEY_WAIT_MS = 5000; const KEY_POLL_MS = 200;
 async function waitForKey(groupId) {
   const start = Date.now();
@@ -56,24 +58,35 @@ function parseBody(plaintext) {
 //     sender's own claim, so there is no cutoff to trust. A group that
 //     already holds a key is an encrypted group: its tagless content is
 //     refused, not shown.
-export async function decodeGroupEvent({ event, groupId, store = groupKeyStore }) {
+export async function decodeGroupEvent({ event, groupId, store = groupKeyStore, members = null, requireMember = true }) {
+  let sender = '';
+  if (requireMember) {
+    // Historical epoch keys remain useful for authorized members' history,
+    // but possessing one does not grant the right to author new relay events.
+    // The caller supplies only active rows from a verified governance doc.
+    if (!event || event.kind !== 9 || !verifyEvent(event)) {
+      return { error: 'invalid-sender-event', refused: true };
+    }
+    sender = resolveControlSender({ wirePubkey: event.pubkey, members });
+    if (!sender) return { error: 'sender-not-in-current-membership', refused: true };
+  }
   const epTag = event.tags.find(t => t[0] === 'ep');
   if (!epTag) {
     const parsed = parseBody(event.content);
-    if (parsed.type === 'gkey_req') return { plaintext: event.content, parsed, legacy: true };
+    if (parsed.type === 'gkey_req') return { plaintext: event.content, parsed, legacy: true, ...(sender ? { sender } : {}) };
     const held = await store.getCurrentGroupKey(groupId);
     if (held) {
       return { error: 'unencrypted-refused', refused: true, reason: 'This group is encrypted; a message with no epoch is not one of its messages.' };
     }
-    return { plaintext: event.content, parsed, legacy: true };
+    return { plaintext: event.content, parsed, legacy: true, ...(sender ? { sender } : {}) };
   }
   const epoch = parseInt(epTag[1], 10);
   if (!Number.isInteger(epoch) || epoch < 0) return { error: 'decrypt-failed', epoch, reason: 'bad epoch tag' };
   const key = await store.getGroupKey(groupId, epoch);
-  if (!key) return { pending: true, epoch };
+  if (!key) return { pending: true, epoch, ...(sender ? { sender } : {}) };
   try {
     const env = JSON.parse(event.content);
     const plaintext = await decryptGroupMessage({ rawKey: key, envelope: env, groupId, epoch, senderPubkey: event.pubkey });
-    return { plaintext, parsed: parseBody(plaintext), epoch };
+    return { plaintext, parsed: parseBody(plaintext), epoch, ...(sender ? { sender } : {}) };
   } catch (e) { return { error: 'decrypt-failed', epoch, reason: e.message }; }
 }

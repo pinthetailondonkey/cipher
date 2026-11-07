@@ -11,6 +11,7 @@ import { scopedGet, scopedSet } from '../../lib/storage';
 import { shortNpub } from '../../lib/npub';
 import { getPrivacy, allowsTyping, allowsNotifications } from '../../lib/privacy';
 import { decodeGroupEvent } from '../../lib/crypto/groupMessageCodec';
+import { loadVerifiedMemberSnapshot } from '../../lib/crypto/groupKeyRotation';
 import { resumeKeyRequestIds } from '../../lib/crypto/groupKeyRequest';
 import { useGroupKeyReconciler } from '../../hooks/useGroupKeyReconciler';
 import { flushSecuringGroupSends } from '../../hooks/useNIP29Group';
@@ -68,10 +69,13 @@ export function useChatBootstrap({
     const pool = await getAuthenticatedPool(syncIdentity);
     const events = await queryAllPages(pool, groupRelays, { kinds: [9], '#h': [groupId] });
     const syncedMessages = [];
+    const standing = await loadVerifiedMemberSnapshot(groupId);
 
     for (const event of events) {
-      const decoded = await decodeGroupEvent({ event, groupId });
-      if (decoded.error) {
+      const decoded = await decodeGroupEvent({
+        event, groupId, members: standing, requireMember: true,
+      });
+      if (decoded.refused || decoded.error) {
         console.warn('[Chat] Could not decrypt group history event:', event.id, decoded.reason);
         continue;
       }
@@ -80,8 +84,8 @@ export function useChatBootstrap({
       const message = {
         id: event.id,
         clientId,
-        isSender: event.pubkey === syncIdentity.pk,
-        pubkey: event.pubkey,
+        isSender: decoded.sender === syncIdentity.pk,
+        pubkey: decoded.sender,
         timestamp: event.created_at,
         rawContent: decoded.pending ? null : decoded.plaintext,
         ciphertext: decoded.pending ? event.content : null,

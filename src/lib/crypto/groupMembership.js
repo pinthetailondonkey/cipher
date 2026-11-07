@@ -332,9 +332,13 @@ export function mapRelayRosterToAccounts(relayRows, governanceRows) {
   for (const row of governanceRows) {
     const account = String(typeof row === 'string' ? row : row?.pubkey || '').toLowerCase();
     if (!/^[0-9a-f]{64}$/.test(account)) continue;
+    // A relay may still have the historical direct-account roster row after
+    // newer clients began publishing actor-only rows. The signed governance
+    // document independently proves this account's standing, so accepting
+    // that legacy wire spelling does not trust an unverified actor hint.
+    legacy.set(account, row);
     const actor = row?.actorVerified === true ? pinXonly(row.actor) : '';
     if (actor) byActor.set(actor, row);
-    else legacy.set(account, row);
   }
   const out = new Map();
   for (const relayRow of relayRows) {

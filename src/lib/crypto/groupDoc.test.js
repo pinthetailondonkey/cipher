@@ -205,6 +205,17 @@ test('a genesis row names its member\u2019s actor pin, canonicalized', async () 
   assert.equal('actor' in junk.members[0], false);
 });
 
+test('genesis records the creator as an administrator in signed governance standing', async () => {
+  const body = await genesisDocBody({
+    gid: GID,
+    epoch: 1,
+    creator: PK(1),
+    members: [PK(1), PK(2)],
+  });
+  assert.equal(body.members.find((member) => member.pubkey === PK(1))?.role, 'admin');
+  assert.equal(body.members.find((member) => member.pubkey === PK(2))?.role, 'member');
+});
+
 test('an admit stamps the pin; re-admitting bare keeps the held one; roles keep theirs', () => {
   const head = canonicalBody({
     gid: GID, gen: 0, epoch: 1, parents: [],

@@ -125,7 +125,7 @@ test('the full kind-9 round trip: one signer encrypts and signs; the receiver ho
   assert.equal(await getCurrentGroupKey(GROUP), null, 'a fresh member starts keyless');
   await putGroupKey(GROUP, EPOCH, KEY);
 
-  const decoded = await decodeGroupEvent({ event, groupId: GROUP });
+  const decoded = await decodeGroupEvent({ event, groupId: GROUP, requireMember: false });
   assert.ok(!decoded.refused && !decoded.error && !decoded.pending, `decode refused: ${JSON.stringify(decoded)}`);
   assert.deepEqual(decoded.parsed, { type: 'text', message: 'hello box', by: sender.pk },
     'the sealed body carries the account fact INSIDE the ciphertext');
@@ -135,7 +135,7 @@ test('the full kind-9 round trip: one signer encrypts and signs; the receiver ho
   // The AAD really binds the wire pubkey: replaying the same envelope under
   // any other claimed author refuses instead of showing someone else's text.
   const spoofed = { ...event, pubkey: 'ab'.repeat(32) };
-  assert.equal((await decodeGroupEvent({ event: spoofed, groupId: GROUP })).error, 'decrypt-failed');
+  assert.equal((await decodeGroupEvent({ event: spoofed, groupId: GROUP, requireMember: false })).error, 'decrypt-failed');
 
   // Pre-Step-2 events keep working: no `by`, encoded under the ACCOUNT pubkey.
   const legacyEncoded = await encodeGroupPayload({
@@ -147,7 +147,7 @@ test('the full kind-9 round trip: one signer encrypts and signs; the receiver ho
     { kind: 9, created_at: 999, tags: [['h', GROUP], ...legacyEncoded.tags], content: legacyEncoded.content },
     senderSk,
   );
-  const legacyDecoded = await decodeGroupEvent({ event: legacyEvent, groupId: GROUP });
+  const legacyDecoded = await decodeGroupEvent({ event: legacyEvent, groupId: GROUP, requireMember: false });
   assert.deepEqual(legacyDecoded.parsed, { type: 'text', message: 'old style' },
     'a body with no by still opens, attributed to the wire pubkey');
   forgetActors();
