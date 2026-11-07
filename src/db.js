@@ -100,6 +100,14 @@ function makeDB(name) {
     groupMemberDocs: '&[groupId+gen+docId], groupId, gen, docId',
     groupDocKeys: '&groupId, epoch',
   });
+  // v14 stores device-scoped DM ratchet accounts/sessions and a sealed inbox
+  // journal. The ratchet protocol state and journal payloads are separately
+  // encrypted under the unlocked vault secret by ratchetStateAtRest.js.
+  d.version(14).stores({
+    ratchetDevices: '&deviceId, updatedAt',
+    ratchetSessions: '&sessionId, peerPubkey, peerDeviceId, updatedAt',
+    ratchetInbox: '&eventId, chatId, status, receivedAt',
+  });
   return d;
 }
 
@@ -336,7 +344,7 @@ export const db = new Proxy({}, {
         _warnedOnce = true;
         console.warn('[db] accessed before openDBFor — returning empty stubs');
       }
-      if (['messages', 'chatReads', 'profiles', 'groups', 'groupKeys', 'groupKeyGrants', 'groupMemberSigs', 'outbox', 'tombstones', 'vendorReviews', 'groupMemberDocs'].includes(prop)) {
+      if (['messages', 'chatReads', 'profiles', 'groups', 'groupKeys', 'groupKeyGrants', 'groupMemberSigs', 'outbox', 'tombstones', 'vendorReviews', 'groupMemberDocs', 'ratchetDevices', 'ratchetSessions', 'ratchetInbox'].includes(prop)) {
         return stubTable(prop);
       }
       return () => Promise.resolve();

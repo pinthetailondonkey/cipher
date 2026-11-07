@@ -22,3 +22,6 @@ kill9-out/
 # sealed device keys; it never belongs in a commit.
 desktop/data/
 dist-desktop/
+/crypto/ratchet-wasm/target/
+/crypto/mls-eval/target/
+/src/lib/ratchet/wasm/
