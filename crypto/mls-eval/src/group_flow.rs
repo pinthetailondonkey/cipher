@@ -134,6 +134,7 @@ pub fn private_add_commit_and_removal_flow() -> bool {
     alice.merge_pending_commit(&alice_provider).unwrap();
     let remove: MlsMessageIn = remove.into();
     let remove = remove.try_into_protocol_message().unwrap();
+    let replayed_remove = remove.clone();
     let processed_remove = carol.process_message(&carol_provider, remove).unwrap();
     let ProcessedMessageContent::StagedCommitMessage(processed_remove) =
         processed_remove.into_content()
@@ -143,6 +144,12 @@ pub fn private_add_commit_and_removal_flow() -> bool {
     carol
         .merge_staged_commit(&carol_provider, *processed_remove)
         .unwrap();
+    assert!(
+        carol
+            .process_message(&carol_provider, replayed_remove)
+            .is_err(),
+        "an already merged removal commit cannot be replayed"
+    );
 
     let after = alice
         .create_message(&alice_provider, &alice_signer, b"after removal")

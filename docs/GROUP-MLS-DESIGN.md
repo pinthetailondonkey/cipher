@@ -85,7 +85,8 @@ OpenMLS add/Welcome/commit/removal witness was also built with the pinned
 test:mls-browser`. It passed provider initialization, Alice adding Bob and
 Carol, both members processing the current epoch, delivery of an application
 message to the remaining members, and rejection of a post-removal application
-message by Bob. The native and browser checks invoke the same Rust flow in
+message by Bob. Carol also rejects a duplicate delivery of the already merged
+removal Commit. The native and browser checks invoke the same Rust flow in
 `crypto/mls-eval/src/group_flow.rs`. This is evidence for OpenMLS 0.9.2 plus
 the pinned Libcrux provider in this narrow browser scenario, not a production
 adapter, storage, relay, or interoperability result.

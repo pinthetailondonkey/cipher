@@ -345,7 +345,7 @@ group-key/removal suite — 29 passed; `cargo test --manifest-path
 crypto/mls-eval/Cargo.toml --locked` — 1 passed; `npm run build` — passed.
 `npm run test:mls-browser` — passed in headless Chromium against the actual
 OpenMLS 0.9.2 WASM module, using the same add/commit/remove flow as the native
-test.
+test, including duplicate removal-commit rejection.
 The MLS evaluation crate passed `cargo fmt --manifest-path
 crypto/mls-eval/Cargo.toml --check` and `cargo check --manifest-path
 crypto/mls-eval/Cargo.toml --locked --target wasm32-unknown-unknown`. The
