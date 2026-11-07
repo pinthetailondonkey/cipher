@@ -66,7 +66,10 @@ fn private_add_commit_and_removal_flow() {
     alice.merge_pending_commit(&alice_provider).unwrap();
 
     let bob_welcome: MlsMessageIn = bob_welcome.into();
-    let bob_welcome = bob_welcome.into_welcome().unwrap();
+    let bob_welcome = match bob_welcome.extract() {
+        openmls::framing::MlsMessageBodyIn::Welcome(welcome) => welcome,
+        _ => panic!("expected Bob welcome"),
+    };
     let mut bob = StagedWelcome::new_from_welcome(
         &bob_provider,
         &MlsGroupJoinConfig::default(),
@@ -77,7 +80,10 @@ fn private_add_commit_and_removal_flow() {
     .into_group(&bob_provider)
     .unwrap();
     let carol_welcome: MlsMessageIn = carol_welcome.into();
-    let carol_welcome = carol_welcome.into_welcome().unwrap();
+    let carol_welcome = match carol_welcome.extract() {
+        openmls::framing::MlsMessageBodyIn::Welcome(welcome) => welcome,
+        _ => panic!("expected Carol welcome"),
+    };
     let mut carol = StagedWelcome::new_from_welcome(
         &carol_provider,
         &MlsGroupJoinConfig::default(),
@@ -90,7 +96,7 @@ fn private_add_commit_and_removal_flow() {
 
     // Bob must process the second add commit to share Alice's current epoch.
     let carol_add: MlsMessageIn = carol_add.into();
-    let carol_add = carol_add.into_protocol_message().unwrap();
+    let carol_add = carol_add.try_into_protocol_message().unwrap();
     let bob_add = bob.process_message(&bob_provider, carol_add).unwrap();
     let ProcessedMessageContent::StagedCommitMessage(bob_add) = bob_add.into_content() else {
         panic!("expected Bob to stage Carol's add commit");
@@ -101,7 +107,7 @@ fn private_add_commit_and_removal_flow() {
         .create_message(&alice_provider, &alice_signer, b"before removal")
         .unwrap();
     let before: MlsMessageIn = before.into();
-    let before = before.into_protocol_message().unwrap();
+    let before = before.try_into_protocol_message().unwrap();
     let bob_before = bob.process_message(&bob_provider, before.clone()).unwrap();
     let carol_before = carol.process_message(&carol_provider, before).unwrap();
     match bob_before.into_content() {
@@ -127,7 +133,7 @@ fn private_add_commit_and_removal_flow() {
         .unwrap();
     alice.merge_pending_commit(&alice_provider).unwrap();
     let remove: MlsMessageIn = remove.into();
-    let remove = remove.into_protocol_message().unwrap();
+    let remove = remove.try_into_protocol_message().unwrap();
     let processed_remove = carol.process_message(&carol_provider, remove).unwrap();
     let ProcessedMessageContent::StagedCommitMessage(processed_remove) =
         processed_remove.into_content()
@@ -142,7 +148,7 @@ fn private_add_commit_and_removal_flow() {
         .create_message(&alice_provider, &alice_signer, b"after removal")
         .unwrap();
     let after: MlsMessageIn = after.into();
-    let after = after.into_protocol_message().unwrap();
+    let after = after.try_into_protocol_message().unwrap();
     let carol_after = carol
         .process_message(&carol_provider, after.clone())
         .unwrap();

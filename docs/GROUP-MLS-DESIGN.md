@@ -73,6 +73,16 @@ browser, create an MLS group, execute a commit, or exercise persistence. Use
 the WASM-compatible provider and test exact release artifacts before any
 selection.
 
+The pinned `crypto/mls-eval` crate now checks the dependency actually needed
+for MLS credentials as well: `openmls_basic_credential` 0.6.0 pulls
+`getrandom` 0.2, so this isolated evaluation pins 0.2.17 with its `js` feature
+in addition to OpenMLS 0.9.2's `js` feature and the Libcrux provider. The
+repository command
+`cargo check --manifest-path crypto/mls-eval/Cargo.toml --locked --target
+wasm32-unknown-unknown` passed on 2026-11-07. This remains compile evidence;
+the browser-executed test currently covers the separate vodozemac DM adapter,
+not OpenMLS runtime behavior.
+
 The repository includes a pinned, isolated native behavior witness at
 `crypto/mls-eval`, run with
 `cargo test --manifest-path crypto/mls-eval/Cargo.toml --locked`. It creates Alice's group,

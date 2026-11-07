@@ -342,7 +342,9 @@ Verification snapshot (2026-11-07): `npm test` — 1,133 tests, 1,129 passed,
 group-key/removal suite — 29 passed; `cargo test --manifest-path
 crypto/mls-eval/Cargo.toml --locked` — 1 passed; `npm run build` — passed.
 The MLS evaluation crate passed `cargo fmt --manifest-path
-crypto/mls-eval/Cargo.toml --check`. The NIP-29 relay integration could not
+crypto/mls-eval/Cargo.toml --check` and `cargo check --manifest-path
+crypto/mls-eval/Cargo.toml --locked --target wasm32-unknown-unknown`. The
+NIP-29 relay integration could not
 be repeated because no compatible test relay was listening on
 `127.0.0.1:18888`; the earlier Phase 0 captured-frame result remains its only
 live relay evidence. `npm run test:ui -- --workers=2` — 184 passed. The build
