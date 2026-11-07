@@ -58,6 +58,22 @@ test('an ordinary member cannot force a new epoch; only the creator or an admin 
   assert.equal(senderAuthorizedForGroupKey({ snapshot: snap, sender: MEMBER, maxEpoch: 99, currentEpoch: undefined }), true);
 });
 
+test('an admin can resync one explicitly requested current key across missed epochs, without backfill', () => {
+  const base = { snapshot: SNAPSHOT, currentEpoch: 2 };
+  assert.equal(senderAuthorizedForGroupKey({
+    ...base, sender: ADMIN, maxEpoch: 7, offeredEpochs: [7], allowCurrentEpochResync: true,
+  }), true);
+  assert.equal(senderAuthorizedForGroupKey({
+    ...base, sender: ADMIN, maxEpoch: 7, offeredEpochs: [7],
+  }), false, 'a jump requires an explicit resync response');
+  assert.equal(senderAuthorizedForGroupKey({
+    ...base, sender: ADMIN, maxEpoch: 7, offeredEpochs: [7, 3], allowCurrentEpochResync: true,
+  }), false, 'a resync cannot contain historical keys');
+  assert.equal(senderAuthorizedForGroupKey({
+    ...base, sender: MEMBER, maxEpoch: 7, offeredEpochs: [7], allowCurrentEpochResync: true,
+  }), false, 'ordinary members cannot move a device across missed epochs');
+});
+
 test('an epoch already held is never overwritten with different bytes, current or older', () => {
   const held = [{ epoch: 3, hex: 'aa'.repeat(32) }, { epoch: 5, hex: 'bb'.repeat(32) }];
   assert.equal(conflictingHeldEpoch([{ epoch: 5, hex: 'bb'.repeat(32) }, { epoch: 3, hex: 'AA'.repeat(32) }], held), null);

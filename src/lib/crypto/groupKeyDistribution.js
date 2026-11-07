@@ -142,16 +142,17 @@ export function parseGroupKeyBundle(payload) {
 // whole group onto it. The rule now is by what the bundle does:
 //   - no key held yet (the first key, which this device asked for - see the
 //     floor in installReceivedGroupKey): a member of record, as before;
-//   - a bundle that only restates or backfills epochs at or below the held
-//     one: a member of record, as before (installReceivedGroupKey separately
-//     refuses to overwrite any held epoch with different bytes);
+//   - a legacy bundle that only restates older epochs at or below the held
+//     one: a member of record may install an unheld history key, while
+//     installReceivedGroupKey refuses to overwrite held bytes. New senders in
+//     this client do not publish those historical keys automatically;
 //   - a bundle that carries an epoch ABOVE the held one is a rotation, and
 //     only the creator or an admin rotates. The new epochs must also run on
 //     from the held one with no gap (held+1, held+2, ...): a jump past the
 //     next epoch is refused, so a sender cannot park the group at a number
-//     of their choosing. A device that missed a rotation catches up through
-//     its own key request, which is answered with every epoch it lacks.
-export function senderAuthorizedForGroupKey({ snapshot, sender, maxEpoch, currentEpoch, creator = '', offeredEpochs = null }) {
+//     of their choosing. A device that missed a rotation requests current
+//     access only; old epochs are not automatically regranted.
+export function senderAuthorizedForGroupKey({ snapshot, sender, maxEpoch, currentEpoch, creator = '', offeredEpochs = null, allowCurrentEpochResync = false }) {
   if (!sender || !Array.isArray(snapshot)) return false;
   const row = snapshot.find((member) => {
     const pubkey = typeof member === 'string' ? member : member?.pubkey;
@@ -164,6 +165,8 @@ export function senderAuthorizedForGroupKey({ snapshot, sender, maxEpoch, curren
   const who = String(sender).toLowerCase();
   const standing = snapshot.map((member) => (typeof member === 'string' ? { pubkey: member.toLowerCase() } : { ...member, pubkey: String(member?.pubkey || '').toLowerCase() }));
   if (!isGroupAdmin(standing, who, String(creator || '').toLowerCase())) return false;
+  if (allowCurrentEpochResync && Array.isArray(offeredEpochs)
+    && offeredEpochs.length === 1 && offeredEpochs[0] === maxEpoch) return true;
   if (Array.isArray(offeredEpochs)) {
     const above = new Set(offeredEpochs.filter((epoch) => epoch > currentEpoch));
     for (let epoch = currentEpoch + 1; epoch <= maxEpoch; epoch += 1) {
@@ -184,7 +187,7 @@ export function conflictingHeldEpoch(rows, held) {
   return hit ? hit.epoch : null;
 }
 
-export async function senderMayInstallGroupKey({ sender, groupId, maxEpoch, offeredEpochs = null }) {
+export async function senderMayInstallGroupKey({ sender, groupId, maxEpoch, offeredEpochs = null, allowCurrentEpochResync = false }) {
   if (!sender || !groupId) return false;
   const snapshot = await loadMemberSnapshot(groupId);
   if (!Array.isArray(snapshot)) return false;
@@ -192,7 +195,7 @@ export async function senderMayInstallGroupKey({ sender, groupId, maxEpoch, offe
   const owner = currentOwner();
   const claimed = (getMyGroups(owner).find((group) => group?.id === groupId) || {}).creator;
   const creator = trustedGroupCreator({ creator: claimed, identityPk: owner, snapshot });
-  return senderAuthorizedForGroupKey({ snapshot, sender, maxEpoch, currentEpoch: current?.epoch, creator, offeredEpochs });
+  return senderAuthorizedForGroupKey({ snapshot, sender, maxEpoch, currentEpoch: current?.epoch, creator, offeredEpochs, allowCurrentEpochResync });
 }
 
 // The floor, as a pure decision: a device with no key installs one only on
@@ -231,7 +234,11 @@ export async function installReceivedGroupKey(payload, sender = null) {
     console.warn('[group-key] A key bundle was not installed: this device has not asked this group for a key.', { groupId, epoch: maxEpoch });
     return false;
   }
-  const authorized = await senderMayInstallGroupKey({ sender, groupId, maxEpoch, offeredEpochs: rows.map((row) => row.epoch) });
+  const allowCurrentEpochResync = payload?.resync === true && rows.length === 1;
+  if (payload?.resync === true && !allowCurrentEpochResync) return false;
+  const authorized = await senderMayInstallGroupKey({
+    sender, groupId, maxEpoch, offeredEpochs: rows.map((row) => row.epoch), allowCurrentEpochResync,
+  });
   if (!authorized) {
     console.warn('[group-key] A key bundle was not installed: sender is not authorized for this group.', { groupId, epoch: maxEpoch });
     return false;
@@ -340,18 +347,6 @@ export function docKeyAdoptionAllows({ heldEpoch, offeredEpoch }) {
   return offeredEpoch > heldEpoch; // roll forward only
 }
 
-export function epochsToBackfill(allEpochs, currentEpoch) {  return (allEpochs || []).filter((item) => item && item.epoch !== currentEpoch && item.bytes);
-}
-
-export function missingEpochs(granted, epoch, extraEpochs = []) {
-  const missing = [];
-  if (!granted.has(epoch)) missing.push(epoch);
-  for (const prior of extraEpochs) {
-    if (prior && !granted.has(prior.epoch) && prior.epoch !== epoch && !missing.includes(prior.epoch)) missing.push(prior.epoch);
-  }
-  return missing;
-}
-
 // Bug #9: the grant ledger is a record of what was SENT, not of what a member
 // installed - the install floor refuses a key a device did not ask for, so an
 // unsolicited bundle (sent when the owner approves a member who has not yet
@@ -360,28 +355,23 @@ export function missingEpochs(granted, epoch, extraEpochs = []) {
 // never answered, and the composer sat on Securing forever.
 //
 // An explicit request is therefore never blocked by the ledger. It is answered
-// with the current key and every prior epoch, and only rate limited: an epoch
-// that already answered a request for this member inside the window is not
-// sent again. An unsolicited send (the reconciler's) never counts toward that
-// window, so a request arriving right after one is answered at once.
+// with the current epoch only and is rate limited. Older keys are not
+// backfilled on admission, reconciliation, or device recovery. Historical
+// access has no implicit grant path; it requires a future explicit,
+// owner-authorized recovery action.
 export const REGRANT_WINDOW_SEC = 60;
 
-export function epochsToSend({ records, epoch, extraEpochs = [], explicit = false, nowSec = Math.floor(Date.now() / 1000), windowSec = REGRANT_WINDOW_SEC } = {}) {
+export function epochsToSend({ records, epoch, explicit = false, nowSec = Math.floor(Date.now() / 1000), windowSec = REGRANT_WINDOW_SEC } = {}) {
   const held = records instanceof Map ? records : new Map();
-  if (!explicit) return missingEpochs(new Set(held.keys()), epoch, extraEpochs);
-  const all = [epoch];
-  for (const prior of extraEpochs) {
-    if (prior && !all.includes(prior.epoch)) all.push(prior.epoch);
-  }
-  return all.filter((ep) => {
-    const answeredAt = held.get(ep)?.answeredAt;
-    return !(Number.isFinite(answeredAt) && nowSec - answeredAt < windowSec);
-  });
+  if (!Number.isInteger(epoch) || epoch < 0) return [];
+  if (!explicit) return held.has(epoch) ? [] : [epoch];
+  const answeredAt = held.get(epoch)?.answeredAt;
+  return Number.isFinite(answeredAt) && nowSec - answeredAt < windowSec ? [] : [epoch];
 }
 
 const grantLedger = { getGrantRecords, recordGrant };
 
-export async function distributeGroupKey({ senderPrivkey, senderPubkey, groupId, epoch, keyBytes, recipients, publish, extraEpochs = [], answerRequest = false, label = null, ledger = grantLedger, docKey }) {
+export async function distributeGroupKey({ senderPrivkey, senderPubkey, groupId, epoch, keyBytes, recipients, publish, answerRequest = false, label = null, ledger = grantLedger, docKey }) {
   const { nip44 } = await import('nostr-tools');
   // SEC-1: the governance-doc key rides every bundle this call ships. An
   // explicit `docKey` wins (rotation hands its freshly minted secret over);
@@ -397,7 +387,7 @@ export async function distributeGroupKey({ senderPrivkey, senderPubkey, groupId,
   const now = Math.floor(Date.now() / 1000);
   const results = await Promise.allSettled(recipients.map(async (recipientPubkey) => {
     const records = await ledger.getGrantRecords(groupId, recipientPubkey);
-    const needed = epochsToSend({ records, epoch, extraEpochs, explicit: answerRequest, nowSec: now });
+    const needed = epochsToSend({ records, epoch, explicit: answerRequest, nowSec: now });
     // A label is not a key, but it travels in the key's envelope and the
     // ledger above records keys. Without this a member who already holds the
     // epoch would be skipped and would never hear a rename — the ledger would
@@ -407,14 +397,14 @@ export async function distributeGroupKey({ senderPrivkey, senderPubkey, groupId,
     // refuses any other bytes, so the restatement cannot carry a new key).
     const carrying = label ? (needed.length ? needed : [epoch]) : needed;
     if (!carrying.length) return;
-    const byEpoch = new Map([[epoch, keyBytes], ...extraEpochs.map((item) => [item.epoch, item.bytes])]);
-    const bundles = carrying.map((ep) => ({ ep, k: toHex(byEpoch.get(ep)) }));
+    const bundles = carrying.map((ep) => ({ ep, k: toHex(keyBytes) }));
     // SEC-1: the resolved doc key (caller-passed or held) rides every
     // bundle - grants, rotations, regrants and label rides all pass here,
     // so any accepted install adopts or rolls forward to exactly what the
     // sender holds now.
     const payload = {
       v: 1, t: 'gkey', gid: groupId, by: senderPubkey, at: now, keys: bundles,
+      ...(answerRequest ? { resync: true } : {}),
       ...(label ? { name: label.name, about: label.about || '' } : {}),
       dk: toHex(resolvedDocKey),
     };

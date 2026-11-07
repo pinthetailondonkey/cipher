@@ -1,0 +1,10 @@
+[package]
+name = "cipher-openmls-wasm-smoke"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+openmls = { version = "=0.9.2", default-features = false, features = ["js", "libcrux-provider", "test-utils"] }
+openmls_libcrux_crypto = "=0.4.0"
+openmls_basic_credential = "=0.6.0"

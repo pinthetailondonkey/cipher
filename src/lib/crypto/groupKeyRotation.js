@@ -3,7 +3,7 @@ import { getPublicKey } from 'nostr-tools';
 import { refetchMembersCached, trustedGroupCreator } from './groupMembership';
 import { generateGroupKey, toHex } from './groupCipher';
 import { distributeGroupKey } from './groupKeyDistribution';
-import { getAllGroupKeys, getCurrentGroupKey, putGroupKey, getDocKey, putDocKey } from './groupKeyStore';
+import { getCurrentGroupKey, putGroupKey, getDocKey, putDocKey } from './groupKeyStore';
 import { generateDocKey, normalizeDocKey } from './groupDocKey';
 import { queueMemberBaseline } from './memberBaseline';
 import { isJoinDenied, hasPendingJoin } from '../groupJoinQueue';
@@ -612,7 +612,6 @@ export async function rotateGroupEpoch({ identity, groupId, remainingPubkeys, pu
   await putGroupKey(groupId, nextEpoch, newKey);
   // A failed publish must not leave them eligible to re-request the new
   // epoch — the strip above already saw to that.
-  const prior = (await getAllGroupKeys(groupId)).filter((epoch) => epoch.epoch !== nextEpoch);
   if (recipients.length > 0) {
     await distributeGroupKey({
       senderPrivkey: identity.sk,
@@ -621,7 +620,6 @@ export async function rotateGroupEpoch({ identity, groupId, remainingPubkeys, pu
       epoch: nextEpoch,
       keyBytes: newKey,
       recipients,
-      extraEpochs: prior,
       docKey: rotatedDocKey,
       publish,
     });

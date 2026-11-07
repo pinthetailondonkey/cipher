@@ -1,8 +1,11 @@
 # Protocol security roadmap
 
-Status: baseline audit complete; Phase 0 implementation is complete, with
-browser and compatible-relay integration checks still running. This is a staged engineering
-plan, not a security certification. Findings below are pinned to the source
+Status: Phase 0 implementation and verification are complete. Phase 1 has a
+browser-WASM ratchet adapter and crash-safe storage prototype under test; it is
+not yet integrated into DM send/receive paths, multi-device fanout, or
+recovery. Phase 2 is authorized for protocol evaluation and design; MLS is not
+yet integrated. This is a staged engineering plan, not a security
+certification. Findings below are pinned to the source
 currently checked out on `security-ui-remediation`; external protocol
 comparisons link to the standards, protocol descriptions, and published audit
 reports used. Cipher has not received a professional external security review.
@@ -66,8 +69,8 @@ universally stronger.
 | Improvement | Desired property / proposed change | Required code areas | Migration and compatibility | Test strategy | Priority |
 | --- | --- | --- | --- | --- | --- |
 | P0: private group admission and actor-only relay identity | The group relay sees only a per-group actor in creator/admin/member slots. A closed-group request carries an account-signed proof encrypted to the out-of-band group actor pin; owner approval binds account↔actor↔gid before key distribution. | `groupCreate.js`, `useNIP29Group.js`, `groupJoin.js`, `groupJoinQueue.js`, actor/authority helpers, group member UI mapping, group key grant mapping. No change to NIP-44 DM or group ciphers. | Existing account-key roster entries remain recognizable as legacy. New clients should display them locally but never copy those account keys back into fresh relay events. Actor pin must come from a signed invite (`a=`) or an already verified local binding; do not trust a relay-provided pin for encrypting identity. | Real NIP-29 relay implementation locally, two unrelated generated account keys, captured frames; assert account ids absent from 9007/9000/9001/39001/39002 and subscription filters. Test invalid signature, wrong gid/actor, replay, denied, duplicate, no-pin, owner offline, and retry. | Essential; immediate. |
-| P1: ratcheted DMs | Add asynchronous authenticated key establishment and Double Ratchet with message-key deletion and durable transactional state. Use an established implementation such as Signal's maintained protocol implementation only after browser/runtime/license/API assessment. Do not implement ratchet primitives here. | New DM session/prekey module, per-device identity/prekeys, `useNIP44DM.js`, gift-wrap transport, DB schema/transactions, safety-number/key-change UX, outbox. | Keep old NIP-44 decrypt/read path for old messages. New sessions begin only after authenticated device/identity transition. Ratchet messages need a versioned payload and explicit retries. A recovered account without ratchet backup can establish a new session but cannot recover erased message keys or plaintexts. | Known-answer vectors from the chosen library; offline prekey delivery; out-of-order, duplicate, replay, corrupted state, atomic crash/retry, stolen old key and compromised-current-state tests; browser and two-device end-to-end run. | Essential. Depends on P0 identity mapping and storage design. |
-| P2: group cryptography | Evaluate RFC 9420 MLS: epochs, authenticated commits, forward secrecy and PCS after members process updates; the relay is an untrusted delivery service, not an authorization authority. Preserve the verified governance doc as the application admission/role policy, with explicit binding into MLS credentials/commits. | Group codec, key store, membership docs, `groupKeyRotation`, distribution and baseline state, event transport, device sync, recovery. Likely add a mature MLS implementation, not custom MLS. | New groups first, or explicit opt-in rekey with all members online/available. Preserve legacy AES-GCM history reads. New admission defaults to current epoch only; historical access requires an explicit owner policy. Returning-device recovery uses verified encrypted backup or a current-epoch rejoin, not automatic old-epoch backfill. | Standard MLS vectors plus malicious relay reorder/drop/fork, concurrent commits, removed-member ciphertext, stale/offline devices, commit crash recovery, equivocation detection, and legacy compatibility. | Essential for FS/PCS in groups, but defer implementation until P0/P1 architecture review. |
+| P1: ratcheted DMs | Add asynchronous authenticated key establishment and Double Ratchet with message-key deletion and durable transactional state. The current prototype evaluates Vodozemac's v2 Olm mode, not Signal libsignal interoperability. | New DM session/prekey module, per-device identity/prekeys, `useNIP44DM.js`, gift-wrap transport, DB schema/transactions, safety-number/key-change UX, outbox. | Keep old NIP-44 decrypt/read path for old messages. New sessions begin only after authenticated device/identity transition. Ratchet messages need a versioned payload and explicit retries. A recovered account without ratchet backup can establish a new session but cannot recover erased message keys or plaintexts. | Known-answer vectors from the chosen library; offline prekey delivery; out-of-order, duplicate, replay, corrupted state, atomic crash/retry, stolen old key and compromised-current-state tests; browser and two-device end-to-end run. | Essential. Depends on P0 identity mapping and storage design. |
+| P2: group cryptography | Evaluate RFC 9420 MLS: epochs, authenticated commits, forward secrecy and PCS after members process updates; the relay is an untrusted delivery service, not an authorization authority. Preserve the verified governance doc as the application admission/role policy, with explicit binding into MLS credentials/commits. | Group codec, key store, membership docs, `groupKeyRotation`, distribution and baseline state, event transport, device sync, recovery. OpenMLS 0.9.2 is the current candidate for a browser-WASM spike; no production selection yet. | New groups first, or explicit opt-in rekey with all members online/available. Preserve legacy AES-GCM history reads. New admission defaults to current epoch only; historical access requires an explicit owner policy. Returning-device recovery uses verified encrypted backup or a current-epoch rejoin, not automatic old-epoch backfill. | Standard MLS vectors plus malicious relay reorder/drop/fork, concurrent commits, removed-member ciphertext, stale/offline devices, commit crash recovery, equivocation detection, and legacy compatibility. | Essential for FS/PCS in groups, but defer transport and state migration until P0/P1 architecture review. |
 | P3: device security/recovery | Device-scoped signing/encryption credentials; explicit verified device adds and revokes; encrypted state backups with rollback detection. | Identity vault, device lock/passkey, backup/restore flows, DM ratchet storage, group state sync, revocation events. | Account phrase restores account continuity, not deleted ratchet secrets. Restore from an earlier encrypted backup is bounded by that backup's state and must rotate/rejoin after revocation. No public-relay ratchet or private-key backups. | New device enrollment, stolen/lost device revoke, old device key denial, backup restore, backup rollback, interrupted transfer, no-backup honest refusal. | Essential for safe multi-device and loss claims. |
 | P4: privacy compartments | Distinct account, DM-device, per-group actor, storefront and device identities; minimize joins across public surfaces. | `identity`, group actor derivation/bindings, profile/vendor publication, subscriptions, NIP-65, receipt/public order surfaces. | No global identifier migration that silently breaks Nostr interoperability. Public profile/merchant data stays linkable by choice; old events remain public. | Cross-account/linkability harness over signed events, relay frames, profile and receipt publication; negative controls prove intentional public identity. | Essential for claims; increment after P0. |
 | P5: security evidence | Reproducible adversarial harness with captured actual WebSocket frames and pinned protocol/library versions. | Tests, relay fixture, UI integration, release process and security documentation. | Compatibility fixtures retained for all wire versions; CI fails on unregistered tests. | Relay tampering, forged membership, key-request abuse, removal, rollback, compromise, offline, device loss/restore, cross-account linkage, browser execution. | Essential ongoing; start with P0. |
@@ -221,35 +224,37 @@ two-account live test are required before making a deployment claim.
   prior caller's account p-tag leak; first-contact account/actor binding uses
   independent generated keys and real actor derivation, NIP-44 and Nostr
   signature verification.
-- [ ] A locally run compatible NIP-29 relay accepts creation, queues closed
+- [x] A locally run compatible NIP-29 relay accepts creation, queues closed
   `9021`, and accepts owner approval targeting the actor; it generates actor-
   only admin/member state.
-- [ ] Captured group-relay frames/events/filters contain neither account key.
-- [ ] No joiner obtains roster access or any group key before explicit approval.
-- [ ] Bad signature, wrong gid, wrong actor, wrong pin, stale/replayed ticket,
+- [x] Captured group-relay frames/events/filters contain neither account key.
+- [x] No joiner obtains roster access or any group key before explicit approval.
+- [x] Bad signature, wrong gid, wrong actor, wrong pin, stale/replayed ticket,
   duplicate, denial, relay refusal and retry cases are tested.
-- [ ] Existing groups and unpinned links follow explicit legacy/refusal behavior;
+- [x] Existing groups and unpinned links follow explicit legacy/refusal behavior;
   no relay-derived pin is treated as trusted.
 - [x] `npm run lint`, `npm test`, `npm run build`, targeted crypto/membership
   tests and browser checks are run; exact counts and skips are reported below.
-- [ ] A two-account run against a locally run compatible NIP-29 relay verifies
-  the real admission path and captured traffic; this remains open.
+- [x] A two-account run against a locally run compatible NIP-29 relay verifies
+  the real admission path and captured traffic.
 - [x] Verified changes are committed locally on `security-ui-remediation`; no
   push or deploy.
 
-Phase 0 verification snapshot (2026-11-06): `npm test` — 1,115 passed, 0
-failed, 0 skipped; `npm run lint` — exit 0 with existing warnings;
-`npm run build` — exit 0, 2,635 modules transformed and 65 assets listed;
-`npm run test:ui` — 184 passed. Targeted membership/crypto runs passed (60/60
-for the initial phase and 57/57 for the legacy-owner migration follow-up).
-The upstream NIP-29 relay source test is not included in these counts and was
-still compiling in the local harness at this snapshot. No two-account relay
-or real network-frame run has yet been completed.
+Phase 0 verification snapshot (2026-11-06): `npm test` — 1,119 passed, 0
+failed, 4 skipped (1,123 tests total); `npm run lint` — exit 0 with 103
+existing warnings and no errors; `npm run build` — exit 0; `npm run test:ui
+-- --workers=2` — 184 passed. The local compatible NIP-29 integration test
+passed with two independent accounts and captured 26 outgoing and 38 incoming
+frames (17 EVENT, 2 AUTH, 7 REQ). No account key appeared in captured relay
+frames. `git diff --check` passed. These results do not establish behavior on
+every deployed NIP-29 relay. Commit: `97491bb` (`SEC: close Phase 0 group
+membership trust gaps`), local only; branch is one commit ahead of origin.
 
 ### Phase 1 — DM forward secrecy
 
-- [ ] A maintained, reviewed library is selected after a browser/runtime,
-  license, update, storage and API review; no custom ratchet primitives.
+- [ ] The selected ratchet/key-establishment implementation passes the browser,
+  native/desktop, license, update, storage and API assessment documented in
+  `docs/DM-RATCHET-DESIGN.md`; no custom ratchet primitives.
 - [ ] Protocol design records identity authentication, device identity, async
   prekeys, ratchet advancement, replay/out-of-order behavior and deletion rules.
 - [ ] Ciphertext fixtures prove legacy read and versioned new-session behavior.
@@ -259,6 +264,90 @@ or real network-frame run has yet been completed.
   securely erased; current-state compromise demonstrates recovery after fresh
   authenticated DH input. The limits of compromised identity keys are stated.
 - [ ] Two independent devices and offline delivery pass browser integration.
+
+#### Phase 1 source audit (2026-11-06)
+
+**Verified call paths.** `useNIP44DM.sendDM()` encrypts every ordinary DM
+payload, including commerce and control payloads passed through `sendDM()`,
+under `conversationKey(accountSecret, peerAccountPubkey)`. Typing has a
+separate sender that uses the same key. Live and history ingestion unwrap
+NIP-59 and decrypt the rumor using that same deterministic key. NIP-59's
+kind-13 seal and kind-1059 gift wrap add signatures/routing privacy but do not
+ratchet the inner message key. There is no persistent conversation ratchet
+state. `dmKeys.js` caches only the deterministic key in memory.
+
+**Verified storage and retry behavior.** The account database is Dexie-backed,
+message payload rows are sealed at rest with the active vault session key, and
+outgoing signed events use a durable write-ahead outbox. The current send path
+does not atomically commit a ratchet state transition with the message/outbox;
+that must change before ratcheted messages can safely use the existing retry
+semantics. Incoming decrypt currently precedes message persistence and business
+side effects, so inbound state, decrypted message storage, and idempotent
+side-effect recovery need one explicit transaction/journal design.
+
+**Candidate assessment and prototype.** Signal publishes its Double Ratchet,
+X3DH and Sesame specifications, but its official `@signalapp/libsignal-client`
+package targets native Node libraries and maintainers say outside-Signal use is
+unsupported. A third-party browser port exists, but it is not an audited
+official implementation and is not selected. Matrix `vodozemac` implements
+Olm's asynchronous 3DH setup and Double Ratchet and builds for
+`wasm32-unknown-unknown`. A Rust/WASM adapter prototype pins vodozemac 0.11.2
+and uses its experimental Olm v2 full-MAC mode. This mode is intentionally
+not treated as audited just because the library's older core was audited; the
+2022 Least Authority assessment examined an older revision, excluded language
+bindings, and left the 8-byte v1 MAC concern unresolved. The mode requires a
+separate protocol and implementation review before production selection.
+
+The prototype currently has: 5 native Rust tests for V2 setup, bidirectional
+ratchet operation, refusal of V1 sessions, one-time-key consumption, encrypted
+account-pickle restoration, and one-use out-of-order message keys; JS tests for
+encrypted local state, authenticated prekey bundles and IndexedDB CAS/outbox
+behavior. The WASM release module builds, and its two-account browser exercise
+passes initial delivery, wrong-recipient rejection, out-of-order delivery,
+replay rejection, replies and sealed-state restore. The exercise tests the
+library adapter only: no DM production send or receive path has changed, and no
+forward-secrecy claim is enabled for users. `docs/DM-RATCHET-DESIGN.md` records
+the storage and migration gates. **Production implementation choice remains
+unresolved** pending review of the V2 mode or a better-supported
+browser-capable implementation.
+
+#### Phase 2 implementation evaluation
+
+RFC 9420 and OpenMLS 0.9.2 are evaluated in `docs/GROUP-MLS-DESIGN.md`. OpenMLS
+is a possible browser/WASM prototype candidate, not yet selected for
+production. Phase 0's signed governance document remains authoritative;
+OpenMLS membership commits alone do not implement Cipher's owner/admin policy.
+The relay's NIP-29 roster remains untrusted input. Local crash-atomic MLS state
+and governance/outbox persistence, fork detection, NIP-29 event compatibility,
+offline/stale member behavior, and independent interop are all open gates.
+
+**Current-only history-grant policy implemented.** The AES-GCM key distribution
+path now sends only the current epoch during reconciliation, rotation, and
+explicit key-request responses. A returning device may ask an authorized admin
+for a one-key current-state resync across missed epochs; this does not grant
+old history. The receiver accepts that gap only for one key exactly at the
+sender's current epoch and only from a governance-authorized admin. New tests
+exercise the real NIP-44 envelope contents, current-only admission grant,
+current-state resync authorization, and refusal of multi-key or non-admin gap
+grants. The legacy receiver still reads historical keys from older senders for
+compatibility, so old clients can continue to grant history during migration;
+new clients no longer do so automatically. Historical access remains
+unavailable through the new client until a distinct, explicit owner-authorized
+grant policy exists.
+
+Verification snapshot (2026-11-07): `npm test` — 1,133 tests, 1,129 passed,
+0 failed, 4 skipped; `npm run test:ratchet` — 5 passed; `npm run lint` — exit
+0 with 103 warnings and no errors; `npm run lint:ratchet` — exit 0;
+`npm run test:ratchet-browser` — passed in a real browser; targeted
+group-key/removal suite — 29 passed; `cargo test --manifest-path
+crypto/mls-eval/Cargo.toml --locked` — 1 passed; `npm run build` — passed.
+The MLS evaluation crate passed `cargo fmt --manifest-path
+crypto/mls-eval/Cargo.toml --check`. The NIP-29 relay integration could not
+be repeated because no compatible test relay was listening on
+`127.0.0.1:18888`; the earlier Phase 0 captured-frame result remains its only
+live relay evidence. `npm run test:ui -- --workers=2` — 184 passed. The build
+and UI run temporarily moved `.grok/app-env.json` out of the workspace as
+required by the build guard; the original file was restored after the run.
 
 ### Phase 2 — group forward secrecy and post-compromise recovery
 

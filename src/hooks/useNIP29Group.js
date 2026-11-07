@@ -9,7 +9,7 @@ import { allowsTyping } from '../lib/privacy';
 import { shortNpub } from '../lib/npub';
 import { getMyGroups, setMyGroups } from '../lib/myGroups';
 import { encodeGroupPayload, decodeGroupEvent } from '../lib/crypto/groupMessageCodec';
-import { getAllGroupKeys, getCurrentGroupKey, putGroupKey } from '../lib/crypto/groupKeyStore';
+import { getCurrentGroupKey, putGroupKey } from '../lib/crypto/groupKeyStore';
 import { authorizeGroupControl, authorizeGroupPin, authorizeMemberSnapshot, controlMembersFromDocument, groupFrameAccepted, groupRelayPubkey, groupTimelinePlans, isRestrictedRelayClose, mapRelayRosterToAccounts, pickMemberSnapshot, pinnedMessageOf, resolveControlSender, resolveKeyRequestRequester, trustedGroupCreator } from '../lib/crypto/groupMembership';
 import { grantKeyRequest, isGroupRotationPending, loadMemberSnapshot, loadMemberSnapshotRecord, loadVerifiedMemberSnapshot, memberKey, patchMemberSnapshot, rememberMembers, publishMemberDocUpdate, rotateGroupEpoch } from '../lib/crypto/groupKeyRotation';
 import { generateGroupKey } from '../lib/crypto/groupCipher';
@@ -21,7 +21,7 @@ import { getDocKey, putDocKey } from '../lib/crypto/groupKeyStore';
 import { MEMBER_DOC_KIND, MEMBER_DOC_D_PREFIX } from '../lib/crypto/groupDocWire';
 import { heldGroupRow } from '../lib/groupJoin';
 import { ACCESS_PRIVATE, ACCESS_PUBLIC, JOIN_APPROVAL, groupCreateTags, relayFacingLabel } from '../lib/groupCreate';
-import { distributeGroupKey, epochsToBackfill } from '../lib/crypto/groupKeyDistribution';
+import { distributeGroupKey } from '../lib/crypto/groupKeyDistribution';
 import { publishWriteAhead, startOutboxSync } from '../lib/outbox';
 import { groupSocketUrl } from '../lib/egress';
 import { relaysForPeer } from '../lib/dmRelays';
@@ -1730,14 +1730,13 @@ export function useNIP29Group({ identity }) {
               fetchMembers: () => fetchRelayMemberSnapshot(identity, groupId),
             });
             if (decision === 'allow' && current) {
-              const prior = epochsToBackfill(await getAllGroupKeys(groupId), current.epoch);
               await distributeGroupKey({
                 senderPrivkey: identity.sk, senderPubkey: identity.pk,
                 groupId, epoch: current.epoch, keyBytes: current.bytes,
                 recipients: [requester],
-                extraEpochs: prior,
                 // An explicit request is answered whatever the ledger says
-                // was sent before (rate limited inside distributeGroupKey).
+                // was sent before, but only for the current epoch. New members
+                // and returning devices do not receive automatic history.
                 answerRequest: true,
                 publish: (dmEvent) => publishKeyDm(identity, dmEvent),
               });

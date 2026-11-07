@@ -1,5 +1,5 @@
 import { useEffect, useMemo } from 'react';
-import { getCurrentGroupKey, getAllGroupKeys, getGrantedEpochsFor, putGroupKey, getDocKey, putDocKey } from '../lib/crypto/groupKeyStore';
+import { getCurrentGroupKey, getGrantedEpochsFor, putGroupKey, getDocKey, putDocKey } from '../lib/crypto/groupKeyStore';
 import { distributeGroupKey } from '../lib/crypto/groupKeyDistribution';
 import { generateGroupKey } from '../lib/crypto/groupCipher';
 import { generateDocKey, normalizeDocKey } from '../lib/crypto/groupDocKey';
@@ -217,15 +217,13 @@ async function reconcile({ groupId, members, isOwner, identity }) {
     const nextEpoch = current.epoch + 1;
     const newKey = generateGroupKey();
     await putGroupKey(groupId, nextEpoch, newKey);
-    const priorEpochs = (await getAllGroupKeys(groupId)).filter(e => e.epoch !== nextEpoch);
-    await distributeGroupKey({ senderPrivkey: identity.sk, senderPubkey: identity.pk, groupId, epoch: nextEpoch, keyBytes: newKey, recipients: dedupe([...members, identity.pk]), extraEpochs: priorEpochs, docKey: reconcilerRotatedDocKey, publish });
+    await distributeGroupKey({ senderPrivkey: identity.sk, senderPubkey: identity.pk, groupId, epoch: nextEpoch, keyBytes: newKey, recipients: dedupe([...members, identity.pk]), docKey: reconcilerRotatedDocKey, publish });
     await safePutSnapshot(groupId, members);
     await setGroupRotationPending(groupId, false);
     return { epoch: nextEpoch };
   }
   await safePutSnapshot(groupId, members);
 
-  const allEpochs = await getAllGroupKeys(groupId);
   const recipients = [];
   for (const pk of members) {
     const granted = await getGrantedEpochsFor(groupId, pk);
@@ -239,7 +237,6 @@ async function reconcile({ groupId, members, isOwner, identity }) {
     epoch: current.epoch,
     keyBytes: current.bytes,
     recipients: dedupe([...recipients, identity.pk]),
-    extraEpochs: allEpochs.filter(e => e.epoch !== current.epoch),
     publish,
   });
   return { epoch: current.epoch };
