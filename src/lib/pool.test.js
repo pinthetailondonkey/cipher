@@ -309,7 +309,7 @@ test('the choke point every read passes through re-issues, on the pool the app b
 // REQ it did not see a matching AUTH for. This one is the red on the base tree
 // (no AUTH is ever sent) and the green once the pool answers. Its stub also
 // checks the signature names this account.
-function makeRelayStub() {
+function makeRelayStub({ acceptedActors = [ACTOR_XONLY] } = {}) {
   const sockets = [];
   class RelaySocket {
     constructor(url) {
@@ -330,7 +330,7 @@ function makeRelayStub() {
       this.sent.push(msg);
       // Step 2 slice 2b: the AUTH frame is signed by this account's per-group
       // actor key, whose x-only form is the wire pubkey.
-      if (msg[0] === 'AUTH' && msg[1]?.kind === 22242 && msg[1]?.pubkey === ACTOR_XONLY) {
+      if (msg[0] === 'AUTH' && msg[1]?.kind === 22242 && acceptedActors.includes(msg[1]?.pubkey)) {
         this.authed = true;
         this.emit(['OK', msg[1].id, true, '']);
         return;
@@ -395,6 +395,37 @@ test('a challenged read through the account pool is answered with an ACTOR-signe
     assert.equal(events.length, 1, 'the read returned the event the relay gates behind AUTH');
   } finally {
     clearPool();
+    delete globalThis.WebSocket;
+  }
+});
+
+test('a first-contact create or join can prove with its supplied group actor before a held row exists', async () => {
+  const firstContactGroup = 'first-contact-group';
+  const { pin } = await groupAuthorityKey(SK, firstContactGroup);
+  const { RelaySocket, sockets } = makeRelayStub({ acceptedActors: [pin.slice(2)] });
+  globalThis.WebSocket = RelaySocket;
+  setMyGroups(PK, []);
+
+  const { getAuthenticatedPool, setAuthProofGroup, clearPool } = await import('./pool.js');
+  const identity = { pk: PK, sk: SK };
+  const pool = await getAuthenticatedPool(identity);
+  assert.equal(setAuthProofGroup(pool, firstContactGroup), true);
+  try {
+    await pool.querySync([GROUP_RELAY], { kinds: [39000], limit: 1 }).catch(() => []);
+    let authFrame = null;
+    for (let i = 0; i < 50 && !authFrame; i += 1) {
+      authFrame = sockets[0]?.sent.find((message) => message[0] === 'AUTH') || null;
+      if (!authFrame) await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    assert.ok(authFrame, 'the first-contact operation does not produce a null AUTH event');
+    assert.equal(authFrame[1].pubkey, pin.slice(2), 'the challenge is signed by the requested group actor');
+    assert.deepEqual(authFrame[1].tags.find((tag) => tag[0] === 'author'), ['author', pin]);
+    assert.notEqual(authFrame[1].pubkey, PK, 'the account key is not used as an AUTH fallback');
+    const events = await pool.querySync([GROUP_RELAY], { kinds: [39000], limit: 1 });
+    assert.equal(events.length, 1, 'the group relay read completes after the first-contact proof');
+  } finally {
+    clearPool();
+    setMyGroups(PK, [{ id: 'pool-test-group' }]);
     delete globalThis.WebSocket;
   }
 });

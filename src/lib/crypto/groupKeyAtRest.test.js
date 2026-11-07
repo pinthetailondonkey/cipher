@@ -8,6 +8,7 @@ import {
 } from './groupKeyAtRest.js';
 import {
   __setGroupKeyStoreForTests, putGroupKey, getGroupKey, getCurrentGroupKey, getAllGroupKeys,
+  putDocKey, getDocKey,
 } from './groupKeyStore.js';
 
 const SK = Uint8Array.from({ length: 32 }, (_, i) => i + 1);
@@ -21,6 +22,7 @@ const plainRow = (over = {}) => ({ groupId: 'g1', epoch: 2, keyHex: KEY_HEX, isC
 // unique [groupId+epoch] rule and hands out copies, as IndexedDB does.
 function fakeDb(initial = []) {
   const rows = initial.map((r, i) => ({ id: i + 1, ...structuredClone(r) }));
+  const docRows = [];
   let nextId = rows.length + 1;
   const collection = (match) => ({
     first: async () => { const r = rows.find(match); return r ? structuredClone(r) : undefined; },
@@ -41,9 +43,25 @@ function fakeDb(initial = []) {
       if (at >= 0) rows[at] = copy; else { copy.id = nextId++; rows.push(copy); }
     },
   };
+  const docTable = {
+    get: async (groupId) => {
+      const row = docRows.find((candidate) => candidate.groupId === groupId);
+      return row ? structuredClone(row) : undefined;
+    },
+    put: async (row) => {
+      const at = docRows.findIndex((candidate) => candidate.groupId === row.groupId);
+      if (at < 0) docRows.push(structuredClone(row));
+      else docRows[at] = structuredClone(row);
+    },
+    delete: async (groupId) => {
+      const at = docRows.findIndex((candidate) => candidate.groupId === groupId);
+      if (at >= 0) docRows.splice(at, 1);
+    },
+  };
   return {
     rows,
-    db: { groupKeys: table, transaction: async (_mode, _table, fn) => fn() },
+    docRows,
+    db: { groupKeys: table, groupDocKeys: docTable, transaction: async (_mode, _table, fn) => fn() },
     owner: () => 'owner-pk',
   };
 }
@@ -93,6 +111,30 @@ test('with no session key nothing is sealed and nothing sealed opens', async () 
   setAtRestKeyProvider(() => null);
   await assert.rejects(() => sealGroupKeyRow(plainRow()), GroupKeyLockedError);
   await assert.rejects(() => openGroupKeyRow(stored), GroupKeyLockedError);
+});
+
+test('governance document keys round-trip through the scalar groupId primary key', async () => {
+  setAtRestKeyProvider(() => SK);
+  const fake = fakeDb();
+  __setGroupKeyStoreForTests(fake);
+  const docKey = Uint8Array.from({ length: 32 }, (_, i) => 255 - i);
+  assert.equal(await putDocKey('doc-key-roundtrip', 1, docKey), true);
+  assert.equal(fake.docRows.length, 1, 'the sealed governance secret is durably stored');
+  assert.deepEqual(await getDocKey('doc-key-roundtrip'), { epoch: 1, bytes: docKey },
+    'the stored secret is readable immediately by the creating device');
+});
+
+test('governance document key replacement upserts the scalar groupId row', async () => {
+  setAtRestKeyProvider(() => SK);
+  const fake = fakeDb();
+  __setGroupKeyStoreForTests(fake);
+  const first = new Uint8Array(32).fill(17);
+  const next = new Uint8Array(32).fill(29);
+  assert.equal(await putDocKey('doc-key-replace', 1, first), true);
+  assert.equal(await putDocKey('doc-key-replace', 2, next), true);
+  assert.equal(fake.docRows.length, 1, 'one primary-key row remains for this group');
+  assert.deepEqual(await getDocKey('doc-key-replace'), { epoch: 2, bytes: next },
+    'the newest explicitly supplied governance key is recoverable');
 });
 
 test('putGroupKey stores a row with no key hex in it, and the key reads back', async () => {

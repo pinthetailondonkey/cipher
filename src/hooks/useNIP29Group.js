@@ -3,7 +3,7 @@ import { nip19 } from 'nostr-tools';
 import { db, saveMessage, markChatRead } from '../db';
 import { showNotification } from '../lib/notifications';
 import { useChatStore } from '../store/chatStore';
-import { getAuthenticatedPool } from '../lib/pool';
+import { getAuthenticatedPool, setAuthProofGroup } from '../lib/pool';
 import { groupRelays, generalRelays, groupOnlyRelays, queryWithTimeout } from '../lib/relays';
 import { allowsTyping } from '../lib/privacy';
 import { shortNpub } from '../lib/npub';
@@ -223,6 +223,7 @@ function metadataFromEvent(latest) {
 export async function fetchGroupMetadataOutcome(identity, groupId, options = {}) {
   const reader = options.reader || await import('../lib/relayDirectoryRead');
   const pool = options.pool || await getAuthenticatedPool(identity);
+  setAuthProofGroup(pool, groupId);
   const read = (filter) => reader.readDirectory(groupRelays, filter, {
     timeoutMs: 4000, identity, createPool: () => pool, closePool: false,
   });
@@ -406,6 +407,7 @@ function markGroupAuthed(session) {
 
 function sendAuthResponse(session, challenge) {
   if (!challenge || !session.identity?.sk || session.authSent) return;
+  session.pendingChallenge = challenge;
   // Step 2 (MEMBERSHIP-DESIGN.md): the proof that opens a group box is
   // signed by this account's per-group actor key, not by the account key.
   // signActProof builds it: kind 22242, relay + challenge tags, the author
@@ -424,6 +426,8 @@ function sendAuthResponse(session, challenge) {
     if (!signed || !session.ws || session.ws.readyState !== WebSocket.OPEN) return;
     session.actorPin = signed.pin;
     session.actorGid = gid;
+    session.proofGroupId = '';
+    session.pendingChallenge = '';
     session.authEventId = signed.event.id;
     session.authSent = true;
     session.ws.send(JSON.stringify(['AUTH', signed.event]));
@@ -443,7 +447,7 @@ function sendAuthResponse(session, challenge) {
 // held groups — is driven from the real tree rather than re-stated in a test.
 export function sessionActorGroupId(session) {
   return socketProofGroupId({
-    held: session.actorGid || '',
+    held: session.actorGid || session.proofGroupId || '',
     readable: groupIdsOnSession(session),
     known: (useChatStore.getState().groups || []).map((group) => group.id),
   });
@@ -478,6 +482,7 @@ function handleGroupSocketFrame(session, raw) {
 
   if (msg[0] === 'AUTH') {
     const challenge = typeof msg[1] === 'string' ? msg[1] : msg[1]?.challenge;
+    session.pendingChallenge = challenge || '';
     try {
       sendAuthResponse(session, challenge);
     } catch (error) {
@@ -611,6 +616,9 @@ function openGroupRelaySession(identity) {
     authedAt: null,
     authSent: false,
     authEventId: null,
+    actorGid: '',
+    proofGroupId: '',
+    pendingChallenge: '',
     closed: false,
     reconnectTimer: null,
     authWaiters: [],
@@ -641,6 +649,9 @@ function whenGroupAuthed(session) {
 
 async function publishAuthedGroupEvent(identity, event) {
   const session = openGroupRelaySession(identity);
+  const eventGroupId = event.tags?.find((tag) => tag[0] === 'h' && tag[1])?.[1];
+  if (!session.authed && !session.actorGid && eventGroupId) session.proofGroupId = eventGroupId;
+  if (session.pendingChallenge && !session.authSent) sendAuthResponse(session, session.pendingChallenge);
   await whenGroupAuthed(session);
   if (!event.tags?.some((tag) => tag[0] === 'h' && tag[1])) {
     throw new Error('Group event is missing the h tag');
@@ -797,6 +808,7 @@ export function useNIP29Group({ identity }) {
   const createGroup = useCallback(async (name, about, isChannel, { access = ACCESS_PUBLIC, joinPolicy = JOIN_APPROVAL } = {}) => {
     const pool = await getAuthenticatedPool(identity);
     const groupId = (globalThis.crypto?.randomUUID?.() || Date.now().toString()).replace(/-/g, '').slice(0, 16);
+    setAuthProofGroup(pool, groupId);
 
     const createdAt = Math.floor(Date.now() / 1000);
 

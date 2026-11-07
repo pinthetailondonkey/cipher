@@ -89,7 +89,7 @@ test('every proofer in the tree takes the pin from the one rule', async () => {
 test('the hook asks the rule with the socket\'s own subs and the held groups', () => {
   const body = HOOK.match(/export function sessionActorGroupId\(session\) \{[\s\S]*?\n\}/);
   assert.ok(body, 'the chooser is exported and present');
-  assert.match(body[0], /held: session\.actorGid \|\| ''/, 'the pin already proved under is passed as held');
+  assert.match(body[0], /held: session\.actorGid \|\| session\.proofGroupId \|\| ''/, 'the proved pin takes precedence, with an explicit first-contact group before one exists');
   assert.match(body[0], /readable: groupIdsOnSession\(session\)/, 'the live subs are the readable set');
   assert.match(body[0], /known: \(useChatStore\.getState\(\)\.groups \|\| \[\]\)/, 'the held groups are the fallback');
 });
@@ -151,7 +151,7 @@ test('the pin reaches a group host and no public relay', () => {
 
 test('the pool and the reader both keep the pin they first proved under', () => {
   assert.match(POOL, /const heldProofGroup = new WeakMap\(\)/, 'the pool holds a pin per pool');
-  assert.match(POOL, /socketProofGroupId\(\{ held, known: groups\.map/, 'and passes it back into the rule');
+  assert.match(POOL, /socketProofGroupId\(\{[\s\S]*?held,[\s\S]*?readable: pendingProofGroup\.has\(pool\) \? \[pendingProofGroup\.get\(pool\)\] : \[\],[\s\S]*?known: groups\.map/, 'the existing pin stays held; first contact adds only its requested group before held groups as the fallback');
   assert.match(POOL, /if \(!heldProofGroup\.has\(pool\)\) heldProofGroup\.set\(pool, gid\);/, 'set once, never re-picked');
   assert.match(READER, /held = gid; \/\/ one pseudonym per read/, 'the reader holds its pin for the read');
 });

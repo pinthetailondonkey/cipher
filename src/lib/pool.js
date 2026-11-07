@@ -18,6 +18,18 @@ const poolAuth = new WeakMap();
 // group-host signer below so the pseudonym is chosen once per pool instead of
 // following the store's active group (see lib/groupSocketProof).
 const heldProofGroup = new WeakMap();
+const pendingProofGroup = new WeakMap();
+
+// First-contact operations can be authenticated before the account has a
+// saved group row. Give the pool the target group id so NIP-42 can use that
+// group's actor key instead of an account key or a missing signer.
+export function setAuthProofGroup(pool, groupId) {
+  if (!pool || heldProofGroup.has(pool)) return false;
+  const id = String(groupId || '').trim();
+  if (!id) return false;
+  pendingProofGroup.set(pool, id);
+  return true;
+}
 
 function authState(pool) {
   let state = poolAuth.get(pool);
@@ -161,9 +173,13 @@ export const getAuthenticatedPool = async (identity) => {
       const { actorForGroup, actorTag } = await import('./crypto/gmIdentity');
       const { getMyGroups } = await import('./myGroups');
       const groups = getMyGroups(identity.pk);
-      if (!groups.length) return null;
       const held = heldProofGroup.get(pool);
-      const gid = socketProofGroupId({ held, known: groups.map((group) => group.id) });
+      if (!groups.length && !held && !pendingProofGroup.has(pool)) return null;
+      const gid = socketProofGroupId({
+        held,
+        readable: pendingProofGroup.has(pool) ? [pendingProofGroup.get(pool)] : [],
+        known: groups.map((group) => group.id),
+      });
       if (!gid) return null;
       const actor = await actorForGroup(identity.pk, gid);
       if (!actor) return null; // locked tab: no proof, never a fallback

@@ -145,7 +145,7 @@ export async function putDocKey(groupId, epoch, keyBytes) {
   try {
     const row = await sealDocKeyRow({ groupId, epoch, keyBytes });
     await store.db.transaction('rw', store.db.groupDocKeys, async () => {
-      const existing = await store.db.groupDocKeys.get([groupId]);
+      const existing = await store.db.groupDocKeys.get(groupId);
       if (existing) await store.db.groupDocKeys.delete(existing.groupId);
       await store.db.groupDocKeys.put(row);
     });
@@ -158,7 +158,7 @@ export async function putDocKey(groupId, epoch, keyBytes) {
 export async function getDocKey(groupId) {
   if (!usable()) return null; // locked: null means 'no key', like getCurrentGroupKey
   try {
-    const row = await store.db.groupDocKeys.get([groupId]);
+    const row = await store.db.groupDocKeys.get(groupId);
     if (!row) return null;
     const bytes = await openDocKeyRow(row);
     return { epoch: Number.isInteger(row.epoch) ? row.epoch : 0, bytes };

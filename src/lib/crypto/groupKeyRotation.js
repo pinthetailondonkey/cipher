@@ -1,4 +1,5 @@
-import { db as appDb } from '../../db';
+import { db as appDb, currentOwner } from '../../db';
+import { getAuthenticatedPool } from '../pool';
 import { getPublicKey } from 'nostr-tools';
 import { refetchMembersCached, trustedGroupCreator } from './groupMembership';
 import { generateGroupKey, toHex } from './groupCipher';
