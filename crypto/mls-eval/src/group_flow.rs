@@ -256,9 +256,257 @@ fn conflicting_commit_from_stale_epoch_is_rejected(
     true
 }
 
+const GOVERNANCE_BINDING_EXTENSION: u16 = 0xffca;
+
+fn governance_binding(revision: u64, document_hash: [u8; 32]) -> Vec<u8> {
+    let mut payload = b"cipher-mls-governance-binding-v1".to_vec();
+    payload.extend_from_slice(&revision.to_be_bytes());
+    payload.extend_from_slice(&document_hash);
+    payload
+}
+
+fn governance_binding_extensions(payload: Vec<u8>) -> Extensions<GroupContext> {
+    let required = Extension::RequiredCapabilities(RequiredCapabilitiesExtension::new(
+        &[ExtensionType::Unknown(GOVERNANCE_BINDING_EXTENSION)],
+        &[],
+        &[],
+    ));
+    Extensions::from_vec(vec![
+        Extension::Unknown(GOVERNANCE_BINDING_EXTENSION, UnknownExtension(payload)),
+        required,
+    ])
+    .unwrap()
+}
+
+fn held_governance_binding(
+    group: &MlsGroup,
+    provider: &EvalProvider,
+    signer: &SignatureKeyPair,
+) -> Vec<u8> {
+    let group_info = group
+        .export_group_info(provider.crypto(), signer, false)
+        .unwrap();
+    let group_info: MlsMessageIn = group_info.into();
+    let group_info = match group_info.extract() {
+        openmls::framing::MlsMessageBodyIn::GroupInfo(group_info) => group_info,
+        _ => panic!("expected signed GroupInfo"),
+    };
+    group_info
+        .group_context()
+        .extensions()
+        .iter()
+        .find_map(|extension| match extension {
+            Extension::Unknown(GOVERNANCE_BINDING_EXTENSION, UnknownExtension(payload)) => {
+                Some(payload.clone())
+            }
+            _ => None,
+        })
+        .expect("group context carries the governance binding")
+}
+
+fn authenticated_governance_binding_round_trip() -> bool {
+    let owner_provider = EvalProvider::new();
+    let mut bob_provider = EvalProvider::new();
+    let (owner_credential, owner_signer) = credential(&owner_provider, b"group-actor-owner");
+    let (bob_credential, bob_signer) = credential(&bob_provider, b"group-actor-bob");
+    let required_extensions = [ExtensionType::Unknown(GOVERNANCE_BINDING_EXTENSION)];
+    let capabilities = Capabilities::new(None, None, Some(&required_extensions), None, None);
+    let bob_key_package = KeyPackage::builder()
+        .leaf_node_capabilities(capabilities.clone())
+        .build(
+            SUITE,
+            &bob_provider,
+            &bob_signer,
+            CredentialWithKey {
+                credential: bob_credential.into(),
+                signature_key: bob_signer.public().into(),
+            },
+        )
+        .unwrap();
+
+    let first_binding = governance_binding(4, [0x41; 32]);
+    let mut owner = MlsGroup::builder()
+        .ciphersuite(SUITE)
+        .with_capabilities(capabilities)
+        .with_group_context_extensions(governance_binding_extensions(first_binding.clone()))
+        .build(
+            &owner_provider,
+            &owner_signer,
+            CredentialWithKey {
+                credential: owner_credential.into(),
+                signature_key: owner_signer.public().into(),
+            },
+        )
+        .unwrap();
+    assert_eq!(
+        held_governance_binding(&owner, &owner_provider, &owner_signer),
+        first_binding
+    );
+
+    let (_, welcome, _) = owner
+        .add_members(
+            &owner_provider,
+            &owner_signer,
+            &[bob_key_package.key_package().clone()],
+        )
+        .unwrap();
+    owner.merge_pending_commit(&owner_provider).unwrap();
+    let welcome: MlsMessageIn = welcome.into();
+    let welcome = match welcome.extract() {
+        openmls::framing::MlsMessageBodyIn::Welcome(welcome) => welcome,
+        _ => panic!("expected Bob Welcome"),
+    };
+    let mut bob = accept_welcome_transactionally(
+        &mut bob_provider,
+        &MlsGroupJoinConfig::default(),
+        welcome,
+        Some(owner.export_ratchet_tree().into()),
+    )
+    .unwrap();
+    assert_eq!(
+        held_governance_binding(&bob, &bob_provider, &bob_signer),
+        first_binding
+    );
+
+    let next_binding = governance_binding(5, [0x52; 32]);
+    let (commit, _, _) = owner
+        .update_group_context_extensions(
+            &owner_provider,
+            governance_binding_extensions(next_binding.clone()),
+            &owner_signer,
+        )
+        .unwrap();
+    owner.merge_pending_commit(&owner_provider).unwrap();
+    let commit: MlsMessageIn = commit.into();
+    let commit = commit.try_into_protocol_message().unwrap();
+    let staged = bob.process_message(&bob_provider, commit).unwrap();
+    let ProcessedMessageContent::StagedCommitMessage(staged) = staged.into_content() else {
+        panic!("expected governance-binding update commit");
+    };
+    bob.merge_staged_commit(&bob_provider, *staged).unwrap();
+    assert_eq!(
+        held_governance_binding(&owner, &owner_provider, &owner_signer),
+        next_binding
+    );
+    assert_eq!(
+        held_governance_binding(&bob, &bob_provider, &bob_signer),
+        next_binding
+    );
+    true
+}
+
+fn two_person_exchange_and_removal() -> bool {
+    let alice_provider = EvalProvider::new();
+    let mut bob_provider = EvalProvider::new();
+    let (alice_credential, alice_signer) = credential(&alice_provider, b"two-person-alice");
+    let (bob_kp, bob_signer) = key_package(&bob_provider, b"two-person-bob");
+    let mut alice = MlsGroup::builder()
+        .ciphersuite(SUITE)
+        .use_ratchet_tree_extension(true)
+        .build(
+            &alice_provider,
+            &alice_signer,
+            CredentialWithKey {
+                credential: alice_credential.into(),
+                signature_key: alice_signer.public().into(),
+            },
+        )
+        .unwrap();
+    let (_, welcome, _) = alice
+        .add_members(
+            &alice_provider,
+            &alice_signer,
+            &[bob_kp.key_package().clone()],
+        )
+        .unwrap();
+    alice.merge_pending_commit(&alice_provider).unwrap();
+    let welcome: MlsMessageIn = welcome.into();
+    let welcome = match welcome.extract() {
+        openmls::framing::MlsMessageBodyIn::Welcome(welcome) => welcome,
+        _ => panic!("expected Bob Welcome"),
+    };
+    let mut bob = accept_welcome_transactionally(
+        &mut bob_provider,
+        &MlsGroupJoinConfig::default(),
+        welcome,
+        Some(alice.export_ratchet_tree().into()),
+    )
+    .unwrap();
+
+    let one = alice
+        .create_message(&alice_provider, &alice_signer, b"two-person-one")
+        .unwrap();
+    let two = alice
+        .create_message(&alice_provider, &alice_signer, b"two-person-two")
+        .unwrap();
+    let one: MlsMessageIn = one.into();
+    let one = one.try_into_protocol_message().unwrap();
+    let two: MlsMessageIn = two.into();
+    let two = two.try_into_protocol_message().unwrap();
+    let replay = one.clone();
+
+    for (message, expected) in [
+        (two, b"two-person-two".as_slice()),
+        (one, b"two-person-one".as_slice()),
+    ] {
+        match bob
+            .process_message(&bob_provider, message)
+            .unwrap()
+            .into_content()
+        {
+            ProcessedMessageContent::ApplicationMessage(app) => {
+                assert_eq!(app.into_bytes(), expected)
+            }
+            other => panic!("expected two-person application message, got {other:?}"),
+        }
+    }
+    assert!(
+        bob.process_message(&bob_provider, replay).is_err(),
+        "an already consumed two-person MLS application message cannot be replayed"
+    );
+
+    let reply = bob
+        .create_message(&bob_provider, &bob_signer, b"two-person-reply")
+        .unwrap();
+    let reply: MlsMessageIn = reply.into();
+    let reply = reply.try_into_protocol_message().unwrap();
+    match alice
+        .process_message(&alice_provider, reply)
+        .unwrap()
+        .into_content()
+    {
+        ProcessedMessageContent::ApplicationMessage(app) => {
+            assert_eq!(app.into_bytes(), b"two-person-reply")
+        }
+        other => panic!("expected two-person reply, got {other:?}"),
+    }
+
+    let bob_index = alice
+        .members()
+        .find(|member| member.credential.serialized_content() == b"two-person-bob")
+        .unwrap()
+        .index;
+    alice
+        .remove_members(&alice_provider, &alice_signer, &[bob_index])
+        .unwrap();
+    alice.merge_pending_commit(&alice_provider).unwrap();
+    let after = alice
+        .create_message(&alice_provider, &alice_signer, b"two-person-after-removal")
+        .unwrap();
+    let after: MlsMessageIn = after.into();
+    let after = after.try_into_protocol_message().unwrap();
+    assert!(
+        bob.process_message(&bob_provider, after).is_err(),
+        "a removed two-person member cannot process a post-removal application message"
+    );
+    true
+}
+
 #[wasm_bindgen::prelude::wasm_bindgen]
 pub fn private_add_commit_and_removal_flow() -> bool {
     assert!(failed_welcome_retry_preserves_one_time_key());
+    assert!(authenticated_governance_binding_round_trip());
+    assert!(two_person_exchange_and_removal());
     let alice_provider = EvalProvider::new();
     let mut bob_provider = EvalProvider::new();
     let mut carol_provider = EvalProvider::new();

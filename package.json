@@ -18,6 +18,8 @@
     "build:ui-test": "node scripts/build-ui-test.mjs",
     "test:ui": "playwright test",
     "test:phase0-relay": "node --import ./scripts/resolve-extensionless.mjs scripts/phase0-relay-integration.mjs",
+    "test:phase0-app-flow": "node --import ./scripts/resolve-extensionless.mjs scripts/phase0-app-flow.mjs",
+    "test:ordinary-relay-chaos": "node scripts/ordinary-relay-chaos.mjs",
     "test:ratchet-browser": "npm run build:ratchet && node scripts/ratchet-browser-test.mjs",
     "lint:core": "oxlint src/useIdentity.js src/Chat.jsx src/hooks/useNIP44DM.js src/hooks/useNIP29Group.js src/db.js",
     "typecheck": "npm run lint:core",
