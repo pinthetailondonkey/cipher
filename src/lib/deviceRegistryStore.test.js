@@ -14,6 +14,7 @@ import {
   loadPeerDeviceRegistry,
   loadDeviceRegistry,
 } from './deviceRegistryStore.js';
+import { commitRatchetDevicePublication, loadRatchetDeviceAccountState } from './dmRatchetTransactions.js';
 
 const secret = generateSecretKey();
 const owner = getPublicKey(secret);
@@ -143,4 +144,27 @@ test('peer registry verification and persistence failures never replace the last
   const after = await loadPeerDeviceRegistry(owner, peer, now);
   assert.equal(after.event.id, before.event.id);
   assert.equal(after.generation, before.generation);
+});
+
+test('publishing ratchet account state cannot overwrite the enrolled device credential', async () => {
+  const deviceSecret = generateSecretKey();
+  const deviceId = 'f'.repeat(32);
+  const root = { deviceId: 'c'.repeat(32), pubkey: owner, status: 'active', enrolledAt: now };
+  const device = { deviceId, pubkey: getPublicKey(deviceSecret), status: 'active', enrolledAt: now + 20 };
+  const enrollment = event(20, [root, device]);
+  await commitEnrolledDevice({ owner, event: enrollment, deviceId, deviceSecret, now: now + 20 });
+
+  await commitRatchetDevicePublication({
+    owner,
+    deviceId,
+    expectedVersion: 0,
+    state: { accountPickle: 'ratchet-account-state' },
+    event: { id: 'bundle-publication', sig: 'signed' },
+    now: now + 21,
+  });
+
+  assert.deepEqual(await loadDeviceCredential(owner, deviceId, now + 21), deviceSecret);
+  assert.deepEqual(await loadRatchetDeviceAccountState(owner, deviceId), {
+    version: 1, value: { accountPickle: 'ratchet-account-state' },
+  });
 });

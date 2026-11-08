@@ -89,11 +89,15 @@ function retryDelay(attempts, random = Math.random) {
 }
 
 export function shouldFlushOutboxRow(row, now, force = false) {
+  const ratchetDelivery = row?.ratchetDelivery;
+  if (ratchetDelivery && (ratchetDelivery.protocol !== 'cipher-ratchet-device-delivery-v1'
+    || !Number.isSafeInteger(ratchetDelivery.freshUntil)
+    || ratchetDelivery.freshUntil <= Math.floor(now / 1000))) return false;
   if (force) return true;
   return (row?.nextRetryAt || 0) <= now;
 }
 
-export function outboxRow(event, now = Date.now(), relays = null) {
+export function outboxRow(event, now = Date.now(), relays = null, metadata = {}) {
   const row = {
     id: event.id,
     kind: event.kind,
@@ -105,6 +109,7 @@ export function outboxRow(event, now = Date.now(), relays = null) {
     created_at: event.created_at,
   };
   if (Array.isArray(relays) && relays.length) row.relays = relays;
+  if (metadata?.ratchetDelivery) row.ratchetDelivery = metadata.ratchetDelivery;
   return row;
 }
 
