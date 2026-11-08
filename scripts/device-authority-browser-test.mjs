@@ -71,6 +71,49 @@ try {
   second.on('console', (message) => console.log(`[secondary-tab] ${message.text()}`));
   await Promise.all([first.goto('http://127.0.0.1:8096/__device_authority_browser_test'), second.goto('http://127.0.0.1:8096/__device_authority_browser_test')]);
   console.log('Browser authority setup: storing initial primary key and registry.');
+  await first.evaluate(async (input) => {
+    const { pinInitialDeviceAuthorityPolicy } = await import('/src/lib/deviceAuthorityPinStore.js');
+    const expectedAccountPubkey = JSON.parse(input.policyEvent.content).accountPubkey;
+    return pinInitialDeviceAuthorityPolicy({
+      policyEvent: input.policyEvent,
+      expectedAccountPubkey,
+      expectedRecoveryPubkey: input.expectedRecoveryPubkey,
+      now: input.now,
+    });
+  }, payload);
+  await second.evaluate(async (input) => {
+    const { advanceDeviceAuthorityPolicyPin } = await import('/src/lib/deviceAuthorityPinStore.js');
+    const expectedAccountPubkey = JSON.parse(input.policyEvent.content).accountPubkey;
+    return advanceDeviceAuthorityPolicyPin({
+      currentPolicyEvent: input.policyEvent,
+      nextPolicyEvent: input.replacement.policyEvent,
+      expectedAccountPubkey,
+      expectedRecoveryPubkey: input.expectedRecoveryPubkey,
+      now: input.now + 2,
+    });
+  }, payload);
+  const observedPin = await first.evaluate(async (input) => {
+    const { loadPinnedDeviceAuthorityPolicy, pinInitialDeviceAuthorityPolicy } = await import('/src/lib/deviceAuthorityPinStore.js');
+    const expectedAccountPubkey = JSON.parse(input.policyEvent.content).accountPubkey;
+    const state = await loadPinnedDeviceAuthorityPolicy({
+      expectedAccountPubkey,
+      expectedRecoveryPubkey: input.expectedRecoveryPubkey,
+      now: input.now + 3,
+    });
+    let staleRejected = false;
+    try {
+      await pinInitialDeviceAuthorityPolicy({
+        policyEvent: input.policyEvent,
+        expectedAccountPubkey,
+        expectedRecoveryPubkey: input.expectedRecoveryPubkey,
+        now: input.now + 3,
+      });
+    } catch { staleRejected = true; }
+    return { policyId: state.policyId, staleRejected };
+  }, payload);
+  if (observedPin.policyId !== replacement.policyEvent.id || !observedPin.staleRejected) {
+    throw new Error('The cross-tab recovery policy pin failed to advance monotonically.');
+  }
   await Promise.race([first.evaluate(async (input) => {
     const { storePrimaryAuthoritySecret } = await import('/src/lib/deviceAuthorityStorage.js');
     return storePrimaryAuthoritySecret({

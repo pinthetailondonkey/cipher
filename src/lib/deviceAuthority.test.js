@@ -238,6 +238,99 @@ test('freshness is scoped to pinned authority epoch, exact registry head, purpos
   }), /not authorized/i);
 });
 
+test('30-second lease expires at its signed boundary and revocation fences the next authorization check', () => {
+  const state = setup();
+  const candidate = createIndependentDeviceCredential((target) => target.fill(19));
+  const enrollmentChallenge = createDeviceEnrollmentChallengeV2({
+    policyEvent: state.policyEvent, registryEvent: state.registryEvent, expectedRegistryId: state.registryEvent.id,
+    authoritySecret: state.authoritySecret, deviceId: candidate.deviceId, devicePubkey: candidate.devicePubkey,
+    now: now + 1, randomBytes: (target) => target.fill(20),
+  });
+  const enrollmentProof = buildDeviceEnrollmentProofV2({
+    challengeEvent: enrollmentChallenge, policyEvent: state.policyEvent, registryEvent: state.registryEvent,
+    expectedRegistryId: state.registryEvent.id, deviceSecret: candidate.deviceSecret, now: now + 2,
+  });
+  const enrolledHead = enrollDeviceV2({
+    policyEvent: state.policyEvent, registryEvent: state.registryEvent, expectedRegistryId: state.registryEvent.id,
+    challengeEvent: enrollmentChallenge, proofEvent: enrollmentProof,
+    authoritySecret: state.authoritySecret, now: now + 3,
+  });
+  const operationId = 'e'.repeat(32);
+  const freshnessChallenge = createDeviceFreshnessChallengeV2({
+    policyEvent: state.policyEvent, registryEvent: enrolledHead, expectedRegistryId: enrolledHead.id,
+    requesterDeviceSecret: state.primaryDevice.deviceSecret, requesterDeviceId: state.primaryDevice.deviceId,
+    targetDeviceId: candidate.deviceId, purpose: 'send-dm', operationId, now: now + 4,
+    randomBytes: (target) => target.fill(21),
+  });
+  const response = buildDeviceFreshnessResponseV2({
+    policyEvent: state.policyEvent, registryEvent: enrolledHead, expectedRegistryId: enrolledHead.id,
+    challengeEvent: freshnessChallenge, authoritySecret: state.authoritySecret, now: now + 5,
+  });
+  const verifyAt = (registryEvent, expectedRegistryId, at) => verifyDeviceFreshnessResponseV2(response, freshnessChallenge, {
+    policyEvent: state.policyEvent, registryEvent, expectedRegistryId,
+    expectedPurpose: 'send-dm', expectedOperationId: operationId, now: at,
+  });
+
+  assert.ok(verifyAt(enrolledHead, enrolledHead.id, now + 34), 'a lease remains valid before its expiry');
+  assert.equal(verifyAt(enrolledHead, enrolledHead.id, now + 35), null,
+    'expiry is exclusive: at exactly 30 seconds after issuance the lease is no longer valid');
+
+  const revokedHead = revokeDeviceV2({
+    policyEvent: state.policyEvent, registryEvent: enrolledHead, expectedRegistryId: enrolledHead.id,
+    deviceId: candidate.deviceId, authoritySecret: state.authoritySecret, now: now + 6,
+  });
+  assert.equal(verifyAt(revokedHead, revokedHead.id, now + 7), null,
+    'the old response cannot authorize against a registry head that records revocation');
+  assert.ok(verifyAt(enrolledHead, enrolledHead.id, now + 7),
+    'a peer pinned to the old head can still accept the bounded old lease until it learns revocation');
+  assert.throws(() => createDeviceFreshnessChallengeV2({
+    policyEvent: state.policyEvent, registryEvent: revokedHead, expectedRegistryId: revokedHead.id,
+    requesterDeviceSecret: state.primaryDevice.deviceSecret, requesterDeviceId: state.primaryDevice.deviceId,
+    targetDeviceId: candidate.deviceId, purpose: 'send-dm', operationId, now: now + 7,
+    randomBytes: (target) => target.fill(22),
+  }), /not authorized/i, 'the current authority cannot freshly authorize the revoked device');
+});
+
+test('recovery replacement fences old authority responses only after the new recovery policy is pinned', () => {
+  const state = setup();
+  const operationId = 'f'.repeat(32);
+  const challenge = createDeviceFreshnessChallengeV2({
+    policyEvent: state.policyEvent, registryEvent: state.registryEvent, expectedRegistryId: state.registryEvent.id,
+    requesterDeviceSecret: state.primaryDevice.deviceSecret, requesterDeviceId: state.primaryDevice.deviceId,
+    targetDeviceId: state.primaryDevice.deviceId, purpose: 'send-dm', operationId, now: now + 1,
+    randomBytes: (target) => target.fill(23),
+  });
+  const oldAuthorityResponse = buildDeviceFreshnessResponseV2({
+    policyEvent: state.policyEvent, registryEvent: state.registryEvent, expectedRegistryId: state.registryEvent.id,
+    challengeEvent: challenge, authoritySecret: state.authoritySecret, now: now + 2,
+  });
+  const replacement = replaceDeviceAuthority({
+    currentPolicyEvent: state.policyEvent, recoverySecret: state.recoverySecret, now: now + 3,
+  });
+
+  assert.ok(verifyDeviceFreshnessResponseV2(oldAuthorityResponse, challenge, {
+    policyEvent: state.policyEvent, registryEvent: state.registryEvent, expectedRegistryId: state.registryEvent.id,
+    now: now + 4,
+  }), 'a peer still pinned to the prior policy cannot distinguish the replaced authority');
+  assert.equal(verifyDeviceFreshnessResponseV2(oldAuthorityResponse, challenge, {
+    policyEvent: replacement.policyEvent, registryEvent: replacement.registryEvent,
+    expectedRegistryId: replacement.registryEvent.id, now: now + 4,
+  }), null, 'the prior authority is rejected once the recovery-signed successor is pinned');
+
+  const forgedUpdate = finalizeEvent({
+    kind: replacement.policyEvent.kind,
+    created_at: replacement.policyEvent.created_at,
+    tags: replacement.policyEvent.tags,
+    content: replacement.policyEvent.content,
+  }, state.authoritySecret);
+  assert.equal(verifyDeviceAuthorityReplacement(forgedUpdate, state.policyEvent, {
+    recoveryPubkey: getPublicKey(state.recoverySecret), now: now + 4,
+  }), null, 'a compromised primary authority cannot forge a recovery-root policy replacement');
+  assert.equal(verifyDeviceAuthorityReplacement(replacement.policyEvent, replacement.policyEvent, {
+    recoveryPubkey: getPublicKey(state.recoverySecret), now: now + 4,
+  }), null, 'a policy replay cannot advance a peer already pinned to that policy');
+});
+
 test('authority replacement is recoverable only with the independent root and creates a clean primary credential', () => {
   const state = setup();
   const before = state.policyEvent.id;
