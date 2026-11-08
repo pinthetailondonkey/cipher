@@ -5,6 +5,14 @@ NIP-44/NIP-59. This work does not enable ratchet sends or reads in
 `useNIP44DM.js`, migrate stored messages, or claim vodozemac's experimental
 session mode is production-ready.
 
+The account-key-authorized v1 device registry and freshness design described
+below are superseded as a proposed trust model by
+[`DEVICE-AUTHORITY-DESIGN.md`](./DEVICE-AUTHORITY-DESIGN.md). They remain in
+the codebase for existing prototype tests and are not safe as production
+revocation authority while the shared account secret can exist on multiple
+devices. The v2 independent R/A/D foundation is isolated and has no application
+or relay call sites.
+
 ## Review of the six reported findings
 
 The six cases were checked against the helper and storage paths used by the
