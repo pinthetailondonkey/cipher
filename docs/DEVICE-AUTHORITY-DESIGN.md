@@ -41,10 +41,23 @@ checkpoint, so a production client still needs a recovery/contact checkpoint
 strategy.
 
 The records use Nostr event signatures as an encoding and authentication
-primitive, but this prototype has no relay transport. Policy and registry
-events expose the account-to-device binding in their content; a future
-transport must carry them only inside an authenticated encrypted channel.
-Publishing these kinds to an ordinary relay would violate the privacy goal.
+primitive. The isolated `deviceAuthorityTransport.js` prototype carries
+policy and registry transitions as individually addressed NIP-59 wraps. It
+requires the exact predecessor, a valid sender device credential, a valid
+recovery signature for replacement, and an active post-update recipient.
+Tests cover withheld/stale heads, replay, conflicting successors, tampering,
+wrong recipients and replacement. Relay-visible wraps contain an ephemeral
+outer author and recipient device-key `p` tag; account, recovery and authority
+keys and transition bodies remain sealed. The helper has no application call
+site. `deviceAuthorityPeerStore.js` persists a bounded signed registry history
+and exact policy/registry head in IndexedDB, revalidates it on load, commits
+successors atomically across tabs, retries an exact event idempotently, and
+fences delayed pre-replacement updates. Node adversarial tests and a Chromium
+two-tab IndexedDB test exercise those behaviors. Relay subscriptions, a
+durable delivery outbox, independent-relay synchronization, offline recipient
+recovery, and real WebSocket privacy capture remain unverified. A relay still
+learns the recipient device key and can withhold its copy; this is not
+production discovery or anonymity.
 
 Fresh authority approval is mandatory for enrollment, revocation, and
 replacement. These operations are not authorized by a cached 30-second
@@ -52,11 +65,16 @@ messaging lease: enrollment and revocation require the current `A` to sign the
 exact successor, and replacement requires `R` to sign the next policy epoch.
 If the primary is offline, ordinary devices cannot perform these transitions.
 The 30-second lease is currently a verifier prototype only; no production send
-path consumes it. Its isolated tests establish that expiry is exclusive at
-the signed expiry second, a current registry head rejects a pre-revocation
-lease, and a peer pinned to the old head can accept that lease until either
-the lease expires or the peer learns the revocation. A 30-second bound does
-not provide instant global revocation.
+path consumes it. Tests establish expiry at the signed boundary, denial when
+the authority withholds a response, and denial after the peer pins a newer
+registry. With an honest authority and a relay withholding a revocation, a
+peer must hold sensitive sends when its last lease expires (at most 30 seconds
+after that response). This is a replay bound, not a global revocation bound:
+the adversarial test demonstrates that a compromised old authority can answer
+fresh challenges indefinitely for a peer still pinned to the old recovery
+policy. The peer accepts each new short lease until it learns and pins the
+recovery-signed replacement. Multiple relays and timestamps cannot prove that
+a newer record was not withheld.
 
 This is browser-profile isolation, not a hardware-backed device identity. A
 compromised primary browser origin, OS, or copied browser profile may expose
@@ -80,7 +98,17 @@ availability and recovery behavior. The standards distinguish single-device
 from backup-eligible multi-device credentials and define PRF output as
 associated with a credential; they do not provide Cipher a universal
 device-only custody guarantee ([W3C WebAuthn Level 3](https://www.w3.org/TR/webauthn-3/), [FIDO synced passkey deployment guidance](https://fidoalliance.org/wp-content/uploads/2024/05/Synced-Passkey-Deployment_-Emerging-Practices-for-Consumer-Use-Cases_2024-May-31.pdf)).
-No such binding is implemented here.
+An isolated WebAuthn PRF wrapper is implemented as an experiment in
+`src/lib/deviceAuthorityWebAuthn.js`. It requires user presence and
+verification, checks the authenticator's backup-eligibility (`BE`) and
+backup-state (`BS`) flags on an assertion, and refuses PRF absence or `BE/BS=1`;
+there is no IndexedDB fallback. AES-GCM additional data binds the wrapped
+secret to the exact account public key and policy event id. A Chromium virtual
+authenticator test proves this browser execution path and its rejection
+behavior. This does not prove a physical authenticator is tamper-resistant,
+that same-origin code cannot invoke it while unlocked, or that a real
+authenticator reports truthful custody flags. The wrapper has no application
+call site and is not production custody.
 
 ## Authenticated record transitions
 
@@ -134,15 +162,19 @@ recovery fingerprint and current policy id therefore need an authenticated,
 monotonic local pin, and successor acceptance must check the exact prior
 policy id and increment by one. Multiple relays, timestamps, signed chains
 and gossip can expose forks or withholding but cannot prove that no newer
-event was withheld. Without a globally trusted checkpoint, peers that remain
-offline have a bounded stale-authority risk until they refresh their pin.
+event was withheld. A stale peer's exposure is not bounded by one 30-second
+lease if a compromised old authority can keep answering it; the lease only
+bounds replay/use of a single response. A trusted checkpoint/witness, quorum,
+or an explicit policy of holding sends until a successor is authenticated is
+required to bound that condition.
 
-The current experimental policy uses a 30-second lease inside a known pinned
-authority epoch. It therefore accepts a bounded interval between a valid
-response and a later revocation. Strict instant revocation requires a reachable
-trusted checkpoint/witness policy or per-operation online authorization, and
-must hold sends if that trust source is unavailable. That availability policy
-has not been approved for production.
+The experimental policy's availability tradeoff is explicit: when the primary
+is offline or a relay withholds a response, sensitive sending stops when the
+cached response expires. This prevents a relay-only outage from silently
+authorizing on stale local state. It cannot stop a compromised old primary
+from issuing new leases to a still-stale peer. Strict global freshness needs a
+reachable trusted checkpoint/witness or an explicitly approved bounded
+offline window. Neither is implemented or approved for production.
 
 If `A` is offline, local history can remain available, but enrollment,
 revocation, recovery coordination, and any action requiring fresh authority
@@ -188,20 +220,29 @@ Implemented only in isolated modules:
 * Local monotonic recovery-policy pins, requiring an independently
   authenticated recovery fingerprint and exact predecessor on replacement
   (`src/lib/deviceAuthorityPinStore.js`).
-* Adversarial node tests and a Chromium IndexedDB test. The browser test checks
-  reload, concurrent-tab single-writer registry commit, ordinary-device
-  denial, separate-profile isolation, and recovery replacement fencing.
+* Peer-side monotonic policy/registry checkpoint history and atomic update
+  application (`src/lib/deviceAuthorityPeerStore.js`).
+* NIP-59 authority-update transport prototype and adversarial tests for exact
+  predecessor validation, revocation delivery, replay, competing heads,
+  tampering, recipient authorization and replacement.
+* Offline recovery phrase/restore helpers with random word-position
+  confirmation; the helper never persists or transmits `R`.
+* WebAuthn PRF authority-wrap experiment and Chromium virtual-authenticator
+  execution, including policy binding and backup-eligible credential refusal.
+* Chromium IndexedDB checks for reload, cross-tab single-writer registry
+  commit, ordinary-device denial, separate-profile isolation and replacement
+  fencing.
 
-Not implemented: user recovery-root backup/export flow; authority or policy
-relay transport; authenticated contact migration; freshness transport; profile
-signing capability separation; account-secret backup changes; device-specific
-mailbox routing; production DM/session integration; group revocation; hardware
-key binding; locked-state key-load gating; a trusted global recovery
-checkpoint; and user recovery UX. No production protocol may claim device
-revocation based on this foundation until those integrations and an independent
-security review are complete.
+Not implemented: production recovery phrase UX; application relay transport or
+freshness request/response flow; durable relay outbox and independent-relay
+sync; authenticated contact migration; profile signing capability separation;
+account-secret backup changes; device-specific mailbox routing; production
+DM/session integration; group revocation; locked-state key-load gating; a
+trusted global recovery checkpoint; and real authenticator/vendor validation.
+No production protocol may claim device revocation based on this foundation
+until those integrations and an independent security review are complete.
 
-## Recovery custody proposal (not implemented)
+## Recovery custody prototype and decision
 
 `R` must be generated independently and exported only in a deliberate recovery
 ceremony to a user-controlled offline backup, such as a downloadable
@@ -215,17 +256,32 @@ current. If the user loses both the primary and `R`, preserving the same
 Cipher-authorized device identity is impossible; recovery would require a
 separately approved identity reset and contact re-verification.
 
-This ceremony is not implemented because its backup format, local-unlock
-behavior, and user-facing confirmation are security-critical product choices.
-Any future setup flow must stop if no verified offline backup exists, rather
-than silently keeping `R` in ordinary application storage.
+The isolated `deviceAuthorityRecovery.js` prototype encodes the independent
+32-byte root as a 24-word BIP-39 phrase, asks the user to confirm four random
+word positions, and restores only when the phrase matches a separately
+authenticated recovery public-key pin. Tests cover valid and malformed
+phrases, wrong confirmation words, missing randomness and account-key
+substitution. It has no persistence, clipboard, download, log, or relay path.
+A browser UI ceremony and real recovery account flow are not implemented.
+
+The phrase is a bearer credential: anyone holding all words can replace the
+authority. Cryptography cannot distinguish that person from the owner. A
+second recovery passphrase could reduce harm from a stolen paper backup, but
+forgetting it creates permanent lockout. A 2-of-3 guardian quorum reduces
+single-secret risk but introduces trusted parties and coordination. A remote
+witness helps with authority freshness but introduces infrastructure. Approval
+is needed before integrating any of these tradeoffs into the user-facing
+recovery ceremony. The client must not discard its in-memory `R` until the
+offline backup has been verified; in this isolated prototype, the caller
+remains responsible for handling that secret safely.
 
 Before R5 production integration, Cipher must approve:
 
 1. Whether all new sends require a primary response per operation or may use
-   a bounded lease, and what happens when the primary is offline. The lease is
-   not enabled in production; the test demonstrates a maximum 30-second
-   stale-revocation window after a valid response.
+   a bounded lease, and what happens when the primary is offline. With an
+   honest authority, lease expiry holds sends after at most 30 seconds. A
+   compromised old authority can keep issuing fresh leases to peers that have
+   not learned its replacement, so this is not a global revocation bound.
 2. How contacts independently authenticate and refresh the recovery-root
    fingerprint and authority epoch, including peers that are offline during
    replacement.

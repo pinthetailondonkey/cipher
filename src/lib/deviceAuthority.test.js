@@ -291,6 +291,39 @@ test('30-second lease expires at its signed boundary and revocation fences the n
   }), /not authorized/i, 'the current authority cannot freshly authorize the revoked device');
 });
 
+test('30-second lease does not bound a compromised old authority while a peer is held at a stale checkpoint', () => {
+  const state = setup();
+  const request = (at, nonceByte) => createDeviceFreshnessChallengeV2({
+    policyEvent: state.policyEvent, registryEvent: state.registryEvent, expectedRegistryId: state.registryEvent.id,
+    requesterDeviceSecret: state.primaryDevice.deviceSecret, requesterDeviceId: state.primaryDevice.deviceId,
+    targetDeviceId: state.primaryDevice.deviceId, purpose: 'send-dm', operationId: 'f'.repeat(32), now: at,
+    randomBytes: (target) => target.fill(nonceByte),
+  });
+  const firstChallenge = request(now + 1, 21);
+  const firstResponse = buildDeviceFreshnessResponseV2({ policyEvent: state.policyEvent,
+    registryEvent: state.registryEvent, expectedRegistryId: state.registryEvent.id,
+    challengeEvent: firstChallenge, authoritySecret: state.authoritySecret, now: now + 2 });
+  assert.ok(verifyDeviceFreshnessResponseV2(firstResponse, firstChallenge, {
+    policyEvent: state.policyEvent, registryEvent: state.registryEvent,
+    expectedRegistryId: state.registryEvent.id, expectedPurpose: 'send-dm', now: now + 3,
+  }));
+
+  const replacement = replaceDeviceAuthority({ currentPolicyEvent: state.policyEvent,
+    recoverySecret: state.recoverySecret, now: now + 4 });
+  const laterChallenge = request(now + 40, 22);
+  const staleAuthorityResponse = buildDeviceFreshnessResponseV2({ policyEvent: state.policyEvent,
+    registryEvent: state.registryEvent, expectedRegistryId: state.registryEvent.id,
+    challengeEvent: laterChallenge, authoritySecret: state.authoritySecret, now: now + 41 });
+  assert.ok(verifyDeviceFreshnessResponseV2(staleAuthorityResponse, laterChallenge, {
+    policyEvent: state.policyEvent, registryEvent: state.registryEvent,
+    expectedRegistryId: state.registryEvent.id, expectedPurpose: 'send-dm', now: now + 42,
+  }), 'a peer that never received the recovery replacement keeps accepting newly issued short leases');
+  assert.equal(verifyDeviceFreshnessResponseV2(staleAuthorityResponse, laterChallenge, {
+    policyEvent: replacement.policyEvent, registryEvent: replacement.registryEvent,
+    expectedRegistryId: replacement.registryEvent.id, expectedPurpose: 'send-dm', now: now + 42,
+  }), null, 'the same stale response is rejected once the recovery-signed successor is pinned');
+});
+
 test('recovery replacement fences old authority responses only after the new recovery policy is pinned', () => {
   const state = setup();
   const operationId = 'f'.repeat(32);
