@@ -97,3 +97,21 @@ test('a compromised authority cannot move the recovery pin, and concurrent recov
   const loaded = await loadPinnedDeviceAuthorityPolicy({ expectedAccountPubkey, expectedRecoveryPubkey, now: now + 4 });
   assert.ok([replacementA.policyEvent.id, replacementB.policyEvent.id].includes(loaded.policyId));
 });
+
+test('keeping the same Nostr account identity does not authenticate a replacement recovery authority', async () => {
+  const accountPubkey = getPublicKey(generateSecretKey());
+  const original = createDeviceAuthoritySetup({ accountPubkey, now });
+  const attacker = createDeviceAuthoritySetup({ accountPubkey, now: now + 1 });
+  const pinnedRecoveryPubkey = getPublicKey(original.recoverySecret);
+  const attackerRecoveryPubkey = getPublicKey(attacker.recoverySecret);
+  assert.equal(JSON.parse(original.policyEvent.content).accountPubkey,
+    JSON.parse(attacker.policyEvent.content).accountPubkey, 'profile and Nostr identity remain the same');
+  assert.notEqual(pinnedRecoveryPubkey, attackerRecoveryPubkey);
+
+  await assert.rejects(pinInitialDeviceAuthorityPolicy({ policyEvent: attacker.policyEvent,
+    expectedAccountPubkey: accountPubkey, expectedRecoveryPubkey: pinnedRecoveryPubkey, now: now + 2 }),
+  /does not match/i, 'a same-N account signature/profile cannot silently TOFU a new device authority');
+  assert.throws(() => replaceDeviceAuthority({ currentPolicyEvent: original.policyEvent,
+    recoverySecret: attacker.recoverySecret, now: now + 2 }), /cannot authenticate/i,
+  'the replacement recovery secret must be the already pinned root');
+});

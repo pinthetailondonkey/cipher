@@ -294,3 +294,126 @@ Before R5 production integration, Cipher must approve:
 6. Whether browser deployments may use synced passkeys for local unlocking,
    or must require a device-bound authenticator/native secure storage for
    primary `A` custody.
+
+## Isolated freshness-witness and encrypted-backup experiments
+
+`deviceAuthorityCheckpoint.js` adds an optional peer-witness experiment. A
+requester sends a random, 60-second challenge bound to the existing account
+and independently pinned recovery fingerprint. A witness signs the exact
+policy and registry head it has already validated from its local monotonic
+checkpoint. The attestation is delivered to the requesting device in a
+NIP-59 wrap; the relay sees the target device routing key, not the checkpoint
+or account identity in the wrapped body. The checked authority, account, and
+recovery root are barred from acting as their own witness. Witness keys and
+quorum size are explicit caller inputs; no trust list or threshold is
+preselected, and this module has no application or relay subscription call
+site.
+
+Adversarial tests cover a 2-of-3 quorum where two independently pinned peers
+have observed recovery replacement, a compromised authority presented as a
+witness, replayed and expired challenges, minimum-epoch rollback, a withheld
+or offline witness leaving no quorum, a fork, and an isolated partition where
+two witnesses both attest the same old head. That last case succeeds by
+design: signed responses prove what those witnesses saw, not that no newer
+authority event exists. If a compromised authority can answer a peer and the
+peer's quorum consists of stale or compromised witnesses, that peer may
+continue to treat the old authority as current. Quorum improves detection
+only after enough independently trusted witnesses learn the replacement and
+are reachable. It gives no guaranteed instant or globally bounded revocation.
+Requiring a fresh quorum for every sensitive send would also pause delivery
+when witnesses are offline or censored. The experiment therefore does not
+change the existing offline-messaging policy; choosing which operations need
+a quorum and whether to queue or hold them is a production decision.
+
+The optional `deviceAuthorityRecoveryPackage.js` wraps an export copy of `R`
+using Argon2id (19 MiB, 2 iterations, one lane) and AES-256-GCM. Associated
+data binds the ciphertext to the existing account and recovery fingerprint;
+the file carries fixed KDF parameters, random salt and nonce, and rejects
+parameter edits, wrong passphrases, wrong account/root pins, and tampering.
+The parameters use the current OWASP minimum recommendation as a browser
+runtime floor, not a claim that a short passphrase is safe. The passphrase
+requirement is only a 12-character minimum; users need a unique, high-entropy
+phrase, and offline guessing remains possible if an attacker obtains the
+encrypted file. Derived key and input passphrase byte buffers are cleared on
+completion, although JavaScript engines do not guarantee erasure of all
+copies. The package remains an optional export format, is never saved by the
+helper, and does not replace the 24-word offline backup.
+
+The 24 words themselves remain a bearer recovery credential. Anyone who
+copies them can replace `A`; a separate passphrase protects only the encrypted
+digital copy. Forgetting that passphrase loses that copy route, while the
+paper words can still restore. Loss of both means the account cannot safely
+replace its authority without a separately approved reset and contact
+re-verification. BIP-39's optional passphrase is not used as a password KDF:
+it uses a fixed 2,048-round PBKDF2 derivation and every passphrase creates a
+valid seed, so the encrypted package uses an explicit Argon2id wrapper instead
+([BIP-39](https://github.com/bitcoin/bips/blob/master/bip-0039.mediawiki),
+[OWASP Password Storage Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html),
+[RFC 9106](https://datatracker.ietf.org/doc/rfc9106/)).
+
+Browser execution now exercises the recovery phrase and Argon2id package in
+Chromium and confirms that neither helper writes the recovery secret to
+`localStorage`. Node adversarial coverage checks wrong passphrase, identity,
+tampering, and KDF downgrade. The optional package has no UI, download,
+clipboard, account-backup integration, or user study; usability, browser
+memory pressure, and platform-specific secure-file handling remain unverified.
+
+## Contact continuity and replacement-authority pinning
+
+The protocol can preserve the same Nostr public key, profile, contact records,
+group references, orders, reviews, and payment records because the new policy
+binds to the existing public account identity and does not rewrite those
+records. A contact can accept a replacement `A` only by verifying an
+`R`-signed successor from the exact policy id that contact already pinned,
+then durably advancing its own pin. The same N identity does not authenticate
+a new `R`: the isolated test constructs two valid policies for one account
+identity and proves the second is rejected against the first policy's pinned
+recovery fingerprint.
+
+Initial contact pinning still needs an independent authenticated ceremony:
+compare a recovery fingerprint in person, verify a QR/fingerprint through a
+previously authenticated channel whose trust does not depend on the possibly
+compromised account secret, or use a previously pinned independent witness
+policy. Signing the first fingerprint with `N` alone is insufficient if a
+former device may retain `N`. A recovery-signed successor proves continuity
+from a pin already held; it cannot repair a contact that never authenticated
+the original root. Contacts offline during replacement continue to have only
+their old pin. Until they receive and authenticate the successor (or a fresh
+trusted witness quorum proves it), they cannot distinguish an old-authority
+response from the current one. Failing closed for those sends is safer, but
+reduces availability. No automatic TOFU, account-key fallback, identity
+rewrite, or live-user migration is implemented.
+
+## Decision gate before full R5
+
+R5 cannot guarantee prompt global revocation using only signatures and
+ordinary relays. Choose one explicit model before production integration:
+
+1. **Local pin plus strict hold:** accept authority changes only when a device
+   receives a recovery-signed successor extending its pin. Hold sensitive
+   operations when freshness is uncertain; offline history and composition
+   remain available. A compromised old authority may still serve stale peers
+   until they receive the replacement.
+2. **Pinned peer-witness quorum:** require a configurable threshold of
+   independently authenticated peers for authority-sensitive operations.
+   This detects replacement only when enough non-compromised witnesses have
+   learned it and can be reached. Outages, censorship, or a stale quorum pause
+   those operations. Cipher must decide witness enrollment, removal,
+   threshold, challenge frequency, and recovery if the witness set is lost.
+3. **Public append-only transparency checkpoint:** use a monitored,
+   consistency-proven log plus client gossip. This can expose equivocation to
+   clients that compare checkpoints, but adds a log/monitor availability and
+   trust dependency; partitioned clients still cannot know what they have not
+   received. It is not decentralized merely because the log is auditable.
+4. **Explicit bounded-staleness policy:** permit offline authority decisions
+   for a chosen window. This trades a known stale-authorization period for
+   availability and cannot stop an old authority from freshly answering a
+   peer until that peer learns of replacement.
+
+No option provides instant global revocation while allowing arbitrary offline
+operation and avoiding a common reachable trust/checkpoint assumption. The
+prototype does not choose among these. Before enabling R5, approve (a) whether
+the witness/log dependency is acceptable or local-pin-only is sufficient,
+(b) which sensitive operations fail closed, (c) how contacts authenticate
+their first recovery pin, (d) backup/passphrase UX and loss behavior, and (e)
+whether the unchanged Nostr identity is the intended security boundary.

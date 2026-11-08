@@ -47,6 +47,7 @@ try {
   const recoveryPubkey = getPublicKey(state.recoverySecret);
   const payload = {
     policyEvent: state.policyEvent,
+    accountPubkey: JSON.parse(state.policyEvent.content).accountPubkey,
     registryEvent: state.registryEvent,
     recoverySecret: Array.from(state.recoverySecret),
     expectedRecoveryPubkey: recoveryPubkey,
@@ -131,6 +132,25 @@ try {
   }, payload);
   if (!recoveryBrowserResult.matched || recoveryBrowserResult.wordCount !== 24 || recoveryBrowserResult.localStorageCount !== 0) {
     throw new Error('Browser recovery backup/restore failed or wrote the phrase to localStorage.');
+  }
+  const encryptedRecoveryBrowserResult = await first.evaluate(async (input) => {
+    const { sealDeviceRecoveryPackage, openDeviceRecoveryPackage } =
+      await import('/src/lib/deviceAuthorityRecoveryPackage.js');
+    const recoverySecret = Uint8Array.from(input.recoverySecret);
+    const passphrase = 'violet lantern cedar river amber';
+    const backup = await sealDeviceRecoveryPackage({ recoverySecret, accountPubkey: input.accountPubkey,
+      recoveryPubkey: input.expectedRecoveryPubkey, passphrase });
+    const restored = await openDeviceRecoveryPackage({ package: backup, accountPubkey: input.accountPubkey,
+      recoveryPubkey: input.expectedRecoveryPubkey, passphrase });
+    const matched = restored.every((byte, index) => byte === recoverySecret[index]);
+    const secretNotSerialized = !JSON.stringify(backup).includes(Array.from(recoverySecret).join(','));
+    restored.fill(0);
+    recoverySecret.fill(0);
+    return { matched, secretNotSerialized, localStorageCount: localStorage.length };
+  }, payload);
+  if (!encryptedRecoveryBrowserResult.matched || !encryptedRecoveryBrowserResult.secretNotSerialized
+    || encryptedRecoveryBrowserResult.localStorageCount !== 0) {
+    throw new Error('Browser Argon2id recovery package failed, exposed the recovery root, or persisted it unexpectedly.');
   }
   await first.evaluate(async (input) => {
     const { initializePeerDeviceAuthority } = await import('/src/lib/deviceAuthorityPeerStore.js');
@@ -333,7 +353,7 @@ try {
   await backupCdp.detach();
   await backupEligibleContext.close();
 
-  console.log('Device authority browser tests passed: IndexedDB reload, concurrent peer registry updates, recovery replacement checkpoint, secondary-device denial, profile isolation, recovery phrase restore, WebAuthn PRF wrap/unlock, policy binding, and backup-eligible credential rejection.');
+  console.log('Device authority browser tests passed: IndexedDB reload, concurrent peer registry updates, recovery replacement checkpoint, secondary-device denial, profile isolation, 24-word and Argon2id recovery restore, WebAuthn PRF wrap/unlock, policy binding, and backup-eligible credential rejection.');
   await separateDeviceContext.close();
   await context.close();
 } catch (error) {
