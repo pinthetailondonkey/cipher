@@ -40,18 +40,21 @@ independent browser account stores. These tests establish:
    lower generations and same-generation equivocation. This acceptance path
    is not yet connected to contact discovery or live device authorization.
 
-`giftUnwrap.js` is now the shared DM transport verification gate for live and
+`giftUnwrap.js` is the shared DM transport verification gate for live and
 history receive: it validates outer kind-1059 hashes/signatures/routing tags,
 then returns the authenticated inner rumor id; legacy kind-4 remains accepted
 only with its original valid signature and exactly one recipient tag. The DM
-hook uses that same inner id in both paths, so a new randomized outer wrap of
-one rumor maps to one persisted message. Group kind-9 ingestion requires one
-matching group id and rejects ambiguous epoch tags; ordinary stored messages
-are skipped on duplicate live/history delivery. These prevent forged envelope
-metadata and persisted-message replay. Side effects that happen before message
-storage are not a cross-tab exactly-once transaction; receipt retries and
-key-request delivery retain their existing idempotency/rate-limit rules and
-are listed as residual work below.
+hook uses that same inner id in both paths. `saveMessageOnce()` arbitrates
+duplicate incoming IDs in a cross-tab IndexedDB transaction before unread and
+notification effects. Order receipt countersigns reserve one immutable signed
+kind-1059 event and its outbox row atomically under a hashed idempotency key;
+the outbox settles both records together, and retries reuse the same event ID.
+Group kind-9 ingestion still requires one matching group id and rejects
+ambiguous epoch tags. These changes close duplicate message insertion and
+cross-tab receipt-send races, but cannot make external relay delivery or OS
+notifications literally exactly-once: an uncertain relay acknowledgement can
+cause retry of the same signed event id, and notifications/haptics remain
+best-effort rather than durably journaled.
 
 The browser registry exercise is a real Chromium + IndexedDB crypto path, but
 does not publish the registry over a WebSocket. In this R4 run, two independent
@@ -66,6 +69,26 @@ the run. A background profile request to the default public relay returned
 503, but it did not participate in the isolated group flow. A future DM
 identity migration must inspect subscription filters and delivery across
 ordinary relays.
+
+The same Chromium harness now uses two tabs on one account to race distinct
+signed kind-1059 candidates for one receipt-effect key, completes the reserved
+event from the second tab, then confirms the first tab recovers the completed
+state without creating another event. Separate independent account contexts
+remain in the registry test. The UI payment test checks that a valid signed
+watcher result stores a receipt and its signed event in the durable outbox;
+unit and Chromium database tests exercise retry/recovery. These are isolated
+test paths; they do not migrate identity formats or publish a new identity
+capability.
+
+The payment watcher itself is read-only. Its confirmed report now enters the
+account's Web-Locks-protected consumed-transfer check, persists a receipt and
+the consumed ledger before publication, and uses the message-effect journal
+for the outgoing order update. A crash after those local writes can repeat the watcher
+check for the same order/transfer, revalidate and reuse the exact device-signed
+receipt, then recover the same outbox event. A different order using that
+transfer remains refused. The watcher does not broadcast a payment, custody
+funds, or prove more than its signed report; external relay acceptance remains
+at-least-once with a stable event id.
 
 ## Linkability findings
 
@@ -91,32 +114,105 @@ ordinary relays.
   from direct account-key matching; it does not protect against root-key
   compromise or a party that already knows the binding.
 
+## Migration designs requiring approval
+
+### DM recipient privacy
+
+**Threat model.** A relay reads Nostr event tags and REQ filters. It sees the
+recipient account key on current kind-1059 DMs and can join that route to the
+account's public profile and traffic timing. The gift wrap hides the sender
+and the inner NIP-44 body; it does not hide the recipient route, IP, or timing.
+
+**Design.** Give each account device random inbox signing keys, scoped per
+contact/device where practical. The account key signs a private, expiring
+contact capability binding the contact, inbox public key, device credential,
+protocol version, and rotation counter. Exchange it inside the existing
+authenticated DM. Send new NIP-59 wraps to that scoped inbox route while
+keeping sender identity inside the sealed conversation. Verify the capability
+signature, contact binding, expiry, and monotonic counter before sending.
+Keep account-key routes for receive-only legacy history; never silently send
+there after a new capability is expired or revoked, and never publish an
+account-to-inbox directory.
+
+Existing event IDs, message history, contacts, and NIP-44 decryption stay
+unchanged. Migrate through an in-band signed capability exchange with an
+authenticated acknowledgement. New devices obtain inbox secrets only via
+verified device pairing or an encrypted recovery package. Without either, a
+lost inbox secret cannot be reconstructed from the account key. Capture
+filters and frames across independent ordinary relays before enabling this.
+
+### Merchant/account separation
+
+**Threat model.** Public marketplace cards use the account key, and a group
+relay hosting a card can directly join it to group activity. This is a
+confirmed key-reuse link, not a theoretical derivation risk.
+
+**Design.** Create an independent random merchant key and a versioned,
+account-signed continuity statement. Do not globally publish that statement by
+default, since that would preserve the public link. Deliver proof in a signed
+listing, an established private conversation, or an explicit QR/export. New
+listings use merchant identity; old listings remain immutable and verifiable.
+Version orders, receipts, and reviews to name the merchant identity while
+retaining original account party fields for legacy verification. A transition
+ledger must preserve review provenance and old merchant-key continuity. Never
+rewrite an order, signed receipt, reputation record, or chain address.
+
+Keep one familiar visible profile and present the merchant identity as its
+storefront compartment. Existing chats continue to account routes until a
+separately approved inbox migration. Back up and transfer the merchant secret
+only to verified devices. Losing it does not authorize signing as the account;
+watcher evidence and noncustodial wallet/address behavior remain unchanged.
+
+### Independent group actor keys
+
+**Threat model.** Group actors are group-separated on the wire, but their
+secrets are HKDF-derived from the account secret and group id. Root-key
+compromise enables derivation of known group actors. Relay observers do not
+learn the account key from group events; the risk is derivation after root
+compromise or correlation by a party that already knows the binding.
+
+**Design.** Generate an independent random actor secret per group, seal it at
+rest, and deliver it only to governance-authorized devices. A governance-signed
+transition binds group id, generation, old actor, new actor, authority
+standing, and a fresh nonce. Members verify that transition against their
+current signed governance document. Preserve old pins, invites, and relay
+events as history; never authorize a transition from a relay roster. Offline
+members receive transition plus current governance state through an
+authenticated member channel. If authority is lost, require explicit group
+recovery rather than deriving a replacement key.
+
+This needs a versioned actor binding, device transfer, and a decision on
+recovery after the last authority device is lost. Existing groups remain on
+their old actors until every member can verify the transition. No automatic
+downgrade or parallel authorization is safe.
+
+### Device registry freshness and revocation
+
+The prototype account-signs registry contents and seals the latest locally
+accepted generation at rest. It rejects lower generations and same-generation
+equivocation, but that is not global freshness: a relay can withhold a newer
+revocation and replay an older valid registry to a device that has not seen
+the update. Event timestamps and the 90-day age limit cannot prove latestness.
+
+Before live DM prekeys or group key delivery depend on the registry, require
+authenticated device-to-device checkpoint gossip, per-contact monotonic
+generation acknowledgements, and explicit handling of conflicting valid
+snapshots. A stale/unavailable checkpoint must block new device authorization;
+it must not erase historical access or mint replacement secrets. Recovery
+pairs from an active device or consumes an encrypted recovery package and
+advances the registry. Account-key recovery alone cannot recreate a revoked
+device secret. This remains experimental and is not wired into live transport.
+
 ## Safe migration order
 
-Do not replace keys in place. Preserve current account-signed public profile,
-commerce events, old group actor pins, and legacy DM reads while introducing
-new identities only behind a versioned, authenticated transition:
-
-1. Decide whether merchant identity separation is desired. If yes, define a
-   stable merchant key and signed account-to-merchant continuity statement;
-   migrate orders, dispute authority, reviews, receipts, listings, and buyer
-   verification together. Until then, merchant/account linkage is an explicit
-   public product choice.
-2. Define a private DM address-discovery protocol bound to verified contacts
-   and device credentials. Keep old account-addressed NIP-44/NIP-59 history
-   readable. Reject unauthenticated address changes; never publish an
-   account-to-DM-address directory.
-3. Define per-group actor key ownership and encrypted device transfer before
-   changing the deterministic derivation. The transition must bind old actor,
-   new actor, account standing, group id, and governance generation, and must
-   preserve existing authority pins and relay history.
-4. Add a private, freshness-checked device-registry delivery path before live
-   prekey bundles rely on R2 credentials. Missing or stale registry means no
-   new device-authorized send. Wire the prototype into live DM only after the
-   account/device continuity and revocation freshness policy is approved.
-5. Capture ordinary-relay frames and test cross-account correlation before
-   enabling any new format. Keep public profile and commerce identifiers
-   public where the user chose a public identity.
+1. Approve merchant continuity policy before changing public listing authors.
+2. Approve scoped DM inbox routes and their contact capability handshake.
+3. Define independent group actor ownership and recovery before replacing
+   deterministic derivation.
+4. Complete registry freshness/revocation before live key delivery depends on
+   device credentials.
+5. Capture ordinary-relay traffic and test cross-account correlation before
+   enabling any new wire format.
 
 ## Stop conditions
 
@@ -127,10 +223,9 @@ new identities only behind a versioned, authenticated transition:
   continuity are proven end to end.
 - No per-group actor rotation until every member can verify the signed
   transition and offline/reinstall recovery is specified.
-- No claim of exactly-once cross-tab message side effects: current message-id
-  deduplication is durable after storage, but effects before that save can race
-  across tabs. A durable ingest/outbox transaction needs its own recovery
-  policy before high-impact side effects rely on it.
+- Receipt sending and message insertion now use durable cross-tab idempotency.
+  OS notifications/haptics remain best-effort; external relay delivery is
+  at-least-once with the same event id after an uncertain acknowledgement.
 - Do not claim R4 provides full identity unlinkability. IP and traffic timing
   remain accepted residuals, and the current merchant and DM routing joins are
   measurable.
