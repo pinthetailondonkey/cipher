@@ -4,12 +4,14 @@ import 'fake-indexeddb/auto';
 import { generateSecretKey, getPublicKey } from 'nostr-tools/pure';
 import {
   buildDeviceEnrollmentProofV2, createDeviceAuthoritySetup, createDeviceEnrollmentChallengeV2,
+  createDeviceRecoveryRootReplacement,
   createIndependentDeviceCredential, enrollDeviceV2, replaceDeviceAuthority,
 } from './deviceAuthority.js';
 import {
-  applyPeerAuthorityReplacement, applyPeerDeviceRegistryUpdate, initializePeerDeviceAuthority,
+  applyPeerAuthorityReplacement, applyPeerDeviceRegistryUpdate, applyPeerRecoveryRootReplacement, initializePeerDeviceAuthority,
   loadPeerDeviceAuthority,
 } from './deviceAuthorityPeerStore.js';
+import { recoveryIdentityFingerprint } from './deviceAuthorityContactVerification.js';
 
 const now = 1_800_000_000;
 function setup() {
@@ -83,4 +85,40 @@ test('withheld updates leave the saved checkpoint unchanged, and recovery replac
   await assert.rejects(applyPeerDeviceRegistryUpdate({ update: { type: 'registry-update',
     policyEvent: s.policyEvent, previousRegistryEvent: s.registryEvent, nextRegistryEvent: s.nextRegistryEvent }, ...args,
   }), /exact head|policy update/i, 'a delayed old-authority update cannot cross the recovery replacement');
+});
+
+test('new recovery root requires independent fingerprint confirmation and fences old account-key trust', async () => {
+  const s = setup();
+  const args = { expectedAccountPubkey: s.expectedAccountPubkey,
+    expectedRecoveryPubkey: s.expectedRecoveryPubkey, expectedOldRecoveryPubkey: s.expectedRecoveryPubkey,
+    now: now + 20 };
+  await initializePeerDeviceAuthority({ policyEvent: s.policyEvent, registryEvent: s.registryEvent, ...args });
+  const nextRoot = createDeviceRecoveryRootReplacement({ currentPolicyEvent: s.policyEvent,
+    newRecoverySecret: generateSecretKey(), now: now + 21 });
+  const nextRecoveryPubkey = JSON.parse(nextRoot.policyEvent.content).recoveryPubkey;
+  const fingerprint = recoveryIdentityFingerprint(s.expectedAccountPubkey, nextRecoveryPubkey);
+  await assert.rejects(applyPeerRecoveryRootReplacement({ currentPolicyEvent: s.policyEvent,
+    nextPolicyEvent: nextRoot.policyEvent, nextRegistryEvent: nextRoot.registryEvent,
+    ...args, confirmedFingerprint: '' }), /not independently confirmed/i);
+  await assert.rejects(applyPeerRecoveryRootReplacement({ currentPolicyEvent: s.policyEvent,
+    nextPolicyEvent: nextRoot.policyEvent, nextRegistryEvent: nextRoot.registryEvent,
+    ...args, confirmedFingerprint: '0000 0000' }), /not independently confirmed/i);
+  assert.equal((await loadPeerDeviceAuthority(args)).policyId, s.policyEvent.id,
+    'failed contact verification leaves the old pin untouched');
+
+  const result = await applyPeerRecoveryRootReplacement({ currentPolicyEvent: s.policyEvent,
+    nextPolicyEvent: nextRoot.policyEvent, nextRegistryEvent: nextRoot.registryEvent,
+    ...args, confirmedFingerprint: fingerprint.replaceAll(' ', '  ') });
+  assert.equal(result.policyId, nextRoot.policyEvent.id);
+  const nextArgs = { expectedAccountPubkey: s.expectedAccountPubkey,
+    expectedRecoveryPubkey: nextRecoveryPubkey, now: now + 22 };
+  const loaded = await loadPeerDeviceAuthority(nextArgs);
+  assert.equal(loaded.policyId, nextRoot.policyEvent.id);
+  assert.equal(loaded.registryId, nextRoot.registryEvent.id);
+  await assert.rejects(loadPeerDeviceAuthority(args), /missing or inconsistent|pinned recovery policy/i,
+    'the account key and prior recovery root cannot roll the contact back');
+  assert.equal((await applyPeerRecoveryRootReplacement({ currentPolicyEvent: s.policyEvent,
+    nextPolicyEvent: nextRoot.policyEvent, nextRegistryEvent: nextRoot.registryEvent,
+    expectedAccountPubkey: s.expectedAccountPubkey, expectedOldRecoveryPubkey: s.expectedRecoveryPubkey,
+    confirmedFingerprint: fingerprint, now: now + 22 })).idempotent, true);
 });

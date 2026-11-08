@@ -7,6 +7,7 @@ import { openRatchetState, sealRatchetState } from './ratchetStateAtRest.js';
 import { getPublicKey } from 'nostr-tools/pure';
 import { verifyDeviceRegistryEvent } from './deviceEnrollment.js';
 import { verifyDeviceFreshnessResponse } from './deviceFreshness.js';
+import { authorizeRatchetSend, buildAuthorizedRatchetDm, openAuthorizedRatchetDm } from './dmRatchetAuthority.js';
 
 export class RatchetStateConflict extends Error {
   constructor(collection, id) {
@@ -31,6 +32,12 @@ function assertVersion(actual, expected, collection, id) {
 
 function nextVersion(expected) {
   return expected === null ? 0 : expected + 1;
+}
+
+async function digestApplicationPayload(payload) {
+  const bytes = new TextEncoder().encode(JSON.stringify(payload ?? null));
+  const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes));
+  return Array.from(digest, (byte) => byte.toString(16).padStart(2, '0')).join('');
 }
 
 function secretFromHex(secretHex) {
@@ -128,6 +135,102 @@ export async function commitRatchetOutbound({
   return version;
 }
 
+// R5 isolated path: validate both independent authorities, put their proofs
+// inside the NIP-59 seal, then atomically commit the ratchet state, immutable
+// event, and operation-id journal. No production DM caller uses this until a
+// separately approved protocol migration.
+export async function commitRatchetOutboundV2({
+  owner, sessionId, peerPubkey, peerDeviceId, expectedVersion, state,
+  ratchetCiphertext, applicationPayload = null, senderDeviceSecret,
+  authorization, relays = null, now = Date.now(),
+}) {
+  assertOwner(owner);
+  if (!/^[0-9a-f]{64}$/.test(owner || '') || !sessionId || !/^[0-9a-f]{64}$/.test(peerPubkey || '')
+    || !/^[0-9a-f]{32}$/.test(peerDeviceId || '') || typeof ratchetCiphertext !== 'string'
+    || !ratchetCiphertext || !(senderDeviceSecret instanceof Uint8Array)) {
+    throw new Error('A valid account, ratchet session, device target, and ciphertext are required.');
+  }
+  const nowSeconds = Math.floor(now / 1000);
+  const operationId = authorization?.operationId;
+  if (!/^[0-9a-f]{32}$/.test(operationId || '')) throw new Error('A unique ratchet operation id is required.');
+  const authorized = authorizeRatchetSend({
+    operationId,
+    sender: authorization.sender,
+    recipient: authorization.recipient,
+    now: nowSeconds,
+  });
+  if (!authorized || authorized.sender.accountPubkey !== owner
+    || authorized.recipient.accountPubkey !== peerPubkey
+    || authorized.recipient.deviceId !== peerDeviceId) {
+    throw new Error('Fresh independent sender and recipient device authorization is required.');
+  }
+  const payloadDigest = await digestApplicationPayload(applicationPayload);
+  const existingOperation = await db.ratchetInbox.get(operationId);
+  if (existingOperation) {
+    const journal = await openRatchetState({ owner, collection: 'inbox', id: operationId, sealed: existingOperation.sealed });
+    if (journal?.protocol !== 'cipher-ratchet-outbound-operation-v2'
+      || journal.sessionId !== sessionId || journal.payloadDigest !== payloadDigest) {
+      throw new Error('The ratchet operation id was already committed for different content.');
+    }
+    return { version: null, eventId: journal.eventId, alreadyCommitted: true };
+  }
+  const sealedMessage = buildAuthorizedRatchetDm({
+    authorization: authorized,
+    ratchetCiphertext,
+    applicationPayload,
+    senderDeviceSecret,
+    recipientDevicePubkey: authorized.recipient.devicePubkey,
+    createdAt: nowSeconds,
+    clientId: operationId,
+  });
+  const event = sealedMessage.wrap;
+  if (!event?.id || !event?.sig || event.kind !== 1059) throw new Error('A valid NIP-59 ratchet message is required.');
+  const sealedState = await sealRatchetState({ owner, collection: 'sessions', id: sessionId, value: state });
+  const sealedJournal = await sealRatchetState({
+    owner, collection: 'inbox', id: operationId,
+    value: { protocol: 'cipher-ratchet-outbound-operation-v2', operationId, sessionId,
+      payloadDigest, eventId: event.id, peerPubkey, peerDeviceId },
+  });
+  const version = nextVersion(expectedVersion);
+  let alreadyCommitted = false;
+  await db.transaction('rw', 'ratchetSessions', 'outbox', 'ratchetInbox', async () => {
+    assertOwner(owner);
+    const prior = await db.ratchetInbox.get(operationId);
+    if (prior) {
+      alreadyCommitted = true;
+      return;
+    }
+    assertVersion(await currentVersion(db.ratchetSessions, sessionId), expectedVersion, 'sessions', sessionId);
+    await db.ratchetSessions.put({ sessionId, peerPubkey, peerDeviceId, version, updatedAt: now, sealed: sealedState });
+    await db.outbox.put(outboxRow(event, now, relays, {
+      ratchetDelivery: {
+        protocol: 'cipher-ratchet-device-delivery-v2',
+        peerPubkey,
+        peerDeviceId,
+        peerPolicyId: authorized.recipient.policyId,
+        peerAuthorityEpoch: authorized.recipient.authorityEpoch,
+        peerRegistryId: authorized.recipient.registryId,
+        localPolicyId: authorized.sender.policyId,
+        localAuthorityEpoch: authorized.sender.authorityEpoch,
+        localRegistryId: authorized.sender.registryId,
+        operationId,
+        freshUntil: authorized.freshUntil,
+      },
+    }));
+    await db.ratchetInbox.put({ eventId: operationId, chatId: sessionId, status: 'outbound-committed',
+      receivedAt: now, sealed: sealedJournal });
+  });
+  if (alreadyCommitted) {
+    const journalRow = await db.ratchetInbox.get(operationId);
+    const journal = await openRatchetState({ owner, collection: 'inbox', id: operationId, sealed: journalRow.sealed });
+    if (journal?.sessionId !== sessionId || journal?.payloadDigest !== payloadDigest) {
+      throw new Error('A concurrent ratchet operation id was committed for different content.');
+    }
+    return { version: null, eventId: journal.eventId, alreadyCommitted: true };
+  }
+  return { version, eventId: event.id, event, alreadyCommitted: false };
+}
+
 // Refresh only the authorization fence for an already sealed, pending event.
 // The immutable ciphertext and ratchet state never change during this retry.
 export async function refreshRatchetOutboundAuthorization({
@@ -220,6 +323,122 @@ export async function commitRatchetInitialInbound({
     });
   });
   return deviceVersion;
+}
+
+// R5 isolated receive boundary. The NIP-59 envelope and both authority proofs
+// are checked before the caller advances a tentative ratchet state. The
+// operation id is the inbox key, so alternate wraps/retries cannot apply a
+// commerce or message effect twice. Callers must discard callback state if
+// this transaction conflicts or fails.
+export async function commitRatchetInboundV2({
+  owner, deviceId, recipientDeviceSecret, senderCheckpoint, recipientCheckpoint,
+  recipientRequesterDeviceId, wrap, expectedVersion, processRatchetMessage,
+  now = Date.now(),
+}) {
+  assertOwner(owner);
+  if (!/^[0-9a-f]{64}$/.test(owner || '') || !/^[0-9a-f]{32}$/.test(deviceId || '')
+    || typeof processRatchetMessage !== 'function') {
+    throw new Error('An authenticated recipient device and ratchet message processor are required.');
+  }
+  const opened = openAuthorizedRatchetDm({
+    wrap, recipientDeviceSecret, senderCheckpoint, recipientCheckpoint,
+    recipientDeviceId: deviceId, recipientRequesterDeviceId,
+    now: Math.floor(now / 1000),
+  });
+  if (!opened || opened.recipientDeviceId !== deviceId || opened.recipientAccountPubkey !== owner) {
+    throw new Error('The ratchet message lacks fresh sender and recipient authority proofs.');
+  }
+  const claimToken = Array.from(crypto.getRandomValues(new Uint8Array(16)),
+    (byte) => byte.toString(16).padStart(2, '0')).join('');
+  let duplicateRow = null;
+  let busy = false;
+  await db.transaction('rw', 'ratchetInbox', async () => {
+    assertOwner(owner);
+    const current = await db.ratchetInbox.get(opened.operationId);
+    if (!current) {
+      await db.ratchetInbox.add({ eventId: opened.operationId, chatId: '', status: 'processing',
+        receivedAt: now, rumorId: opened.rumorId, senderAccountPubkey: opened.senderAccountPubkey,
+        claimToken, claimUntil: now + 60_000 });
+      return;
+    }
+    if (current.rumorId !== opened.rumorId || current.senderAccountPubkey !== opened.senderAccountPubkey) {
+      throw new Error('A ratchet operation id was replayed with different authenticated content.');
+    }
+    if (current.status !== 'processing') {
+      duplicateRow = current;
+      return;
+    }
+    if (current.claimUntil > now) {
+      busy = true;
+      return;
+    }
+    await db.ratchetInbox.put({ ...current, claimToken, claimUntil: now + 60_000 });
+  });
+  if (duplicateRow) {
+    const previous = await openRatchetState({ owner, collection: 'inbox', id: opened.operationId, sealed: duplicateRow.sealed });
+    if (previous?.protocol !== 'cipher-ratchet-inbound-operation-v2'
+      || previous.senderAccountPubkey !== opened.senderAccountPubkey
+      || previous.rumorId !== opened.rumorId) {
+      throw new Error('The ratchet operation id does not match its durable receive journal.');
+    }
+    return { duplicate: true, operationId: opened.operationId, rumorId: opened.rumorId };
+  }
+  if (busy) return { busy: true, duplicate: false, operationId: opened.operationId, rumorId: opened.rumorId };
+
+  // This callback may only prepare a tentative cryptographic transition and a
+  // journal. It must not apply messages, orders, receipts or payment effects.
+  // The durable reservation prevents concurrent tabs from running it twice;
+  // the final state/journal transaction below is the only commit point.
+  try {
+    const transition = await processRatchetMessage({
+      ratchetCiphertext: opened.ratchetCiphertext,
+      applicationPayload: opened.applicationPayload,
+      senderAccountPubkey: opened.senderAccountPubkey,
+      senderDeviceId: opened.senderDeviceId,
+      operationId: opened.operationId,
+      expectedVersion,
+    });
+    if (!transition?.sessionId || !transition.sessionState || !transition.journal || !transition.chatId) {
+      throw new Error('The ratchet processor did not return a complete durable transition.');
+    }
+    const version = nextVersion(expectedVersion);
+    const [sealedSession, sealedJournal] = await Promise.all([
+      sealRatchetState({ owner, collection: 'sessions', id: transition.sessionId, value: transition.sessionState }),
+      sealRatchetState({
+        owner, collection: 'inbox', id: opened.operationId,
+        value: { protocol: 'cipher-ratchet-inbound-operation-v2', operationId: opened.operationId,
+          rumorId: opened.rumorId, senderAccountPubkey: opened.senderAccountPubkey,
+          senderDeviceId: opened.senderDeviceId, applicationPayload: opened.applicationPayload,
+          journal: transition.journal },
+      }),
+    ]);
+    await db.transaction('rw', 'ratchetSessions', 'ratchetInbox', async () => {
+      assertOwner(owner);
+      const current = await db.ratchetInbox.get(opened.operationId);
+      if (current?.status !== 'processing' || current.claimToken !== claimToken) {
+        throw new Error('The receive reservation expired or was claimed by another tab.');
+      }
+      assertVersion(await currentVersion(db.ratchetSessions, transition.sessionId), expectedVersion,
+        'sessions', transition.sessionId);
+      await db.ratchetSessions.put({ sessionId: transition.sessionId,
+        peerPubkey: opened.senderAccountPubkey, peerDeviceId: opened.senderDeviceId,
+        version, updatedAt: now, sealed: sealedSession });
+      await db.ratchetInbox.put({ eventId: opened.operationId, chatId: transition.chatId,
+        status: 'pending', receivedAt: now, rumorId: opened.rumorId,
+        senderAccountPubkey: opened.senderAccountPubkey, sealed: sealedJournal });
+    });
+    return { duplicate: false, version, operationId: opened.operationId, rumorId: opened.rumorId,
+      applicationPayload: opened.applicationPayload };
+  } catch (error) {
+    await db.transaction('rw', 'ratchetInbox', async () => {
+      assertOwner(owner);
+      const current = await db.ratchetInbox.get(opened.operationId);
+      if (current?.status === 'processing' && current.claimToken === claimToken) {
+        await db.ratchetInbox.delete(opened.operationId);
+      }
+    });
+    throw error;
+  }
 }
 
 export async function commitRatchetInbound({

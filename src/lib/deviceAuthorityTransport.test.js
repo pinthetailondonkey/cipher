@@ -3,11 +3,18 @@ import test from 'node:test';
 import { generateSecretKey, getPublicKey } from 'nostr-tools/pure';
 import {
   createDeviceAuthoritySetup, createIndependentDeviceCredential, createDeviceEnrollmentChallengeV2,
-  buildDeviceEnrollmentProofV2, enrollDeviceV2, revokeDeviceV2, replaceDeviceAuthority,
+  buildDeviceEnrollmentProofV2, createDeviceRecoveryRootReplacement, enrollDeviceV2, revokeDeviceV2, replaceDeviceAuthority,
 } from './deviceAuthority.js';
 import {
   buildDeviceAuthorityReplacementWrap, buildDeviceRegistryUpdateWrap, openDeviceAuthorityUpdateWrap,
+  buildPeerDeviceRegistryUpdateWrap, openPeerDeviceRegistryUpdateWrap,
+  buildPeerRecoveryRootReplacementWrap, openPeerRecoveryRootReplacementWrap,
 } from './deviceAuthorityTransport.js';
+import {
+  applyPeerDeviceRegistryUpdate, applyPeerRecoveryRootReplacement, initializePeerDeviceAuthority, loadPeerDeviceAuthority,
+} from './deviceAuthorityPeerStore.js';
+import { recoveryIdentityFingerprint } from './deviceAuthorityContactVerification.js';
+import 'fake-indexeddb/auto';
 
 const now = 1_800_000_000;
 function setup() {
@@ -106,4 +113,111 @@ test('recovery-authorized replacement reaches an active device through the new p
     policyEvent: s.policyEvent, registryEvent: s.enrolled, registryPredecessorEvent: s.registryEvent,
     expectedRecoveryPubkey: getPublicKey(s.recoverySecret), now: now + 11 }), null,
   'old primary is not an update recipient under the new registry');
+});
+
+test('revocation update reaches an independently pinned contact privately and advances its peer checkpoint', async () => {
+  const sender = setup();
+  const recipient = setup();
+  const senderPolicy = JSON.parse(sender.policyEvent.content);
+  const recipientPolicy = JSON.parse(recipient.policyEvent.content);
+  const recipientCheckpoint = {
+    accountPubkey: recipientPolicy.accountPubkey,
+    recoveryPubkey: recipientPolicy.recoveryPubkey,
+    policyEvent: recipient.policyEvent,
+    policyId: recipient.policyEvent.id,
+    registryEvent: recipient.enrolled,
+    registryId: recipient.enrolled.id,
+    registryHistory: [recipient.registryEvent, recipient.enrolled],
+  };
+  const revoked = revokeDeviceV2({ policyEvent: sender.policyEvent, registryEvent: sender.enrolled,
+    expectedRegistryId: sender.enrolled.id, deviceId: sender.second.deviceId,
+    authoritySecret: sender.authoritySecret, now: now + 4 });
+  const wrap = buildPeerDeviceRegistryUpdateWrap({
+    policyEvent: sender.policyEvent,
+    previousRegistryEvent: sender.enrolled,
+    previousHeadPredecessorEvent: sender.registryEvent,
+    nextRegistryEvent: revoked,
+    senderSecret: sender.primaryDevice.deviceSecret,
+    expectedSenderRecoveryPubkey: senderPolicy.recoveryPubkey,
+    recipientCheckpoint,
+    recipientDeviceId: recipient.second.deviceId,
+    now: now + 5,
+  });
+  assert.equal(wrap.kind, 1059);
+  const serialized = JSON.stringify(wrap);
+  for (const privateOrAccountIdentity of [senderPolicy.accountPubkey, senderPolicy.recoveryPubkey,
+    recipientPolicy.accountPubkey, recipientPolicy.recoveryPubkey, senderPolicy.authorityPubkey]) {
+    assert.equal(serialized.includes(privateOrAccountIdentity), false);
+  }
+  const opened = openPeerDeviceRegistryUpdateWrap({
+    wrap,
+    recipientSecret: recipient.second.deviceSecret,
+    senderPolicyEvent: sender.policyEvent,
+    senderRecoveryPubkey: senderPolicy.recoveryPubkey,
+    senderRegistryEvent: sender.enrolled,
+    senderRegistryPredecessorEvent: sender.registryEvent,
+    recipientCheckpoint,
+    now: now + 5,
+  });
+  assert.equal(opened?.nextRegistryEvent.id, revoked.id);
+
+  const args = { expectedAccountPubkey: senderPolicy.accountPubkey,
+    expectedRecoveryPubkey: senderPolicy.recoveryPubkey, now: now + 6 };
+  await initializePeerDeviceAuthority({ policyEvent: sender.policyEvent,
+    registryEvent: sender.registryEvent, ...args });
+  await applyPeerDeviceRegistryUpdate({ update: { type: 'registry-update', policyEvent: sender.policyEvent,
+    previousRegistryEvent: sender.registryEvent, nextRegistryEvent: sender.enrolled }, ...args });
+  const applied = await applyPeerDeviceRegistryUpdate({ update: opened, ...args });
+  assert.equal(applied.registryId, revoked.id);
+  const current = await loadPeerDeviceAuthority(args);
+  assert.equal(JSON.parse(current.registryEvent.content).devices.find((row) =>
+    row.deviceId === sender.second.deviceId).status, 'revoked');
+  assert.equal(openPeerDeviceRegistryUpdateWrap({
+    wrap, recipientSecret: recipient.primaryDevice.deviceSecret,
+    senderPolicyEvent: sender.policyEvent, senderRecoveryPubkey: senderPolicy.recoveryPubkey,
+    senderRegistryEvent: sender.enrolled, senderRegistryPredecessorEvent: sender.registryEvent,
+    recipientCheckpoint, now: now + 5,
+  }), null, 'a different device key cannot open an update addressed to the enrolled recipient device');
+});
+
+test('new recovery root is delivered only as a candidate and needs independent contact fingerprint confirmation', async () => {
+  const sender = setup();
+  const recipient = setup();
+  const senderPolicy = JSON.parse(sender.policyEvent.content);
+  const recipientPolicy = JSON.parse(recipient.policyEvent.content);
+  const recipientCheckpoint = {
+    accountPubkey: recipientPolicy.accountPubkey, recoveryPubkey: recipientPolicy.recoveryPubkey,
+    policyEvent: recipient.policyEvent, policyId: recipient.policyEvent.id,
+    registryEvent: recipient.enrolled, registryId: recipient.enrolled.id,
+    registryHistory: [recipient.registryEvent, recipient.enrolled],
+  };
+  const replacement = createDeviceRecoveryRootReplacement({ currentPolicyEvent: sender.policyEvent,
+    newRecoverySecret: generateSecretKey(), now: now + 6 });
+  const wrap = buildPeerRecoveryRootReplacementWrap({ previousPolicyEvent: sender.policyEvent,
+    previousRecoveryPubkey: senderPolicy.recoveryPubkey, nextPolicyEvent: replacement.policyEvent,
+    nextRegistryEvent: replacement.registryEvent, senderSecret: replacement.primaryDevice.deviceSecret,
+    recipientCheckpoint, recipientDeviceId: recipient.second.deviceId, now: now + 7 });
+  const candidate = openPeerRecoveryRootReplacementWrap({ wrap,
+    recipientSecret: recipient.second.deviceSecret, senderPolicyEvent: sender.policyEvent,
+    senderRecoveryPubkey: senderPolicy.recoveryPubkey, senderRegistryEvent: sender.enrolled,
+    senderRegistryPredecessorEvent: sender.registryEvent, recipientCheckpoint, now: now + 7 });
+  assert.equal(candidate?.nextPolicyEvent.id, replacement.policyEvent.id);
+  const args = { expectedAccountPubkey: senderPolicy.accountPubkey,
+    expectedRecoveryPubkey: senderPolicy.recoveryPubkey, expectedOldRecoveryPubkey: senderPolicy.recoveryPubkey,
+    now: now + 8 };
+  await initializePeerDeviceAuthority({ policyEvent: sender.policyEvent,
+    registryEvent: sender.registryEvent, ...args });
+  await applyPeerDeviceRegistryUpdate({ update: { type: 'registry-update', policyEvent: sender.policyEvent,
+    previousRegistryEvent: sender.registryEvent, nextRegistryEvent: sender.enrolled }, ...args });
+  await assert.rejects(applyPeerRecoveryRootReplacement({ ...candidate,
+    currentPolicyEvent: candidate.previousPolicyEvent,
+    nextRegistryEvent: replacement.registryEvent, ...args, confirmedFingerprint: '' }), /not independently confirmed/i);
+  const newRecoveryPubkey = JSON.parse(replacement.policyEvent.content).recoveryPubkey;
+  const fingerprint = recoveryIdentityFingerprint(senderPolicy.accountPubkey, newRecoveryPubkey);
+  await applyPeerRecoveryRootReplacement({ ...candidate, currentPolicyEvent: candidate.previousPolicyEvent,
+    nextRegistryEvent: replacement.registryEvent,
+    ...args, confirmedFingerprint: fingerprint });
+  const pinned = await loadPeerDeviceAuthority({ expectedAccountPubkey: senderPolicy.accountPubkey,
+    expectedRecoveryPubkey: newRecoveryPubkey, now: now + 9 });
+  assert.equal(pinned.policyId, replacement.policyEvent.id);
 });

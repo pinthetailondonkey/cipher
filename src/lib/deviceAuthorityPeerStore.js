@@ -3,6 +3,7 @@
 import {
   verifyDeviceAuthorityPolicy, verifyDeviceAuthorityRegistry, verifyDeviceAuthorityReplacement,
 } from './deviceAuthority.js';
+import { verifyRecoveryRootReplacement } from './deviceAuthorityContactVerification.js';
 
 const STORE = 'peer-checkpoints';
 const MAX_HISTORY = 512;
@@ -160,6 +161,35 @@ export async function applyPeerAuthorityReplacement({ update, expectedAccountPub
       registryHistory: [update.nextRegistryEvent], accountPubkey: expectedAccountPubkey,
       recoveryPubkey: expectedRecoveryPubkey });
     return await compareAndSwap(db, { nextRow, expectedPolicyId: current.policyId, expectedRegistryId: current.registryId });
+  } finally { db.close(); }
+}
+
+// Recovery-root changes are deliberately not inferred from an account-key or
+// old-root signature. The caller must first complete the independent contact
+// fingerprint ceremony and supply the exact displayed value here.
+export async function applyPeerRecoveryRootReplacement({ currentPolicyEvent, nextPolicyEvent,
+  nextRegistryEvent, expectedAccountPubkey, expectedOldRecoveryPubkey, confirmedFingerprint,
+  now = Math.floor(Date.now() / 1000), indexedDBImpl = globalThis.indexedDB } = {}) {
+  const db = await openDb(expectedAccountPubkey, indexedDBImpl);
+  try {
+    const row = await getRow(db, expectedAccountPubkey);
+    const nextRecoveryPubkey = (() => { try { return JSON.parse(nextPolicyEvent?.content || '').recoveryPubkey; } catch { return null; } })();
+    if (row?.policyId === nextPolicyEvent?.id && row.registryId === nextRegistryEvent?.id
+      && row.recoveryPubkey === nextRecoveryPubkey) {
+      const accepted = verifyState(row, expectedAccountPubkey, nextRecoveryPubkey, now);
+      return { policyId: accepted.policyId, registryId: accepted.registryId, idempotent: true };
+    }
+    const current = verifyState(row, expectedAccountPubkey, expectedOldRecoveryPubkey, now);
+    if (current.policyId !== currentPolicyEvent?.id || current.policyEvent?.id !== currentPolicyEvent?.id) {
+      throw new Error('Recovery replacement must extend the exact locally pinned policy.');
+    }
+    const verified = verifyRecoveryRootReplacement({ currentPolicyEvent, nextPolicyEvent, nextRegistryEvent,
+      expectedAccountPubkey, expectedOldRecoveryPubkey, confirmedFingerprint, now });
+    if (!verified) throw new Error('The new recovery fingerprint was not independently confirmed or the replacement is invalid.');
+    const nextRow = checkpointRow({ policyEvent: nextPolicyEvent, registryHistory: [nextRegistryEvent],
+      accountPubkey: expectedAccountPubkey, recoveryPubkey: verified.recoveryPubkey });
+    return await compareAndSwap(db, { nextRow, expectedPolicyId: current.policyId,
+      expectedRegistryId: current.registryId });
   } finally { db.close(); }
 }
 

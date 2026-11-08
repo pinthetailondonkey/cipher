@@ -233,6 +233,32 @@ export function replaceDeviceAuthority({ currentPolicyEvent, recoverySecret, nex
   };
 }
 
+// Recovery-root replacement is intentionally not accepted as a cryptographic
+// successor by itself. Existing contacts must compare the new root fingerprint
+// independently; this helper only creates the new-root-signed candidate.
+export function createDeviceRecoveryRootReplacement({ currentPolicyEvent, newRecoverySecret,
+  nextAuthoritySecret = generateSecretKey(), nextPrimaryDevice = createIndependentDeviceCredential(),
+  now = Math.floor(Date.now() / 1000) } = {}) {
+  const current = policyFor(currentPolicyEvent, now);
+  if (!current || !secretKey(newRecoverySecret)
+    || getPublicKey(newRecoverySecret) === current.recoveryPubkey) {
+    throw new Error('A new independent recovery root and current policy are required.');
+  }
+  const policyEvent = makePolicy({
+    accountPubkey: current.accountPubkey,
+    recoverySecret: newRecoverySecret,
+    authoritySecret: nextAuthoritySecret,
+    primaryDevice: nextPrimaryDevice,
+    authorityEpoch: current.authorityEpoch + 1,
+    previousPolicyId: currentPolicyEvent.id,
+    now,
+  });
+  const registryEvent = buildInitialDeviceRegistry({ policyEvent, authoritySecret: nextAuthoritySecret,
+    primaryDevice: nextPrimaryDevice, now });
+  return { recoverySecret: newRecoverySecret, authoritySecret: nextAuthoritySecret,
+    primaryDevice: nextPrimaryDevice, policyEvent, registryEvent };
+}
+
 export function verifyDeviceAuthorityReplacement(nextPolicyEvent, currentPolicyEvent, { recoveryPubkey, now = Math.floor(Date.now() / 1000) } = {}) {
   const current = policyFor(currentPolicyEvent, now);
   if (!current || !parsePolicy(nextPolicyEvent, { accountPubkey: current.accountPubkey, recoveryPubkey, now })

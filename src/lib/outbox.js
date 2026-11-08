@@ -90,7 +90,8 @@ function retryDelay(attempts, random = Math.random) {
 
 export function shouldFlushOutboxRow(row, now, force = false) {
   const ratchetDelivery = row?.ratchetDelivery;
-  if (ratchetDelivery && (ratchetDelivery.protocol !== 'cipher-ratchet-device-delivery-v1'
+  if (ratchetDelivery && (!['cipher-ratchet-device-delivery-v1', 'cipher-ratchet-device-delivery-v2']
+    .includes(ratchetDelivery.protocol)
     || !Number.isSafeInteger(ratchetDelivery.freshUntil)
     || ratchetDelivery.freshUntil <= Math.floor(now / 1000))) return false;
   if (force) return true;

@@ -6,7 +6,7 @@ import { getEventHash, getPublicKey, verifyEvent } from 'nostr-tools/pure';
 import { rumorTags, sealAndWrap } from './giftWrap.js';
 import { unwrapToRumor } from './giftUnwrap.js';
 import {
-  verifyDeviceAuthorityRegistry, verifyDeviceAuthorityReplacement,
+  verifyDeviceAuthorityPolicy, verifyDeviceAuthorityRegistry, verifyDeviceAuthorityReplacement,
 } from './deviceAuthority.js';
 
 const PROTOCOL = 'cipher-private-device-authority-update';
@@ -26,6 +26,24 @@ function validHead(event, policyEvent, predecessorEvent, now) {
   const registry = JSON.parse(event.content);
   if (registry?.policyId !== policyEvent.id || registry.authorityPubkey !== body?.authorityPubkey) return false;
   return verifyDeviceAuthorityRegistry(event, policyEvent, { previousEvent: predecessorEvent, now }) !== null;
+}
+
+function validCheckpoint(checkpoint, now) {
+  if (!checkpoint || checkpoint.policyId !== checkpoint.policyEvent?.id
+    || checkpoint.registryId !== checkpoint.registryEvent?.id
+    || !Array.isArray(checkpoint.registryHistory) || checkpoint.registryHistory.length < 1) return false;
+  const policyBodyValue = policyBody(checkpoint.policyEvent);
+  if (!verifyDeviceAuthorityPolicy(checkpoint.policyEvent, {
+    expectedAccount: checkpoint.accountPubkey,
+    expectedRecovery: checkpoint.recoveryPubkey,
+    now,
+  }) || policyBodyValue.accountPubkey !== checkpoint.accountPubkey) return false;
+  let previous = null;
+  for (const event of checkpoint.registryHistory) {
+    if (!verifyDeviceAuthorityRegistry(event, checkpoint.policyEvent, { previousEvent: previous, now })) return false;
+    previous = event;
+  }
+  return previous?.id === checkpoint.registryId;
 }
 
 function makeWrap({ payload, senderSecret, recipientPubkey, now }) {
@@ -50,6 +68,91 @@ export function buildDeviceRegistryUpdateWrap({ policyEvent, previousRegistryEve
   }
   return makeWrap({ payload: { type: 'registry-update', policyEvent, previousRegistryEvent, nextRegistryEvent },
     senderSecret, recipientPubkey, now });
+}
+
+// Send an authenticated owner registry transition to a separately pinned
+// contact device. The older helper above intentionally serves sibling
+// devices only; this helper checks both trust domains before creating a
+// private NIP-59 envelope.
+export function buildPeerDeviceRegistryUpdateWrap({ policyEvent, previousRegistryEvent,
+  previousHeadPredecessorEvent = null, nextRegistryEvent, senderSecret, recipientCheckpoint,
+  recipientDeviceId, expectedSenderRecoveryPubkey, now = Math.floor(Date.now() / 1000) } = {}) {
+  const senderPolicy = policyBody(policyEvent);
+  const sender = verifyDeviceAuthorityPolicy(policyEvent, {
+    expectedAccount: senderPolicy?.accountPubkey,
+    expectedRecovery: expectedSenderRecoveryPubkey,
+    now,
+  });
+  const recipientPolicyBody = policyBody(recipientCheckpoint?.policyEvent);
+  const recipientPolicy = verifyDeviceAuthorityPolicy(recipientCheckpoint?.policyEvent, {
+    expectedAccount: recipientCheckpoint?.accountPubkey,
+    expectedRecovery: recipientCheckpoint?.recoveryPubkey,
+    now,
+  });
+  const recipientHeadValid = recipientPolicy && validCheckpoint(recipientCheckpoint, now);
+  const target = recipientHeadValid
+    ? JSON.parse(recipientCheckpoint.registryEvent.content).devices.find((row) => row.deviceId === recipientDeviceId)
+    : null;
+  if (!sender || getPublicKey(senderSecret) !== sender.primaryDevicePubkey
+    || sender.accountPubkey === recipientPolicyBody?.accountPubkey
+    || !validHead(previousRegistryEvent, policyEvent, previousHeadPredecessorEvent, now)
+    || !verifyDeviceAuthorityRegistry(nextRegistryEvent, policyEvent, { previousEvent: previousRegistryEvent, now })
+    || !target || target.status !== 'active') {
+    throw new Error('A pinned contact device and current primary-authorized registry update are required.');
+  }
+  return makeWrap({ payload: {
+    type: 'peer-registry-update',
+    senderPolicyEvent: policyEvent,
+    previousRegistryEvent,
+    nextRegistryEvent,
+    recipientAccountPubkey: recipientCheckpoint.accountPubkey,
+    recipientPolicyId: recipientCheckpoint.policyId,
+    recipientRegistryId: recipientCheckpoint.registryId,
+    recipientDeviceId,
+  }, senderSecret, recipientPubkey: target.pubkey, now });
+}
+
+function recoveryReplacementCandidate(nextPolicyEvent, currentPolicyEvent, currentRecoveryPubkey, now) {
+  const current = verifyDeviceAuthorityPolicy(currentPolicyEvent, {
+    expectedAccount: policyBody(currentPolicyEvent)?.accountPubkey,
+    expectedRecovery: currentRecoveryPubkey,
+    now,
+  });
+  const nextBody = policyBody(nextPolicyEvent);
+  const next = verifyDeviceAuthorityPolicy(nextPolicyEvent, {
+    expectedAccount: current?.accountPubkey,
+    expectedRecovery: nextBody?.recoveryPubkey,
+    now,
+  });
+  return current && next && nextPolicyEvent.pubkey === next.recoveryPubkey
+    && next.recoveryPubkey !== current.recoveryPubkey
+    && next.authorityEpoch === current.authorityEpoch + 1
+    && next.previousPolicyId === currentPolicyEvent.id
+    && nextPolicyEvent.created_at >= currentPolicyEvent.created_at ? next : null;
+}
+
+// Deliver a recovery-root replacement candidate to a contact without treating
+// the old Nostr account key or old recovery root as proof of the new identity.
+// The recipient must display and compare the fingerprint before applying it.
+export function buildPeerRecoveryRootReplacementWrap({ previousPolicyEvent, previousRecoveryPubkey,
+  nextPolicyEvent, nextRegistryEvent, senderSecret, recipientCheckpoint, recipientDeviceId,
+  now = Math.floor(Date.now() / 1000) } = {}) {
+  const next = recoveryReplacementCandidate(nextPolicyEvent, previousPolicyEvent, previousRecoveryPubkey, now);
+  const recipientBody = policyBody(recipientCheckpoint?.policyEvent);
+  const target = validCheckpoint(recipientCheckpoint, now)
+    ? JSON.parse(recipientCheckpoint.registryEvent.content).devices.find((row) => row.deviceId === recipientDeviceId)
+    : null;
+  if (!next || getPublicKey(senderSecret) !== next.primaryDevicePubkey
+    || !verifyDeviceAuthorityRegistry(nextRegistryEvent, nextPolicyEvent, { now })
+    || JSON.parse(nextRegistryEvent.content).generation !== 1
+    || next.accountPubkey === recipientBody?.accountPubkey || !target || target.status !== 'active') {
+    throw new Error('A valid new recovery identity and pinned contact device are required.');
+  }
+  return makeWrap({ payload: { type: 'peer-recovery-root-candidate', previousPolicyEvent,
+    previousRecoveryPubkey, nextPolicyEvent, nextRegistryEvent,
+    recipientAccountPubkey: recipientCheckpoint.accountPubkey,
+    recipientPolicyId: recipientCheckpoint.policyId, recipientRegistryId: recipientCheckpoint.registryId,
+    recipientDeviceId }, senderSecret, recipientPubkey: target.pubkey, now });
 }
 
 export function buildDeviceAuthorityReplacementWrap({ previousPolicyEvent, nextPolicyEvent, nextRegistryEvent,
@@ -108,5 +211,86 @@ export function openDeviceAuthorityUpdateWrap({ wrap, recipientSecret, policyEve
         nextRegistryEvent: body.nextRegistryEvent };
     }
     return null;
+  } catch { return null; }
+}
+
+export function openPeerDeviceRegistryUpdateWrap({ wrap, recipientSecret, senderPolicyEvent,
+  senderRecoveryPubkey, senderRegistryEvent, senderRegistryPredecessorEvent = null,
+  recipientCheckpoint, now = Math.floor(Date.now() / 1000) } = {}) {
+  try {
+    const opened = unwrapToRumor(wrap, recipientSecret);
+    const rumor = opened?.rumor;
+    const recipient = getPublicKey(recipientSecret);
+    const recipientTags = (rumor?.tags || []).filter((tag) => tag[0] === 'p');
+    const senderPolicy = verifyDeviceAuthorityPolicy(senderPolicyEvent, {
+      expectedAccount: policyBody(senderPolicyEvent)?.accountPubkey,
+      expectedRecovery: senderRecoveryPubkey,
+      now,
+    });
+    const recipientBody = policyBody(recipientCheckpoint?.policyEvent);
+    const recipientPolicy = verifyDeviceAuthorityPolicy(recipientCheckpoint?.policyEvent, {
+      expectedAccount: recipientCheckpoint?.accountPubkey,
+      expectedRecovery: recipientCheckpoint?.recoveryPubkey,
+      now,
+    });
+    const localDevice = recipientPolicy && recipientBody?.accountPubkey !== senderPolicy?.accountPubkey
+      && validCheckpoint(recipientCheckpoint, now)
+      ? JSON.parse(recipientCheckpoint.registryEvent.content).devices.find((row) =>
+        row.pubkey === recipient && row.status === 'active')
+      : null;
+    const body = JSON.parse(rumor?.content || 'null');
+    if (!senderPolicy || !localDevice || rumor?.kind !== 4 || recipientTags.length !== 1
+      || recipientTags[0][1] !== recipient || !validHead(senderRegistryEvent, senderPolicyEvent,
+        senderRegistryPredecessorEvent, now) || body?.protocol !== PROTOCOL || body.version !== 1
+      || body.type !== 'peer-registry-update' || body.senderPolicyEvent?.id !== senderPolicyEvent.id
+      || body.recipientAccountPubkey !== recipientBody.accountPubkey
+      || body.recipientPolicyId !== recipientCheckpoint.policyId
+      || body.recipientRegistryId !== recipientCheckpoint.registryId
+      || body.recipientDeviceId !== localDevice.deviceId || !deviceRow(senderRegistryEvent, rumor.pubkey)
+      || rumor.pubkey !== senderPolicy.primaryDevicePubkey
+      || body.previousRegistryEvent?.id !== senderRegistryEvent.id
+      || !verifyDeviceAuthorityRegistry(body.nextRegistryEvent, senderPolicyEvent,
+        { previousEvent: senderRegistryEvent, now })) return null;
+    return { type: 'registry-update', policyEvent: senderPolicyEvent,
+      previousRegistryEvent: senderRegistryEvent, nextRegistryEvent: body.nextRegistryEvent };
+  } catch { return null; }
+}
+
+export function openPeerRecoveryRootReplacementWrap({ wrap, recipientSecret, senderPolicyEvent,
+  senderRecoveryPubkey, senderRegistryEvent, senderRegistryPredecessorEvent = null,
+  recipientCheckpoint, now = Math.floor(Date.now() / 1000) } = {}) {
+  try {
+    const opened = unwrapToRumor(wrap, recipientSecret);
+    const rumor = opened?.rumor;
+    const recipient = getPublicKey(recipientSecret);
+    const tags = (rumor?.tags || []).filter((tag) => tag[0] === 'p');
+    const sender = verifyDeviceAuthorityPolicy(senderPolicyEvent, {
+      expectedAccount: policyBody(senderPolicyEvent)?.accountPubkey,
+      expectedRecovery: senderRecoveryPubkey,
+      now,
+    });
+    const body = JSON.parse(rumor?.content || 'null');
+    const recipientDevice = validCheckpoint(recipientCheckpoint, now)
+      ? JSON.parse(recipientCheckpoint.registryEvent.content).devices.find((row) =>
+        row.pubkey === recipient && row.status === 'active')
+      : null;
+    const candidate = sender && recoveryReplacementCandidate(body?.nextPolicyEvent,
+      senderPolicyEvent, senderRecoveryPubkey, now);
+    if (!sender || !candidate || !recipientDevice || rumor?.kind !== 4 || tags.length !== 1
+      || tags[0][1] !== recipient || !validHead(senderRegistryEvent, senderPolicyEvent,
+        senderRegistryPredecessorEvent, now)
+      || rumor.pubkey !== candidate.primaryDevicePubkey
+      || body?.protocol !== PROTOCOL || body.version !== 1 || body.type !== 'peer-recovery-root-candidate'
+      || body.previousPolicyEvent?.id !== senderPolicyEvent.id
+      || body.previousRecoveryPubkey !== senderRecoveryPubkey
+      || body.recipientAccountPubkey !== recipientCheckpoint.accountPubkey
+      || body.recipientPolicyId !== recipientCheckpoint.policyId
+      || body.recipientRegistryId !== recipientCheckpoint.registryId
+      || body.recipientDeviceId !== recipientDevice.deviceId
+      || !verifyDeviceAuthorityRegistry(body.nextRegistryEvent, body.nextPolicyEvent, { now })
+      || JSON.parse(body.nextRegistryEvent.content).generation !== 1) return null;
+    return { type: body.type, previousPolicyEvent: senderPolicyEvent,
+      nextPolicyEvent: body.nextPolicyEvent, nextRegistryEvent: body.nextRegistryEvent,
+      recoveryPubkey: candidate.recoveryPubkey };
   } catch { return null; }
 }

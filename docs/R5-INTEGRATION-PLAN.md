@@ -250,3 +250,84 @@ same immutable event only after refreshing authorization. If recovery or
 contact pinning is interrupted, retain the last accepted checkpoint and
 retry the exact signed successor; never accept an alternate branch by
 generation number alone.
+
+## R5 authority bridge implementation status (isolated, not production)
+
+The following experimental bridge is implemented behind explicit module APIs
+with no call site in `useNIP44DM.js`:
+
+* `src/lib/dmRatchetAuthority.js` validates one sender proof and one exact
+  recipient-device proof against their recovery-pinned policy and full
+  registry chains. It seals both proofs and the ratchet ciphertext inside a
+  NIP-59 message. Relay-visible EVENT fields contain no account or recovery
+  pubkey; the recipient device pubkey remains visible and can correlate
+  messages to that device.
+* `commitRatchetOutboundV2()` in `src/lib/dmRatchetTransactions.js` stores the
+  ratchet state, immutable wrapped event, authorization fence and sealed
+  operation journal atomically. Concurrent tabs converge on one operation id;
+  reusing it for changed application content fails. The outbox refuses a
+  forced publication after the 30-second proof expires.
+* `commitRatchetInboundV2()` checks the sealed message and both proofs, claims
+  the operation id in IndexedDB, and then atomically persists receive state
+  and a durable operation journal. Concurrent tabs cannot both claim an
+  operation. An expired processing claim can be recovered after a crash, so
+  the ratchet processor must only prepare a tentative transition and journal;
+  application effects must run from the committed journal through the
+  existing idempotent effect/order handlers.
+* `deviceAuthorityTransport.js` now has a peer-contact update envelope, not
+  only the older sibling-device envelope. It can deliver a primary-signed
+  registry successor or a recovery-root candidate privately to a device in a
+  separately pinned contact checkpoint. The peer store accepts only an exact
+  predecessor. A new recovery root is only a candidate until the contact
+  compares and confirms its full fingerprint independently; an account-key
+  signature cannot complete that step.
+* `deviceAuthorityContactVerification.js` provides a full SHA-256 fingerprint
+  over account and recovery pubkeys. Its API checks the entered value, but
+  cannot prove a person compared it out of band. A product UI must explain
+  that comparison and require an explicit confirmation before calling the
+  checkpoint replacement API.
+
+Focused node tests and the isolated Chromium harness exercise independent
+accounts, NIP-59 sealing, relay-visible fields, update/revocation delivery,
+operation replay, real IndexedDB cross-tab races, expiry holds and reload
+recovery. These tests do not exercise the application DM hook, a live relay
+WebSocket, or vodozemac message processing.
+
+### Remaining R5 release gates
+
+1. The authorized browser harness has no relay subscription/request-response
+   implementation for obtaining the recipient authority proof. The remote
+   primary must be reachable to answer each operation. Without that proof,
+   the send is rejected before the ratchet transaction. Authenticated update
+   helpers also need relay subscriptions, durable retries, and app lifecycle
+   integration.
+2. The same 30-second proof is embedded in the immutable NIP-59 rumor. After
+   expiry, the outbox holds the exact event and the receiver rejects it. There
+   is no safe proof refresh for that immutable envelope yet. Strict expiry
+   therefore limits delayed/offline delivery; accepting the proof at message
+   creation time would permit a compromised sender to backdate a previously
+   authorized message. A protocol decision is required before claiming both
+   strict 30-second freshness and long-offline delivery.
+3. The contact fingerprint and recovery-root candidate functions have no
+   ordinary-user screens, QR scanning/display, or usability validation. A
+   typed fingerprint check alone is not evidence of an independent channel.
+4. The relay sees a stable recipient device pubkey in the NIP-59 `p` tag.
+   This avoids exposing the account pubkey, but it introduces device-level
+   cross-conversation correlation. Per-contact or one-time mailbox routing
+   needs a separate protocol design before network rollout.
+5. The receive transaction reserves ratchet state and a sealed inbox journal;
+   commerce effects must be dispatched after commit through the durable
+   idempotency ledger. No order/payment application path is connected to this
+   experimental receiver yet.
+6. `src/hooks/useNIP44DM.js`, legacy conversation reads, attachment adapters,
+   contact/profile data, orders, reviews and payments remain unchanged. The
+   old experimental v1 freshness helpers remain available to old harnesses;
+   the new R5 methods never call them, but the old experimental API should be
+   removed or fenced before the ratchet prototype becomes selectable.
+
+No production protocol switch is justified until these gates, the ratchet
+engine’s independent security review, browser/relay integration, and
+compatibility tests pass. A held expired event remains sealed and durable; it
+is not automatically re-encrypted or routed to another device. User-facing
+recovery must retain the last accepted checkpoint if the fingerprint ceremony
+or storage commit is interrupted.
