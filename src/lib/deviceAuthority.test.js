@@ -207,6 +207,16 @@ test('freshness is scoped to pinned authority epoch, exact registry head, purpos
     policyEvent: state.policyEvent, registryEvent: state.registryEvent, expectedRegistryId: state.registryEvent.id,
     expectedPurpose: 'send-dm', expectedOperationId: operationId, now: now + 3,
   }));
+  const secondOperation = createDeviceFreshnessChallengeV2({
+    policyEvent: state.policyEvent, registryEvent: state.registryEvent, expectedRegistryId: state.registryEvent.id,
+    requesterDeviceSecret: state.primaryDevice.deviceSecret, requesterDeviceId: state.primaryDevice.deviceId,
+    targetDeviceId: state.primaryDevice.deviceId, purpose: 'send-dm', operationId: 'b'.repeat(32), now: now + 1,
+    randomBytes: (target) => target.fill(24),
+  });
+  assert.equal(verifyDeviceFreshnessResponseV2(response, secondOperation, {
+    policyEvent: state.policyEvent, registryEvent: state.registryEvent, expectedRegistryId: state.registryEvent.id,
+    expectedPurpose: 'send-dm', expectedOperationId: 'b'.repeat(32), now: now + 3,
+  }), null, 'the current proof cannot be reused for another existing-session message');
   assert.equal(verifyDeviceFreshnessResponseV2(response, challenge, {
     policyEvent: state.policyEvent, registryEvent: state.registryEvent, expectedRegistryId: 'f'.repeat(64), now: now + 3,
   }), null);
@@ -218,6 +228,15 @@ test('freshness is scoped to pinned authority epoch, exact registry head, purpos
     policyEvent: state.policyEvent, registryEvent: state.registryEvent, expectedRegistryId: state.registryEvent.id,
     expectedPurpose: 'send-dm', expectedOperationId: operationId, now: now + 34,
   }), null, 'expired leases never authorize a send');
+  const extendedBody = JSON.parse(response.content);
+  extendedBody.expiresAt = challenge.created_at + 300;
+  const extendedLease = finalizeEvent({ kind: response.kind, created_at: response.created_at,
+    tags: response.tags.map((tag) => tag[0] === 'expiration' ? ['expiration', String(extendedBody.expiresAt)] : tag),
+    content: JSON.stringify(extendedBody) }, state.authoritySecret);
+  assert.equal(verifyDeviceFreshnessResponseV2(extendedLease, challenge, {
+    policyEvent: state.policyEvent, registryEvent: state.registryEvent, expectedRegistryId: state.registryEvent.id,
+    expectedPurpose: 'send-dm', expectedOperationId: operationId, now: now + 3,
+  }), null, 'the current protocol rejects a proposed five-minute reusable session lease');
   const futureDated = buildDeviceFreshnessResponseV2({
     policyEvent: state.policyEvent, registryEvent: state.registryEvent, expectedRegistryId: state.registryEvent.id,
     challengeEvent: challenge, authoritySecret: state.authoritySecret, now: now + 20,

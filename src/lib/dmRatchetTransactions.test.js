@@ -211,12 +211,16 @@ test('ratchet outbox holds expired authorization and refreshes only the same dev
   const expiredAt = (first.freshnessResponse.created_at + 30) * 1000;
   assert.equal(shouldFlushOutboxRow(pending, expiredAt, true), false,
     'a forced retry cannot publish after recipient authorization expires');
+  assert.equal(pending.event.id, event.id, 'an offline recipient leaves the exact encrypted message queued');
+  assert.equal(pending.status, 'queued', 'expiry holds the outbox row rather than dropping the message');
   await assert.rejects(refreshRatchetOutboundAuthorization({
     owner,
     eventId: event.id,
     ...first.authorization,
     now: expiredAt,
   }), /fresh authorization/i);
+  assert.equal((await db.outbox.get(event.id)).event.id, event.id,
+    'a withheld authority leaves the ciphertext durable and unpublished');
 
   const second = peerFreshness(2, first.freshnessResponse.created_at + 31);
   const refreshed = await refreshRatchetOutboundAuthorization({
@@ -243,7 +247,10 @@ test('ratchet outbox holds expired authorization and refreshes only the same dev
   }), /fresh authorization/i, 'a lower generation cannot revive the pending event');
   assert.equal((await db.outbox.get(event.id)).ratchetDelivery.registryGeneration, 2);
   assert.throws(() => peerFreshness(3, second.freshnessResponse.created_at + 2, 'revoked'), /cannot prove this device/i);
-  assert.equal(shouldFlushOutboxRow(await db.outbox.get(event.id), (second.freshnessResponse.created_at + 31) * 1000, true), false);
+  const heldAfterRevocation = await db.outbox.get(event.id);
+  assert.equal(shouldFlushOutboxRow(heldAfterRevocation, (second.freshnessResponse.created_at + 31) * 1000, true), false);
+  assert.equal(heldAfterRevocation.event.id, event.id,
+    'revocation prevents publishing but never silently deletes or re-encrypts the pending message');
 });
 
 test('consumed prekey, new session and sealed inbox journal are one transaction', async () => {

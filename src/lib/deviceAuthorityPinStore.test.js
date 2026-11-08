@@ -115,3 +115,22 @@ test('keeping the same Nostr account identity does not authenticate a replacemen
     recoverySecret: attacker.recoverySecret, now: now + 2 }), /cannot authenticate/i,
   'the replacement recovery secret must be the already pinned root');
 });
+
+test('a stolen pinned recovery root can authorize a valid replacement, so signatures cannot detect root compromise', async () => {
+  const accountPubkey = getPublicKey(generateSecretKey());
+  const state = createDeviceAuthoritySetup({ accountPubkey, now });
+  const expectedRecoveryPubkey = getPublicKey(state.recoverySecret);
+  await pinInitialDeviceAuthorityPolicy({ policyEvent: state.policyEvent, expectedAccountPubkey: accountPubkey,
+    expectedRecoveryPubkey, now });
+
+  const attackerAuthoritySecret = generateSecretKey();
+  const replacement = replaceDeviceAuthority({ currentPolicyEvent: state.policyEvent,
+    recoverySecret: state.recoverySecret, nextAuthoritySecret: attackerAuthoritySecret, now: now + 1 });
+  const accepted = await advanceDeviceAuthorityPolicyPin({ currentPolicyEvent: state.policyEvent,
+    nextPolicyEvent: replacement.policyEvent, expectedAccountPubkey: accountPubkey,
+    expectedRecoveryPubkey, now: now + 1 });
+  assert.equal(accepted.policyId, replacement.policyEvent.id,
+    'a stolen R produces a cryptographically valid successor that a correctly pinned peer accepts');
+  assert.equal(JSON.parse(replacement.policyEvent.content).accountPubkey, accountPubkey,
+    'profile continuity alone does not expose that R was stolen');
+});
