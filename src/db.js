@@ -123,6 +123,14 @@ function makeDB(name) {
   d.version(17).stores({
     peerDeviceAuth: '&peerPubkey, generation, updatedAt',
   });
+  // v18 briefly introduced the DM-only journal during local development.
+  d.version(18).stores({
+    dmEffects: '&effectKey, eventId, status, updatedAt',
+  });
+  // v19 generalizes the journal to cover DM and group message effects.
+  d.version(19).stores({
+    messageEffects: '&effectKey, eventId, status, updatedAt',
+  });
   return d;
 }
 
@@ -359,7 +367,7 @@ export const db = new Proxy({}, {
         _warnedOnce = true;
         console.warn('[db] accessed before openDBFor — returning empty stubs');
       }
-      if (['messages', 'chatReads', 'profiles', 'groups', 'groupKeys', 'groupKeyGrants', 'groupMemberSigs', 'outbox', 'tombstones', 'vendorReviews', 'groupMemberDocs', 'ratchetDevices', 'ratchetSessions', 'ratchetInbox', 'mlsGroups', 'mlsInbox', 'deviceAuth', 'peerDeviceAuth'].includes(prop)) {
+      if (['messages', 'chatReads', 'profiles', 'groups', 'groupKeys', 'groupKeyGrants', 'groupMemberSigs', 'outbox', 'tombstones', 'vendorReviews', 'groupMemberDocs', 'ratchetDevices', 'ratchetSessions', 'ratchetInbox', 'mlsGroups', 'mlsInbox', 'deviceAuth', 'peerDeviceAuth', 'messageEffects'].includes(prop)) {
         return stubTable(prop);
       }
       return () => Promise.resolve();
@@ -389,6 +397,35 @@ export const saveMessage = async (chatId, msg) => {
     });
   } catch (error) {
     console.error('[db] Could not save message:', error);
+  }
+};
+
+// Cross-tab receive-side insertion gate. Unlike saveMessage (which merges
+// history and local patches), this reports which delivery won the unique-id
+// race so unread counters and notifications do not repeat for the same event.
+// Rows are sealed before entering the transaction; if the vault is locked,
+// no in-memory queue is mistaken for a durable application effect.
+export const saveMessageOnce = async (chatId, msg) => {
+  const owner = currentOwner();
+  if (!owner || !msg?.id || !_current) return { status: 'unavailable' };
+  const row = { ...msg, chatId };
+  try {
+    const sealed = await trySealMessageRow(row);
+    if (!sealed) return { status: 'locked' };
+    return await db.transaction('rw', 'messages', 'tombstones', async () => {
+      if (currentOwner() !== owner || !_current) return { status: 'unavailable' };
+      const [existing, tombstone] = await Promise.all([
+        _current.messages.get(msg.id),
+        db.tombstones.get(msg.id),
+      ]);
+      if (tombstone) return { status: 'tombstoned' };
+      if (existing) return { status: 'exists' };
+      await _current.messages.add(sealed);
+      return { status: 'inserted' };
+    });
+  } catch (error) {
+    console.error('[db] Could not claim an incoming message:', error);
+    return { status: 'failed', error };
   }
 };
 
@@ -516,6 +553,8 @@ export async function readStoredRows() {
 if (typeof window !== "undefined" && import.meta.env?.VITE_TEST_HOOKS === '1') {
   window.__cipher = {
     saveMessage, patchMessage, readStoredRows,
+    readMessageEffects: () => db.messageEffects.toArray(),
+    readOutboxRows: () => db.outbox.toArray(),
     // Test seam: the one-row change the payment check mark writes through, so
     // a spec can execute the product's writer instead of writing the field by
     // hand. Compiled out of the shipped build with the rest of this block.

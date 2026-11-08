@@ -130,10 +130,15 @@ const snapshot = (page) => page.evaluate(() => {
   return { keys: keys.sort(), rows };
 });
 
+const dmEffectSnapshot = (page) => page.evaluate(async () => {
+  const effects = await window.__cipher.readMessageEffects();
+  return effects.map(({ effectKey, eventId, status, intentHash }) => ({ effectKey, eventId, status, intentHash }));
+});
+
 test.use({ serviceWorkers: 'block' });
 
 test.describe('a report names one transaction', () => {
-  test('control: an answer naming one transaction writes the receipt once', async ({ page }) => {
+  test('control: a confirmed watcher result stores a receipt and durable DM effect', async ({ page }) => {
     const asked = [];
     await answerWatcher(page, asked, [{ txid: 'ab', confirmations: CONFIRMATIONS }]);
     await openThread(page);
@@ -152,6 +157,12 @@ test.describe('a report names one transaction', () => {
     const after = await snapshot(page);
     expect(after.keys.length, 'a receipt and its ledger entry exist after a confirmed answer').toBeGreaterThan(before.keys.length);
     expect(after.keys.some((key) => /_receipt_/.test(key)), 'the receipt is stored').toBe(true);
+    await expect.poll(async () => dmEffectSnapshot(page), { timeout: 15000 }).toHaveLength(1);
+    const firstEffects = await dmEffectSnapshot(page);
+    expect(firstEffects[0].status).toBe('pending'); // no relay accepted; outbox owns retry
+    const outbox = await page.evaluate(() => window.__cipher.readOutboxRows());
+    expect(outbox.some((row) => row.id === firstEffects[0].eventId && row.event.kind === 1059),
+      'the signed update is recoverable from the write-ahead outbox').toBe(true);
   });
 
   test('a watcher that names two transactions writes no receipt and moves no order', async ({ page }) => {

@@ -138,6 +138,16 @@ export function scopedSet(key, value) {
   } catch {}
 }
 
+// Callers that gate an external or irreversible effect on a local write use
+// this variant to distinguish a real storage commit from the best-effort
+// cache update above. The raw read bypasses the per-tab cache.
+export function scopedSetVerified(key, value) {
+  let expected;
+  try { expected = JSON.stringify(value); } catch { return false; }
+  scopedSet(key, value);
+  return scopedRaw(key) === expected;
+}
+
 export function scopedRemove(key) {
   const storageKey = scopeKey(key);
   try { safeStorage.removeItem(storageKey); } catch {}

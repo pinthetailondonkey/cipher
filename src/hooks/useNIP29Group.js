@@ -1,6 +1,6 @@
 import { useCallback, useEffect } from 'react';
 import { nip19 } from 'nostr-tools';
-import { db, saveMessage, markChatRead } from '../db';
+import { db, saveMessage, saveMessageOnce, markChatRead } from '../db';
 import { showNotification } from '../lib/notifications';
 import { useChatStore } from '../store/chatStore';
 import { getAuthenticatedPool, setAuthProofGroup } from '../lib/pool';
@@ -23,6 +23,7 @@ import { heldGroupRow } from '../lib/groupJoin';
 import { ACCESS_PRIVATE, ACCESS_PUBLIC, JOIN_APPROVAL, groupCreateTags, relayFacingLabel } from '../lib/groupCreate';
 import { distributeGroupKey } from '../lib/crypto/groupKeyDistribution';
 import { publishWriteAhead, startOutboxSync } from '../lib/outbox';
+import { completeMessageEffect, reserveMessageEffect } from '../lib/idempotentMessageEffect.js';
 import { groupSocketUrl } from '../lib/egress';
 import { relaysForPeer } from '../lib/dmRelays';
 import { dropSecuringSend, forgetPendingKeyRequest, queueSecuringSend, rememberPendingKeyRequest, resetKeyRequest, securingSendsFor } from '../lib/crypto/groupKeyRequest';
@@ -1078,6 +1079,31 @@ export function useNIP29Group({ identity }) {
         signer: { skBytes: signer.skBytes, pin: signer.pin },
       });
       if (!event) throw new Error('This group message has no signer: unlock your account.');
+      if (clientId) {
+        const idempotencyKey = `group-message-v1|${identity.pk}|${groupId}|${clientId}`;
+        const reservation = await reserveMessageEffect({
+          owner: identity.pk,
+          idempotencyKey,
+          intent: JSON.stringify({ groupId, clientId, replyId, payload }),
+          event,
+          relays: groupRelays,
+        });
+        if (reservation.status === 'sent') {
+          return { success: true, duplicate: true, eventId: reservation.eventId, relayCount: 0 };
+        }
+        try {
+          await publishAuthedGroupEvent(identity, reservation.event);
+          try { await completeMessageEffect({ owner: identity.pk, eventId: reservation.eventId }); }
+          catch (error) { console.warn('[group] A delivered message remains queued for idempotent recovery:', error); }
+          return { success: true, event: reservation.event, relayCount: 1 };
+        } catch (error) {
+          // The immutable event is already in the write-ahead outbox. A retry
+          // will reuse it; signing a replacement under the same client id
+          // could create a second logical group message.
+          console.warn('[NIP29] Group relay did not accept the message after AUTH:', error);
+          return { success: true, queued: true, event: reservation.event, relayCount: 0 };
+        }
+      }
       // Write-ahead: the signed event is in the outbox before the relay is
       // tried and leaves it on the first accept (publishWriteAhead).
       const sent = await publishWriteAhead(event, null, () => [publishAuthedGroupEvent(identity, event)]);
@@ -1709,7 +1735,15 @@ export function useNIP29Group({ identity }) {
       // current-epoch rate limit below. Pending ciphertext is the exception:
       // when its epoch key arrives, history must retry decryption.
       const storedMessage = await db.messages.get(event.id);
-      if (storedMessage && !storedMessage.pending) return;
+      if (storedMessage && !storedMessage.pending) {
+        if (storedMessage.pubkey !== identity.pk && useChatStore.getState().activeGroup?.id === groupId) {
+          // Read state belongs to the shared account database. A duplicate
+          // received in this active tab must still advance that marker even
+          // if another tab won the message insertion race.
+          markChatRead(groupId, Math.max(Math.floor(Date.now() / 1000), event.created_at));
+        }
+        return;
+      }
 
       const blocked = useChatStore.getState().blockedUsers || [];
       if (blocked.includes(actBy) && actBy !== identity.pk) return;
@@ -1835,57 +1869,68 @@ export function useNIP29Group({ identity }) {
         }
       }
 
+      const baseMsg = stampArrival({
+        id: event.id, clientId, isSender: actByClamped === identity.pk,
+        pubkey: actByClamped, timestamp: event.created_at,
+        deliveryStatus: actByClamped === identity.pk ? 'sent' : undefined,
+        local_timestamp: Date.now(),
+        rawContent: isPending ? null : plaintext,
+        ciphertext: isPending ? event.content : null,
+        epoch: decEpoch, pending: isPending,
+        replyTo: replyTag ? replyTag[1] : null, isGroup: true
+      });
+      const insertion = await saveMessageOnce(groupId, baseMsg);
+      if (insertion.status === 'tombstoned') return;
+      if (!['inserted', 'exists'].includes(insertion.status)) {
+        console.warn('[group] The event was not durably stored; application effects were deferred.', insertion.status);
+        return;
+      }
+      // This event id can already own a ciphertext-only pending row. Once its
+      // epoch key arrives, merge the plaintext into that row without claiming
+      // a second notification or unread effect.
+      if (storedMessage?.pending) await saveMessage(groupId, baseMsg);
+
       setGroupMessages(prev => {
         const groupMsgs = prev[groupId] || [];
         const existingIndex = groupMsgs.findIndex((m) => sameOutgoingMessage(m, event, identity, clientId, actByClamped));
 
-        const baseMsg = stampArrival({
-          id: event.id, clientId, isSender: actByClamped === identity.pk,
-          pubkey: actByClamped, timestamp: event.created_at,
-          deliveryStatus: actByClamped === identity.pk ? 'sent' : undefined,
-          local_timestamp: Date.now(),
-          rawContent: isPending ? null : plaintext,
-          ciphertext: isPending ? event.content : null,
-          epoch: decEpoch, pending: isPending,
-          replyTo: replyTag ? replyTag[1] : null, isGroup: true
-        });
-
         if (existingIndex >= 0) {
           const newMsgs = [...groupMsgs];
           newMsgs[existingIndex] = mergeGroupMessage(newMsgs[existingIndex], baseMsg);
-          saveMessage(groupId, newMsgs[existingIndex]);
           return { ...prev, [groupId]: newMsgs };
-        }
-        saveMessage(groupId, baseMsg);
-        // A message arriving into the group on screen is read: the marker is
-        // written to the database or the message counts as unread after reload.
-        if (actByClamped !== identity.pk && useChatStore.getState().activeGroup?.id === groupId) {
-          markChatRead(groupId, Math.max(Math.floor(Date.now() / 1000), event.created_at));
-        }
-        if (actByClamped !== identity.pk && !isPending && !shouldSuppressGroup(groupId)) {
-          let isReplyToMe = false;
-          let isMentioned = false;
-          if (replyTag) {
-            const msgs = useChatStore.getState().groupMessages[groupId] || [];
-            const originalMsg = msgs.find(m => m.id === replyTag[1]);
-            isReplyToMe = originalMsg && originalMsg.isSender;
-          }
-          try {
-            const myProfile = useChatStore.getState().profiles[identity.pk];
-            // The published handle record is the fallback: my own profile only
-            // reaches the store once a group has carried a message of mine, so
-            // without this a mention in the first exchange is not seen. The
-            // record is read at boot (useChatBootstrap) for exactly this.
-            const myUsername = myProfile?.name || myProfile?.username || useChatStore.getState().myUsername;
-            if (myUsername && parsed.message && parsed.message.includes('@' + myUsername)) isMentioned = true;
-          } catch (e) {}
-          // S11: the sender is the throttle key; only the OS notification is held back.
-          if (isReplyToMe) showNotification(`💬 Reply in ${groupId.slice(0, 6)}`, actByClamped);
-          else if (isMentioned) showNotification('📣 You were mentioned', actByClamped);
-          else showNotification('New Group Message', actByClamped);
         }
         return { ...prev, [groupId]: [...groupMsgs, baseMsg].sort(sortMessages) };
       });
+      if (actByClamped === identity.pk) return;
+      // The durable event-id claim is the cross-tab winner for notification
+      // and read effects. Keep those effects outside the React updater, which
+      // React may invoke more than once in development or concurrent renders.
+      if (useChatStore.getState().activeGroup?.id === groupId) {
+        markChatRead(groupId, Math.max(Math.floor(Date.now() / 1000), event.created_at));
+      }
+      if (insertion.status !== 'inserted') return;
+      if (!isPending && !shouldSuppressGroup(groupId)) {
+        let isReplyToMe = false;
+        let isMentioned = false;
+        if (replyTag) {
+          const msgs = useChatStore.getState().groupMessages[groupId] || [];
+          const originalMsg = msgs.find(m => m.id === replyTag[1]);
+          isReplyToMe = originalMsg && originalMsg.isSender;
+        }
+        try {
+          const myProfile = useChatStore.getState().profiles[identity.pk];
+          // The published handle record is the fallback: my own profile only
+          // reaches the store once a group has carried a message of mine, so
+          // without this a mention in the first exchange is not seen. The
+          // record is read at boot (useChatBootstrap) for exactly this.
+          const myUsername = myProfile?.name || myProfile?.username || useChatStore.getState().myUsername;
+          if (myUsername && parsed.message && parsed.message.includes('@' + myUsername)) isMentioned = true;
+        } catch (e) {}
+        // S11: the sender is the throttle key; only the OS notification is held back.
+        if (isReplyToMe) showNotification(`💬 Reply in ${groupId.slice(0, 6)}`, actByClamped);
+        else if (isMentioned) showNotification('📣 You were mentioned', actByClamped);
+        else showNotification('New Group Message', actByClamped);
+      }
     };
 
     session.listeners.add(onFrame);
@@ -1922,25 +1967,27 @@ export function useNIP29Group({ identity }) {
           // Historical messages use the same verified actor binding rule as
           // live frames; body `by` is not identity evidence.
           const actBy = decoded.sender;
+          const historyMessage = stampArrival({
+            id: event.id, clientId, isSender: actBy === identity.pk,
+            pubkey: actBy, timestamp: event.created_at,
+            deliveryStatus: actBy === identity.pk ? 'sent' : undefined,
+            local_timestamp: Date.now(), rawContent: keptPlaintext,
+            epoch: decoded.epoch, pending: false,
+            replyTo: replyTag ? replyTag[1] : null, isGroup: true,
+          });
+          const insertion = await saveMessageOnce(gid, historyMessage);
+          if (insertion.status === 'tombstoned'
+            || !['inserted', 'exists'].includes(insertion.status)) continue;
+          await saveMessage(gid, historyMessage);
           setGroupMessages(prev => {
             const groupMsgs = prev[gid] || [];
             const idx = groupMsgs.findIndex((m) => sameOutgoingMessage(m, event, identity, clientId, actBy));
-            const newMsg = stampArrival({
-              id: event.id, clientId, isSender: actBy === identity.pk,
-              pubkey: actBy, timestamp: event.created_at,
-              deliveryStatus: actBy === identity.pk ? 'sent' : undefined,
-              local_timestamp: Date.now(), rawContent: keptPlaintext,
-              epoch: decoded.epoch, pending: false,
-              replyTo: replyTag ? replyTag[1] : null, isGroup: true,
-            });
             if (idx >= 0) {
               const updated = [...groupMsgs];
-              updated[idx] = mergeGroupMessage(updated[idx], newMsg);
-              saveMessage(gid, updated[idx]);
+              updated[idx] = mergeGroupMessage(updated[idx], historyMessage);
               return { ...prev, [gid]: updated };
             }
-            saveMessage(gid, newMsg);
-            return { ...prev, [gid]: [...groupMsgs, newMsg].sort(sortMessages) };
+            return { ...prev, [gid]: [...groupMsgs, historyMessage].sort(sortMessages) };
           });
         }
       } catch (err) { console.warn('[group-key] refresh failed', err); }

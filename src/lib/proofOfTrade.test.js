@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { schnorr } from '@noble/curves/secp256k1.js';
-import { acceptPayment, canonicalReceipt, coSignPayment, countersignToSend, normalizeAmount, publicReceipt, rankVolume, rankVolumeByStanding, receiptBindsOrder, sendCountersignOnce, signPublicView, signReceipt, stripArrivingReceiptMark, verifyPublicView, verifyReceipt, verifyVendorView } from './proofOfTrade.js';
+import { acceptPayment, canonicalReceipt, coSignPayment, countersignToSend, normalizeAmount, publicReceipt, rankVolume, rankVolumeByStanding, receiptBindsOrder, reusableWatcherReceipt, sendCountersignOnce, signPublicView, signReceipt, stripArrivingReceiptMark, verifyPublicView, verifyReceipt, verifyReceiptSignature, verifyVendorView } from './proofOfTrade.js';
 
 function hex(bytes) {
   return [...bytes].map((byte) => byte.toString(16).padStart(2, '0')).join('');
@@ -104,6 +104,29 @@ test('both parties sign the same bytes, and one bad signature fails', () => {
   assert.equal(verifyReceipt({ ...signed, body: { ...signed.body, txid: 'other' } }), false);
   const moved = signReceipt(vendorKey, { ...body, at: body.at + 1 });
   assert.notEqual(moved.hash, signed.hash);
+});
+
+test('a locally signed partial receipt can be verified for crash recovery', () => {
+  const buyerKey = schnorr.utils.randomSecretKey();
+  const vendorKey = schnorr.utils.randomSecretKey();
+  const buyer = hex(schnorr.getPublicKey(buyerKey));
+  const vendor = hex(schnorr.getPublicKey(vendorKey));
+  const partial = signReceipt(vendorKey, {
+    orderId: 'recover-payment', buyer, vendor, currency: 'btc', address: 'bc1q',
+    amount: '0.01', txid: 'transfer', at: 100, outcome: 'confirmed',
+  });
+  assert.equal(verifyReceipt(partial), false, 'one signature is not a completed receipt');
+  assert.equal(verifyReceiptSignature(partial, vendor), true);
+  assert.equal(verifyReceiptSignature(partial, buyer), false);
+  assert.equal(reusableWatcherReceipt(partial, {
+    orderId: 'recover-payment', buyer, vendor, currency: 'btc', address: 'bc1q',
+    amount: '0.01', txid: 'transfer', outcome: 'confirmed', signer: vendor,
+  }), partial);
+  assert.equal(reusableWatcherReceipt(partial, {
+    orderId: 'recover-payment', buyer, vendor, currency: 'btc', address: 'bc1q',
+    amount: '0.01', txid: 'different-transfer', outcome: 'confirmed', signer: vendor,
+  }), null);
+  assert.equal(verifyReceiptSignature({ ...partial, body: { ...partial.body, txid: 'other' } }, vendor), false);
 });
 
 test('outcome is the vendor assertion at signing, not a dispute', () => {

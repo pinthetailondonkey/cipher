@@ -165,6 +165,9 @@ export async function sendCountersignOnce({ sendDM, counterparty, orderId, accep
         status: ORDER_STATUS.PAID,
         receipt: accepted.receipt,
         ...(accepted.published ? { published: accepted.published } : {}),
+      }, null, null, {
+        idempotencyKey: `receipt-countersign-v1|${counterparty}|${orderId}|${hash}`,
+        intent: `receipt-countersign-v1|${counterparty}|${orderId}|${hash}`,
       });
     } catch (error) {
       result = { success: false, error: error?.message };
@@ -222,6 +225,44 @@ export function verifyReceipt(signed) {
   } catch {
     return false;
   }
+}
+
+// Verifies one party's already-created signature without pretending that the
+// receipt is complete. This is used only to recover the exact watcher receipt
+// after a crash between reserving a txid and sending its DM update.
+export function verifyReceiptSignature(signed, pubkey) {
+  try {
+    if (!signed?.body || !signed?.hash || !pubkey) return false;
+    const body = canonicalReceipt(signed.body);
+    const message = receiptBytes(body);
+    if (bytesToHex(sha256(message)) !== signed.hash) return false;
+    const normalized = String(pubkey).toLowerCase();
+    const role = normalized === body.buyer ? 'buyer' : normalized === body.vendor ? 'vendor' : '';
+    if (!role || !signed.sigs?.[role]) return false;
+    return schnorr.verify(hexToBytes(signed.sigs[role]), message, hexToBytes(normalized));
+  } catch {
+    return false;
+  }
+}
+
+// Recover a device's already-signed watcher receipt only when the current
+// watcher report and order still match every signed field. This is deliberately
+// partial-signature aware: a vendor or buyer's first watcher signature is not
+// misrepresented as a fully co-signed receipt.
+export function reusableWatcherReceipt(prior, {
+  orderId, buyer, vendor, currency, address, amount, txid, outcome, signer,
+} = {}) {
+  const body = prior?.body;
+  if (!body || !verifyReceiptSignature(prior, signer)) return null;
+  if (String(body.orderId) !== String(orderId)
+    || String(body.buyer).toLowerCase() !== String(buyer).toLowerCase()
+    || String(body.vendor).toLowerCase() !== String(vendor).toLowerCase()
+    || String(body.currency).toLowerCase() !== String(currency).toLowerCase()
+    || String(body.address) !== String(address)
+    || body.amount !== normalizeAmount(amount)
+    || String(body.txid) !== String(txid)
+    || String(body.outcome) !== String(outcome)) return null;
+  return prior;
 }
 
 function publicBody(input = {}) {

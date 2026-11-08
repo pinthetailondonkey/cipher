@@ -1,8 +1,8 @@
 import { useRef } from 'react';
 import { useChatStore } from '../../store/chatStore';
 import { db, patchMessage, saveMessage } from '../../db';
-import { getActivePubkey, scopedGet, scopedSet } from '../../lib/storage';
-import { addressSpokenFor, getOrderPaymentMethods, loadVendorPaymentConfig, markConsumed, readConsumedLedger, readPaymentAddresses, txidSpokenFor } from '../../lib/vendorPayments';
+import { getActivePubkey, scopedGet, scopedSet, scopedSetVerified } from '../../lib/storage';
+import { addressSpokenFor, consumedKey, getOrderPaymentMethods, loadVendorPaymentConfig, markConsumed, readConsumedLedger, readPaymentAddresses, txidSpokenFor } from '../../lib/vendorPayments';
 import { getAuthenticatedPool } from '../../lib/pool';
 import { generalRelays } from '../../lib/relays';
 import { ORDER_STATUS, RECEIPT_OUTCOME, acceptAmount, acceptanceCoin, acceptanceDemand, acceptanceDerivationPreference, amountCovers, nextPaymentState, orderCoinAmount } from '../../lib/paymentState';
@@ -10,11 +10,12 @@ import { sendOutcome } from '../../lib/sendOutcome';
 import { checkPayment } from '../../lib/paymentWatch';
 import { readCachedProducts, orderProduct } from '../../lib/listing';
 import { activeUrl, entryById } from '../../lib/egress';
-import { publicReceipt, rememberPublicView, receiptBindsOrder, signPublicView, signReceipt } from '../../lib/proofOfTrade';
+import { publicReceipt, rememberPublicView, receiptBindsOrder, reusableWatcherReceipt, signPublicView, signReceipt } from '../../lib/proofOfTrade';
 import { frozenIssuedMethods, issuedPaymentMethods, newestOwnIssuedMethods, orderPaymentDetails, orderRecordForReceipt, orderState, reopenedStatus } from '../../lib/orderActions';
 import { paymentAddressesProblem } from '../../lib/paymentAddress';
 import { stampArrival } from './media';
 import { createSingleFlight } from '../../lib/singleFlight';
+import { withPaymentLedgerLock } from '../../lib/paymentLedgerLock.js';
 
 // The device mark for a chain check that could not run. It is a fact about
 // this device, never about the order, so it is written to its own top-level
@@ -66,15 +67,8 @@ if (typeof window !== 'undefined' && import.meta.env?.VITE_TEST_HOOKS === '1') {
 // append become one section. The lock is named after the account whose ledger
 // it guards: two accounts on one device keep separate ledgers and never wait
 // on each other. (W2b)
-function withLedgerLock(run) {
-  const scope = getActivePubkey();
-  const name = scope ? `cipher-consumed-ledger:${scope}` : 'cipher-consumed-ledger';
-  const locks = globalThis.navigator?.locks;
-  // Every engine this app ships on has Web Locks. Where it is missing the
-  // block runs exactly as it did before: no queue, no crash, and nothing in
-  // the read or the refusals is skipped.
-  if (!locks || typeof locks.request !== 'function') return run();
-  return locks.request(name, { mode: 'exclusive' }, run);
+function withLedgerLock(run, scope) {
+  return withPaymentLedgerLock(run, { scope });
 }
 
 export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, openChat }) {
@@ -195,10 +189,10 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
     readCachedProducts().filter((row) => row && row.vendorPubkey === identity.pk)
   );
 
-  const deliverOrderUpdate = async (peer, payload, localPatch, okText) => {
+  const deliverOrderUpdate = async (peer, payload, localPatch, okText, sendOptions = undefined) => {
     let result;
     try {
-      result = await sendDM(peer, payload);
+      result = await sendDM(peer, payload, null, null, sendOptions);
     } catch (error) {
       console.error('[orders] Update threw:', error);
       setToast({ type: 'error', message: error?.message || 'The order update did not send.' });
@@ -717,6 +711,9 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
             // scopedRaw, never the per-tab cached scopedGet, which is stale
             // in the other tab by definition. (W2b)
             const signed = await withLedgerLock(async () => {
+              if (String(getActivePubkey()).toLowerCase() !== String(identity.pk).toLowerCase()) {
+                throw new Error('The active account changed while the watcher was checking. Nothing was confirmed; reopen this order and check again.');
+              }
               const read = readConsumedLedger();
               if (!read.ok) {
                 // Marked before the refusal goes out, so the card keeps saying
@@ -760,7 +757,22 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
               const amount = typeof paid === 'number'
                 ? paid.toFixed(12).replace(/0+$/, '').replace(/\.$/, '')
                 : String(paid);
-              const receipt = signReceipt(identity.sk, {
+              const priorReceipt = scopedGet(`receipt_${msg.id}`, null);
+              const reusable = reusableWatcherReceipt(priorReceipt, {
+                orderId: msg.id,
+                buyer: msg.pubkey,
+                vendor: identity.pk,
+                currency,
+                address,
+                amount,
+                txid: outcome.report.txid,
+                outcome: RECEIPT_OUTCOME.CONFIRMED,
+                signer: identity.pk,
+              });
+              // Recover after a crash between recording the transfer and
+              // reserving its DM outbox event. Re-signing with a new timestamp
+              // would create a second logical payment confirmation.
+              const receipt = reusable || signReceipt(identity.sk, {
                 orderId: msg.id,
                 buyer: msg.pubkey,
                 vendor: identity.pk,
@@ -771,18 +783,30 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
                 at: Math.floor(Date.now() / 1000),
                 outcome: RECEIPT_OUTCOME.CONFIRMED,
               });
-              scopedSet(`receipt_${msg.id}`, receipt);
+              if (!scopedSetVerified(`receipt_${msg.id}`, receipt)) {
+                throw new Error('The receipt could not be saved on this device. Nothing was sent. Make space, then check again.');
+              }
               // The envelope { v: 1, entries } lets a future build tell a
               // corrupt ledger from an empty one. (security S1)
-              scopedSet('consumed_txids', { v: 1, entries: markConsumed(ledger, {
-                currency,
-                txid: outcome.report.txid,
-                orderId: msg.id,
-                address,
-                at: Math.floor(Date.now() / 1000),
-              }) });
+              const consumed = ledger[consumedKey(currency, outcome.report.txid)];
+              if (consumed && (String(consumed.orderId) !== String(msg.id)
+                || String(consumed.address || '').toLowerCase() !== String(address).toLowerCase())) {
+                throw new Error('The saved payment record does not match this order. Nothing was sent.');
+              }
+              if (!consumed) {
+                const nextLedger = { v: 1, entries: markConsumed(ledger, {
+                  currency,
+                  txid: outcome.report.txid,
+                  orderId: msg.id,
+                  address,
+                  at: Math.floor(Date.now() / 1000),
+                }) };
+                if (!scopedSetVerified('consumed_txids', nextLedger)) {
+                  throw new Error('The payment record could not be saved on this device. Nothing was sent. Make space, then check again.');
+                }
+              }
               return receipt;
-            });
+            }, identity.pk);
             const payload = {
               type: 'order_update',
               orderId: msg.id,
@@ -799,6 +823,10 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
               payload,
               { status: payload.status, paymentState: outcome.state, paymentSeenBy: 'watcher', receipt: signed },
               'Your watcher confirmed the payment.',
+              {
+                idempotencyKey: `payment-confirm-v1|${msg.pubkey}|${msg.id}|${signed.hash}`,
+                intent: `payment-confirm-v1|${msg.pubkey}|${msg.id}|${currency}|${outcome.report.txid}|${signed.hash}`,
+              },
             );
           } else {
             const payload = {

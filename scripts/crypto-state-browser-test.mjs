@@ -1,7 +1,7 @@
 import { createServer as createViteServer } from 'vite';
 import { chromium } from 'playwright';
 import { readFile } from 'node:fs/promises';
-import { generateSecretKey, getPublicKey } from 'nostr-tools/pure';
+import { finalizeEvent, generateSecretKey, getPublicKey } from 'nostr-tools/pure';
 import { buildDeviceRegistryEvent } from '../src/lib/deviceEnrollment.js';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -111,6 +111,96 @@ if (peerOwner === owner) throw new Error('Peer device-registry flow requires ind
   const second = await context.newPage();
   await second.goto(url, { waitUntil: 'domcontentloaded' });
   await setup(second);
+
+  // The DM effect journal is shared by real same-account Chromium tabs. Two
+  // separately signed candidates race for one countersign idempotency key;
+  // IndexedDB must choose one immutable event and atomically pair it with the
+  // write-ahead outbox row. Completing through a second tab simulates delivery
+  // followed by a crash before the first tab updated local state.
+  const effectCandidates = [
+    finalizeEvent({ kind: 1059, created_at: registryNow, tags: [], content: 'candidate-a' }, accountSecret),
+    finalizeEvent({ kind: 1059, created_at: registryNow, tags: [], content: 'candidate-b' }, accountSecret),
+  ];
+  const effectRace = await Promise.all(effectCandidates.map((event, index) => [first, second][index].evaluate(async ({ candidate, key }) => {
+    const { reserveMessageEffect } = await import('/src/lib/idempotentMessageEffect.js');
+    return reserveMessageEffect({
+      owner: localStorage.getItem('cipher_db_owner'),
+      idempotencyKey: key,
+      intent: key,
+      event: candidate,
+      relays: ['wss://relay-one.invalid'],
+    });
+  }, { candidate: event, key: 'browser-receipt|order-a|receipt-a' })));
+  if (effectRace[0].eventId !== effectRace[1].eventId
+    || effectRace.filter((row) => row.created).length !== 1
+    || effectRace.some((row) => row.event?.id !== effectRace[0].eventId)) {
+    throw new Error(`Cross-tab DM effect reservation diverged: ${JSON.stringify(effectRace.map(({ eventId, created, event }) => ({ eventId, created, eventIdFromEvent: event?.id })))}`);
+  }
+  await second.evaluate(async (eventId) => {
+    const { completeMessageEffect } = await import('/src/lib/idempotentMessageEffect.js');
+    await completeMessageEffect({ owner: localStorage.getItem('cipher_db_owner'), eventId });
+  }, effectRace[0].eventId);
+  const recoveredEffect = await first.evaluate(async ({ event, key }) => {
+    const { reserveMessageEffect } = await import('/src/lib/idempotentMessageEffect.js');
+    return reserveMessageEffect({ owner: localStorage.getItem('cipher_db_owner'), idempotencyKey: key, intent: key, event });
+  }, { event: effectCandidates[1], key: 'browser-receipt|order-a|receipt-a' });
+  if (recoveredEffect.status !== 'sent' || recoveredEffect.event !== null) {
+    throw new Error('A second tab retried an already completed DM application effect.');
+  }
+  const groupActorSecret = generateSecretKey();
+  const groupCandidates = [
+    finalizeEvent({ kind: 9, created_at: registryNow, tags: [['h', 'browser-group-id'], ['client', 'browser-group-client']], content: 'group ciphertext A' }, groupActorSecret),
+    finalizeEvent({ kind: 9, created_at: registryNow, tags: [['h', 'browser-group-id'], ['client', 'browser-group-client']], content: 'group ciphertext B' }, groupActorSecret),
+  ];
+  const groupEffectRace = await Promise.all(groupCandidates.map((event, index) => [first, second][index].evaluate(async ({ candidate, key }) => {
+    const { reserveMessageEffect } = await import('/src/lib/idempotentMessageEffect.js');
+    return reserveMessageEffect({
+      owner: localStorage.getItem('cipher_db_owner'),
+      idempotencyKey: key,
+      intent: 'same encrypted group client message',
+      event: candidate,
+      relays: ['wss://group-relay.invalid'],
+    });
+  }, { candidate: event, key: 'group-message-v1|browser-group-id|browser-group-client' })));
+  if (groupEffectRace[0].eventId !== groupEffectRace[1].eventId
+    || groupEffectRace.filter((row) => row.created).length !== 1
+    || groupEffectRace.some((row) => row.event?.pubkey !== getPublicKey(groupActorSecret))) {
+    throw new Error(`Cross-tab group message reservation lost its actor or event identity: ${JSON.stringify(groupEffectRace.map(({ eventId, created }) => ({ eventId, created })))}`);
+  }
+  await second.evaluate(async (eventId) => {
+    const { completeMessageEffect } = await import('/src/lib/idempotentMessageEffect.js');
+    await completeMessageEffect({ owner: localStorage.getItem('cipher_db_owner'), eventId });
+  }, groupEffectRace[0].eventId);
+  // Incoming DM and group deliveries share the same durable message-id claim.
+  // Race two real tabs against one event and make sure only one can own the
+  // side-effect gate after IndexedDB commits the encrypted message row.
+  const incomingMessageRace = await Promise.all([first, second].map((page) => page.evaluate(async () => {
+    const { saveMessageOnce } = await import('/src/db.js');
+    return saveMessageOnce('browser-peer', {
+      id: 'browser-incoming-once', timestamp: 11,
+      pubkey: 'browser-peer', data: { type: 'text', message: 'one durable delivery' },
+    });
+  })));
+  if (incomingMessageRace.filter((row) => row.status === 'inserted').length !== 1
+    || incomingMessageRace.filter((row) => row.status === 'exists').length !== 1) {
+    throw new Error(`Cross-tab incoming event claim was not exclusive: ${JSON.stringify(incomingMessageRace)}`);
+  }
+  const incomingMessageCount = await first.evaluate(async () =>
+    (await (await import('/src/db.js')).db.messages.where('id').equals('browser-incoming-once').count()));
+  if (incomingMessageCount !== 1) throw new Error(`Incoming event stored ${incomingMessageCount} times.`);
+  const paymentLockRace = await Promise.all([first, second].map((page, index) => page.evaluate(async (tab) => {
+    const { withPaymentLedgerLock } = await import('/src/lib/paymentLedgerLock.js');
+    return withPaymentLedgerLock(async () => {
+      if (localStorage.getItem('browser-payment-lock-active') === '1') return { overlap: true, tab };
+      localStorage.setItem('browser-payment-lock-active', '1');
+      await new Promise((resolve) => setTimeout(resolve, 80));
+      localStorage.setItem('browser-payment-lock-active', '0');
+      return { overlap: false, tab };
+    }, { scope: localStorage.getItem('cipher_db_owner') });
+  }, index)));
+  if (paymentLockRace.some((row) => row.overlap)) {
+    throw new Error(`Concurrent browser payment confirmations escaped the cross-tab lock: ${JSON.stringify(paymentLockRace)}`);
+  }
 
   // Exercise registry transport with two independent browser accounts. The
   // relay-visible object is the actual kind-1059 event produced in Chromium;
@@ -315,6 +405,12 @@ if (peerOwner === owner) throw new Error('Peer device-registry flow requires ind
     nativeIndexedDB: true,
     concurrentTabs: race,
     concurrentRatchetTabs: ratchetRace,
+    concurrentMessageEffectTabs: effectRace.map(({ eventId, created }) => ({ eventId, created })),
+    concurrentGroupMessageTabs: groupEffectRace.map(({ eventId, created }) => ({ eventId, created })),
+    dmEffectCrashRecovery: recoveredEffect.status,
+    incomingMessageTabs: incomingMessageRace.map(({ status }) => status),
+    incomingMessageRows: incomingMessageCount,
+    paymentLedgerLockAcrossTabs: paymentLockRace,
     concurrentDeviceRegistryTabs: registryRace,
     privatePeerRegistryAcrossIndependentAccounts: acceptedPeerRegistry,
     sealedDeviceCredentialRestoreAndRevocation: revokedDevice,

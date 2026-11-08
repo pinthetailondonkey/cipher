@@ -1,6 +1,7 @@
 import { db, currentOwner } from '../db';
 import { getAuthenticatedPool } from './pool';
 import { generalRelays, groupRelays } from './relays';
+import { completeQueuedMessageEffect } from './idempotentMessageEffect.js';
 
 const flushes = new Map();
 const syncWatchers = new Map();
@@ -152,7 +153,15 @@ export async function flushNostrOutbox(identity, { force = false } = {}) {
             .join('; '),
         });
         if (settled.action === 'delete') {
-          await outbox.delete(queued.id);
+          if (queued.effectKey) await completeQueuedMessageEffect(identity.pk, queued);
+          else await outbox.delete(queued.id);
+          await updateMessageStatus(queued.id, 'sent', identity.pk);
+          continue;
+        }
+        if (queued.effectKey && (await db.messageEffects.get(queued.effectKey))?.status === 'sent') {
+          // Another tab may have received the relay acknowledgement and
+          // completed this same immutable event while this attempt was still
+          // in flight. Do not let this tab repaint a completed effect failed.
           await updateMessageStatus(queued.id, 'sent', identity.pk);
           continue;
         }
@@ -161,6 +170,10 @@ export async function flushNostrOutbox(identity, { force = false } = {}) {
       } catch (error) {
         if (currentOwner() !== identity.pk) return;
         console.warn('[outbox] Retry failed:', queued.id, error);
+        if (queued.effectKey && (await db.messageEffects.get(queued.effectKey))?.status === 'sent') {
+          await updateMessageStatus(queued.id, 'sent', identity.pk);
+          continue;
+        }
         const settled = settleOutboxAttempt(queued, { accepted: false, error: error?.message || String(error) });
         await outbox.update(queued.id, settled.patch);
         await updateMessageStatus(queued.id, 'failed', identity.pk);

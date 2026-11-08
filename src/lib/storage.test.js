@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { migrateLegacyScope, resetScopeMigration, scopeKey, scopedGet } from './storage.js';
+import { migrateLegacyScope, resetScopeMigration, scopeKey, scopedGet, scopedSetVerified } from './storage.js';
 
 function memoryStorage(seed = {}) {
   const data = new Map(Object.entries(seed));
@@ -60,4 +60,16 @@ test('a guest scope and an unset key migrate nothing', () => {
   });
   assert.equal(scopeKey('cfg'), 'cipher_guest_cfg');
   assert.equal(localStorage.getItem('cipher_guest_cfg'), '"x"');
+});
+
+test('a payment-critical scoped write reports storage refusal instead of trusting its cache', () => {
+  resetScopeMigration();
+  globalThis.localStorage = {
+    getItem: (key) => key === 'cipher_active_pubkey' ? pk : null,
+    setItem() {},
+    removeItem() {},
+    key: () => null,
+    length: 0,
+  };
+  assert.equal(scopedSetVerified('receipt-order', { hash: 'signed' }), false);
 });
