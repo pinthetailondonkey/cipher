@@ -37,11 +37,18 @@ const rows = EGRESS.filter((row) => row.called !== false && !row.dynamic && row.
 process.stdout.write(JSON.stringify(rows));
 `;
 
-async function bundle(extraEnv) {
+const PROTOCOL_PROBE = `
+import { EGRESS, activeUrl } from ${JSON.stringify(join(TREE, 'src/lib/egress.js'))};
+const externalOverrides = Object.fromEntries(EGRESS.map((row) => [row.id, 'wss://relay.example.invalid']));
+const config = { overrides: externalOverrides, lists: { profile: ['wss://relay.example.invalid'], dm: ['wss://relay.example.invalid'] } };
+process.stdout.write(JSON.stringify(EGRESS.map((row) => activeUrl(row, config)).filter(Boolean)));
+`;
+
+async function bundle(extraEnv, probe = PROBE) {
   const { build } = await import(join(TREE, 'node_modules/vite/dist/node/index.js'));
   const dir = mkdtempSync(join(tmpdir(), 'relay-wall-'));
   const entry = join(dir, 'probe.mjs');
-  writeFileSync(entry, PROBE);
+  writeFileSync(entry, probe);
   const outDir = join(dir, 'out');
   const saved = { ...process.env };
   for (const key of ['VITE_TEST_HOOKS', 'CIPHER_UI_TEST_BUILD', 'CIPHER_DESKTOP_BUILD']) delete process.env[key];
@@ -105,4 +112,9 @@ test('a UI-test build resolves every covered row to this machine and nothing els
   }
   assert.equal(text.includes(WALL_WS), true, 'the UI-test bundle does not carry the wall relay address');
   assert.equal(text.includes(WALL_HTTP), true, 'the UI-test bundle does not carry the wall host address');
+});
+
+test('a protocol-test build cannot use saved overrides or fall back to production relays', async () => {
+  const { rows } = await bundle({ VITE_PROTOCOL_TEST_MODE: '1' }, PROTOCOL_PROBE);
+  assert.deepEqual(rows, [], 'the protocol-test artifact must block every ordinary relay and host row');
 });

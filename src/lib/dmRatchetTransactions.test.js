@@ -3,10 +3,15 @@ import test from 'node:test';
 import 'fake-indexeddb/auto';
 import { generateSecretKey, getPublicKey } from 'nostr-tools/pure';
 import { db, openDBFor } from '../db.js';
+import { createSecurityContextFence, establishSecurityContext } from './securityContextFence.js';
 import { setAtRestKeyProvider } from './messageAtRest.js';
 import { buildDeviceRegistryEvent, revokeDevice } from './deviceEnrollment.js';
 import { buildDeviceFreshnessResponse, createDeviceFreshnessChallenge } from './deviceFreshness.js';
-import { acceptDeviceRegistry, commitEnrolledDevice, loadDeviceCredential } from './deviceRegistryStore.js';
+import {
+  acceptDeviceRegistry as acceptDeviceRegistryRaw,
+  commitEnrolledDevice as commitEnrolledDeviceRaw,
+  loadDeviceCredential as loadDeviceCredentialRaw,
+} from './deviceRegistryStore.js';
 import { shouldFlushOutboxRow } from './outbox.js';
 import {
   commitRatchetInitialInbound,
@@ -39,6 +44,15 @@ globalThis.localStorage = {
   removeItem(key) { this.values.delete(key); },
 };
 setAtRestKeyProvider(() => VAULT_KEY);
+const securityStorage = globalThis.localStorage;
+const securityContext = establishSecurityContext({ owner, storage: securityStorage,
+  randomId: () => 'dm-ratchet-transactions-test-context-0001' });
+const securityFence = createSecurityContextFence({ context: securityContext, storage: securityStorage });
+const acceptDeviceRegistry = (account, signed, at = Math.floor(Date.now() / 1000)) =>
+  acceptDeviceRegistryRaw(account, signed, at, securityFence);
+const commitEnrolledDevice = (options) => commitEnrolledDeviceRaw({ ...options, securityFence });
+const loadDeviceCredential = (account, device, at = Math.floor(Date.now() / 1000)) =>
+  loadDeviceCredentialRaw(account, device, at, securityFence);
 
 async function enrollTestDevice(deviceId, now = Math.floor(Date.now() / 1000)) {
   const deviceSecret = generateSecretKey();
@@ -115,7 +129,7 @@ function peerFreshness(generation = 1, at = Math.floor(Date.now() / 1000), statu
 }
 
 test('outbound ratchet state and immutable Nostr event commit together with CAS', async () => {
-  openDBFor(owner);
+  openDBFor(owner, securityFence);
   await db.open();
   const authorization = peerFreshness();
   const event = { id: 'out-1', sig: 'signed', kind: 1059, created_at: 100 };

@@ -1,5 +1,9 @@
 import { useEffect, useRef } from 'react';
 import { createShakeDetector, requestMotionAccess } from '../lib/shakeDetector';
+import { runPanicWipe } from '../lib/panicWipe';
+import { invalidateAllSecurityContexts } from '../lib/securityContextFence.js';
+import { destroyDeviceKeys } from '../lib/deviceLock';
+import { ensureDeviceProvider } from '../lib/deviceProvider';
 
 export function usePanicWipe(identity, enabled) {
   // useIdentity returns a new object every render; keep it in a ref so the
@@ -27,63 +31,33 @@ export function usePanicWipe(identity, enabled) {
           await fullWipe();
           return;
         } catch (error) {
-          console.error('[panicWipe] Full wipe failed; running local fallback:', error);
+          console.error('[panicWipe] Identity wipe failed; invoking the shared wipe coordinator:', error);
         }
       }
-
       try {
-        const names = new Set();
-        if (typeof indexedDB !== 'undefined') {
-          try {
-            const databases = typeof indexedDB.databases === 'function' ? await indexedDB.databases() : [];
-            databases.forEach((database) => {
-              if (database.name) names.add(database.name);
-            });
-          } catch (error) {
-            console.warn('[panicWipe] IndexedDB enumeration failed:', error);
-          }
-          const owner = localStorage.getItem('cipher_db_owner');
-          if (owner) names.add(`CipherDB_v7_${owner.slice(0, 16)}`);
-          try {
-            const vaults = JSON.parse(localStorage.getItem('cipher_vaults') || '{}');
-            Object.keys(vaults).forEach((pubkey) => names.add(`CipherDB_v7_${pubkey.slice(0, 16)}`));
-          } catch (error) {
-            console.warn('[panicWipe] Could not read saved account database names:', error);
-          }
-          const deleteDatabase = (name) => new Promise((resolve) => {
-            const request = indexedDB.deleteDatabase(name);
-            request.onsuccess = () => resolve(true);
-            request.onerror = () => {
-              console.error(`[panicWipe] Could not delete ${name}:`, request.error);
-              resolve(false);
-            };
-            request.onblocked = () => {
-              console.error(`[panicWipe] Deletion was blocked for ${name}`);
-              resolve(false);
-            };
+        const invalidation = invalidateAllSecurityContexts();
+        const result = await runPanicWipe({
+          stop: [
+            async () => { const { clearSessionKey } = await import('../lib/sessionKey.js'); clearSessionKey(); },
+            async () => { const { clearPool } = await import('../lib/pool.js'); clearPool(); },
+            async () => { const { closeGroupSessions } = await import('./useNIP29Group.js'); closeGroupSessions(); },
+            async () => { const { closeDB } = await import('../db.js'); closeDB(); },
+          ],
+          localStorage,
+          sessionStorage,
+          indexedDB: typeof indexedDB !== 'undefined' ? indexedDB : undefined,
+          serviceWorker: 'serviceWorker' in navigator ? navigator.serviceWorker : undefined,
+          caches: 'caches' in window ? window.caches : undefined,
+          destroyKeys: async (pubkeys) => destroyDeviceKeys(await ensureDeviceProvider(), pubkeys),
+          reload: () => window.location.reload(),
+        });
+        if (!invalidation.persisted || result.failures.length) {
+          console.error('[panicWipe] Shared wipe coordinator reported incomplete cleanup:', {
+            invalidation, failures: result.failures,
           });
-          const results = await Promise.race([
-            Promise.all(Array.from(names, deleteDatabase)),
-            new Promise((resolve) => setTimeout(() => resolve(null), 3000)),
-          ]);
-          if (results === null || results.some((success) => !success)) {
-            console.error('[panicWipe] One or more local databases may remain.');
-          }
-        }
-        if ('serviceWorker' in navigator) {
-          const registrations = await navigator.serviceWorker.getRegistrations();
-          await Promise.allSettled(registrations.map((registration) => registration.unregister()));
-        }
-        if ('caches' in window) {
-          const cacheNames = await caches.keys();
-          await Promise.allSettled(cacheNames.map((name) => caches.delete(name)));
         }
       } catch (error) {
-        console.error('[panicWipe] Local fallback failed:', error);
-      } finally {
-        sessionStorage.clear();
-        localStorage.clear();
-        window.location.reload();
+        console.error('[panicWipe] Shared wipe coordinator could not start:', error);
       }
     };
 

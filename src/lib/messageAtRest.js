@@ -150,29 +150,37 @@ function unb64(s) {
 // disk — until the same account unlocks again.
 const pendingByOwner = new Map();
 
-export function queueAtRestWrite(owner, row) {
+export function queueAtRestWrite(owner, row, securityFence = null) {
   if (!owner) return;
+  if (securityFence) {
+    if (securityFence.context?.owner !== owner) return;
+    try { securityFence.assertCurrent(); } catch { return; }
+  }
   const list = pendingByOwner.get(owner) || [];
   if (list.length >= MAX_PENDING) list.shift();
-  list.push(row);
+  list.push({ row, securityFence });
   pendingByOwner.set(owner, list);
 }
 
-export function takeAtRestWrites(owner) {
+export function takeAtRestWrites(owner, securityFence = null) {
   const list = pendingByOwner.get(owner) || [];
   pendingByOwner.set(owner, []);
-  return list;
+  return list.flatMap((item) => {
+    if (!item.securityFence) return securityFence ? [] : [item.row];
+    if (item.securityFence !== securityFence || item.securityFence.context?.owner !== owner) return [];
+    try { item.securityFence.assertCurrent(); return [item.row]; } catch { return []; }
+  });
 }
 
 // An interrupted flush — the database changed hands mid-batch, or the vault
 // key went away again — puts its un-written rows back at the FRONT of the
 // queue, ahead of anything invoked after it, so their order is preserved.
-export function requeueAtRestWrites(owner, rows) {
+export function requeueAtRestWrites(owner, rows, securityFence = null) {
   if (!owner || !Array.isArray(rows)) return;
   const kept = rows.filter((row) => row && typeof row === 'object');
   if (!kept.length) return;
   const list = pendingByOwner.get(owner) || [];
-  const next = [...kept, ...list];
+  const next = [...kept.map((row) => ({ row, securityFence })), ...list];
   if (next.length > MAX_PENDING) next.length = MAX_PENDING;
   pendingByOwner.set(owner, next);
 }

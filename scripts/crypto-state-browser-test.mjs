@@ -8,7 +8,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const mlsWasmDir = path.join(root, 'crypto/mls-eval/target/browser-bindings');
+const mlsWasmDir = path.join(root, 'crypto/mls-wasm/target/browser-bindings');
 const vite = await createViteServer({
   configFile: path.join(root, 'vite.config.js'),
   server: { host: '127.0.0.1', port: 8094, strictPort: true },

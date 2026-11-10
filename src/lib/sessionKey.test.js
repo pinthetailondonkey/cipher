@@ -58,7 +58,10 @@ test('useIdentity keeps the secret in memory and clears it on lock and wipe', ()
   assert.doesNotMatch(src, /cipher_session_sk/, 'the localStorage/sessionStorage key is gone');
   assert.doesNotMatch(src, /sessionStorage\.(setItem|removeItem|getItem)\('cipher_session_sk'/, 'no raw-secret storage writes remain');
   assert.match(src, /import \{ clearSessionKey, getSessionKey, setSessionKey \} from '\.\/lib\/sessionKey'/, 'the memory helpers are imported');
-  // Lock clears it; the panic wipe clears it as its first step.
-  assert.match(src, /const lockApp = async \(\) => \{\s*clearSessionKey\(\)/);
+  // Lock retires the per-tab context; its invalidation callback clears the
+  // in-memory key. The panic wipe clears it as its first step too.
+  assert.match(src, /const lockApp = async \(\) => \{\s*const retirement = await retireCurrentContext\('local-lock'\)/);
+  assert.match(src, /const retireCurrentContext = async \(reason = 'local-lock'\) => \{[\s\S]*?fence\.invalidate\(reason\)[\s\S]*?else \{\s*clearSessionKey\(\)/);
+  assert.match(src, /const onContextInvalidated = \(context\) => \{[\s\S]*?clearSessionKey\(\)/);
   assert.match(src, /runPanicWipe\(\{[\s\S]{0,400}?stop: \[[\s\S]{0,300}?clearSessionKey\(\)/, 'the wipe clears the in-memory key');
 });

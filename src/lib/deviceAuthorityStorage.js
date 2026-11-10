@@ -4,6 +4,7 @@
 // Recovery-root material is deliberately not accepted by this API.
 import { getPublicKey } from 'nostr-tools/pure';
 import { verifyDeviceAuthorityPolicy, verifyDeviceAuthorityRegistry } from './deviceAuthority.js';
+import { assertDeviceAuthorityContext, withDeviceAuthorityContext } from './deviceAuthorityContext.js';
 
 const STORE = 'authority';
 const encoder = new TextEncoder();
@@ -44,12 +45,14 @@ function readRow(db, accountPubkey) {
   });
 }
 
-function putIfExpected(db, row, expectedPreviousPolicyId) {
+function putIfExpected(db, row, expectedPreviousPolicyId, securityFence) {
   return new Promise((resolve, reject) => {
     const transaction = db.transaction(STORE, 'readwrite');
     const store = transaction.objectStore(STORE);
     const request = store.get(row.accountPubkey);
     request.onsuccess = () => {
+      try { assertDeviceAuthorityContext(securityFence); }
+      catch { transaction.abort(); return; }
       const existing = request.result || null;
       if (existing) {
         if (!expectedPreviousPolicyId || existing.policyId !== expectedPreviousPolicyId
@@ -108,11 +111,12 @@ async function openAuthoritySecret({ policy, policyEvent, primaryDeviceSecret, r
   }
 }
 
-export async function storePrimaryAuthoritySecret({
+async function storePrimaryAuthoritySecretCore({
   policyEvent, expectedRecoveryPubkey, primaryDeviceSecret, authoritySecret,
   registryEvent, expectedPreviousPolicyId = null, now = Math.floor(Date.now() / 1000),
-  indexedDBImpl = globalThis.indexedDB, cryptoImpl = globalThis.crypto,
+  indexedDBImpl = globalThis.indexedDB, cryptoImpl = globalThis.crypto, securityFence,
 }) {
+  assertDeviceAuthorityContext(securityFence);
   const policy = checkedPolicy(policyEvent, expectedRecoveryPubkey, now);
   if (!(primaryDeviceSecret instanceof Uint8Array) || getPublicKey(primaryDeviceSecret) !== policy.primaryDevicePubkey
     || !(authoritySecret instanceof Uint8Array) || getPublicKey(authoritySecret) !== policy.authorityPubkey) {
@@ -147,22 +151,26 @@ export async function storePrimaryAuthoritySecret({
   };
   const db = await openAuthorityDb(policy.accountPubkey, indexedDBImpl);
   try {
-    await putIfExpected(db, metadata, expectedPreviousPolicyId);
+    assertDeviceAuthorityContext(securityFence);
+    await putIfExpected(db, metadata, expectedPreviousPolicyId, securityFence);
+    assertDeviceAuthorityContext(securityFence);
   } finally {
     db.close();
   }
   return { accountPubkey: policy.accountPubkey, policyId: policyEvent.id, authorityEpoch: policy.authorityEpoch };
 }
 
-export async function loadPrimaryDeviceSecret({
+async function loadPrimaryDeviceSecretCore({
   policyEvent, expectedRecoveryPubkey, now = Math.floor(Date.now() / 1000),
-  indexedDBImpl = globalThis.indexedDB, cryptoImpl = globalThis.crypto,
+  indexedDBImpl = globalThis.indexedDB, cryptoImpl = globalThis.crypto, securityFence,
 }) {
+  assertDeviceAuthorityContext(securityFence);
   const policy = checkedPolicy(policyEvent, expectedRecoveryPubkey, now);
   const db = await openAuthorityDb(policy.accountPubkey, indexedDBImpl);
   let row;
   try { row = await readRow(db, policy.accountPubkey); }
   finally { db.close(); }
+  assertDeviceAuthorityContext(securityFence);
   if (!row || row.policyId !== policyEvent.id || row.authorityEpoch !== policy.authorityEpoch
     || row.primaryDeviceId !== policy.primaryDeviceId || row.primaryDevicePubkey !== policy.primaryDevicePubkey
     || !row.wrappingKey || !Array.isArray(row.iv) || row.iv.length !== 12
@@ -172,6 +180,7 @@ export async function loadPrimaryDeviceSecret({
     const secret = new Uint8Array(await cryptoImpl.subtle.decrypt({
       name: 'AES-GCM', iv: Uint8Array.from(row.deviceIv), additionalData: deviceAad(policy),
     }, row.wrappingKey, Uint8Array.from(row.deviceCiphertext)));
+    assertDeviceAuthorityContext(securityFence);
     if (getPublicKey(secret) !== policy.primaryDevicePubkey) {
       secret.fill(0);
       throw new Error('The stored primary device credential does not match the pinned policy.');
@@ -182,11 +191,12 @@ export async function loadPrimaryDeviceSecret({
   }
 }
 
-export async function loadPrimaryAuthoritySecret({
+async function loadPrimaryAuthoritySecretCore({
   policyEvent, expectedRecoveryPubkey, primaryDeviceSecret,
   expectedRegistryId, now = Math.floor(Date.now() / 1000), indexedDBImpl = globalThis.indexedDB,
-  cryptoImpl = globalThis.crypto,
+  cryptoImpl = globalThis.crypto, securityFence,
 }) {
+  assertDeviceAuthorityContext(securityFence);
   const policy = checkedPolicy(policyEvent, expectedRecoveryPubkey, now);
   const db = await openAuthorityDb(policy.accountPubkey, indexedDBImpl);
   let row;
@@ -195,18 +205,22 @@ export async function loadPrimaryAuthoritySecret({
   } finally {
     db.close();
   }
-  return openAuthoritySecret({ policy, policyEvent, primaryDeviceSecret, row, expectedRegistryId, cryptoImpl });
+  assertDeviceAuthorityContext(securityFence);
+  const secret = await openAuthoritySecret({ policy, policyEvent, primaryDeviceSecret, row, expectedRegistryId, cryptoImpl });
+  assertDeviceAuthorityContext(securityFence);
+  return secret;
 }
 
 // Durable compare-and-swap for the sole registry writer. The caller must first
 // obtain a signed successor from the current primary authority. Only one tab
 // can advance a pinned head; after commit the exact event remains available
 // for retry if delivery is interrupted.
-export async function commitPrimaryRegistryHead({
+async function commitPrimaryRegistryHeadCore({
   policyEvent, expectedRecoveryPubkey, primaryDeviceSecret, authoritySecret,
   previousRegistryEvent, nextRegistryEvent, now = Math.floor(Date.now() / 1000),
-  indexedDBImpl = globalThis.indexedDB,
+  indexedDBImpl = globalThis.indexedDB, securityFence,
 }) {
+  assertDeviceAuthorityContext(securityFence);
   const policy = checkedPolicy(policyEvent, expectedRecoveryPubkey, now);
   if (!(primaryDeviceSecret instanceof Uint8Array) || getPublicKey(primaryDeviceSecret) !== policy.primaryDevicePubkey
     || !(authoritySecret instanceof Uint8Array) || getPublicKey(authoritySecret) !== policy.authorityPubkey
@@ -220,6 +234,8 @@ export async function commitPrimaryRegistryHead({
       const store = transaction.objectStore(STORE);
       const request = store.get(policy.accountPubkey);
       request.onsuccess = () => {
+        try { assertDeviceAuthorityContext(securityFence); }
+        catch { transaction.abort(); return; }
         const row = request.result;
         if (!row || row.policyId !== policyEvent.id || row.registryId !== previousRegistryEvent.id
           || row.registryGeneration + 1 !== JSON.parse(nextRegistryEvent.content).generation) {
@@ -239,21 +255,45 @@ export async function commitPrimaryRegistryHead({
   } finally {
     db.close();
   }
+  assertDeviceAuthorityContext(securityFence);
   return { registryId: nextRegistryEvent.id, generation: JSON.parse(nextRegistryEvent.content).generation };
 }
 
-export async function loadPrimaryAuthorityState(options) {
+async function loadPrimaryAuthorityStateCore(options) {
+  assertDeviceAuthorityContext(options.securityFence);
   const policy = checkedPolicy(options.policyEvent, options.expectedRecoveryPubkey, options.now ?? Math.floor(Date.now() / 1000));
   const db = await openAuthorityDb(policy.accountPubkey, options.indexedDBImpl ?? globalThis.indexedDB);
   try {
     const row = await readRow(db, policy.accountPubkey);
+    assertDeviceAuthorityContext(options.securityFence);
     if (!row?.registryEvent || row.registryEvent.id !== row.registryId) throw new Error('The primary registry checkpoint is unavailable.');
     const authoritySecret = await openAuthoritySecret({
       policy, policyEvent: options.policyEvent, primaryDeviceSecret: options.primaryDeviceSecret,
       row, expectedRegistryId: options.expectedRegistryId, cryptoImpl: options.cryptoImpl ?? globalThis.crypto,
     });
+    assertDeviceAuthorityContext(options.securityFence);
     return { authoritySecret, registryEvent: row.registryEvent, registryId: row.registryId, generation: row.registryGeneration };
   } finally {
     db.close();
   }
+}
+
+export function storePrimaryAuthoritySecret(args = {}) {
+  return withDeviceAuthorityContext(args.securityFence, () => storePrimaryAuthoritySecretCore(args));
+}
+
+export function loadPrimaryDeviceSecret(args = {}) {
+  return withDeviceAuthorityContext(args.securityFence, () => loadPrimaryDeviceSecretCore(args));
+}
+
+export function loadPrimaryAuthoritySecret(args = {}) {
+  return withDeviceAuthorityContext(args.securityFence, () => loadPrimaryAuthoritySecretCore(args));
+}
+
+export function commitPrimaryRegistryHead(args = {}) {
+  return withDeviceAuthorityContext(args.securityFence, () => commitPrimaryRegistryHeadCore(args));
+}
+
+export function loadPrimaryAuthorityState(args = {}) {
+  return withDeviceAuthorityContext(args.securityFence, () => loadPrimaryAuthorityStateCore(args));
 }

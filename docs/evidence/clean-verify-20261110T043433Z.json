@@ -1,0 +1,48 @@
+{
+  "run_id": "20261110T043433Z",
+  "status": "fail",
+  "head": "2172f726f83923801b87ea93de897d4b271add9a",
+  "index_tree": "277905f22c21c6bf8e9bcbb36996dc257c9dbc42",
+  "tracked_paths": 697,
+  "source": "git checkout-index export of the staged index",
+  "checks": [
+    {
+      "check": "npm_ci",
+      "exit_code": 0
+    },
+    {
+      "check": "lint",
+      "exit_code": 0
+    },
+    {
+      "check": "build",
+      "exit_code": 0
+    },
+    {
+      "check": "unit",
+      "exit_code": 1
+    }
+  ],
+  "combined_log": "/home/aegis/cipher/docs/evidence/clean-verify-20261110T043433Z.log",
+  "combined_log_sha256": "dc140934af7b4d61a4a9f8fd69b4fdac2c0dca0a2b591fb69f9496211e70188b",
+  "combined_log_normalization": "trailing horizontal whitespace removed per line; ANSI sequences retained",
+  "guard_carrier": "The exported index contains tracked files only; ignored or untracked local build carriers are excluded.",
+  "failure_context": {
+    "classification": "sandbox capability restriction confirmed by isolated reruns; no assertion failure was observed",
+    "blocked_operations": [
+      "nested Node child-process launches (EPERM)",
+      "loopback HTTP listener binds on 127.0.0.1 (EPERM)"
+    ],
+    "affected_test_files": [
+      "scripts/build-desktop.test.mjs",
+      "scripts/note-carrier.test.mjs",
+      "scripts/vite-config-guard.test.mjs",
+      "scripts/with-app-env.test.mjs",
+      "src/lib/mediaCrypto.test.js",
+      "src/lib/mediaDoorEgress.test.js",
+      "src/lib/paymentWatch.test.js",
+      "src/lib/testRelayOverride.test.js"
+    ],
+    "follow_up": "A full npm test run with local subprocess and loopback capabilities enabled passed 1357, failed 0, skipped 5. This run used the live checkout, whose ignored .grok/app-env.json causes five environment-sensitive build cases to skip; it is not clean-index evidence."
+  }
+}

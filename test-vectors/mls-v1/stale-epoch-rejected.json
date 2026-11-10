@@ -1,0 +1,12 @@
+{
+  "observed": [
+    "stale-epoch"
+  ],
+  "expectedRejectionReasons": [
+    "stale-epoch"
+  ],
+  "_meta": {
+    "name": "stale-epoch-rejected",
+    "profile": "MLS-TEST-PROFILE-V1"
+  }
+}

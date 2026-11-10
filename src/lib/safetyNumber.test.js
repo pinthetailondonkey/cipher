@@ -61,6 +61,13 @@ test('noteFirstSeen freezes the first record and never moves it', async () => {
   assert.deepEqual(later.relays, ['relay.one', 'relay.two']);
 });
 
+test('noteFirstSeen checks its account context before writing after async relay loading', async () => {
+  localStorage.clear();
+  const retired = { assertCurrent() { const error = new Error('retired'); error.code = 'SECURITY_CONTEXT_EXPIRED'; throw error; } };
+  await assert.rejects(noteFirstSeen(PK_A, null, NOW, retired), { code: 'SECURITY_CONTEXT_EXPIRED' });
+  assert.equal(safetyRecord(PK_A), null);
+});
+
 test('safetyNumberFor returns the readable surface, null before first contact', async () => {
   localStorage.clear();
   assert.equal(safetyNumberFor(PK_B), null);

@@ -1,6 +1,6 @@
 import { useCallback, useState } from 'react';
 import { getAuthenticatedPool } from '../lib/pool';
-import { generalRelays, profileReadRelays, queryWithTimeout, reputationRelays } from '../lib/relays';
+import { profileReadRelays, queryWithTimeout, reputationRelays } from '../lib/relays';
 import { enqueueNostrEvent } from '../lib/outbox';
 import { shortNpub } from '../lib/npub';
 
@@ -9,6 +9,7 @@ import { shortNpub } from '../lib/npub';
 import { scopedGet, scopedSet } from '../lib/storage';
 import { averageRating, clampRating, profileAgeDays, receiptBindingOf, vouchCoversTrade } from '../lib/reputation';
 import { DISPUTE_KIND, markOwnRider, riderRefusal } from '../lib/disputes';
+import { assertSecurityContextOwner } from '../lib/securityContextFence';
 const PROFILE_CACHE_KEY = 'rep_profile_cache';
 const PROFILE_CACHE_TTL = 24 * 60 * 60 * 1000; // 24h
 
@@ -26,16 +27,18 @@ export function useReputation({ identity }) {
 
   const fetchReputation = useCallback(async (targetPubkey) => {
     if (!targetPubkey) return;
-    setLoading(true);
-
     try {
+      assertSecurityContextOwner(identity?.securityFence, identity?.pk);
+      setLoading(true);
       const pool = await getAuthenticatedPool(identity);
+      assertSecurityContextOwner(identity.securityFence, identity.pk);
 
       // 1. Fetch raw vouches + reviews
       const [vouchEvents, reviews] = await Promise.all([
         queryWithTimeout(pool, reputationRelays, { kinds: [10004], '#p': [targetPubkey] }, 3000),
         queryWithTimeout(pool, reputationRelays, { kinds: [10005], '#p': [targetPubkey] }, 3000)
       ]);
+      assertSecurityContextOwner(identity.securityFence, identity.pk);
       // S8: a vouch counts only when it names the receipt hash of a trade,
       // and the trade it names involves both the target and the author —
       // the role tags the author's own signature vouches for. The hash is
@@ -59,7 +62,6 @@ export function useReputation({ identity }) {
       // 3. Defense Layer 3: check voucher profile age
       const cache = loadProfileCache();
       const now = Date.now();
-      const cachedPubkeys = Object.keys(cache);
 
       // Find which vouchers need profile fetch (not cached, or cache expired)
       const toFetch = vouchesAfterSelf
@@ -78,7 +80,10 @@ export function useReputation({ identity }) {
             { kinds: [0], authors: toFetch },
             3000
           );
-        } catch {}
+          assertSecurityContextOwner(identity.securityFence, identity.pk);
+        } catch (error) {
+          if (error?.code === 'SECURITY_CONTEXT_EXPIRED') throw error;
+        }
       }
 
       // Merge into cache
@@ -92,6 +97,7 @@ export function useReputation({ identity }) {
           picture: meta.picture || null,
         };
       }
+      assertSecurityContextOwner(identity.securityFence, identity.pk);
       saveProfileCache(cache);
 
       // 4. Build voucher display objects. Defense Layer 3 used to drop a
@@ -124,6 +130,7 @@ export function useReputation({ identity }) {
 
       const hasVouched = vouchesAfterSelf.some((ev) => ev.pubkey === identity.pk);
 
+      assertSecurityContextOwner(identity.securityFence, identity.pk);
       setReputation({
         // Every receipt-bound vouch counts: no publisher timestamp gate.
         vouchCount: vouchInfos.length,
@@ -141,9 +148,13 @@ export function useReputation({ identity }) {
         })),
       });
     } catch (e) {
+      if (e?.code === 'SECURITY_CONTEXT_EXPIRED') return;
       console.error('[useReputation] fetch failed:', e);
     } finally {
-      setLoading(false);
+      try {
+        assertSecurityContextOwner(identity?.securityFence, identity?.pk);
+        setLoading(false);
+      } catch {}
     }
   }, [identity]);
 
@@ -175,7 +186,9 @@ export function useReputation({ identity }) {
 
     let event;
     try {
+      assertSecurityContextOwner(identity.securityFence, identity.pk);
       const { finalizeEvent } = await import('nostr-tools');
+      assertSecurityContextOwner(identity.securityFence, identity.pk);
       event = finalizeEvent({
         kind: 10004,
         created_at: Math.floor(Date.now() / 1000),
@@ -187,22 +200,29 @@ export function useReputation({ identity }) {
       }, identity.sk);
 
       const pool = await getAuthenticatedPool(identity);
+      assertSecurityContextOwner(identity.securityFence, identity.pk);
       // N2: a vouch is a public trade event — the two pubkeys and the
       // receipt hash. It rides the reputation relays (the storefront's
       // group relays), never the message relay, so the DM relay's operator
       // cannot join trade events to message flow.
+      assertSecurityContextOwner(identity.securityFence, identity.pk);
       const results = await Promise.allSettled(pool.publish(reputationRelays, event));
+      assertSecurityContextOwner(identity.securityFence, identity.pk);
       if (!results.some((result) => result.status === 'fulfilled')) {
-        await enqueueNostrEvent(event);
+        await enqueueNostrEvent(event, null, identity.securityFence);
+        assertSecurityContextOwner(identity.securityFence, identity.pk);
         return { success: true, queued: true };
       }
       // Refetch to recalculate trust (invalid vouches still don't count)
       await fetchReputation(targetPubkey);
+      assertSecurityContextOwner(identity.securityFence, identity.pk);
       return { success: true };
     } catch (e) {
+      if (e?.code === 'SECURITY_CONTEXT_EXPIRED') return { success: false, error: 'The account context expired before the vouch completed.' };
       if (event) {
         try {
-          await enqueueNostrEvent(event);
+          assertSecurityContextOwner(identity?.securityFence, identity?.pk);
+          await enqueueNostrEvent(event, null, identity.securityFence);
           return { success: true, queued: true };
         } catch (queueError) {
           console.error('[useReputation] Could not queue vouch:', queueError);
@@ -215,6 +235,7 @@ export function useReputation({ identity }) {
   // Same rule as a vouch: a review names the receipt hash of the trade, and
   // the score it carries stays inside 0..5. (security S8)
   const sendReview = useCallback(async (targetPubkey, rating, text, receiptHash) => {
+    if (!identity?.pk || !identity?.sk) return { success: false, error: 'Unlock your account before reviewing.' };
     if (targetPubkey === identity.pk) {
       return { success: false, error: 'Cannot review yourself' };
     }
@@ -223,8 +244,11 @@ export function useReputation({ identity }) {
       return { success: false, error: 'A review needs the receipt of a completed trade.' };
     }
     try {
+      assertSecurityContextOwner(identity.securityFence, identity.pk);
       const { finalizeEvent } = await import('nostr-tools');
+      assertSecurityContextOwner(identity.securityFence, identity.pk);
       const pool = await getAuthenticatedPool(identity);
+      assertSecurityContextOwner(identity.securityFence, identity.pk);
       const ev = finalizeEvent({
         kind: 10005,
         created_at: Math.floor(Date.now() / 1000),
@@ -236,15 +260,19 @@ export function useReputation({ identity }) {
       // re-attempts it; a locally-saved-only review that nobody re-sends
       // is a review that never lands. N2: the review rides the reputation
       // relays, never the message relay.
+      assertSecurityContextOwner(identity.securityFence, identity.pk);
       const results = await Promise.allSettled(pool.publish(reputationRelays, ev));
+      assertSecurityContextOwner(identity.securityFence, identity.pk);
       if (!results.some((result) => result.status === 'fulfilled')) {
-        await enqueueNostrEvent(ev);
+        await enqueueNostrEvent(ev, null, identity.securityFence);
+        assertSecurityContextOwner(identity.securityFence, identity.pk);
         await fetchReputation(targetPubkey);
         return { success: true, queued: true };
       }
       await fetchReputation(targetPubkey);
       return { success: true };
     } catch (e) {
+      if (e?.code === 'SECURITY_CONTEXT_EXPIRED') return { success: false, error: 'The account context expired before the review completed.' };
       return { success: false, error: e.message };
     }
   }, [identity, fetchReputation]);
@@ -255,11 +283,14 @@ export function useReputation({ identity }) {
   // does. The event is signed only after the refusal passes; the moment it
   // is signed, its word is spent on the local record, publish hiccup or not.
   const sendRider = useCallback(async ({ vendor, receiptHash, review, rider, text }) => {
+    if (!identity?.pk || !identity?.sk) return { success: false, error: 'Unlock your account before posting a dispute response.' };
     const refusal = riderRefusal({ author: identity?.pk, vendor, receiptHash, review, rider, text });
     if (refusal) return { success: false, error: refusal };
     let event;
     try {
+      assertSecurityContextOwner(identity.securityFence, identity.pk);
       const { finalizeEvent } = await import('nostr-tools');
+      assertSecurityContextOwner(identity.securityFence, identity.pk);
       const binding = receiptBindingOf({ tags: [['receipt', receiptHash]] });
       event = finalizeEvent({
         kind: DISPUTE_KIND,
@@ -267,20 +298,27 @@ export function useReputation({ identity }) {
         tags: [['p', String(vendor).toLowerCase()], ['receipt', binding], ['review', String(review).toLowerCase()], ['rider', rider]],
         content: String(text).trim(),
       }, identity.sk);
+      assertSecurityContextOwner(identity.securityFence, identity.pk);
       markOwnRider(vendor, binding, review, rider, event.id);
       const pool = await getAuthenticatedPool(identity);
+      assertSecurityContextOwner(identity.securityFence, identity.pk);
       // N2: a rider is a public dispute event. Reputation relays, never
       // the message relay.
+      assertSecurityContextOwner(identity.securityFence, identity.pk);
       const results = await Promise.allSettled(pool.publish(reputationRelays, event));
+      assertSecurityContextOwner(identity.securityFence, identity.pk);
       if (!results.some((result) => result.status === 'fulfilled')) {
-        await enqueueNostrEvent(event);
+        await enqueueNostrEvent(event, null, identity.securityFence);
+        assertSecurityContextOwner(identity.securityFence, identity.pk);
         return { success: true, queued: true };
       }
       return { success: true };
     } catch (e) {
+      if (e?.code === 'SECURITY_CONTEXT_EXPIRED') return { success: false, error: 'The account context expired before the dispute response completed.' };
       if (event) {
         try {
-          await enqueueNostrEvent(event);
+          assertSecurityContextOwner(identity?.securityFence, identity?.pk);
+          await enqueueNostrEvent(event, null, identity.securityFence);
           return { success: true, queued: true };
         } catch (queueError) {
           console.error('[useReputation] Could not queue dispute rider:', queueError);

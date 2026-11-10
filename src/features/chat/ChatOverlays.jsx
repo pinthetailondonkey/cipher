@@ -88,6 +88,7 @@ export default function ChatOverlays({
       {showBookmarks && <BookmarksViewer onClose={() => setShowBookmarks(false)} onJump={jumpBookmark} />}
       {showNotifCenter && (
         <NotificationCenter
+          identity={identity}
           onClose={() => setShowNotifCenter(false)}
           onJump={(type, id) => {
             if (type === 'group') {

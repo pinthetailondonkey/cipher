@@ -22,6 +22,14 @@ function assertOwner(owner) {
   }
 }
 
+function assertSecurityFence(securityFence, owner) {
+  if (!securityFence || typeof securityFence.assertCurrent !== 'function'
+    || securityFence.context?.owner !== owner) {
+    throw new Error('A current account security context is required for ratchet lifecycle operations.');
+  }
+  securityFence.assertCurrent();
+}
+
 async function currentVersion(table, id) {
   return (await table.get(id))?.version ?? null;
 }
@@ -34,8 +42,30 @@ function nextVersion(expected) {
   return expected === null ? 0 : expected + 1;
 }
 
-async function digestApplicationPayload(payload) {
-  const bytes = new TextEncoder().encode(JSON.stringify(payload ?? null));
+async function digestRatchetOperation({ owner, sessionId, peerPubkey, peerDeviceId,
+  operationId, state, ratchetCiphertext, authorization }) {
+  const bytes = new TextEncoder().encode(JSON.stringify([
+    'cipher.ratchet.outbound-operation-v2',
+    owner,
+    sessionId,
+    peerPubkey,
+    peerDeviceId,
+    operationId,
+    JSON.stringify(state ?? null),
+    ratchetCiphertext,
+    authorization.sender.deviceId,
+    authorization.sender.devicePubkey,
+    authorization.sender.policyId,
+    authorization.sender.registryId,
+    authorization.sender.challengeEvent.id,
+    authorization.sender.responseEvent.id,
+    authorization.recipient.deviceId,
+    authorization.recipient.devicePubkey,
+    authorization.recipient.policyId,
+    authorization.recipient.registryId,
+    authorization.recipient.challengeEvent.id,
+    authorization.recipient.responseEvent.id,
+  ]));
   const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes));
   return Array.from(digest, (byte) => byte.toString(16).padStart(2, '0')).join('');
 }
@@ -141,10 +171,11 @@ export async function commitRatchetOutbound({
 // separately approved protocol migration.
 export async function commitRatchetOutboundV2({
   owner, sessionId, peerPubkey, peerDeviceId, expectedVersion, state,
-  ratchetCiphertext, applicationPayload = null, senderDeviceSecret,
-  authorization, relays = null, now = Date.now(),
+  ratchetCiphertext, senderDeviceSecret,
+  authorization, securityFence, relays = null, now = Date.now(),
 }) {
   assertOwner(owner);
+  assertSecurityFence(securityFence, owner);
   if (!/^[0-9a-f]{64}$/.test(owner || '') || !sessionId || !/^[0-9a-f]{64}$/.test(peerPubkey || '')
     || !/^[0-9a-f]{32}$/.test(peerDeviceId || '') || typeof ratchetCiphertext !== 'string'
     || !ratchetCiphertext || !(senderDeviceSecret instanceof Uint8Array)) {
@@ -164,20 +195,23 @@ export async function commitRatchetOutboundV2({
     || authorized.recipient.deviceId !== peerDeviceId) {
     throw new Error('Fresh independent sender and recipient device authorization is required.');
   }
-  const payloadDigest = await digestApplicationPayload(applicationPayload);
+  const operationDigest = await digestRatchetOperation({ owner, sessionId, peerPubkey,
+    peerDeviceId, operationId, state, ratchetCiphertext, authorization: authorized });
+  assertSecurityFence(securityFence, owner);
   const existingOperation = await db.ratchetInbox.get(operationId);
   if (existingOperation) {
     const journal = await openRatchetState({ owner, collection: 'inbox', id: operationId, sealed: existingOperation.sealed });
     if (journal?.protocol !== 'cipher-ratchet-outbound-operation-v2'
-      || journal.sessionId !== sessionId || journal.payloadDigest !== payloadDigest) {
+      || journal.sessionId !== sessionId || journal.peerPubkey !== peerPubkey
+      || journal.peerDeviceId !== peerDeviceId || journal.operationDigest !== operationDigest) {
       throw new Error('The ratchet operation id was already committed for different content.');
     }
+    assertSecurityFence(securityFence, owner);
     return { version: null, eventId: journal.eventId, alreadyCommitted: true };
   }
   const sealedMessage = buildAuthorizedRatchetDm({
     authorization: authorized,
     ratchetCiphertext,
-    applicationPayload,
     senderDeviceSecret,
     recipientDevicePubkey: authorized.recipient.devicePubkey,
     createdAt: nowSeconds,
@@ -189,12 +223,14 @@ export async function commitRatchetOutboundV2({
   const sealedJournal = await sealRatchetState({
     owner, collection: 'inbox', id: operationId,
     value: { protocol: 'cipher-ratchet-outbound-operation-v2', operationId, sessionId,
-      payloadDigest, eventId: event.id, peerPubkey, peerDeviceId },
+      operationDigest, eventId: event.id, peerPubkey, peerDeviceId },
   });
+  assertSecurityFence(securityFence, owner);
   const version = nextVersion(expectedVersion);
   let alreadyCommitted = false;
   await db.transaction('rw', 'ratchetSessions', 'outbox', 'ratchetInbox', async () => {
     assertOwner(owner);
+    assertSecurityFence(securityFence, owner);
     const prior = await db.ratchetInbox.get(operationId);
     if (prior) {
       alreadyCommitted = true;
@@ -223,9 +259,11 @@ export async function commitRatchetOutboundV2({
   if (alreadyCommitted) {
     const journalRow = await db.ratchetInbox.get(operationId);
     const journal = await openRatchetState({ owner, collection: 'inbox', id: operationId, sealed: journalRow.sealed });
-    if (journal?.sessionId !== sessionId || journal?.payloadDigest !== payloadDigest) {
+    if (journal?.sessionId !== sessionId || journal?.peerPubkey !== peerPubkey
+      || journal?.peerDeviceId !== peerDeviceId || journal?.operationDigest !== operationDigest) {
       throw new Error('A concurrent ratchet operation id was committed for different content.');
     }
+    assertSecurityFence(securityFence, owner);
     return { version: null, eventId: journal.eventId, alreadyCommitted: true };
   }
   return { version, eventId: event.id, event, alreadyCommitted: false };
@@ -333,9 +371,10 @@ export async function commitRatchetInitialInbound({
 export async function commitRatchetInboundV2({
   owner, deviceId, recipientDeviceSecret, senderCheckpoint, recipientCheckpoint,
   recipientRequesterDeviceId, wrap, expectedVersion, processRatchetMessage,
-  now = Date.now(),
+  securityFence, now = Date.now(),
 }) {
   assertOwner(owner);
+  assertSecurityFence(securityFence, owner);
   if (!/^[0-9a-f]{64}$/.test(owner || '') || !/^[0-9a-f]{32}$/.test(deviceId || '')
     || typeof processRatchetMessage !== 'function') {
     throw new Error('An authenticated recipient device and ratchet message processor are required.');
@@ -345,6 +384,7 @@ export async function commitRatchetInboundV2({
     recipientDeviceId: deviceId, recipientRequesterDeviceId,
     now: Math.floor(now / 1000),
   });
+  assertSecurityFence(securityFence, owner);
   if (!opened || opened.recipientDeviceId !== deviceId || opened.recipientAccountPubkey !== owner) {
     throw new Error('The ratchet message lacks fresh sender and recipient authority proofs.');
   }
@@ -354,6 +394,7 @@ export async function commitRatchetInboundV2({
   let busy = false;
   await db.transaction('rw', 'ratchetInbox', async () => {
     assertOwner(owner);
+    assertSecurityFence(securityFence, owner);
     const current = await db.ratchetInbox.get(opened.operationId);
     if (!current) {
       await db.ratchetInbox.add({ eventId: opened.operationId, chatId: '', status: 'processing',
@@ -390,15 +431,17 @@ export async function commitRatchetInboundV2({
   // The durable reservation prevents concurrent tabs from running it twice;
   // the final state/journal transaction below is the only commit point.
   try {
+    assertSecurityFence(securityFence, owner);
     const transition = await processRatchetMessage({
       ratchetCiphertext: opened.ratchetCiphertext,
-      applicationPayload: opened.applicationPayload,
       senderAccountPubkey: opened.senderAccountPubkey,
       senderDeviceId: opened.senderDeviceId,
       operationId: opened.operationId,
       expectedVersion,
     });
-    if (!transition?.sessionId || !transition.sessionState || !transition.journal || !transition.chatId) {
+    assertSecurityFence(securityFence, owner);
+    if (!transition?.sessionId || !transition.sessionState || !transition.journal || !transition.chatId
+      || !Object.hasOwn(transition, 'applicationPayload')) {
       throw new Error('The ratchet processor did not return a complete durable transition.');
     }
     const version = nextVersion(expectedVersion);
@@ -408,12 +451,14 @@ export async function commitRatchetInboundV2({
         owner, collection: 'inbox', id: opened.operationId,
         value: { protocol: 'cipher-ratchet-inbound-operation-v2', operationId: opened.operationId,
           rumorId: opened.rumorId, senderAccountPubkey: opened.senderAccountPubkey,
-          senderDeviceId: opened.senderDeviceId, applicationPayload: opened.applicationPayload,
+          senderDeviceId: opened.senderDeviceId, applicationPayload: transition.applicationPayload,
           journal: transition.journal },
       }),
     ]);
+    assertSecurityFence(securityFence, owner);
     await db.transaction('rw', 'ratchetSessions', 'ratchetInbox', async () => {
       assertOwner(owner);
+      assertSecurityFence(securityFence, owner);
       const current = await db.ratchetInbox.get(opened.operationId);
       if (current?.status !== 'processing' || current.claimToken !== claimToken) {
         throw new Error('The receive reservation expired or was claimed by another tab.');
@@ -428,7 +473,7 @@ export async function commitRatchetInboundV2({
         senderAccountPubkey: opened.senderAccountPubkey, sealed: sealedJournal });
     });
     return { duplicate: false, version, operationId: opened.operationId, rumorId: opened.rumorId,
-      applicationPayload: opened.applicationPayload };
+      applicationPayload: transition.applicationPayload };
   } catch (error) {
     await db.transaction('rw', 'ratchetInbox', async () => {
       assertOwner(owner);

@@ -110,7 +110,7 @@ export function authorizeRatchetSend({ operationId, sender, recipient, now = Mat
 // authorization proofs are inside the NIP-59 seal, so relays see neither
 // account identity nor registry/recovery records. The per-device p tag is
 // still relay-visible and is a known correlation surface.
-export function buildAuthorizedRatchetDm({ authorization, ratchetCiphertext, applicationPayload = null,
+export function buildAuthorizedRatchetDm({ authorization, ratchetCiphertext,
   senderDeviceSecret, recipientDevicePubkey, createdAt = Math.floor(Date.now() / 1000), clientId = null } = {}) {
   if (authorization?.protocol !== 'cipher-ratchet-authority-v2'
     || !HEX32.test(authorization.operationId || '')
@@ -125,7 +125,6 @@ export function buildAuthorizedRatchetDm({ authorization, ratchetCiphertext, app
     version: 2,
     operationId: authorization.operationId,
     ratchetCiphertext,
-    applicationPayload,
     senderProof: {
       challengeEvent: authorization.sender.challengeEvent,
       responseEvent: authorization.sender.responseEvent,
@@ -169,8 +168,7 @@ export function openAuthorizedRatchetDm({ wrap, recipientDeviceSecret, senderChe
   return { rumorId: opened.rumor.id, operationId: body.operationId,
     senderAccountPubkey: senderProof.accountPubkey, senderDeviceId: senderProof.deviceId,
     recipientAccountPubkey: recipientProof.accountPubkey, recipientDeviceId: recipientProof.deviceId,
-    ratchetCiphertext: body.ratchetCiphertext,
-    applicationPayload: body.applicationPayload, senderProof, recipientProof };
+    ratchetCiphertext: body.ratchetCiphertext, senderProof, recipientProof };
 }
 
 export const dmRatchetAuthorityInternals = Object.freeze({ DM_SEND_PURPOSE });

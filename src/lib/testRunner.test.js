@@ -28,7 +28,13 @@ const listOnDisk = (dir, out = []) => {
 };
 
 const pkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'));
-const listed = new Set(pkg.scripts.test.match(/[\w./-]+\.test\.(js|mjs)/g) ?? []);
+// `npm test` is the main explicit list; the protocol-test lane suites run
+// under their own scripts (test:protocol-dm-lane, test:mls-lane,
+// test:fault-proxy, test:protocol-mode) and count as runners too. Every
+// dedicated runner's paths are collected so a new lane file is still owned
+// by a runner somewhere.
+const RUNNER_SCRIPTS = ['test', 'test:protocol-mode', 'test:protocol-dm-lane', 'test:mls-lane', 'test:mls-vectors', 'test:fault-proxy'];
+const listed = new Set(RUNNER_SCRIPTS.flatMap((name) => (pkg.scripts[name] || '').match(/[\w./-]+\.test\.(js|mjs)/g) ?? []));
 
 test('every test file under src/ and scripts/ is named in `npm test`', () => {
   const orphans = [...listOnDisk('src'), ...listOnDisk('scripts')].filter((f) => !listed.has(f));

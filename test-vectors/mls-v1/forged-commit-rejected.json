@@ -1,0 +1,32 @@
+{
+  "chain": [
+    {
+      "groupId": "cipher-test-group-v1",
+      "epoch": 1,
+      "prevRev": 0,
+      "prevTranscriptHash": "",
+      "transcriptHash": "1111111111111111111111111111111111111111111111111111111111111111",
+      "delta": {
+        "add": [
+          "b"
+        ]
+      },
+      "eventId": "evt-ad4c5512c1d8fb88",
+      "pubkey": "f1090db50bcb9458dec8cd1cfecacc05e55b9c4b5d37a41c3ca02c91c400e669",
+      "sig": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+    }
+  ],
+  "adminPubkeys": [
+    "f1090db50bcb9458dec8cd1cfecacc05e55b9c4b5d37a41c3ca02c91c400e669"
+  ],
+  "observed": [
+    "forged-commit"
+  ],
+  "expectedRejectionReasons": [
+    "forged-commit"
+  ],
+  "_meta": {
+    "name": "forged-commit-rejected",
+    "profile": "MLS-TEST-PROFILE-V1"
+  }
+}

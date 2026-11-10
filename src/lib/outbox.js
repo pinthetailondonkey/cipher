@@ -31,12 +31,18 @@ async function updateMessageStatus(id, status, owner) {
   if (currentOwner() === owner) notifyStatus(id, status);
 }
 
-export async function enqueueNostrEvent(event, relays = null) {
+export async function enqueueNostrEvent(event, relays = null, securityFence = null) {
   const owner = currentOwner();
   if (!owner) throw new Error('Local account database is not open.');
+  if (securityFence) {
+    if (securityFence.context?.owner !== owner) throw new Error('The outbox owner changed before the event could be queued.');
+    securityFence.assertCurrent();
+  }
   const outbox = db.outbox;
   await outbox.put(outboxRow(event, Date.now(), relays));
+  securityFence?.assertCurrent?.();
   await updateMessageStatus(event.id, 'queued', owner);
+  securityFence?.assertCurrent?.();
 }
 
 async function dropOutboxRow(id) {
@@ -55,31 +61,50 @@ export async function publishWriteAhead(event, relays, publish, deps = {}) {
   const enqueue = deps.enqueue || enqueueNostrEvent;
   const unqueue = deps.unqueue || dropOutboxRow;
   const writeAhead = deps.writeAhead !== false;
+  const assertCurrent = deps.assertCurrent || (() => {});
   let written = false;
+  assertCurrent();
   if (writeAhead) {
     try {
+      assertCurrent();
       await enqueue(event, relays);
       written = true;
+      assertCurrent();
     } catch (error) {
+      if (error?.code === 'SECURITY_CONTEXT_EXPIRED') throw error;
       console.warn('[outbox] Could not write the event ahead of publishing:', error);
     }
   }
+  // The check must sit outside the publish catch: an expired caller holds the
+  // immutable queued event and must not turn into a best-effort network send.
+  assertCurrent();
   let results = [];
   try {
     results = await Promise.allSettled(publish());
   } catch (error) {
+    if (error?.code === 'SECURITY_CONTEXT_EXPIRED') throw error;
     console.warn('[outbox] Publish could not start:', error);
   }
+  assertCurrent();
   const okCount = results.filter((result) => result.status === 'fulfilled').length;
   if (okCount > 0) {
     if (written) {
-      try { await unqueue(event.id); } catch (error) {
+      try {
+        assertCurrent();
+        await unqueue(event.id);
+        assertCurrent();
+      } catch (error) {
+        if (error?.code === 'SECURITY_CONTEXT_EXPIRED') throw error;
         console.warn('[outbox] Could not clear a delivered row; the next flush will clear it:', error);
       }
     }
     return { queued: false, results, okCount };
   }
-  if (!written) await enqueue(event, relays);
+  if (!written) {
+    assertCurrent();
+    await enqueue(event, relays);
+    assertCurrent();
+  }
   return { queued: true, results, okCount: 0 };
 }
 
@@ -114,6 +139,15 @@ export function outboxRow(event, now = Date.now(), relays = null, metadata = {})
   return row;
 }
 
+function assertQueuedRatchetContext(identity, row) {
+  if (row?.ratchetDelivery?.protocol !== 'cipher-ratchet-device-delivery-v2') return;
+  if (typeof identity?.securityFence?.assertCurrent !== 'function'
+    || identity.securityFence.context?.owner !== identity.pk) {
+    throw new Error('A current account security context is required to publish this ratchet message.');
+  }
+  identity.securityFence.assertCurrent();
+}
+
 export function settleOutboxAttempt(queued, { accepted, now = Date.now(), error = '' }) {
   if (accepted) return { action: 'delete' };
   const attempts = (queued.attempts || 0) + 1;
@@ -128,19 +162,26 @@ export function settleOutboxAttempt(queued, { accepted, now = Date.now(), error 
   };
 }
 
-export async function flushNostrOutbox(identity, { force = false } = {}) {
+export async function flushNostrOutbox(identity, {
+  force = false,
+  getPool = getAuthenticatedPool,
+  clockNow = Date.now,
+} = {}) {
   if (!identity?.sk || !identity?.pk || currentOwner() !== identity.pk) return;
   const activeFlush = flushes.get(identity.pk);
   if (activeFlush) return activeFlush;
 
   const flushPromise = (async () => {
-    const pool = await getAuthenticatedPool(identity);
+    identity.securityFence?.assertCurrent?.();
+    const pool = await getPool(identity);
+    identity.securityFence?.assertCurrent?.();
     if (currentOwner() !== identity.pk) return;
     const outbox = db.outbox;
     const pending = await outbox.toArray();
     for (const queued of pending) {
+      assertQueuedRatchetContext(identity, queued);
       if (currentOwner() !== identity.pk) return;
-      if (!shouldFlushOutboxRow(queued, Date.now(), force)) continue;
+      if (!shouldFlushOutboxRow(queued, clockNow(), force)) continue;
 
       await outbox.update(queued.id, { status: 'sending' });
       await updateMessageStatus(queued.id, 'sending', identity.pk);
@@ -148,11 +189,23 @@ export async function flushNostrOutbox(identity, { force = false } = {}) {
         const relays = queued.relays?.length
           ? queued.relays
           : (queued.kind === 9 ? groupRelays : generalRelays);
+        assertQueuedRatchetContext(identity, queued);
+        // Status and at-rest writes above can await IndexedDB/WebCrypto. A
+        // proof may expire during that work, so recheck after those awaits and
+        // immediately before handing the event to the relay pool.
+        if (!shouldFlushOutboxRow(queued, clockNow(), force)) {
+          await outbox.update(queued.id, { status: 'queued' });
+          await updateMessageStatus(queued.id, 'queued', identity.pk);
+          continue;
+        }
+        assertQueuedRatchetContext(identity, queued);
         const results = await Promise.allSettled(pool.publish(relays, queued.event));
+        assertQueuedRatchetContext(identity, queued);
         if (currentOwner() !== identity.pk) return;
         const accepted = results.some((result) => result.status === 'fulfilled');
         const settled = settleOutboxAttempt(queued, {
           accepted,
+          now: clockNow(),
           error: results
             .filter((result) => result.status === 'rejected')
             .map((result) => result.reason?.message || String(result.reason))

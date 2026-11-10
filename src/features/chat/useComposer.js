@@ -9,6 +9,7 @@ import { createRecordingSession } from './recordingSession';
 import { photoRefusalToast, sendPrivateImage, uploadPrivateMedia } from '../../lib/mediaCrypto';
 import { blossomServers } from '../../lib/egress';
 import { timerSeconds } from '../../lib/disappearing';
+import { assertSecurityContextOwner } from '../../lib/securityContextFence.js';
 
 export function useComposer({ identity, sendDM, sendGroupMessage }) {
   const view = useChatStore((s) => s.view);
@@ -46,6 +47,10 @@ export function useComposer({ identity, sendDM, sendGroupMessage }) {
     return session;
   };
   const chatMountedRef = useRef(false);
+  const assertCurrent = (securityFence = identity?.securityFence) => {
+    assertSecurityContextOwner(securityFence, identity?.pk);
+    return securityFence;
+  };
 
   useEffect(() => {
     chatMountedRef.current = true;
@@ -69,6 +74,7 @@ export function useComposer({ identity, sendDM, sendGroupMessage }) {
   // message is neither: it waits on a key, and the bubble says so.
   const sendMessage = async (text, customPayload = null) => {
     if (!text.trim() && !customPayload) return 'failed';
+    const securityFence = assertCurrent();
     haptic('light');
     const tempId = `temp-${Date.now()}`;
     let msgPayload = customPayload || { type: 'text', message: text };
@@ -78,7 +84,6 @@ export function useComposer({ identity, sendDM, sendGroupMessage }) {
     if (_secs > 0 && !msgPayload.expires_at) msgPayload.expires_at = Math.floor(Date.now() / 1000) + _secs;
     const replyId = replyingTo ? replyingTo.id : null;
     const isDmView = view === 'dm';
-    const chatId = isDmView ? activeDm : activeGroup?.id;
     const newMsg = stampArrival({
       id: tempId, clientId: tempId, isSender: true, pubkey: identity.pk,
       timestamp: Math.floor(Date.now() / 1000), local_timestamp: Date.now(), replyTo: replyId,
@@ -100,8 +105,11 @@ export function useComposer({ identity, sendDM, sendGroupMessage }) {
         if (msgs.some((message) => message.id === tempId || message.clientId === tempId)) return prev;
         return { ...prev, [activeGroup.id]: [...msgs, newMsg] };
       });
+      securityFence.assertCurrent();
       await saveMessage(activeGroup.id, newMsg);
+      assertCurrent(securityFence);
       const result = await sendGroupMessage(activeGroup.id, msgPayload, tempId, replyId);
+      assertCurrent(securityFence);
       // One place decides what the send did, so a refused or timed-out send
       // cannot be read as success further up.
       const outcome = sendOutcome(result);
@@ -113,7 +121,9 @@ export function useComposer({ identity, sendDM, sendGroupMessage }) {
             message.id === tempId || message.clientId === tempId ? securing : message
           )),
         }));
+        assertCurrent(securityFence);
         await saveMessage(activeGroup.id, securing);
+        assertCurrent(securityFence);
         return 'securing';
       }
       if (outcome === 'failed') {
@@ -121,11 +131,15 @@ export function useComposer({ identity, sendDM, sendGroupMessage }) {
           ...prev,
           [activeGroup.id]: (prev[activeGroup.id] || []).filter((message) => message.id !== tempId && message.clientId !== tempId),
         }));
+        assertCurrent(securityFence);
         try {
           await db.messages.delete(tempId);
+          assertCurrent(securityFence);
         } catch (error) {
+          if (!securityFence.isCurrent()) return 'failed';
           console.error('[Chat] Failed to remove unsent group message:', error);
         }
+        assertCurrent(securityFence);
         setToast({ type: 'error', message: 'Failed to send to group' });
         return 'failed';
       }
@@ -147,20 +161,29 @@ export function useComposer({ identity, sendDM, sendGroupMessage }) {
           return confirmedMessage;
         }),
       }));
+      assertCurrent(securityFence);
       await saveMessage(activeGroup.id, confirmedMessage || {
         ...newMsg,
         id: result.event.id,
         timestamp: result.event.created_at,
         deliveryStatus,
       });
+      assertCurrent(securityFence);
       return outcome;
     }
-    if (isDmView && activeDm) await saveMessage(activeDm, newMsg);
+    if (isDmView && activeDm) {
+      assertCurrent(securityFence);
+      await saveMessage(activeDm, newMsg);
+      assertCurrent(securityFence);
+    }
+    assertCurrent(securityFence);
     setReplyingTo(null);
     if (activeDm) scopedRemove(`draft-dm-${activeDm}`);
     if (activeGroup) scopedRemove(`draft-group-${activeGroup.id}`);
     if (activeDm) {
+      assertCurrent(securityFence);
       const result = await sendDM(activeDm, msgPayload, tempId, replyId);
+      assertCurrent(securityFence);
       // A direct message has no key-waiting state: a failure is a failure.
       // Queued is not one: the signed event is in the outbox and the bubble
       // stays, saying queued until a relay takes it.
@@ -170,11 +193,15 @@ export function useComposer({ identity, sendDM, sendGroupMessage }) {
           ...prev,
           [activeDm]: (prev[activeDm] || []).filter((message) => message.id !== tempId && message.clientId !== tempId),
         }));
+        assertCurrent(securityFence);
         try {
           await db.messages.delete(tempId);
+          assertCurrent(securityFence);
         } catch (error) {
+          if (!securityFence.isCurrent()) return 'failed';
           console.error('[Chat] Failed to remove unsent direct message:', error);
         }
+        assertCurrent(securityFence);
         setToast({ type: 'error', message: 'Failed to send: ' + (result.error || 'unknown') });
         return 'failed';
       } else {
@@ -184,21 +211,27 @@ export function useComposer({ identity, sendDM, sendGroupMessage }) {
           ...prev,
           [activeDm]: (prev[activeDm] || []).map((message) => {
             if (message.clientId !== tempId) return message;
+            // The confirmed row keys on the rumor id — the canonical thread
+            // identity every peer-side reference (reply tags, order ids)
+            // names after the NIP-59 transition. Legacy results without a
+            // rumorId keep the wrap key.
             confirmedMessage = {
               ...message,
-              id: result.event.id,
+              id: result.rumorId || result.event.id,
               timestamp: result.event.created_at,
               deliveryStatus,
             };
             return confirmedMessage;
           }),
         }));
+        assertCurrent(securityFence);
         await saveMessage(activeDm, confirmedMessage || {
           ...newMsg,
-          id: result.event.id,
+          id: result.rumorId || result.event.id,
           timestamp: result.event.created_at,
           deliveryStatus,
         });
+        assertCurrent(securityFence);
         return outcome;
       }
     }
@@ -207,6 +240,9 @@ export function useComposer({ identity, sendDM, sendGroupMessage }) {
   const handleImageUpload = async (e) => {
     const files = Array.from(e.target.files || []);
     if (files.length === 0) return;
+    let securityFence;
+    try { securityFence = assertCurrent(); }
+    catch (error) { setToast({ type: 'error', message: error?.message || 'The account security context is unavailable.' }); return; }
     setUploadingImage(true);
     const caption = newMessage;
     setNewMessage('');
@@ -214,10 +250,12 @@ export function useComposer({ identity, sendDM, sendGroupMessage }) {
       const media = [];
       for (const file of files) {
         media.push(await sendPrivateImage(file, blossomServers()));
+        assertCurrent(securityFence);
       }
       // The photo reached a host; the message still has to reach the chat.
       // sendMessage's own failure toast is the last word when it did not.
       const outcome = await sendMessage(caption, { type: 'album', media, message: caption });
+      assertCurrent(securityFence);
       if (outcome === 'sent') {
         setToast({ type: 'success', message: media.length > 1 ? 'Album sent!' : 'Image sent!' });
       } else if (outcome === 'queued') {
@@ -227,16 +265,19 @@ export function useComposer({ identity, sendDM, sendGroupMessage }) {
       }
     } catch (err) {
       console.error('[media] Encrypted photo upload failed:', err);
-      setToast({ type: 'error', message: photoRefusalToast(err?.message) });
+      if (securityFence.isCurrent()) setToast({ type: 'error', message: photoRefusalToast(err?.message) });
     } finally {
-      setUploadingImage(false);
+      if (securityFence.isCurrent()) setUploadingImage(false);
     }
   };
 
   const startRecording = async () => {
+    let securityFence;
+    try { securityFence = assertCurrent(); }
+    catch (error) { setToast({ type: 'error', message: error?.message || 'The account security context is unavailable.' }); return; }
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      if (!chatMountedRef.current) {
+      if (!chatMountedRef.current || !securityFence.isCurrent()) {
         stream.getTracks().forEach((track) => track.stop());
         return;
       }
@@ -248,28 +289,30 @@ export function useComposer({ identity, sendDM, sendGroupMessage }) {
         // Its own session decides: a cancelled one sends nothing, and one a
         // newer recording replaced sends nothing either.
         if (!session.shouldSend()) return;
-        if (!chatMountedRef.current) return;
+        if (!chatMountedRef.current || !securityFence.isCurrent()) return;
         const audioBlob = session.blob('audio/webm');
         const file = new File([audioBlob], 'voice_note.webm', { type: 'audio/webm' });
         setUploadingImage(true);
         setToast({ type: 'success', message: 'Uploading voice note...' });
         try {
           const entry = await uploadPrivateMedia(file, blossomServers());
+          assertCurrent(securityFence);
           const outcome = await sendMessage('', { type: 'audio', ...entry });
+          assertCurrent(securityFence);
           if (outcome === 'sent') setToast({ type: 'success', message: 'Voice note sent!' });
           else if (outcome === 'queued') setToast({ type: 'success', message: 'Voice note queued. It will send when the network is back.' });
         } catch (err) {
           console.error('[media] Encrypted voice upload failed:', err);
-          setToast({ type: 'error', message: 'The voice note was not sent. No media host took the encrypted file.' });
+          if (securityFence.isCurrent()) setToast({ type: 'error', message: 'The voice note was not sent. No media host took the encrypted file.' });
         } finally {
-          if (chatMountedRef.current) setUploadingImage(false);
+          if (chatMountedRef.current && securityFence.isCurrent()) setUploadingImage(false);
         }
       };
       mediaRecorder.start();
       setIsRecording(true);
     } catch (err) {
       console.error(err);
-      if (chatMountedRef.current) setToast({ type: 'error', message: 'Microphone access denied' });
+      if (chatMountedRef.current && securityFence.isCurrent()) setToast({ type: 'error', message: 'Microphone access denied' });
     }
   };
 

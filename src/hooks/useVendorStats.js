@@ -4,6 +4,7 @@ import { getAuthenticatedPool } from '../lib/pool';
 import { reputationRelays } from '../lib/relays';
 import { enqueueNostrEvent } from '../lib/outbox';
 import { BULLETIN_KIND, bulletinContent, bulletinRefusal, bulletinTags } from '../lib/vendorStats';
+import { assertSecurityContextOwner } from '../lib/securityContextFence';
 
 export function useVendorStats({ identity, targetPubkey = null }) {
   const [stats, setStats] = useState({ sales: 0, revenueFiat: 0, btc: 0, xmr: 0, badges: [] });
@@ -12,9 +13,11 @@ export function useVendorStats({ identity, targetPubkey = null }) {
   const fetchStats = useCallback(async () => {
     const pkToFetch = targetPubkey || identity?.pk;
     if (!pkToFetch) return;
+    assertSecurityContextOwner(identity?.securityFence, identity?.pk);
     setLoading(true);
     try {
       const allMsgs = await db.messages.toArray();
+      assertSecurityContextOwner(identity.securityFence, identity.pk);
       
       const completedIds = new Set();
       allMsgs.forEach(m => {
@@ -51,11 +54,16 @@ export function useVendorStats({ identity, targetPubkey = null }) {
       if (revenueFiat >= 1000) badges.push({ id: 'high_roller', name: '$1K Volume', icon: 'coins', color: 'text-accent' });
       if (revenueFiat >= 10000) badges.push({ id: 'whale', name: '$10K Volume', icon: 'waves', color: 'text-accent' });
 
+      assertSecurityContextOwner(identity.securityFence, identity.pk);
       setStats({ sales, revenueFiat, btc, xmr, badges });
     } catch (e) {
+      if (e?.code === 'SECURITY_CONTEXT_EXPIRED') return;
       console.error('Failed to fetch vendor stats', e);
     } finally {
-      setLoading(false);
+      try {
+        assertSecurityContextOwner(identity?.securityFence, identity?.pk);
+        setLoading(false);
+      } catch {}
     }
   }, [identity, targetPubkey]);
 
@@ -70,21 +78,28 @@ export function useVendorStats({ identity, targetPubkey = null }) {
     const refusal = bulletinRefusal(rail, hashes);
     if (refusal) return { success: false, error: refusal };
     try {
+      assertSecurityContextOwner(identity?.securityFence, identity?.pk);
       const { finalizeEvent } = await import('nostr-tools');
+      assertSecurityContextOwner(identity.securityFence, identity.pk);
       const event = finalizeEvent({
         kind: BULLETIN_KIND,
         created_at: Math.floor(Date.now() / 1000),
         tags: bulletinTags(rail),
         content: bulletinContent(hashes),
       }, identity.sk);
+      assertSecurityContextOwner(identity.securityFence, identity.pk);
       const pool = await getAuthenticatedPool(identity);
+      assertSecurityContextOwner(identity.securityFence, identity.pk);
       const results = await Promise.allSettled(pool.publish(reputationRelays, event));
+      assertSecurityContextOwner(identity.securityFence, identity.pk);
       if (!results.some((result) => result.status === 'fulfilled')) {
-        await enqueueNostrEvent(event);
+        await enqueueNostrEvent(event, null, identity.securityFence);
+        assertSecurityContextOwner(identity.securityFence, identity.pk);
         return { success: true, queued: true };
       }
       return { success: true };
     } catch (e) {
+      if (e?.code === 'SECURITY_CONTEXT_EXPIRED') return { success: false, error: 'The account context expired before the bulletin completed.' };
       return { success: false, error: e.message };
     }
   }, [identity]);

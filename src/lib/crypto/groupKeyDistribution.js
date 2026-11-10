@@ -12,6 +12,7 @@ import { rumorTags, sealAndWrap } from '../giftWrap';
 import { markSafetyChange } from '../safetyNumber.js';
 import { secp256k1 } from '@noble/curves/secp256k1.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
+import { assertSecurityContextOwner } from '../securityContextFence.js';
 
 const KEY_HEX = /^[0-9a-f]{64}$/i;
 
@@ -254,7 +255,7 @@ export function conflictingHeldEpoch(rows, held) {
   return hit ? hit.epoch : null;
 }
 
-export async function senderMayInstallGroupKey({ sender, groupId, maxEpoch, offeredEpochs = null, allowCurrentEpochResync = false }) {
+export async function senderMayInstallGroupKey({ sender, groupId, maxEpoch, offeredEpochs = null, allowCurrentEpochResync = false, securityFence = null }) {
   if (!sender || !groupId) return false;
   const owner = currentOwner();
   const { readAuthorityPin } = await import('./authorityPins.js');
@@ -266,7 +267,8 @@ export async function senderMayInstallGroupKey({ sender, groupId, maxEpoch, offe
     ? await (await import('./groupKeyRotation.js')).loadVerifiedMemberSnapshot(groupId)
     : await loadMemberSnapshot(groupId);
   if (!Array.isArray(snapshot)) return false;
-  const current = await getCurrentGroupKey(groupId);
+  const current = await getCurrentGroupKey(groupId, securityFence);
+  if (securityFence) assertSecurityContextOwner(securityFence, owner);
   const claimed = (getMyGroups(owner).find((group) => group?.id === groupId) || {}).creator;
   const creator = trustedGroupCreator({ creator: claimed, identityPk: owner, snapshot });
   return senderAuthorizedForGroupKey({ snapshot, sender, maxEpoch, currentEpoch: current?.epoch, creator, offeredEpochs, allowCurrentEpochResync });
@@ -278,13 +280,17 @@ export function installFloorAllows({ hasKey, asked }) {
   return Boolean(hasKey || asked);
 }
 
-export async function installReceivedGroupKey(payload, sender = null) {
+export async function installReceivedGroupKey(payload, sender = null, securityFence = null) {
   const rows = parseGroupKeyBundle(payload);
   if (!rows.length || !currentOwner()) return false;
+  const owner = currentOwner();
+  const assertCurrent = () => { if (securityFence) assertSecurityContextOwner(securityFence, owner); };
+  assertCurrent();
   const { groupId } = rows[0];
   if (rows.some((row) => row.groupId !== groupId)) return false;
   const maxEpoch = Math.max(...rows.map((row) => row.epoch));
-  const current = await getCurrentGroupKey(groupId);
+  const current = await getCurrentGroupKey(groupId, securityFence);
+  assertCurrent();
   // The receiver arm of the kick wall (drills D2): the owner says who is
   // removed, but that ledger lives on the OWNER's device — the victim's own
   // copy is what stops the re-arm. A device that read its own kick (kind 9001
@@ -311,15 +317,17 @@ export async function installReceivedGroupKey(payload, sender = null) {
   const allowCurrentEpochResync = payload?.resync === true && rows.length === 1;
   if (payload?.resync === true && !allowCurrentEpochResync) return false;
   let authorized = await senderMayInstallGroupKey({
-    sender, groupId, maxEpoch, offeredEpochs: rows.map((row) => row.epoch), allowCurrentEpochResync,
+    sender, groupId, maxEpoch, offeredEpochs: rows.map((row) => row.epoch), allowCurrentEpochResync, securityFence,
   });
+  assertCurrent();
   const { readAuthorityPin } = await import('./authorityPins.js');
   const pinnedAuthority = readAuthorityPin(currentOwner(), groupId);
   // For a secured group, first-key adoption always needs a grant signed by
   // the out-of-band authority pin. A partially persisted doc cannot turn a
   // relay roster or a normal member into a bootstrap signer.
   if (pinnedAuthority && !current) authorized = false;
-  let priorDocKey = await getDocKey(groupId);
+  let priorDocKey = await getDocKey(groupId, securityFence);
+  assertCurrent();
   const docKeyHex = typeof payload?.dk === 'string' ? payload.dk : '';
   // Also restore a doc-key-lost returning device: the pinned owner grant can
   // re-establish the current signed head even when an older chat key remains.
@@ -345,7 +353,8 @@ export async function installReceivedGroupKey(payload, sender = null) {
       return false;
     }
     const { rememberVerifiedDoc } = await import('./groupDocWire.js');
-    const stored = await rememberVerifiedDoc({ groupId, pin: pinnedAuthority, signed: verified.signedDoc });
+    const stored = await rememberVerifiedDoc({ groupId, pin: pinnedAuthority, signed: verified.signedDoc, securityFence });
+    assertCurrent();
     if (!stored?.stored) {
       console.warn('[group-key] A key bundle was not installed: its verified governance document could not be stored.', { groupId, epoch: maxEpoch });
       return false;
@@ -368,7 +377,8 @@ export async function installReceivedGroupKey(payload, sender = null) {
   // the same epoch number, which the rollback guard never sees. Honest
   // backfills re-state the held epoch with the held bytes, so only a byte
   // mismatch closes the whole bundle.
-  const heldRows = (await getAllGroupKeys(groupId)).map((item) => ({ epoch: item.epoch, hex: toHex(item.bytes) }));
+  const heldRows = (await getAllGroupKeys(groupId, securityFence)).map((item) => ({ epoch: item.epoch, hex: toHex(item.bytes) }));
+  assertCurrent();
   const conflict = conflictingHeldEpoch(rows, heldRows);
   if (conflict !== null) {
     console.warn('[group-key] A key bundle was not installed: it re-states a held epoch with different bytes.', { groupId, epoch: conflict });
@@ -387,7 +397,8 @@ export async function installReceivedGroupKey(payload, sender = null) {
   let adoptedDocKey = false;
   if (/^[0-9a-f]{64}$/.test(docKeyHex)) {
     if (docKeyAdoptionAllows({ heldEpoch: priorDocKey?.epoch, offeredEpoch: maxEpoch })) {
-      adoptedDocKey = await putDocKey(groupId, maxEpoch, fromHex(docKeyHex));
+      adoptedDocKey = await putDocKey(groupId, maxEpoch, fromHex(docKeyHex), securityFence);
+      assertCurrent();
       if (!adoptedDocKey) {
         console.warn('[group-key] A key bundle was not installed: the governance-doc key could not be stored.', { groupId, epoch: maxEpoch });
         return false;
@@ -402,11 +413,15 @@ export async function installReceivedGroupKey(payload, sender = null) {
   }
   const keyMaterialMoved = safetyChangeFromInstall({ currentEpoch: current?.epoch, maxEpoch });
   try {
-    for (const row of rows) await putGroupKey(row.groupId, row.epoch, fromHex(row.hex));
+    for (const row of rows) {
+      await putGroupKey(row.groupId, row.epoch, fromHex(row.hex), {}, securityFence);
+      assertCurrent();
+    }
   } catch (error) {
     if (adoptedDocKey) {
-      if (priorDocKey) await putDocKey(groupId, priorDocKey.epoch, priorDocKey.bytes);
-      else await removeDocKey(groupId);
+      if (priorDocKey) await putDocKey(groupId, priorDocKey.epoch, priorDocKey.bytes, securityFence);
+      else await removeDocKey(groupId, securityFence);
+      assertCurrent();
     }
     console.warn('[group-key] A key bundle was not fully installed:', error?.message || error);
     return false;
@@ -485,8 +500,11 @@ export function epochsToSend({ records, epoch, explicit = false, nowSec = Math.f
 
 const grantLedger = { getGrantRecords, recordGrant };
 
-export async function distributeGroupKey({ senderPrivkey, senderPubkey, groupId, epoch, keyBytes, recipients, publish, answerRequest = false, label = null, ledger = grantLedger, docKey, bootstrapRecipient = null }) {
+export async function distributeGroupKey({ senderPrivkey, senderPubkey, groupId, epoch, keyBytes, recipients, publish, answerRequest = false, label = null, ledger = grantLedger, docKey, bootstrapRecipient = null, securityFence = null }) {
+  const assertCurrent = () => { if (securityFence) assertSecurityContextOwner(securityFence, senderPubkey); };
+  assertCurrent();
   const { nip44 } = await import('nostr-tools');
+  assertCurrent();
   // SEC-1: the governance-doc key rides every bundle this call ships. An
   // explicit `docKey` wins (rotation hands its freshly minted secret over);
   // otherwise what this device holds now travels, so every existing grant,
@@ -494,7 +512,11 @@ export async function distributeGroupKey({ senderPrivkey, senderPubkey, groupId,
   // per-caller wiring. Missing or unreadable state blocks the bundle.
   let resolvedDocKey = normalizeDocKey(docKey);
   if (!resolvedDocKey && docKey === undefined) {
-    const held = await getDocKey(groupId).catch(() => null);
+    const held = await getDocKey(groupId, securityFence).catch((error) => {
+      if (error?.code === 'SECURITY_CONTEXT_EXPIRED') throw error;
+      return null;
+    });
+    assertCurrent();
     resolvedDocKey = normalizeDocKey(held?.bytes);
   }
   if (!resolvedDocKey) throw new Error('A readable governance-doc key is required before distributing new group keys. Recover the shared key; do not generate a replacement.');
@@ -512,10 +534,12 @@ export async function distributeGroupKey({ senderPrivkey, senderPubkey, groupId,
     }
     const heldPin = readAuthorityPin(owner, groupId);
     const authority = await groupAuthorityKey(accountSk, groupId);
+    assertCurrent();
     if (!heldPin || authority.pin !== heldPin) {
       throw new Error('A first key grant requires the pinned group-authority signing key.');
     }
     const head = (await loadMemberDocHeads(groupId))[0];
+    assertCurrent();
     if (!head || head.body?.gid !== groupId || head.body?.epoch !== epoch) {
       throw new Error(`A first key grant requires the current verified governance document (document epoch ${head?.body?.epoch ?? 'missing'}, key epoch ${epoch}).`);
     }
@@ -523,7 +547,9 @@ export async function distributeGroupKey({ senderPrivkey, senderPubkey, groupId,
   }
   const now = Math.floor(Date.now() / 1000);
   const results = await Promise.allSettled(recipients.map(async (recipientPubkey) => {
-    const records = await ledger.getGrantRecords(groupId, recipientPubkey);
+    assertCurrent();
+    const records = await ledger.getGrantRecords(groupId, recipientPubkey, securityFence);
+    assertCurrent();
     const needed = epochsToSend({ records, epoch, explicit: answerRequest, nowSec: now });
     // A label is not a key, but it travels in the key's envelope and the
     // ledger above records keys. Without this a member who already holds the
@@ -546,6 +572,7 @@ export async function distributeGroupKey({ senderPrivkey, senderPubkey, groupId,
         keyHex: toHex(keyBytes), docKeyHex: toHex(resolvedDocKey),
         authoritySk: bootstrapContext.authoritySk, doc: bootstrapContext.doc,
       });
+      assertCurrent();
       if (!bootstrap) throw new Error('The pinned authority could not authorize this first key grant from the current membership document.');
     }
     const payload = {
@@ -573,9 +600,16 @@ export async function distributeGroupKey({ senderPrivkey, senderPubkey, groupId,
       content: wrapped,
     }, senderPrivkey);
     const { wrap } = sealAndWrap(rumor, { senderSk: senderPrivkey, recipientPubkey });
+    assertCurrent();
     await publish(wrap);
-    for (const bundle of bundles) await ledger.recordGrant(groupId, recipientPubkey, bundle.ep, { answered: answerRequest });
+    assertCurrent();
+    for (const bundle of bundles) {
+      assertCurrent();
+      await ledger.recordGrant(groupId, recipientPubkey, bundle.ep, { answered: answerRequest, securityFence });
+      assertCurrent();
+    }
   }));
+  assertCurrent();
   const failures = results.filter((result) => result.status === 'rejected');
   if (failures.length > 0) {
     throw new Error(`Could not distribute group keys to ${failures.length} member(s).`);

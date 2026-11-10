@@ -4,6 +4,7 @@ import { getAuthenticatedPool } from '../lib/pool';
 import { generalRelays, groupRelays, queryWithTimeout } from '../lib/relays';
 import { db } from '../db';
 import { mergeReactions, groupReactionFilters, reactionFromEvent, removeReaction, withoutDeletedReactions } from '../lib/reactions';
+import { assertSecurityContextOwner } from '../lib/securityContextFence';
 
 // A reaction event we deleted stays gone for this device, whatever a relay
 // serves again. The deleted ids live in the same tombstone table as deleted
@@ -24,8 +25,11 @@ export function useReactions({ identity }) {
     console.log("🚨 SEND REACTION HOOK:", { msgId, emoji, isGroup, groupId, authorPubkey });
     if (!msgId || !emoji || !identity?.sk) return { success: false };
     try {
+      assertSecurityContextOwner(identity.securityFence, identity.pk);
       const { finalizeEvent } = await import('nostr-tools');
+      assertSecurityContextOwner(identity.securityFence, identity.pk);
       const pool = await getAuthenticatedPool(identity);
+      assertSecurityContextOwner(identity.securityFence, identity.pk);
       const relays = isGroup ? groupRelays : generalRelays;
 
       const existing = useChatStore.getState().reactions?.[msgId] || [];
@@ -37,13 +41,20 @@ export function useReactions({ identity }) {
         if (!ids.length) {
           try {
             const own = await queryWithTimeout(pool, relays, { kinds: [7], authors: [identity.pk], '#e': [String(msgId)] }, 4000);
+            assertSecurityContextOwner(identity.securityFence, identity.pk);
             ids = own.filter((ev) => ev.content === emoji).map((ev) => ev.id);
           } catch (error) {
+            if (error?.code === 'SECURITY_CONTEXT_EXPIRED') throw error;
             console.warn('[useReactions] could not look up our reaction:', error);
           }
         }
         for (const id of ids) {
-          try { await db.tombstones.put({ id, chatId: 'reaction', at: Date.now() }); } catch (error) {
+          assertSecurityContextOwner(identity.securityFence, identity.pk);
+          try {
+            await db.tombstones.put({ id, chatId: 'reaction', at: Date.now() });
+            assertSecurityContextOwner(identity.securityFence, identity.pk);
+          } catch (error) {
+            if (error?.code === 'SECURITY_CONTEXT_EXPIRED') throw error;
             console.warn('[useReactions] could not keep the removal on this device:', error);
           }
           const del = finalizeEvent({
@@ -52,8 +63,10 @@ export function useReactions({ identity }) {
             tags: [['e', id], ['k', '7']],
             content: '',
           }, identity.sk);
+          assertSecurityContextOwner(identity.securityFence, identity.pk);
           Promise.allSettled(pool.publish(relays, del)).catch(() => {});
         }
+        assertSecurityContextOwner(identity.securityFence, identity.pk);
         setReactions((prev) => ({ ...prev, [msgId]: removeReaction(prev[msgId], { pubkey: identity.pk, emoji }).list }));
         return { success: true, removed: ids.length };
       }
@@ -69,7 +82,9 @@ export function useReactions({ identity }) {
         content: emoji
       }, identity.sk);
 
+      assertSecurityContextOwner(identity.securityFence, identity.pk);
       const results = await Promise.allSettled(pool.publish(relays, ev));
+      assertSecurityContextOwner(identity.securityFence, identity.pk);
       // The reaction is kept on screen only if a relay took it: a reaction no
       // relay holds is gone after the next load, and the screen lied.
       if (!results.some((result) => result.status === 'fulfilled')) {
@@ -78,24 +93,29 @@ export function useReactions({ identity }) {
       setReactions((prev) => mergeReactions(prev, { [msgId]: reactionFromEvent(ev) }));
       return { success: true, results };
     } catch (e) {
+      if (e?.code === 'SECURITY_CONTEXT_EXPIRED') return { success: false, error: e.message };
       console.error('[useReactions] send failed:', e);
       return { success: false, error: e.message };
     }
   }, [identity, setReactions]);
 
   const subscribeToReactions = useCallback((msgIds) => {
-    if (!msgIds || msgIds.length === 0) return () => {};
+    if (!msgIds || msgIds.length === 0 || !identity?.pk || !identity?.securityFence) return () => {};
     let sub = null;
     let isMounted = true;
 
     const setup = async () => {
       try {
+        assertSecurityContextOwner(identity.securityFence, identity.pk);
         const pool = await getAuthenticatedPool(identity);
+        assertSecurityContextOwner(identity.securityFence, identity.pk);
         const allRelays = [...new Set([...generalRelays, ...groupRelays])];
 
         // 1. Fetch historical reactions
         const found = await queryWithTimeout(pool, allRelays, { kinds: [7], '#e': msgIds, limit: 500 }, 4000);
+        assertSecurityContextOwner(identity.securityFence, identity.pk);
         const gone = await deletedIdsAmong(found);
+        assertSecurityContextOwner(identity.securityFence, identity.pk);
         const events = withoutDeletedReactions(found, gone);
         if (isMounted && events.length > 0) {
           const reactionMap = {};
@@ -113,10 +133,12 @@ export function useReactions({ identity }) {
           sub = pool.subscribe(allRelays, { kinds: [7], '#e': msgIds }, {
             onevent: async (ev) => {
               if (!isMounted) return;
+              try { assertSecurityContextOwner(identity.securityFence, identity.pk); } catch { return; }
               const targetId = ev.tags.find(t => t[0] === 'e')?.[1];
               if (!targetId) return;
               if ((await deletedIdsAmong([ev])).size) return;
               if (!isMounted) return;
+              try { assertSecurityContextOwner(identity.securityFence, identity.pk); } catch { return; }
               setReactions((prev) => mergeReactions(prev, {
                 [targetId]: reactionFromEvent(ev),
               }));
@@ -124,6 +146,7 @@ export function useReactions({ identity }) {
           });
         }
       } catch (e) {
+        if (e?.code === 'SECURITY_CONTEXT_EXPIRED') return;
         console.error('[useReactions] subscribe failed:', e);
       }
     };
@@ -138,7 +161,7 @@ export function useReactions({ identity }) {
 
   const subscribeToGroupReactions = useCallback((groupIds) => {
     const filters = groupReactionFilters(groupIds);
-    if (!filters.length || !identity?.sk) return () => {};
+    if (!filters.length || !identity?.sk || !identity?.pk || !identity?.securityFence) return () => {};
     const subs = [];
     const byGroup = new Map();
     let isMounted = true;
@@ -152,9 +175,11 @@ export function useReactions({ identity }) {
     if (typeof window !== 'undefined') window.addEventListener('cipher:group-left', onLeft);
 
     const apply = async (ev) => {
+      try { assertSecurityContextOwner(identity.securityFence, identity.pk); } catch { return; }
       const targetId = ev.tags?.find((tag) => tag[0] === 'e')?.[1];
       if (!targetId) return;
       if ((await deletedIdsAmong([ev])).size) return;
+      try { assertSecurityContextOwner(identity.securityFence, identity.pk); } catch { return; }
       setReactions((prev) => mergeReactions(prev, {
         [targetId]: reactionFromEvent(ev),
       }));
@@ -162,10 +187,13 @@ export function useReactions({ identity }) {
 
     const setup = async () => {
       try {
+        assertSecurityContextOwner(identity.securityFence, identity.pk);
         const pool = await getAuthenticatedPool(identity);
+        assertSecurityContextOwner(identity.securityFence, identity.pk);
         const batches = await Promise.allSettled(filters.map((filter) => (
           queryWithTimeout(pool, groupRelays, { ...filter, limit: 200 }, 4000)
         )));
+        assertSecurityContextOwner(identity.securityFence, identity.pk);
         if (isMounted) {
           for (const batch of batches) {
             if (batch.status === 'fulfilled') batch.value.forEach(apply);
@@ -183,6 +211,7 @@ export function useReactions({ identity }) {
           byGroup.set(filter['#h'][0], sub);
         }
       } catch (e) {
+        if (e?.code === 'SECURITY_CONTEXT_EXPIRED') return;
         console.error('[useReactions] group subscribe failed:', e);
       }
     };

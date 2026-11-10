@@ -4,7 +4,8 @@ import 'fake-indexeddb/auto';
 import { generateSecretKey, getPublicKey } from 'nostr-tools/pure';
 import { db, openDBFor } from '../db.js';
 import { setAtRestKeyProvider } from './messageAtRest.js';
-import { commitRatchetInboundV2, commitRatchetOutboundV2, loadRatchetState } from './dmRatchetTransactions.js';
+import { commitRatchetInboundV2, commitRatchetOutboundV2, loadRatchetState,
+  refreshRatchetOutboundAuthorization } from './dmRatchetTransactions.js';
 import { shouldFlushOutboxRow } from './outbox.js';
 import {
   buildDeviceFreshnessResponseV2,
@@ -112,7 +113,6 @@ test('authorized ratchet payload is NIP-59 sealed and relay fields expose no acc
     recipient: proofFor(recipient, { operationId, device: recipient.secondaryDevice }),
     now: now + 4 });
   const sealed = buildAuthorizedRatchetDm({ authorization, ratchetCiphertext: 'opaque-ratchet-ciphertext',
-    applicationPayload: { kind: 'order-receipt', id: 'commerce-effect-1' },
     senderDeviceSecret: sender.primaryDevice.deviceSecret,
     recipientDevicePubkey: recipient.secondaryDevice.devicePubkey, createdAt: now + 5 });
   assert.equal(sealed.wrap.kind, 1059);
@@ -130,7 +130,8 @@ test('authorized ratchet payload is NIP-59 sealed and relay fields expose no acc
     recipientRequesterDeviceId: recipient.primaryDevice.deviceId, now: now + 6 });
   assert.equal(opened.operationId, operationId);
   assert.equal(opened.ratchetCiphertext, 'opaque-ratchet-ciphertext');
-  assert.deepEqual(opened.applicationPayload, { kind: 'order-receipt', id: 'commerce-effect-1' });
+  assert.equal(opened.applicationPayload, undefined,
+    'application content is not carried beside the ratchet ciphertext in the NIP-59 rumor');
   assert.equal(openAuthorizedRatchetDm({ wrap: sealed.wrap,
     recipientDeviceSecret: recipient.secondaryDevice.deviceSecret,
     senderCheckpoint: sender.checkpoint, recipientCheckpoint: recipient.checkpoint,
@@ -207,13 +208,13 @@ test('v2 ratchet transaction commits proofs, ciphertext, state and operation id 
     expectedVersion: null,
     state: { chainKey: 'advanced-once' },
     ratchetCiphertext: 'ciphertext-a',
-    applicationPayload: { kind: 'receipt', id: 'receipt-effect-a' },
     senderDeviceSecret: sender.primaryDevice.deviceSecret,
     authorization: {
       operationId,
       sender: proofFor(sender, { operationId }),
       recipient: proofFor(recipient, { operationId, device: recipient.secondaryDevice }),
     },
+    securityFence: { context: { owner: sender.checkpoint.accountPubkey }, assertCurrent() {} },
     now: (now + 5) * 1000,
   };
   const committed = await commitRatchetOutboundV2(input);
@@ -222,12 +223,20 @@ test('v2 ratchet transaction commits proofs, ciphertext, state and operation id 
   assert.equal(shouldFlushOutboxRow(await db.outbox.get(committed.eventId), input.now), true);
   assert.equal(shouldFlushOutboxRow(await db.outbox.get(committed.eventId), input.now + 31_000, true), false,
     'forcing an outbox retry cannot bypass proof expiry');
-  const duplicate = await commitRatchetOutboundV2({ ...input, expectedVersion: 0, state: { chainKey: 'advanced-twice' },
-    ratchetCiphertext: 'different-ciphertext' });
+  await assert.rejects(refreshRatchetOutboundAuthorization({ owner: input.owner,
+    eventId: committed.eventId, expectedRequester: sender.primaryDevice.devicePubkey }),
+  /no recipient-device authorization fence/i,
+  'the older v1 authorization refresh helper cannot refresh the v2 embedded proof');
+  const duplicate = await commitRatchetOutboundV2({ ...input, expectedVersion: 0, state: { chainKey: 'advanced-once' },
+    ratchetCiphertext: 'ciphertext-a' });
   assert.deepEqual({ eventId: duplicate.eventId, alreadyCommitted: duplicate.alreadyCommitted },
     { eventId: committed.eventId, alreadyCommitted: true });
   await assert.rejects(commitRatchetOutboundV2({ ...input, expectedVersion: 0,
-    applicationPayload: { kind: 'receipt', id: 'different-effect' } }), /different content/i);
+    ratchetCiphertext: 'different-ciphertext' }), /different content/i,
+  'the same operation id cannot alias a different ratchet transition even when the application payload matches');
+  await assert.rejects(commitRatchetOutboundV2({ ...input, expectedVersion: 0,
+    state: { chainKey: 'different-state' } }), /different content/i,
+  'the same operation id cannot alias a different committed ratchet state');
   assert.deepEqual(await loadRatchetState({ owner: input.owner, collection: 'sessions', id: input.sessionId,
     table: db.ratchetSessions }), { version: 0, value: { chainKey: 'advanced-once' } });
 });
@@ -241,7 +250,6 @@ test('v2 inbound requires authority proofs, recovers expired processing claims, 
     recipient: proofFor(recipient, { operationId, device: recipient.secondaryDevice }),
     now: now + 4 });
   const message = buildAuthorizedRatchetDm({ authorization, ratchetCiphertext: 'ratchet-step-1',
-    applicationPayload: { kind: 'order-receipt', id: 'effect-once' },
     senderDeviceSecret: sender.primaryDevice.deviceSecret,
     recipientDevicePubkey: recipient.secondaryDevice.devicePubkey, createdAt: now + 5 });
   const owner = recipient.checkpoint.accountPubkey;
@@ -260,14 +268,21 @@ test('v2 inbound requires authority proofs, recovers expired processing claims, 
     recipientCheckpoint: recipient.checkpoint,
     recipientRequesterDeviceId: recipient.primaryDevice.deviceId,
     wrap: message.wrap,
+    securityFence: { context: { owner }, assertCurrent() {} },
     expectedVersion: null,
     now: (now + 6) * 1000,
-    processRatchetMessage: async ({ operationId: receivedId, ratchetCiphertext, applicationPayload }) => {
+    processRatchetMessage: async (processorInput) => {
       processCount += 1;
+      assert.equal(Object.hasOwn(processorInput, 'applicationPayload'), false,
+        'the inbound callback obtains plaintext from the ratchet ciphertext, not a parallel rumor field');
+      const { operationId: receivedId, ratchetCiphertext } = processorInput;
       assert.equal(receivedId, operationId);
       assert.equal(ratchetCiphertext, 'ratchet-step-1');
+      // The fake processor models plaintext yielded by the ratchet library;
+      // it is not sourced from the NIP-59 rumor.
       return { sessionId: 'inbound-session-v2', sessionState: { receiveKey: 'advanced-once' },
-        chatId: 'chat-with-sender', journal: { payload: applicationPayload } };
+        applicationPayload: { kind: 'order-receipt', id: 'effect-once' },
+        chatId: 'chat-with-sender', journal: { payload: { kind: 'order-receipt', id: 'effect-once' } } };
     },
   };
   const received = await commitRatchetInboundV2(input);
@@ -278,4 +293,34 @@ test('v2 inbound requires authority proofs, recovers expired processing claims, 
   assert.equal(processCount, 1, 'a repeated delivery cannot advance ratchet state or reapply commerce payload');
   assert.deepEqual(await loadRatchetState({ owner, collection: 'sessions', id: 'inbound-session-v2',
     table: db.ratchetSessions }), { version: 0, value: { receiveKey: 'advanced-once' } });
+});
+
+test('v2 ratchet transactions fail closed when the account lifecycle fence is missing or expires mid-operation', async () => {
+  const sender = principal();
+  const recipient = principal();
+  const operationId = createRatchetOperationId(randomBytes);
+  openDBFor(sender.checkpoint.accountPubkey);
+  await db.open();
+  const base = {
+    owner: sender.checkpoint.accountPubkey, sessionId: 'lifecycle-fenced-session',
+    peerPubkey: recipient.checkpoint.accountPubkey, peerDeviceId: recipient.primaryDevice.deviceId,
+    expectedVersion: null, state: { sendChain: 'must-not-commit' }, ratchetCiphertext: 'fenced-ciphertext',
+    senderDeviceSecret: sender.primaryDevice.deviceSecret,
+    authorization: { operationId, sender: proofFor(sender, { operationId }), recipient: proofFor(recipient, { operationId }) },
+    now: (now + 5) * 1000,
+  };
+  await assert.rejects(commitRatchetOutboundV2(base), /security context/i);
+  await assert.rejects(commitRatchetOutboundV2({ ...base,
+    securityFence: { context: { owner: 'f'.repeat(64) }, assertCurrent() {} } }), /security context/i);
+  assert.equal(await db.outbox.count(), 0);
+  assert.equal(await db.ratchetSessions.count(), 0);
+
+  let current = true;
+  const fence = { context: { owner: sender.checkpoint.accountPubkey },
+    assertCurrent() { if (!current) throw Object.assign(new Error('expired context'), { code: 'SECURITY_CONTEXT_EXPIRED' }); } };
+  const operation = commitRatchetOutboundV2({ ...base, securityFence: fence });
+  current = false;
+  await assert.rejects(operation, /expired context/i);
+  assert.equal(await db.outbox.count(), 0, 'a lock racing with sealing cannot persist or publish a message');
+  assert.equal(await db.ratchetSessions.count(), 0, 'a lock racing with sealing cannot advance the ratchet');
 });

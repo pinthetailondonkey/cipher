@@ -8,6 +8,7 @@ import { getCurrentGroupKey, putGroupKey, getDocKey, putDocKey } from './groupKe
 import { generateDocKey, normalizeDocKey } from './groupDocKey';
 import { queueMemberBaseline } from './memberBaseline';
 import { isJoinDenied, hasPendingJoin } from '../groupJoinQueue';
+import { assertSecurityContextOwner } from '../securityContextFence';
 
 // A snapshot older than this is not grounds to refuse a key. Re-fetch first.
 export const MEMBER_SNAPSHOT_MAX_AGE_SEC = 120;
@@ -54,7 +55,9 @@ const memberTable = () => (membershipDb || appDb).groupMemberSigs;
 // `strict` rethrows a failed write. The rotation path needs that: a removed
 // member must be stripped from the snapshot before the new epoch is stored, so a
 // failed strip has to abort the rotation rather than report success.
-export async function rememberMembers(groupId, members, { strict = false, pins = null, publishDoc = false } = {}) {
+export async function rememberMembers(groupId, members, { strict = false, pins = null, publishDoc = false, securityFence = null, owner = null } = {}) {
+  const assertCurrent = () => { if (securityFence) assertSecurityContextOwner(securityFence, owner); };
+  assertCurrent();
   const normalized = normalizeMembers(members);
   const pubkeys = normalized.map((member) => memberKey(member));
   let roles = {};
@@ -65,13 +68,15 @@ export async function rememberMembers(groupId, members, { strict = false, pins =
   if (!explicitRoles) {
     try {
       const existing = await memberTable().get(groupId);
+      assertCurrent();
       previousSignature = existing?.signature || '';
       rotationPending = existing?.rotationPending === true;
       const previous = existing?.roles && typeof existing.roles === 'object' ? existing.roles : {};
       for (const pubkey of pubkeys) {
         if (previous[pubkey]) roles[pubkey] = previous[pubkey];
       }
-    } catch {
+    } catch (error) {
+      if (error?.code === 'SECURITY_CONTEXT_EXPIRED') throw error;
       if (strict) throw new Error('Could not read the pending group-rotation state; the membership snapshot was not changed.');
       roles = {};
     }
@@ -81,15 +86,18 @@ export async function rememberMembers(groupId, members, { strict = false, pins =
     }
     try {
       const existing = await memberTable().get(groupId);
+      assertCurrent();
       previousSignature = existing?.signature || '';
       rotationPending = existing?.rotationPending === true;
-    } catch {
+    } catch (error) {
+      if (error?.code === 'SECURITY_CONTEXT_EXPIRED') throw error;
       if (strict) throw new Error('Could not read the pending group-rotation state; the membership snapshot was not changed.');
       previousSignature = '';
     }
   }
   // `members` stays a string array. Dexie indexes that field, and object values fail the put.
   try {
+    assertCurrent();
     await memberTable().put({
       groupId,
       signature,
@@ -98,16 +106,19 @@ export async function rememberMembers(groupId, members, { strict = false, pins =
       rotationPending,
       updatedAt: Math.floor(Date.now() / 1000),
     });
+    assertCurrent();
     if (publishDoc && signature !== previousSignature) {
       queueMemberBaseline(groupId, pubkeys);
       // A caller must opt in to an authority write. Relay roster and UI
       // reconciliation use this cache for display only; an omission or
       // addition from a relay must never become a signed governance change.
-      publishMemberDocUpdate(groupId, pubkeys, { pins }).catch((docError) => {
+      publishMemberDocUpdate(groupId, pubkeys, { pins, securityFence, owner }).catch((docError) => {
+        if (docError?.code === 'SECURITY_CONTEXT_EXPIRED') return;
         console.warn('[group-key] Member-set doc update deferred:', docError?.message || docError);
       });
     }
   } catch (error) {
+    if (error?.code === 'SECURITY_CONTEXT_EXPIRED') throw error;
     if (strict) throw error;
     console.warn('[group-key] Could not store the membership snapshot:', error);
   }
@@ -117,10 +128,13 @@ export async function rememberMembers(groupId, members, { strict = false, pins =
 // A rotation marker is durable because an accepted governance removal can
 // precede successful key distribution. Senders and grant responders fail
 // closed while it is set, including after a reload or device restart.
-export async function setGroupRotationPending(groupId, pending) {
+export async function setGroupRotationPending(groupId, pending, { securityFence = null, owner = null } = {}) {
+  const assertCurrent = () => { if (securityFence) assertSecurityContextOwner(securityFence, owner); };
+  assertCurrent();
   if (!groupId) throw new Error('A group is required to update rotation state.');
   const table = memberTable();
   const existing = await table.get(groupId);
+  assertCurrent();
   if (!pending && !existing?.rotationPending) return true;
   const row = {
     ...(existing || {}),
@@ -131,7 +145,9 @@ export async function setGroupRotationPending(groupId, pending) {
     rotationPending: Boolean(pending),
     updatedAt: Math.floor(Date.now() / 1000),
   };
+  assertCurrent();
   await table.put(row);
+  assertCurrent();
   return true;
 }
 
@@ -173,24 +189,34 @@ async function docPool(identity) {
   if (docOpEnv?.publish) return { publish: docOpEnv.publish };
   return getAuthenticatedPool(identity);
 }
-export async function publishMemberDocUpdate(groupId, pubkeys, { pins = null, roleChanges = null, epoch = null } = {}) {
+export async function publishMemberDocUpdate(groupId, pubkeys, { pins = null, roleChanges = null, epoch = null, securityFence = null, owner: expectedOwner = null } = {}) {
+  const assertCurrent = () => { if (securityFence) assertSecurityContextOwner(securityFence, expectedOwner); };
+  assertCurrent();
   const owner = docOwner();
   if (!owner) throw new Error('No account open.');
   const { readAuthorityPin } = await import('./authorityPins.js');
+  assertCurrent();
   const { groupAuthorityKey } = await import('./groupAuthority.js');
+  assertCurrent();
   const { applyDocOps, signDocEvent, canonicalBody, resolveMembership } = await import('./groupDoc.js');
+  assertCurrent();
   const { buildMemberDocEvent, rememberVerifiedDoc, loadMemberDocHeads } = await import('./groupDocWire.js');
+  assertCurrent();
   const { getSessionKey } = await import('../sessionKey.js');
+  assertCurrent();
   const relays = await import('../relays');
+  assertCurrent();
 
   const pin = readAuthorityPin(owner, groupId);
   if (!pin) throw new Error('No authority pin held for this group.');
   const heads = await loadMemberDocHeads(groupId);
+  assertCurrent();
   const head = heads[0];
   if (!head) throw new Error('No member-set doc held for this group.');
   const accountSk = getSessionKey();
   if (!accountSk || accountSk.length !== 32) throw new Error('Account locked; the doc update waits for unlock.');
   const { privateKeyBytes, pin: derivedPin } = await groupAuthorityKey(accountSk, groupId);
+  assertCurrent();
   // Derivation parity: the key this device derives must be the one the pin
   // names. A member device that joined by invite has no signing side here.
   if (derivedPin !== String(pin).toLowerCase()) {
@@ -201,7 +227,7 @@ export async function publishMemberDocUpdate(groupId, pubkeys, { pins = null, ro
   // stranded by a locally invented key.
   let docKeyForSeal = null;
   try {
-    docKeyForSeal = normalizeDocKey((await getDocKey(groupId))?.bytes);
+    docKeyForSeal = normalizeDocKey((await getDocKey(groupId, securityFence))?.bytes);
   } catch (error) {
     throw new Error(`Could not read the held governance-doc key: ${error?.message || error}`);
   }
@@ -268,6 +294,7 @@ export async function publishMemberDocUpdate(groupId, pubkeys, { pins = null, ro
     const body = applyDocOps(head, { admit, bind, remove, promote, demote, gen: nextGen, epoch: nextEpoch });
     if (!body) throw new Error('Could not fold membership ops onto the held head.');
     signed = await signDocEvent(body, privateKeyBytes);
+    assertCurrent();
   }
   // H2 stamp: created_at at least now; gen stays the ordering truth.
   const nowSec = Math.floor(Date.now() / 1000);
@@ -275,16 +302,20 @@ export async function publishMemberDocUpdate(groupId, pubkeys, { pins = null, ro
     signedDoc: signed, authoritySk: privateKeyBytes, pin, groupId, createdAt: nowSec,
     docKey: docKeyForSeal,
   });
+  assertCurrent();
   if (!event) throw new Error('Could not build the doc event.');
   const pool = await docPool(identityLike(owner, accountSk));
+  assertCurrent();
   const targets = [...new Set([...relays.groupRelays, ...relays.generalRelays])].filter(Boolean);
   if (!targets.length) throw new Error('No relay accepted the member-set doc update window.');
   // SimplePool.publish returns per-relay promises; the seam may hand back a
   // single promise instead, which normalizes to the same gate here.
   const published = pool.publish(targets, event);
+  assertCurrent();
   const results = await Promise.allSettled(
     Array.isArray(published) ? published : [Promise.resolve(published)],
   );
+  assertCurrent();
   if (!results.some((result) => result.status === 'fulfilled')) {
     const error = new Error('Relays rejected the member-set doc update.');
     error.published = false;
@@ -292,7 +323,8 @@ export async function publishMemberDocUpdate(groupId, pubkeys, { pins = null, ro
   }
   let stored;
   try {
-    stored = await rememberVerifiedDoc({ groupId, pin, signed });
+    stored = await rememberVerifiedDoc({ groupId, pin, signed, securityFence });
+    assertCurrent();
   } catch (cause) {
     const error = new Error('The encrypted member-set doc was published but could not be stored locally; refresh it from a relay before another membership change.', { cause });
     error.published = true;
@@ -525,8 +557,13 @@ export async function grantKeyRequest({
   });
 }
 
-export async function patchMemberSnapshot(groupId, mutate) {
+export async function patchMemberSnapshot(groupId, mutate, options = {}) {
+  const assertCurrent = () => {
+    if (options.securityFence) assertSecurityContextOwner(options.securityFence, options.owner);
+  };
+  assertCurrent();
   const snapshot = await loadMemberSnapshot(groupId);
+  assertCurrent();
   if (!Array.isArray(snapshot)) return null;
   let next = null;
   try {
@@ -535,14 +572,26 @@ export async function patchMemberSnapshot(groupId, mutate) {
     return null;
   }
   if (!Array.isArray(next)) return null;
-  return rememberMembers(groupId, next);
+  const result = await rememberMembers(groupId, next, options);
+  assertCurrent();
+  return result;
 }
 
 export async function rotateGroupEpoch({ identity, groupId, remainingPubkeys, publish }) {
+  const securityFence = identity?.securityFence;
+  const owner = identity?.pk;
+  const assertCurrent = () => { if (securityFence) assertSecurityContextOwner(securityFence, owner); };
+  assertCurrent();
   const rotationWasPending = await isGroupRotationPending(groupId);
-  const current = await getCurrentGroupKey(groupId);
+  assertCurrent();
+  const current = await getCurrentGroupKey(groupId, securityFence);
+  assertCurrent();
   if (!current) return { rotated: false, reason: 'no-key' };
-  const priorDoc = await getDocKey(groupId).catch(() => null);
+  const priorDoc = await getDocKey(groupId, securityFence).catch((error) => {
+    if (error?.code === 'SECURITY_CONTEXT_EXPIRED') throw error;
+    return null;
+  });
+  assertCurrent();
   const priorDocKey = normalizeDocKey(priorDoc?.bytes);
   if (!priorDocKey) {
     return { rotated: false, reason: 'missing-doc-key' };
@@ -550,7 +599,9 @@ export async function rotateGroupEpoch({ identity, groupId, remainingPubkeys, pu
   const [{ loadMemberDocHeads }, { resolveMembership }] = await Promise.all([
     import('./groupDocWire.js'), import('./groupDoc.js'),
   ]);
+  assertCurrent();
   const heads = await loadMemberDocHeads(groupId);
+  assertCurrent();
   if (!heads.length) return { rotated: false, reason: 'missing-member-doc' };
   const recipients = [...new Set((remainingPubkeys || []).filter(Boolean))];
   const heldSnapshot = resolveMembership(heads[0]);
@@ -565,31 +616,45 @@ export async function rotateGroupEpoch({ identity, groupId, remainingPubkeys, pu
   let rotatedDocKey = priorDocKey;
   if (docMembershipChanges) {
     rotatedDocKey = generateDocKey();
-    const storedDocKey = await putDocKey(groupId, (priorDoc?.epoch || 0) + 1, rotatedDocKey);
+    const storedDocKey = await putDocKey(groupId, (priorDoc?.epoch || 0) + 1, rotatedDocKey, securityFence);
+    assertCurrent();
     if (!storedDocKey) throw new Error('Could not store the rotated governance-doc key; membership and chat keys were left unchanged. Unlock storage and retry.');
   }
   // Stage the local recipient set and a durable send/grant barrier before the
   // signed removal can reach a relay. A failed cache write therefore cannot
   // leave a published authorization change paired with the old chat epoch.
   try {
-    await setGroupRotationPending(groupId, true);
+    await setGroupRotationPending(groupId, true, { securityFence, owner });
+    assertCurrent();
   } catch (error) {
+    if (error?.code === 'SECURITY_CONTEXT_EXPIRED') throw error;
     if (docMembershipChanges) {
-      const restoredKey = await putDocKey(groupId, Number.isInteger(priorDoc?.epoch) ? priorDoc.epoch : 0, priorDocKey);
+      assertCurrent();
+      const restoredKey = await putDocKey(groupId, Number.isInteger(priorDoc?.epoch) ? priorDoc.epoch : 0, priorDocKey, securityFence);
+      assertCurrent();
       if (!restoredKey) throw new Error('Could not stage rotation state or restore the prior governance key. Recover the held key before retrying.', { cause: error });
     }
     throw error;
   }
   try {
-    await rememberMembers(groupId, recipients, { strict: true, publishDoc: false });
+    await rememberMembers(groupId, recipients, { strict: true, publishDoc: false, securityFence, owner });
+    assertCurrent();
   } catch (error) {
     try {
-      await rememberMembers(groupId, heldSnapshot, { strict: true, publishDoc: false });
+      if (error?.code === 'SECURITY_CONTEXT_EXPIRED') throw error;
+      assertCurrent();
+      await rememberMembers(groupId, heldSnapshot, { strict: true, publishDoc: false, securityFence, owner });
+      assertCurrent();
       if (docMembershipChanges) {
-        const restoredKey = await putDocKey(groupId, Number.isInteger(priorDoc?.epoch) ? priorDoc.epoch : 0, priorDocKey);
+        assertCurrent();
+        const restoredKey = await putDocKey(groupId, Number.isInteger(priorDoc?.epoch) ? priorDoc.epoch : 0, priorDocKey, securityFence);
+        assertCurrent();
         if (!restoredKey) throw new Error('The prior governance key could not be restored.');
       }
-      if (!rotationWasPending) await setGroupRotationPending(groupId, false);
+      if (!rotationWasPending) {
+        await setGroupRotationPending(groupId, false, { securityFence, owner });
+        assertCurrent();
+      }
     } catch (restoreError) {
       throw new Error('The local rotation could not be staged or restored. Sending and key grants remain paused until recovery.', { cause: restoreError });
     }
@@ -599,23 +664,34 @@ export async function rotateGroupEpoch({ identity, groupId, remainingPubkeys, pu
   // to roll back; an accepted event whose local persistence failed keeps the
   // barrier and new key so relay refresh can recover it.
   try {
-    await publishMemberDocUpdate(groupId, recipients, { epoch: nextEpoch });
+    assertCurrent();
+    await publishMemberDocUpdate(groupId, recipients, { epoch: nextEpoch, securityFence, owner });
+    assertCurrent();
   } catch (error) {
     if (error?.published === false) {
       if (docMembershipChanges) {
-        const restoredKey = await putDocKey(groupId, Number.isInteger(priorDoc?.epoch) ? priorDoc.epoch : 0, priorDocKey);
+        assertCurrent();
+        const restoredKey = await putDocKey(groupId, Number.isInteger(priorDoc?.epoch) ? priorDoc.epoch : 0, priorDocKey, securityFence);
+        assertCurrent();
         if (!restoredKey) throw new Error('The update was refused and the prior governance key could not be restored. Recover the held key before retrying.', { cause: error });
       }
       try {
-        await rememberMembers(groupId, heldSnapshot, { strict: true, publishDoc: false });
-        if (!rotationWasPending) await setGroupRotationPending(groupId, false);
+        assertCurrent();
+        await rememberMembers(groupId, heldSnapshot, { strict: true, publishDoc: false, securityFence, owner });
+        assertCurrent();
+        if (!rotationWasPending) {
+          await setGroupRotationPending(groupId, false, { securityFence, owner });
+          assertCurrent();
+        }
       } catch (restoreError) {
         throw new Error('The relay refused the governance update, but local rotation state could not be restored. Sending and key grants remain paused until recovery.', { cause: restoreError });
       }
     }
     throw error;
   }
-  await putGroupKey(groupId, nextEpoch, newKey);
+  assertCurrent();
+  await putGroupKey(groupId, nextEpoch, newKey, {}, securityFence);
+  assertCurrent();
   // A failed publish must not leave them eligible to re-request the new
   // epoch — the strip above already saw to that.
   if (recipients.length > 0) {
@@ -628,8 +704,11 @@ export async function rotateGroupEpoch({ identity, groupId, remainingPubkeys, pu
       recipients,
       docKey: rotatedDocKey,
       publish,
+      securityFence,
     });
+    assertCurrent();
   }
-  await setGroupRotationPending(groupId, false);
+  await setGroupRotationPending(groupId, false, { securityFence, owner });
+  assertCurrent();
   return { rotated: true, epoch: nextEpoch };
 }

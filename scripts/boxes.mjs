@@ -1,7 +1,7 @@
 // One command that brings up both boxes a vendor runs: the push gateway and
 // the payment watcher. From a fresh clone this installs dependencies, writes
-// .env from .env.example with a generated WATCH_TOKEN (so the URL pasted into
-// Connections survives a restart), and starts both boxes in one process tree.
+// .env from .env.example with an access token and separate Ed25519 report key,
+// and starts both boxes in one process tree.
 //
 //   npm run boxes
 //
@@ -24,6 +24,10 @@ export const REQUIRED_NODE_MAJOR = 22;
 
 export function makeWatchToken() {
   return randomBytes(24).toString('base64url');
+}
+
+export function makeWatcherSigningKey() {
+  return randomBytes(32).toString('base64url');
 }
 
 // The requirement is named in the message, not just an exit code, so a wrong
@@ -52,7 +56,7 @@ export function pickLanIp(interfaces = os.networkInterfaces()) {
 // Copy .env.example to .env when there is no .env, and make sure WATCH_TOKEN
 // holds a value. An existing token is never replaced: the phone already has
 // it pasted. Returns the token both boxes will run with.
-export function ensureEnvFile(root, token = makeWatchToken()) {
+export function ensureEnvFile(root, token = makeWatchToken(), signingKey = makeWatcherSigningKey()) {
   const envPath = path.join(root, '.env');
   let text;
   let existed = true;
@@ -66,14 +70,22 @@ export function ensureEnvFile(root, token = makeWatchToken()) {
     }
     existed = false;
   }
-  const present = /^WATCH_TOKEN=(.+)$/m.exec(text);
-  if (present && present[1].trim()) return { token: present[1].trim(), created: false, changed: false };
-  const line = `WATCH_TOKEN=${token}`;
-  const next = /^WATCH_TOKEN=\s*$/m.test(text)
-    ? text.replace(/^WATCH_TOKEN=\s*$/m, line)
-    : text.replace(/\n*$/, `\n${line}\n`);
-  fs.writeFileSync(envPath, next);
-  return { token, created: !existed, changed: true };
+  const presentToken = /^WATCH_TOKEN=(.+)$/m.exec(text)?.[1]?.trim();
+  const presentSigningKey = /^WATCH_SIGNING_PRIVATE_KEY=(.+)$/m.exec(text)?.[1]?.trim();
+  const finalToken = presentToken || token;
+  const finalSigningKey = presentSigningKey || signingKey;
+  const setValue = (source, name, value) => {
+    const line = `${name}=${value}`;
+    const matcher = new RegExp(`^${name}=.*$`, 'm');
+    return matcher.test(source) ? source.replace(matcher, line) : source.replace(/\n*$/, `\n${line}\n`);
+  };
+  const next = setValue(setValue(text, 'WATCH_TOKEN', finalToken), 'WATCH_SIGNING_PRIVATE_KEY', finalSigningKey);
+  const changed = next !== text;
+  if (changed) {
+    fs.writeFileSync(envPath, next, { mode: 0o600 });
+    fs.chmodSync(envPath, 0o600);
+  }
+  return { token: finalToken, signingKey: finalSigningKey, created: !existed, changed };
 }
 
 function run(command, args, cwd) {
@@ -137,7 +149,7 @@ async function main() {
     process.exit(1);
   }
   if (env.created) console.error('[boxes] Wrote .env from .env.example.');
-  if (env.changed) console.error('[boxes] Generated a WATCH_TOKEN into .env. It stays the token until you change it.');
+  if (env.changed) console.error('[boxes] Saved missing watcher credentials in .env. They stay in place until you change them.');
 
   const lanIp = pickLanIp();
   const host = lanIp || '127.0.0.1';

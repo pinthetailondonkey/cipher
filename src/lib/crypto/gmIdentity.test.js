@@ -78,6 +78,43 @@ test('actorForGroup memoizes the derived pair but never trusts it across a lock 
   forgetActors();
 });
 
+test('an in-flight actor derivation is zeroed and discarded if lock clears its session key', async () => {
+  const previousCrypto = Object.getOwnPropertyDescriptor(globalThis, 'crypto');
+  let releaseDerivation;
+  let delayFirstDerivation = true;
+  const derivedBytes = new Uint8Array(32).fill(5);
+  Object.defineProperty(globalThis, 'crypto', {
+    configurable: true,
+    value: { subtle: {
+      importKey: async () => ({}),
+      deriveBits: () => {
+        if (!delayFirstDerivation) return Promise.resolve(new Uint8Array(32).fill(5).buffer);
+        delayFirstDerivation = false;
+        return new Promise((resolve) => { releaseDerivation = () => resolve(derivedBytes.buffer); });
+      },
+    } },
+  });
+  clearSessionKey();
+  forgetActors();
+  setSessionKey(SK);
+  try {
+    const pending = actorForGroup(PK, GID);
+    while (!releaseDerivation) await new Promise((resolve) => setTimeout(resolve, 0));
+    clearSessionKey();
+    releaseDerivation();
+    assert.equal(await pending, null);
+    assert.ok(derivedBytes.every((byte) => byte === 0), 'the late private bytes are cleared');
+    setSessionKey(SK);
+    const actor = await actorForGroup(PK, GID);
+    assert.ok(actor, 'the discarded result did not enter the cache');
+  } finally {
+    clearSessionKey();
+    forgetActors();
+    if (previousCrypto) Object.defineProperty(globalThis, 'crypto', previousCrypto);
+    else delete globalThis.crypto;
+  }
+});
+
 test('the pin tag rides lowercased and reads back through the event form', () => {
   const pin = 'AB'.repeat(33);
   assert.deepEqual(actorTag(pin), [['author', pin.toLowerCase()]]);

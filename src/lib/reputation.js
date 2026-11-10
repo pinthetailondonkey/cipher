@@ -40,6 +40,16 @@ export function vouchCoversTrade(event, targetPubkey) {
     && author !== target;
 }
 
+// Public vouches are endorsements only. No wire tag can establish a receipt's
+// signatures or independent settlement provenance, so this projection never
+// promotes a self-reported hash into verified trade evidence.
+export function tradeEvidenceOf(event) {
+  const hash = receiptBindingOf(event);
+  const trade = vouchTradeOf(event);
+  if (!hash || !trade) return { state: 'unverified-endorsement', receiptHash: hash || null };
+  return { state: 'unverified-endorsement', receiptHash: hash, parties: trade };
+}
+
 // A rating outside 0..5 is a numbers game, not an opinion. Anything
 // unparseable is a zero, anything negative is a zero, anything above 5 is a 5.
 export function clampRating(value) {

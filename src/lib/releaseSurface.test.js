@@ -86,7 +86,9 @@ test('the new-listing form defaults to a coin and says what USD cannot do', () =
 
 test('the listing send reports the outbox\'s real answer and keeps the form when neither door took it', () => {
   const wallet = read('../Wallet.jsx');
-  assert.match(wallet, /await enqueueNostrEvent\(ev, relays\)\s*\n\s*queued = true/);
+  assert.match(wallet, /assertCurrent\(\)\s*\n\s*await enqueueNostrEvent\(ev, relays, securityFence\)\s*\n\s*assertCurrent\(\)\s*\n\s*queued = true/);
+  assert.match(wallet, /const publishResults = pool\.publish\(relays, ev\)/);
+  assert.match(wallet, /assertCurrent\(\)\s*\n\s*\/\/ `d` is kept beside the event id/);
   assert.match(wallet, /const outcome = listingPublishOutcome\(accepted, queued\)/);
   const failure = wallet.slice(wallet.indexOf('if (!outcome.ok)'), wallet.indexOf('const newProduct ='));
   assert.match(failure, /setStatus\(outcome\.status\)/);

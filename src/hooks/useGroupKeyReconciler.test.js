@@ -27,7 +27,7 @@ import {
   __setGroupKeyStoreForTests, getCurrentGroupKey,
 } from '../lib/crypto/groupKeyStore.js';
 import { generateGroupKey, toHex } from '../lib/crypto/groupCipher.js';
-import { __setMembershipDbForTests } from '../lib/crypto/groupKeyRotation.js';
+import { __setMembershipDbForTests, rememberMembers, setGroupRotationPending } from '../lib/crypto/groupKeyRotation.js';
 import { reconcileGroupKeys } from './useGroupKeyReconciler.js';
 
 // A pre-remediation group with no held governance key cannot safely be
@@ -98,13 +98,14 @@ test('the reconciler refuses to rotate a legacy group without its governance key
   __setMembershipDbForTests({ groupMemberSigs: { put: async () => { stripAttempted = true; throw new Error("QuotaExceededError"); }, get: async () => ({ members: [aPk, bPk], roles: {}, updatedAt: 1 }) } });
 
   const published = [];
+  const currentFence = { context: { owner: aPk, incarnation: 'reconciler-test-incarnation' }, assertCurrent() {} };
   // Removal: B is gone from the roster.
   await assert.rejects(
     reconcileGroupKeys({
       groupId: GROUP,
       members: [aPk],
       isOwner: true,
-      identity: { sk: A, pk: aPk },
+      identity: { sk: A, pk: aPk, securityFence: currentFence },
       publish: async (event) => { published.push(event); },
     }),
     /No readable governance-doc key/,
@@ -116,4 +117,54 @@ test('the reconciler refuses to rotate a legacy group without its governance key
   assert.equal(keyTable.rows.some((r) => r.groupId === GROUP && r.epoch === 1), false, 'no epoch 1 stored');
   assert.equal((await getCurrentGroupKey(GROUP))?.epoch, 0, 'still on epoch 0');
   assert.equal(published.length, 0, 'no key bundle published');
+
+  const staleFence = { ...currentFence, assertCurrent() {
+    const error = new Error('retired account context');
+    error.code = 'SECURITY_CONTEXT_EXPIRED';
+    throw error;
+  } };
+  await assert.rejects(reconcileGroupKeys({
+    groupId: GROUP,
+    members: [aPk],
+    isOwner: true,
+    identity: { sk: A, pk: aPk, securityFence: staleFence },
+  }), { code: 'SECURITY_CONTEXT_EXPIRED' });
+  assert.equal(keyTable.rows.some((r) => r.groupId === GROUP && r.epoch === 1), false, 'a retired incarnation cannot rotate keys');
+  assert.equal(published.length, 0, 'a retired incarnation cannot publish group keys');
+});
+
+test('membership writes stop if the account incarnation expires during an IndexedDB read', async () => {
+  const owner = getPublicKey(generateSecretKey());
+  const context = { owner, incarnation: 'reconciler-race-incarnation' };
+  let current = true;
+  const fence = {
+    context,
+    assertCurrent() {
+      if (current) return;
+      const error = new Error('retired account context');
+      error.code = 'SECURITY_CONTEXT_EXPIRED';
+      throw error;
+    },
+  };
+  let puts = 0;
+  __setMembershipDbForTests({ groupMemberSigs: {
+    get: async () => { current = false; return undefined; },
+    put: async () => { puts += 1; },
+  } });
+
+  await assert.rejects(
+    rememberMembers('fenced-membership-read', [owner], {
+      strict: true, securityFence: fence, owner,
+    }),
+    { code: 'SECURITY_CONTEXT_EXPIRED' },
+  );
+  assert.equal(puts, 0, 'no membership row is written after the read returns to a retired context');
+
+  current = true;
+  await assert.rejects(
+    setGroupRotationPending('fenced-rotation-read', true, { securityFence: fence, owner }),
+    { code: 'SECURITY_CONTEXT_EXPIRED' },
+  );
+  assert.equal(puts, 0, 'no rotation marker is written after the read returns to a retired context');
+  __setMembershipDbForTests(null);
 });

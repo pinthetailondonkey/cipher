@@ -28,7 +28,7 @@ export function dmExpired(data, now = Math.floor(Date.now() / 1000)) {
   return now >= Number(data.expires_at);
 }
 
-export async function installMemberGroupKey(payload, sender = null) {
+export async function installMemberGroupKey(payload, sender = null, securityFence = null) {
   if (!isGroupKeyPayload(payload)) return false;
-  return installReceivedGroupKey(payload, sender);
+  return installReceivedGroupKey(payload, sender, securityFence);
 }

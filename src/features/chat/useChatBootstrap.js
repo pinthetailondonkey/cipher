@@ -20,6 +20,7 @@ import { bindMemberDocPins } from '../../lib/crypto/memberDocStanding';
 import { authorityPinGetterFor } from '../../lib/crypto/authorityPins';
 import { sortMessages } from './media';
 import { makeSubscriptionGuard, setupChatSubscriptions } from './chatSubscriptions';
+import { assertSecurityContextOwner } from '../../lib/securityContextFence';
 import { rowExpired, timerSeconds, timerSweepKeepsRow } from '../../lib/disappearing';
 import { listingFromEvent, vendorListingFilter } from '../../lib/listing';
 import { activeUrl, entryById } from '../../lib/egress';
@@ -61,20 +62,26 @@ export function useChatBootstrap({
   const lastTypingSent = useRef(0);
   const groupSubscriptionKey = groups.map((group) => group.id).sort().join('|');
   const syncIdentity = useMemo(
-    () => ({ pk: identity?.pk, sk: identity?.sk }),
-    [identity?.pk, identity?.sk]
+    () => ({ pk: identity?.pk, sk: identity?.sk, securityFence: identity?.securityFence }),
+    [identity?.pk, identity?.sk, identity?.securityFence]
   );
 
   const syncGroupMessages = useCallback(async (groupId) => {
+    assertSecurityContextOwner(syncIdentity.securityFence, syncIdentity.pk);
     const pool = await getAuthenticatedPool(syncIdentity);
+    assertSecurityContextOwner(syncIdentity.securityFence, syncIdentity.pk);
     const events = await queryAllPages(pool, groupRelays, { kinds: [9], '#h': [groupId] });
+    assertSecurityContextOwner(syncIdentity.securityFence, syncIdentity.pk);
     const syncedMessages = [];
     const standing = await loadVerifiedMemberSnapshot(groupId);
+    assertSecurityContextOwner(syncIdentity.securityFence, syncIdentity.pk);
 
     for (const event of events) {
+      assertSecurityContextOwner(syncIdentity.securityFence, syncIdentity.pk);
       const decoded = await decodeGroupEvent({
-        event, groupId, members: standing, requireMember: true,
+        event, groupId, members: standing, requireMember: true, securityFence: syncIdentity.securityFence,
       });
+      assertSecurityContextOwner(syncIdentity.securityFence, syncIdentity.pk);
       if (decoded.refused || decoded.error) {
         console.warn('[Chat] Could not decrypt group history event:', event.id, decoded.reason);
         continue;
@@ -95,10 +102,12 @@ export function useChatBootstrap({
         isGroup: true,
       };
       await saveMessage(groupId, message);
+      assertSecurityContextOwner(syncIdentity.securityFence, syncIdentity.pk);
       syncedMessages.push(message);
     }
 
     if (syncedMessages.length > 0) {
+      assertSecurityContextOwner(syncIdentity.securityFence, syncIdentity.pk);
       setGroupMessages((previous) => {
         const current = previous[groupId] || [];
         const byId = new Map(current.map((message) => [message.id, message]));
@@ -119,27 +128,37 @@ export function useChatBootstrap({
   });
 
   useEffect(() => {
-    if (!identity?.sk) return undefined;
+    if (!identity?.sk || !identity?.securityFence) return undefined;
     const onKey = (event) => {
       const groupId = event.detail?.groupId;
       if (!groupId) return;
+      try { assertSecurityContextOwner(identity.securityFence, identity.pk); }
+      catch { return; }
       flushSecuringGroupSends(identity, groupId).catch((error) => {
+        if (error?.code === 'SECURITY_CONTEXT_EXPIRED') return;
         console.warn('[group-key] Could not send messages waiting on the key:', error);
       });
     };
     window.addEventListener('cipher:group-key-updated', onKey);
     return () => window.removeEventListener('cipher:group-key-updated', onKey);
-  }, [identity?.pk, identity?.sk]);
+  }, [identity?.pk, identity?.sk, identity?.securityFence]);
 
   useEffect(() => {
-    if (identity?.pk) openDBFor(identity.pk);
-  }, [identity?.pk]);
+    if (identity?.pk && identity?.securityFence) openDBFor(identity.pk, identity.securityFence);
+  }, [identity?.pk, identity?.securityFence]);
 
   useEffect(() => {
-    if (!identity?.pk) return undefined;
+    if (!identity?.pk || !identity?.securityFence) return undefined;
+    const owner = identity.pk;
+    const securityFence = identity.securityFence;
+    const isCurrent = () => {
+      try { assertSecurityContextOwner(securityFence, owner); return true; }
+      catch { return false; }
+    };
     let cancelled = false;
     let told = false;
     const run = () => {
+      if (cancelled || !isCurrent()) return;
       // Registration asks the OS for permission on a browser, so it waits for
       // the person's own opt-in rather than prompting on mount. A gateway
       // pasted later still needs the Notifications switch, which is the same
@@ -155,12 +174,12 @@ export function useChatBootstrap({
         subscribe: shell ? undefined : subscribeBrowser,
         native: shell ? subscribeNative : undefined,
       }).then((result) => {
-        if (cancelled || result.buzzing || told) return;
+        if (cancelled || !isCurrent() || result.buzzing || told) return;
         told = true;
         console.warn('[push]', result.reason);
         useChatStore.getState().setToast({ type: 'info', message: result.reason });
       }).catch((error) => {
-        if (cancelled) return;
+        if (cancelled || !isCurrent()) return;
         console.error('[push] Gateway registration failed:', error);
         useChatStore.getState().setToast({ type: 'error', message: error?.message || 'The push gateway did not accept this phone.' });
       });
@@ -171,25 +190,29 @@ export function useChatBootstrap({
       cancelled = true;
       window.removeEventListener('cipher:network', run);
     };
-  }, [identity?.pk]);
+  }, [identity?.pk, identity?.sk, identity?.securityFence]);
 
   useEffect(() => {
-    if (!identity?.sk || !identity?.pk) return undefined;
+    if (!identity?.sk || !identity?.pk || !identity?.securityFence) return undefined;
     // Step 1d wiring: the doc standing reader asks this for each group's
     // out-of-band authority pin. The pins are written by group creation and
     // invite-link joins only (authorityPins.js); nothing fetches them.
     const unbindPins = bindMemberDocPins(authorityPinGetterFor(identity.pk));
     const unbindBaseline = bindMemberBaselinePublisher(async (groupId, members) => {
+      assertSecurityContextOwner(identity.securityFence, identity.pk);
       const pool = await getAuthenticatedPool(identity);
+      assertSecurityContextOwner(identity.securityFence, identity.pk);
       const event = await sealMemberBaseline({
         senderPrivkey: identity.sk,
         senderPubkey: identity.pk,
         groupId,
         members,
       });
+      assertSecurityContextOwner(identity.securityFence, identity.pk);
       const relays = generalRelays.slice();
       if (!relays.length) throw new Error('No relay is available for the membership baseline.');
       const results = await Promise.allSettled(pool.publish(relays, event));
+      assertSecurityContextOwner(identity.securityFence, identity.pk);
       if (!results.some((result) => result.status === 'fulfilled')) {
         throw new Error('Relays rejected the membership baseline.');
       }
@@ -198,10 +221,18 @@ export function useChatBootstrap({
       unbindBaseline();
       unbindPins();
     };
-  }, [identity?.pk, identity?.sk]);
+  }, [identity?.pk, identity?.sk, identity?.securityFence]);
 
   useEffect(() => {
+    if (!identity?.pk || !identity?.securityFence) return undefined;
+    const owner = identity.pk;
+    const securityFence = identity.securityFence;
+    const isCurrent = () => {
+      try { assertSecurityContextOwner(securityFence, owner); return true; }
+      catch { return false; }
+    };
     const handleOutboxStatus = async (event) => {
+      if (!isCurrent()) return;
       const messageId = event.detail?.id;
       const deliveryStatus = event.detail?.status;
       if (!messageId || !deliveryStatus) return;
@@ -210,10 +241,15 @@ export function useChatBootstrap({
           db.messages.get(messageId),
           db.outbox.get(messageId),
         ]);
+        if (!isCurrent()) return;
         if (!message) return;
         const currentStatus = outboxEntry?.status || 'sent';
         const updatedMessage = { ...message, deliveryStatus: currentStatus };
-        if (message.deliveryStatus !== currentStatus) await db.messages.put(updatedMessage);
+        if (message.deliveryStatus !== currentStatus) {
+          await db.messages.put(updatedMessage);
+          if (!isCurrent()) return;
+        }
+        if (!isCurrent()) return;
         if (message.isGroup) {
           setGroupMessages((current) => ({
             ...current,
@@ -226,15 +262,23 @@ export function useChatBootstrap({
           }));
         }
       } catch (error) {
-        console.error('[outbox] Could not update the sent message:', messageId, error);
+        if (error?.code !== 'SECURITY_CONTEXT_EXPIRED') {
+          console.error('[outbox] Could not update the sent message:', messageId, error);
+        }
       }
     };
     window.addEventListener('cipher:outbox-status', handleOutboxStatus);
     return () => window.removeEventListener('cipher:outbox-status', handleOutboxStatus);
-  }, [setDms, setGroupMessages]);
+  }, [identity?.pk, identity?.securityFence, setDms, setGroupMessages]);
 
   useEffect(() => {
-    if (!identity?.pk) return;
+    if (!identity?.pk || !identity?.securityFence) return undefined;
+    const owner = identity.pk;
+    const securityFence = identity.securityFence;
+    const isCurrent = () => {
+      try { assertSecurityContextOwner(securityFence, owner); return true; }
+      catch { return false; }
+    };
     const fetchMyUsername = async () => {
       try {
         // Kind 10003, not 30078: the writer (useIdentity.js:259) is 10003 and
@@ -243,10 +287,13 @@ export function useChatBootstrap({
         // this read never matched anything and my_username stayed empty. The
         // d=username tag is what narrows it away from a NIP-51 bookmarks list
         // on the same kind, which is why the filter was right all along.
+        if (!isCurrent()) return;
         const pool = await getAuthenticatedPool(identity);
+        if (!isCurrent()) return;
         const evs = await queryWithTimeout(pool, profileRelays, {
           kinds: [10003], authors: [identity.pk], '#d': ['username'],
         });
+        if (!isCurrent()) return;
         if (evs && evs.length > 0) {
           const username = evs[0].tags.find(t => t[0] === 'username')?.[1];
           if (username && username !== lockedUsername) {
@@ -255,21 +302,27 @@ export function useChatBootstrap({
             useChatStore.getState().setMyUsername(username);
           }
         }
-      } catch (e) { console.error('Failed to restore username', e); }
+      } catch (e) {
+        if (e?.code !== 'SECURITY_CONTEXT_EXPIRED') console.error('Failed to restore username', e);
+      }
     };
     fetchMyUsername();
-  }, [identity?.pk]);
+  }, [identity?.pk, identity?.securityFence]);
 
   const fetchProfilesForPubkeys = async (pubkeys) => {
     if (!pubkeys || pubkeys.length === 0) return;
     try {
+      assertSecurityContextOwner(identity.securityFence, identity.pk);
       const cached = await db.profiles.bulkGet(pubkeys);
+      assertSecurityContextOwner(identity.securityFence, identity.pk);
       const cachedMap = {};
       cached.forEach(p => { if (p) cachedMap[p.pubkey] = p; });
+      assertSecurityContextOwner(identity.securityFence, identity.pk);
       setProfiles(prev => ({ ...prev, ...cachedMap }));
       const missing = pubkeys.filter(pk => !cachedMap[pk]);
       if (missing.length === 0) return;
       const pool = await getAuthenticatedPool(identity);
+      assertSecurityContextOwner(identity.securityFence, identity.pk);
       // Two phases, so the message relay reads the address book only when it
       // has to. Profiles are public and this client publishes kind 0 to
       // profileRelays, not to the message relay; the profile-read class indexes
@@ -282,9 +335,13 @@ export function useChatBootstrap({
       const readRelays = profileReadRelays.filter((url) => !generalRelays.includes(url));
       const askFor = (authors, relays) => queryWithTimeout(pool, relays, { kinds: [0], authors }, 4000);
       let events = readRelays.length > 0 ? await askFor(missing, readRelays) : [];
+      assertSecurityContextOwner(identity.securityFence, identity.pk);
       const answered = new Set(events.map((ev) => ev.pubkey));
       const stragglers = missing.filter((pk) => !answered.has(pk));
-      if (stragglers.length > 0) events = events.concat(await askFor(stragglers, generalRelays));
+      if (stragglers.length > 0) {
+        events = events.concat(await askFor(stragglers, generalRelays));
+        assertSecurityContextOwner(identity.securityFence, identity.pk);
+      }
       const fresh = {};
       for (const ev of events) {
         try {
@@ -296,11 +353,20 @@ export function useChatBootstrap({
             picture: meta.picture || null, about: meta.about || '',
           };
           fresh[ev.pubkey] = profile;
+          assertSecurityContextOwner(identity.securityFence, identity.pk);
           await db.profiles.put(profile);
-        } catch {}
+          assertSecurityContextOwner(identity.securityFence, identity.pk);
+        } catch (error) {
+          if (error?.code === 'SECURITY_CONTEXT_EXPIRED') throw error;
+        }
       }
-      if (Object.keys(fresh).length > 0) setProfiles(prev => ({ ...prev, ...fresh }));
-    } catch (err) { console.error('[profiles] fetch failed:', err); }
+      if (Object.keys(fresh).length > 0) {
+        assertSecurityContextOwner(identity.securityFence, identity.pk);
+        setProfiles(prev => ({ ...prev, ...fresh }));
+      }
+    } catch (err) {
+      if (err?.code !== 'SECURITY_CONTEXT_EXPIRED') console.error('[profiles] fetch failed:', err);
+    }
   };
 
   // One grouping for both draws — the rows this device holds at the start of
@@ -311,7 +377,10 @@ export function useChatBootstrap({
     const finalGroups = {};
     let n = 0;
     for (const msg of rows) {
-      if (++n % 50 === 0) await new Promise((r) => setTimeout(r, 0)); // yield to UI
+      if (++n % 50 === 0) {
+        await new Promise((r) => setTimeout(r, 0)); // yield to UI
+        assertSecurityContextOwner(identity.securityFence, identity.pk);
+      }
       if (msg.isGroup === true) {
         if (!finalGroups[msg.chatId]) finalGroups[msg.chatId] = [];
         finalGroups[msg.chatId].push(msg);
@@ -332,24 +401,31 @@ export function useChatBootstrap({
   // another account. The relays replace it as soon as they answer.
   const drawHeldChats = async () => {
     try {
+      assertSecurityContextOwner(identity.securityFence, identity.pk);
       const rows = (await db.messages.toArray()).filter((msg) => !rowExpired(msg));
+      assertSecurityContextOwner(identity.securityFence, identity.pk);
       if (rows.length === 0) return false;
       const { finalDms, finalGroups } = await splitRows(rows);
+      assertSecurityContextOwner(identity.securityFence, identity.pk);
       const reads = await db.chatReads.toArray();
+      assertSecurityContextOwner(identity.securityFence, identity.pk);
       const readMap = {};
       reads.forEach(r => { readMap[r.chatId] = r.lastRead; });
       const localDeleted = new Set(await deletedMessageIds());
+      assertSecurityContextOwner(identity.securityFence, identity.pk);
       setUnreadCounts(unreadCountsFor(rows, readMap, localDeleted));
       setDms(finalDms);
       setGroupMessages(finalGroups);
       return true;
     } catch (error) {
+      if (error?.code === 'SECURITY_CONTEXT_EXPIRED') throw error;
       console.warn('[chat] Could not draw the chats this device holds:', error);
       return false;
     }
   };
 
   const fetchChats = async (showLoader = false) => {
+    assertSecurityContextOwner(identity?.securityFence, identity?.pk);
     if (showLoader) setLoading(true);
     try {
       // What this device already holds, drawn before any relay is asked. The
@@ -370,8 +446,11 @@ export function useChatBootstrap({
       //   the loader exactly as before; this costs it nothing and gains it
       //   nothing.
       // - An offline cold unlock is not this branch's problem (fix/offline-warm).
-      if (await drawHeldChats()) setLoading(false);
+      const drewHeldChats = await drawHeldChats();
+      assertSecurityContextOwner(identity.securityFence, identity.pk);
+      if (drewHeldChats) setLoading(false);
       const pool = await getAuthenticatedPool(identity);
+      assertSecurityContextOwner(identity.securityFence, identity.pk);
       // Stage 1 and stage 2 are independent — fetchDMs() takes no arguments
       // and reads nothing stage 1 produces (useNIP44DM.js:362) — so the DM
       // history starts now instead of after the group read gives up. The one
@@ -385,6 +464,7 @@ export function useChatBootstrap({
         .then(() => fetchDMs())
         .catch((error) => { console.error('[chat] DM history fetch failed:', error); return []; });
       const [groupMetaEvents, delEvents] = await stageOne;
+      assertSecurityContextOwner(identity.securityFence, identity.pk);
       const localGroupsNow = getMyGroups(identity.pk);
       const uniqueGroupsNow = Array.from(new Map(groupMetaEvents.map(ev => {
         const hTag = ev.tags.find(t => t[0] === 'h')?.[1] || ev.tags.find(t => t[0] === 'd')?.[1];
@@ -415,6 +495,7 @@ export function useChatBootstrap({
       });
       setGroups(Array.from(allGroupsMap.values()));
       const dmPubkeys = await stageTwo;
+      assertSecurityContextOwner(identity.securityFence, identity.pk);
       const deleted = new Set();
       delEvents.forEach(ev => {
         if (ev.pubkey === identity.pk) {
@@ -422,7 +503,9 @@ export function useChatBootstrap({
           if (targetId) deleted.add(targetId);
         }
       });
-      (await deletedMessageIds()).forEach((id) => deleted.add(id));
+      const localDeletedIds = await deletedMessageIds();
+      assertSecurityContextOwner(identity.securityFence, identity.pk);
+      localDeletedIds.forEach((id) => deleted.add(id));
       // Reactions to the messages this device holds, asked for by id in
       // batches (newest first, capped). The old query took the latest 500
       // reactions of anyone, which held almost none of ours. A reaction whose
@@ -432,9 +515,11 @@ export function useChatBootstrap({
           .filter((m) => m && typeof m.id === 'string')
           .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0))
           .map((m) => m.id);
+        assertSecurityContextOwner(identity.securityFence, identity.pk);
         const batches = await Promise.allSettled(
           reactionFiltersFor(held).map((filter) => queryWithTimeout(pool, generalRelays, filter)),
         );
+        assertSecurityContextOwner(identity.securityFence, identity.pk);
         const reactionMap = {};
         for (const batch of batches) {
           if (batch.status !== 'fulfilled') continue;
@@ -447,11 +532,14 @@ export function useChatBootstrap({
         }
         setReactions((prev) => mergeReactions(prev, reactionMap));
       } catch (error) {
+        if (error?.code === 'SECURITY_CONTEXT_EXPIRED') throw error;
         console.warn('[reactions] Could not load reactions for the messages on this device:', error);
       }
       setDeletedMsgs(deleted);
       await sweepTempMessages();
+      assertSecurityContextOwner(identity.securityFence, identity.pk);
       const allDbMsgs = await db.messages.toArray();
+      assertSecurityContextOwner(identity.securityFence, identity.pk);
       // The carried stamp dies first: a row whose own expires_at is past is
       // dead on load, whatever the local timer says — a local timer that is
       // missing (fresh device, restored account) is exactly how expired rows
@@ -462,25 +550,30 @@ export function useChatBootstrap({
         if (rowExpired(msg)) expiredIds.push(msg.id);
       }
       if (expiredIds.length) {
-        db.messages.bulkDelete(expiredIds).catch((error) => console.error('[disappearing] Could not delete expired messages:', error));
+        await db.messages.bulkDelete(expiredIds);
+        assertSecurityContextOwner(identity.securityFence, identity.pk);
       }
       const liveDbMsgs = expiredIds.length ? allDbMsgs.filter((msg) => !expiredIds.includes(msg.id)) : allDbMsgs;
       const reads = await db.chatReads.toArray();
+      assertSecurityContextOwner(identity.securityFence, identity.pk);
       const readMap = {};
       reads.forEach(r => { readMap[r.chatId] = r.lastRead; });
       const counts = unreadCountsFor(liveDbMsgs, readMap, deleted);
       setUnreadCounts(counts);
       const { finalDms, finalGroups } = await splitRows(liveDbMsgs);
+      assertSecurityContextOwner(identity.securityFence, identity.pk);
       setDms(finalDms);
       setGroupMessages(finalGroups);
       if (dmPubkeys.length > 0) fetchProfilesForPubkeys(dmPubkeys);
     } catch (err) {
-      console.error('Fetch error:', err);
+      if (err?.code !== 'SECURITY_CONTEXT_EXPIRED') console.error('Fetch error:', err);
       // A refresh the relays refused used to be silent: the press looked
       // like a dead button. The failure is said out loud instead.
-      useChatStore.getState().setToast({ type: 'error', message: 'The chats could not be refreshed.' });
+      if (err?.code !== 'SECURITY_CONTEXT_EXPIRED' && identity?.securityFence?.isCurrent?.()) {
+        useChatStore.getState().setToast({ type: 'error', message: 'The chats could not be refreshed.' });
+      }
     } finally {
-      setLoading(false);
+      if (identity?.securityFence?.isCurrent?.()) setLoading(false);
     }
   };
   useEffect(() => {
@@ -506,7 +599,7 @@ export function useChatBootstrap({
       },
     });
     return () => guard.cleanup();
-  }, [identity.sk, identity.pk, groupSubscriptionKey]);
+  }, [identity.sk, identity.pk, identity.securityFence, groupSubscriptionKey]);
 
   useEffect(() => {
     if (!identity?.sk) return;

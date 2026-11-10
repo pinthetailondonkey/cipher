@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
-import { createHmac } from 'node:crypto';
 import { schnorr } from '@noble/curves/secp256k1.js';
 import { seedVault, unlock } from './fixtures.js';
+import { childWatcherToken, pinWatcherKey, signedWatcherReport } from './payment-watcher-fixture.js';
 
 // Row 15 at the screen. A watcher answer must name ONE transaction, and the
 // refusal has to be read where it matters: on the order's stored state and on
@@ -22,11 +22,6 @@ const AMOUNT = '0.001';
 const CHECK = 'Check the chain';
 const REFUSED = 'The watcher did not name a single transaction. Nothing was marked on the order.';
 const CONFIRMATIONS = 3; // bitcoin's bar; a confirmed answer is what signs a receipt
-
-const sign = (token, ts, raw) =>
-  createHmac('sha256', token).update(`${ts}:${raw}`).digest('hex');
-const childToken = (base, currency, address) =>
-  createHmac('sha256', base).update(`cipher-watch-v1:${currency}:${address}`).digest('hex');
 
 // The vendor's own view of an order: the buyer's request arrived, and this
 // device accepted it with its own issued pair. The check reads the pair from
@@ -68,18 +63,17 @@ async function answerWatcher(page, asked, answers) {
     const url = new URL(route.request().url());
     const address = url.searchParams.get('address') || '';
     const currency = url.searchParams.get('currency') || 'btc';
-    const token = url.searchParams.get('token') || '';
+    const authorization = route.request().headers().authorization || '';
+    const nonce = url.searchParams.get('nonce') || '';
     const next = queue.length > 1 ? queue.shift() : queue[0];
-    asked.push({ address, currency, token, txid: next.txid });
-    const raw = JSON.stringify({
-      address, currency, txid: next.txid, confirmations: next.confirmations, amount: AMOUNT,
-      time: Math.floor(Date.now() / 1000),
+    asked.push({ address, currency, authorization, tokenQuery: url.searchParams.get('token'), txid: next.txid });
+    const { rawBody, signature } = signedWatcherReport({
+      address, currency, nonce, txid: next.txid, confirmations: next.confirmations, amount: AMOUNT, time: next.time,
     });
-    const ts = String(Math.floor(Date.now() / 1000));
     await route.fulfill({
       status: 200,
-      headers: { 'content-type': 'application/json', 'x-cipher-sig': `v1=${sign(token, ts, raw)}`, 'x-cipher-ts': ts },
-      body: raw,
+      headers: { 'content-type': 'application/json', 'x-cipher-signature': signature },
+      body: rawBody,
     });
   });
 }
@@ -93,6 +87,7 @@ async function openThread(page) {
   });
   await page.goto('/');
   await unlock(page);
+  await pinWatcherKey(page);
   await expect(page.getByRole('heading', { name: 'Chats' })).toBeVisible({ timeout: 20000 });
   await page.waitForTimeout(2000);
   const rows = vendorThread();
@@ -140,7 +135,7 @@ test.use({ serviceWorkers: 'block' });
 test.describe('a report names one transaction', () => {
   test('control: a confirmed watcher result stores a receipt and durable DM effect', async ({ page }) => {
     const asked = [];
-    await answerWatcher(page, asked, [{ txid: 'ab', confirmations: CONFIRMATIONS }]);
+    await answerWatcher(page, asked, [{ txid: 'ab', confirmations: CONFIRMATIONS, time: Math.floor(Date.now() / 1000) - 5 }]);
     await openThread(page);
     const before = await snapshot(page);
     expect(before.keys, 'control: nothing is stored before the check').toEqual([]);
@@ -153,7 +148,12 @@ test.describe('a report names one transaction', () => {
       timeout: 20000, message: 'a confirmed answer writes a receipt',
     }).toBe(true);
     expect(asked.length, 'the watcher was asked exactly once').toBe(1);
-    for (const one of asked) expect(one).toMatchObject({ address: ADDRESS, currency: 'btc', token: childToken('secret', 'btc', ADDRESS) });
+    for (const one of asked) expect(one).toMatchObject({
+      address: ADDRESS,
+      currency: 'btc',
+      authorization: `Bearer ${childWatcherToken('secret', 'btc', ADDRESS)}`,
+      tokenQuery: null,
+    });
     const after = await snapshot(page);
     expect(after.keys.length, 'a receipt and its ledger entry exist after a confirmed answer').toBeGreaterThan(before.keys.length);
     expect(after.keys.some((key) => /_receipt_/.test(key)), 'the receipt is stored').toBe(true);

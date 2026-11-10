@@ -31,7 +31,7 @@ test('the listing form offers a photo, and only there: uploaded privately, refus
   // The file goes out encrypted, to the hosts the device names. It takes the
   // attachment door, which re-encodes a photo before encrypting it; the raw
   // upload is no longer reachable from this picker.
-  assert.match(view.slice(storefrontStart, formEnd), /uploadAttachment\(file, blossomServers\(\)\)/);
+  assert.match(view.slice(storefrontStart, formEnd), /const upload = import\.meta\.env\?\.VITE_TEST_HOOKS === '1'[\s\S]*?\? window\.__cipherMediaUpload : uploadAttachment;\s*const uploaded = await upload\(file, blossomServers\(\), securityFence, owner, 'group-listing'\)/);
   assert.doesNotMatch(view.slice(storefrontStart, formEnd), /uploadPrivateMedia\(file, blossomServers\(\)\)/);
   // A host that refuses is the shared toast's sentence, never re-inlined.
   assert.match(view.slice(storefrontStart, formEnd), /photoRefusalToast\(/);
@@ -39,7 +39,7 @@ test('the listing form offers a photo, and only there: uploaded privately, refus
 
 test('the posted product carries the entry the upload returns, and the row draws it through the DM gate', () => {
   const storefront = view.slice(storefrontStart, formEnd);
-  assert.match(storefront, /setPhoto\(await uploadAttachment\(file, blossomServers\(\)\)\)/);
+  assert.match(storefront, /const uploaded = await upload\([\s\S]*?\);\s*assertSecurityContextOwner\(securityFence, owner\);\s*setPhoto\(uploaded\)/);
   assert.match(storefront, /image: photo/);
   // The menu row no longer hands the field to Picture as a plain src.
   assert.match(view, /<ProductImage value=\{item\.product\.image\}/);

@@ -14,10 +14,9 @@
 // GET /payment?address=&currency=xmr|btc
 // 200 { address, currency, txid, confirmations, amount, outputAmount, time } or
 //     { address, currency, pending: true },
-//     signed with `x-cipher-sig: v1=<hex hmac-sha256>` over the timestamp
-//     and the raw body bytes (`<ts>:<body>`, the order's child token is
-//     the key), with `x-cipher-ts` in unix seconds. The phone rejects an
-//     unsigned, re-stamped or stale answer, so only the watcher's own word
+//     signed with `x-cipher-signature` using a separately configured Ed25519
+//     key over the exact v2 report body. The phone rejects an unsigned,
+//     re-stamped, replayed or stale answer, so only a pinned watcher's word
 //     moves an order. The body echoes the address and currency it was asked
 //     about: a signed reply for one order replayed as another order's check
 //     is the one forgery the signature alone cannot see. (security re-attack)
@@ -47,7 +46,7 @@
 
 import http from 'node:http';
 import fs from 'node:fs';
-import { createHmac, timingSafeEqual } from 'node:crypto';
+import { createHash, createPrivateKey, createPublicKey, sign, timingSafeEqual } from 'node:crypto';
 import { childWatcherToken, incomingMoneroTransfers, parseExactAmounts, reportFromTransfers, rowsFromScan } from '../src/lib/paymentWatch.js';
 
 if (fs.existsSync('.env')) process.loadEnvFile('.env');
@@ -56,6 +55,17 @@ const port = Number(process.env.PORT || process.env.WATCH_PORT || 8788);
 const xmrRpc = String(process.env.XMR_WALLET_RPC || '').trim();
 const btcRpc = String(process.env.BTC_RPC_URL || '').trim();
 const watchToken = String(process.env.WATCH_TOKEN || '');
+const signingSecret = String(process.env.WATCH_SIGNING_PRIVATE_KEY || '');
+const defaultAllowedOrigin = 'https://www.ciphermessenger.org';
+const allowedOrigins = new Set(String(process.env.WATCH_ALLOWED_ORIGINS || defaultAllowedOrigin).split(',').map((origin) => origin.trim()).filter(Boolean));
+function loadSigningAuthority(secret) {
+  const raw = Buffer.from(secret.replace(/-/g, '+').replace(/_/g, '/'), 'base64');
+  if (raw.length !== 32) return null;
+  const privateKey = createPrivateKey({ key: Buffer.concat([Buffer.from('302e020100300506032b657004220420', 'hex'), raw]), format: 'der', type: 'pkcs8' });
+  const publicKey = createPublicKey(privateKey).export({ format: 'der', type: 'spki' }).subarray(-32);
+  return { privateKey, publicKeyText: publicKey.toString('base64url'), keyId: createHash('sha256').update(publicKey).digest('hex') };
+}
+const signingAuthority = loadSigningAuthority(signingSecret);
 // WATCH_HOST widens the listen address back on purpose: the default is the
 // machine itself, so a vendor box on Tails never serves the LAN. A phone on
 // the same network sets WATCH_HOST=0.0.0.0 and gets exactly what it got before.
@@ -73,24 +83,17 @@ async function tokenMatches(presented, address, currency) {
   return timingSafeEqual(a, b);
 }
 
-// Every 200 answer is signed so the phone can tell a forged report from a real
-// one. The signature covers the timestamp and the exact body bytes; the
-// order's child token is the key — the same one the phone presented and
-// verifies with. The phone also checks `x-cipher-ts` is within two minutes
-// of its own clock — which bites only because the timestamp itself is inside
-// the signature: a replay of a captured answer cannot re-stamp the date.
+// Every 200 answer is signed with the separate Ed25519 report key. The access
+// token can open the endpoint but cannot forge this report. The phone checks a
+// pinned key, request nonce and signed timestamp before trusting the body.
 // Every answer also echoes the address and currency it looked up, so a
 // signed reply for one order replayed as another order's check answers
 // nothing. (security re-attack)
-async function signedAnswer(res, address, currency, report) {
-  // Awaited: the child token is an async derivation, and an un-awaited
-  // promise turned every successful check into a 502 at the signature line
-  // (caught by the executed probe, never by the unit tests).
-  const token = await childWatcherToken(watchToken, address, currency);
-  const body = JSON.stringify({ address, currency, ...report });
-  const ts = Math.floor(Date.now() / 1000);
-  const sig = `v1=${createHmac('sha256', token).update(`${ts}:${body}`).digest('hex')}`;
-  res.writeHead(200, { 'Content-Type': 'application/json', 'x-cipher-sig': sig, 'x-cipher-ts': String(ts) });
+async function signedAnswer(res, address, currency, nonce, report) {
+  if (!signingAuthority) throw Object.assign(new Error('This watcher has no v2 signing key.'), { status: 503 });
+  const body = JSON.stringify({ version: 2, keyId: signingAuthority.keyId, nonce, signedAt: Math.floor(Date.now() / 1000), address, currency, ...report });
+  const sig = sign(null, Buffer.from(`cipher-payment-watcher-v2\n${body}`), signingAuthority.privateKey).toString('base64url');
+  res.writeHead(200, { 'Content-Type': 'application/json', 'x-cipher-signature': sig, 'x-cipher-keyid': signingAuthority.keyId });
   res.end(body);
 }
 
@@ -174,15 +177,50 @@ async function bitcoinTransfers(address) {
 
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url || '/', 'http://127.0.0.1');
-  if (req.method !== 'GET' || url.pathname !== '/payment') {
+  if (url.pathname !== '/payment') {
     res.writeHead(404, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ error: 'Not found' }));
     return;
   }
+  const origin = String(req.headers.origin || '');
+  if (req.method === 'OPTIONS') {
+    const requestedMethod = String(req.headers['access-control-request-method'] || '').toUpperCase();
+    const requestedHeaders = String(req.headers['access-control-request-headers'] || '').toLowerCase().split(',').map((header) => header.trim()).filter(Boolean);
+    if (!origin || !allowedOrigins.has(origin) || requestedMethod !== 'GET' || requestedHeaders.some((header) => !['authorization', 'accept'].includes(header))) {
+      res.writeHead(403, { Vary: 'Origin' });
+      res.end();
+      return;
+    }
+    res.writeHead(204, {
+      'Access-Control-Allow-Origin': origin,
+      'Access-Control-Allow-Methods': 'GET, OPTIONS',
+      'Access-Control-Allow-Headers': 'Authorization, Accept',
+      'Access-Control-Max-Age': '600',
+      Vary: 'Origin',
+    });
+    res.end();
+    return;
+  }
+  if (req.method !== 'GET') {
+    res.writeHead(405, { 'Content-Type': 'application/json', Allow: 'GET, OPTIONS' });
+    res.end(JSON.stringify({ error: 'Method not allowed.' }));
+    return;
+  }
+  if (origin && !allowedOrigins.has(origin)) {
+    res.writeHead(403, { Vary: 'Origin' });
+    res.end(JSON.stringify({ error: 'This app origin is not allowed.' }));
+    return;
+  }
+  if (origin) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Access-Control-Expose-Headers', 'x-cipher-signature, x-cipher-keyid');
+    res.setHeader('Vary', 'Origin');
+  }
   const address = url.searchParams.get('address') || '';
   const currency = (url.searchParams.get('currency') || '').toLowerCase();
+  const nonce = url.searchParams.get('nonce') || '';
   const header = String(req.headers.authorization || '');
-  const presented = header.startsWith('Bearer ') ? header.slice(7) : (url.searchParams.get('token') || '');
+  const presented = header.startsWith('Bearer ') ? header.slice(7) : '';
   if (!watchToken) {
     res.writeHead(503, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ error: 'Set WATCH_TOKEN. This watcher refuses an open check.' }));
@@ -191,6 +229,11 @@ const server = http.createServer(async (req, res) => {
   if (!(await tokenMatches(presented, address, currency))) {
     res.writeHead(401, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ error: 'The watcher token is wrong.' }));
+    return;
+  }
+  if (!signingAuthority || !/^[A-Za-z0-9_-]{22,64}$/.test(nonce)) {
+    res.writeHead(503, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Set a v2 signing key and request nonce.' }));
     return;
   }
   try {
@@ -204,7 +247,7 @@ const server = http.createServer(async (req, res) => {
     } else {
       throw Object.assign(new Error('Say currency=xmr or currency=btc.'), { status: 400 });
     }
-    await signedAnswer(res, address, currency, report);
+    await signedAnswer(res, address, currency, nonce, report);
   } catch (error) {
     const status = error.status || 502;
     console.error('[watcher]', error.message);
@@ -214,18 +257,21 @@ const server = http.createServer(async (req, res) => {
 });
 
 if (process.argv[1] && process.argv[1].endsWith('payment-watcher.mjs')) {
-  if (!watchToken || (!xmrRpc && !btcRpc)) {
-    console.error('[watcher] A vendor runs this. It will not listen until both of these are set:');
+  if (!watchToken || !signingAuthority || (!xmrRpc && !btcRpc)) {
+    console.error('[watcher] Set the access token, v2 signing key, and at least one wallet RPC before starting:');
     console.error('  WATCH_TOKEN=a-long-secret');
+    console.error('  WATCH_SIGNING_PRIVATE_KEY=<32-byte base64url Ed25519 seed; generate with npm run watch:keygen>');
     console.error('  XMR_WALLET_RPC=http://127.0.0.1:18083   or   BTC_RPC_URL=http://user:pass@127.0.0.1:8332');
     console.error('Start the Monero wallet first:');
     console.error('  monero-wallet-rpc --rpc-bind-ip 127.0.0.1 --rpc-bind-port 18083 --disable-rpc-login --wallet-file YOUR_WALLET --password YOUR_PASSWORD');
-    console.error('Then: WATCH_TOKEN=a-long-secret XMR_WALLET_RPC=http://127.0.0.1:18083 npm run watch');
-    console.error('Paste http://THIS_MACHINE:8788/payment?token=a-long-secret into Connections. The phone never calls a block explorer.');
+    console.error('Then: WATCH_TOKEN=a-long-secret WATCH_SIGNING_PRIVATE_KEY=... XMR_WALLET_RPC=http://127.0.0.1:18083 npm run watch');
+    console.error('Paste the watcher URL in Connections and pin this public key:');
+    if (signingAuthority) console.error(`  ${signingAuthority.publicKeyText}`);
     process.exit(1);
   }
   server.listen(port, watchHost, () => {
-    console.log(`[watcher] http://127.0.0.1:${port}/payment?token=${watchToken}`);
+    console.log(`[watcher] http://127.0.0.1:${port}/payment`);
+    console.log(`[watcher] Pin this Ed25519 public key in Connections: ${signingAuthority.publicKeyText}`);
     if (watchHost !== '127.0.0.1') console.log(`[watcher] Listening on ${watchHost}. Any device on this network can ask this watcher.`);
     console.log('[watcher] To serve this box as an onion service instead, add to torrc:');
     console.log('[watcher]   HiddenServiceDir /var/lib/tor/cipher-watcher/');

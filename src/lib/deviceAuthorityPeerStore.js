@@ -4,6 +4,7 @@ import {
   verifyDeviceAuthorityPolicy, verifyDeviceAuthorityRegistry, verifyDeviceAuthorityReplacement,
 } from './deviceAuthority.js';
 import { verifyRecoveryRootReplacement } from './deviceAuthorityContactVerification.js';
+import { assertDeviceAuthorityContext, withDeviceAuthorityContext } from './deviceAuthorityContext.js';
 
 const STORE = 'peer-checkpoints';
 const MAX_HISTORY = 512;
@@ -59,13 +60,15 @@ function getRow(db, accountPubkey) {
   });
 }
 
-function compareAndSwap(db, { nextRow, expectedPolicyId, expectedRegistryId }) {
+function compareAndSwap(db, { nextRow, expectedPolicyId, expectedRegistryId, securityFence }) {
   return new Promise((resolve, reject) => {
     const transaction = db.transaction(STORE, 'readwrite');
     const store = transaction.objectStore(STORE);
     const request = store.get(nextRow.accountPubkey);
     let idempotent = false;
     request.onsuccess = () => {
+      try { assertDeviceAuthorityContext(securityFence); }
+      catch { transaction.abort(); return; }
       const current = request.result || null;
       if (current?.policyId === nextRow.policyId && current?.registryId === nextRow.registryId) {
         idempotent = true;
@@ -91,8 +94,10 @@ function checkpointRow({ policyEvent, registryHistory, accountPubkey, recoveryPu
     registryHistory, registryEvent, registryId: registryEvent.id };
 }
 
-export async function initializePeerDeviceAuthority({ policyEvent, registryEvent, expectedAccountPubkey,
-  expectedRecoveryPubkey, now = Math.floor(Date.now() / 1000), indexedDBImpl = globalThis.indexedDB } = {}) {
+async function initializePeerDeviceAuthorityCore({ policyEvent, registryEvent, expectedAccountPubkey,
+  expectedRecoveryPubkey, now = Math.floor(Date.now() / 1000), indexedDBImpl = globalThis.indexedDB,
+  securityFence } = {}) {
+  assertDeviceAuthorityContext(securityFence);
   if (!verifyDeviceAuthorityPolicy(policyEvent, { expectedAccount: expectedAccountPubkey,
     expectedRecovery: expectedRecoveryPubkey, now })
     || !verifyDeviceAuthorityRegistry(registryEvent, policyEvent, { now })
@@ -103,7 +108,9 @@ export async function initializePeerDeviceAuthority({ policyEvent, registryEvent
     accountPubkey: expectedAccountPubkey, recoveryPubkey: expectedRecoveryPubkey });
   const db = await openDb(expectedAccountPubkey, indexedDBImpl);
   try {
+    assertDeviceAuthorityContext(securityFence);
     const existing = await getRow(db, expectedAccountPubkey);
+    assertDeviceAuthorityContext(securityFence);
     if (existing) {
       verifyState(existing, expectedAccountPubkey, expectedRecoveryPubkey, now);
       if (existing.policyId === row.policyId && existing.registryId === row.registryId) {
@@ -111,17 +118,22 @@ export async function initializePeerDeviceAuthority({ policyEvent, registryEvent
       }
       throw new Error('An existing peer checkpoint cannot be replaced by initialization.');
     }
-    return await compareAndSwap(db, { nextRow: row, expectedPolicyId: null, expectedRegistryId: null });
+    const result = await compareAndSwap(db, { nextRow: row, expectedPolicyId: null,
+      expectedRegistryId: null, securityFence });
+    assertDeviceAuthorityContext(securityFence);
+    return result;
   } finally { db.close(); }
 }
 
-export async function applyPeerDeviceRegistryUpdate({ update, expectedAccountPubkey, expectedRecoveryPubkey,
-  now = Math.floor(Date.now() / 1000), indexedDBImpl = globalThis.indexedDB } = {}) {
+async function applyPeerDeviceRegistryUpdateCore({ update, expectedAccountPubkey, expectedRecoveryPubkey,
+  now = Math.floor(Date.now() / 1000), indexedDBImpl = globalThis.indexedDB, securityFence } = {}) {
+  assertDeviceAuthorityContext(securityFence);
   if (update?.type !== 'registry-update' || !update.policyEvent?.id || !update.previousRegistryEvent?.id
     || !update.nextRegistryEvent?.id) throw new Error('A verified registry update is required.');
   const db = await openDb(expectedAccountPubkey, indexedDBImpl);
   try {
     const current = verifyState(await getRow(db, expectedAccountPubkey), expectedAccountPubkey, expectedRecoveryPubkey, now);
+    assertDeviceAuthorityContext(securityFence);
     if (current.registryId === update.nextRegistryEvent?.id) {
       return { policyId: current.policyId, registryId: current.registryId, idempotent: true };
     }
@@ -133,16 +145,21 @@ export async function applyPeerDeviceRegistryUpdate({ update, expectedAccountPub
       throw new Error('The registry update is invalid or the local authenticated history is full.');
     }
     const nextRow = checkpointRow({ ...current, registryHistory: [...current.registryHistory, update.nextRegistryEvent] });
-    return await compareAndSwap(db, { nextRow, expectedPolicyId: current.policyId, expectedRegistryId: current.registryId });
+    const result = await compareAndSwap(db, { nextRow, expectedPolicyId: current.policyId,
+      expectedRegistryId: current.registryId, securityFence });
+    assertDeviceAuthorityContext(securityFence);
+    return result;
   } finally { db.close(); }
 }
 
-export async function applyPeerAuthorityReplacement({ update, expectedAccountPubkey, expectedRecoveryPubkey,
-  now = Math.floor(Date.now() / 1000), indexedDBImpl = globalThis.indexedDB } = {}) {
+async function applyPeerAuthorityReplacementCore({ update, expectedAccountPubkey, expectedRecoveryPubkey,
+  now = Math.floor(Date.now() / 1000), indexedDBImpl = globalThis.indexedDB, securityFence } = {}) {
+  assertDeviceAuthorityContext(securityFence);
   if (update?.type !== 'authority-replacement') throw new Error('A verified authority replacement is required.');
   const db = await openDb(expectedAccountPubkey, indexedDBImpl);
   try {
     const current = verifyState(await getRow(db, expectedAccountPubkey), expectedAccountPubkey, expectedRecoveryPubkey, now);
+    assertDeviceAuthorityContext(securityFence);
     if (current.policyId === update.nextPolicyEvent?.id && current.registryId === update.nextRegistryEvent?.id) {
       return { policyId: current.policyId, registryId: current.registryId, idempotent: true };
     }
@@ -160,19 +177,24 @@ export async function applyPeerAuthorityReplacement({ update, expectedAccountPub
     const nextRow = checkpointRow({ policyEvent: update.nextPolicyEvent,
       registryHistory: [update.nextRegistryEvent], accountPubkey: expectedAccountPubkey,
       recoveryPubkey: expectedRecoveryPubkey });
-    return await compareAndSwap(db, { nextRow, expectedPolicyId: current.policyId, expectedRegistryId: current.registryId });
+    const result = await compareAndSwap(db, { nextRow, expectedPolicyId: current.policyId,
+      expectedRegistryId: current.registryId, securityFence });
+    assertDeviceAuthorityContext(securityFence);
+    return result;
   } finally { db.close(); }
 }
 
 // Recovery-root changes are deliberately not inferred from an account-key or
 // old-root signature. The caller must first complete the independent contact
 // fingerprint ceremony and supply the exact displayed value here.
-export async function applyPeerRecoveryRootReplacement({ currentPolicyEvent, nextPolicyEvent,
+async function applyPeerRecoveryRootReplacementCore({ currentPolicyEvent, nextPolicyEvent,
   nextRegistryEvent, expectedAccountPubkey, expectedOldRecoveryPubkey, confirmedFingerprint,
-  now = Math.floor(Date.now() / 1000), indexedDBImpl = globalThis.indexedDB } = {}) {
+  now = Math.floor(Date.now() / 1000), indexedDBImpl = globalThis.indexedDB, securityFence } = {}) {
+  assertDeviceAuthorityContext(securityFence);
   const db = await openDb(expectedAccountPubkey, indexedDBImpl);
   try {
     const row = await getRow(db, expectedAccountPubkey);
+    assertDeviceAuthorityContext(securityFence);
     const nextRecoveryPubkey = (() => { try { return JSON.parse(nextPolicyEvent?.content || '').recoveryPubkey; } catch { return null; } })();
     if (row?.policyId === nextPolicyEvent?.id && row.registryId === nextRegistryEvent?.id
       && row.recoveryPubkey === nextRecoveryPubkey) {
@@ -188,15 +210,40 @@ export async function applyPeerRecoveryRootReplacement({ currentPolicyEvent, nex
     if (!verified) throw new Error('The new recovery fingerprint was not independently confirmed or the replacement is invalid.');
     const nextRow = checkpointRow({ policyEvent: nextPolicyEvent, registryHistory: [nextRegistryEvent],
       accountPubkey: expectedAccountPubkey, recoveryPubkey: verified.recoveryPubkey });
-    return await compareAndSwap(db, { nextRow, expectedPolicyId: current.policyId,
-      expectedRegistryId: current.registryId });
+    const result = await compareAndSwap(db, { nextRow, expectedPolicyId: current.policyId,
+      expectedRegistryId: current.registryId, securityFence });
+    assertDeviceAuthorityContext(securityFence);
+    return result;
   } finally { db.close(); }
 }
 
-export async function loadPeerDeviceAuthority({ expectedAccountPubkey, expectedRecoveryPubkey,
-  now = Math.floor(Date.now() / 1000), indexedDBImpl = globalThis.indexedDB } = {}) {
+async function loadPeerDeviceAuthorityCore({ expectedAccountPubkey, expectedRecoveryPubkey,
+  now = Math.floor(Date.now() / 1000), indexedDBImpl = globalThis.indexedDB, securityFence } = {}) {
+  assertDeviceAuthorityContext(securityFence);
   const db = await openDb(expectedAccountPubkey, indexedDBImpl);
   try {
-    return structuredClone(verifyState(await getRow(db, expectedAccountPubkey), expectedAccountPubkey, expectedRecoveryPubkey, now));
+    const row = await getRow(db, expectedAccountPubkey);
+    assertDeviceAuthorityContext(securityFence);
+    return structuredClone(verifyState(row, expectedAccountPubkey, expectedRecoveryPubkey, now));
   } finally { db.close(); }
+}
+
+export function initializePeerDeviceAuthority(args = {}) {
+  return withDeviceAuthorityContext(args.securityFence, () => initializePeerDeviceAuthorityCore(args));
+}
+
+export function applyPeerDeviceRegistryUpdate(args = {}) {
+  return withDeviceAuthorityContext(args.securityFence, () => applyPeerDeviceRegistryUpdateCore(args));
+}
+
+export function applyPeerAuthorityReplacement(args = {}) {
+  return withDeviceAuthorityContext(args.securityFence, () => applyPeerAuthorityReplacementCore(args));
+}
+
+export function applyPeerRecoveryRootReplacement(args = {}) {
+  return withDeviceAuthorityContext(args.securityFence, () => applyPeerRecoveryRootReplacementCore(args));
+}
+
+export function loadPeerDeviceAuthority(args = {}) {
+  return withDeviceAuthorityContext(args.securityFence, () => loadPeerDeviceAuthorityCore(args));
 }

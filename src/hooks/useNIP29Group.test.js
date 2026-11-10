@@ -33,6 +33,54 @@ test('wire control authorization uses only held verified governance standing', (
   assert.doesNotMatch(block, /state\.groupMembers|group\?\.members|loadMemberSnapshot\(/);
 });
 
+test('group AUTH and EVENT websocket sends are fenced by their captured account context', () => {
+  const authStart = SOURCE.indexOf('function sendAuthResponse(session, challenge) {');
+  const authEnd = SOURCE.indexOf('\n}', authStart) + 2;
+  const auth = SOURCE.slice(authStart, authEnd);
+  assert.match(auth, /assertSecurityContextOwner\(session\.identity\.securityFence, session\.identity\.pk\)/);
+  assert.match(auth, /assertSecurityContextOwner\(session\.identity\?\.securityFence, session\.identity\?\.pk\);[\s\S]*?session\.ws\.send\(JSON\.stringify\(\['AUTH'/);
+
+  const publishStart = SOURCE.indexOf('async function publishAuthedGroupEvent(identity, event) {');
+  const publishEnd = SOURCE.indexOf('\n}', publishStart) + 2;
+  const publish = SOURCE.slice(publishStart, publishEnd);
+  assert.match(publish, /await whenGroupAuthed\(session\);\s*assertSecurityContextOwner\(identity\.securityFence, identity\.pk\)/);
+  assert.match(publish, /assertSecurityContextOwner\(identity\.securityFence, identity\.pk\);\s*session\.ws\.send\(JSON\.stringify\(\['EVENT'/);
+  assert.match(publish, /\}\);\s*assertSecurityContextOwner\(identity\.securityFence, identity\.pk\);\s*return event/);
+});
+
+test('group-key DM publisher rechecks the account fence before and after relay awaits', () => {
+  const start = SOURCE.indexOf('async function publishKeyDm(identity, dmEvent) {');
+  const end = SOURCE.indexOf('\n}', start) + 2;
+  const body = SOURCE.slice(start, end);
+  assert.match(body, /assertSecurityContextOwner\(identity\?\.securityFence, identity\?\.pk\);[\s\S]*?await relaysForPeer[\s\S]*?assertSecurityContextOwner\(identity\.securityFence, identity\.pk\);/);
+  assert.match(body, /await getAuthenticatedPool\(identity\);\s*assertSecurityContextOwner\(identity\.securityFence, identity\.pk\)/);
+  assert.match(body, /await Promise\.allSettled\(pool\.publish\([\s\S]*?\);\s*assertSecurityContextOwner\(identity\.securityFence, identity\.pk\)/);
+});
+
+test('stale group sockets drop inbound frames and cannot reconnect after account invalidation', () => {
+  const frameStart = SOURCE.indexOf('function handleGroupSocketFrame(session, raw) {');
+  const frameEnd = SOURCE.indexOf('\n}', frameStart) + 2;
+  assert.match(SOURCE.slice(frameStart, frameEnd), /^function handleGroupSocketFrame\(session, raw\) \{\s*try \{ assertSecurityContextOwner\(session\.identity\?\.securityFence, session\.identity\?\.pk\); \}/);
+
+  const connectStart = SOURCE.indexOf('function connectGroupSocket(session) {');
+  const connectEnd = SOURCE.indexOf('\n}', connectStart) + 2;
+  const connect = SOURCE.slice(connectStart, connectEnd);
+  assert.match(connect, /if \(session\.closed\) return;\s*try \{ assertSecurityContextOwner\(session\.identity\?\.securityFence, session\.identity\?\.pk\); \}/);
+  assert.match(connect, /ws\.onopen = \(\) => \{\s*try \{ assertSecurityContextOwner/);
+  assert.match(connect, /ws\.onclose = \(event\) => \{[\s\S]*?assertSecurityContextOwner[\s\S]*?if \(!session\.closed\)/);
+});
+
+test('queued group sends are fenced before retry and before clearing their durable queue row', () => {
+  const start = SOURCE.indexOf('export async function flushSecuringGroupSends(identity, groupId) {');
+  const end = SOURCE.indexOf('\n}', start) + 2;
+  const body = SOURCE.slice(start, end);
+  assert.match(body, /assertSecurityContextOwner\(identity\.securityFence, identity\.pk\);\s*if \(await isGroupRotationPending/);
+  assert.match(body, /await resolveActorSigner\([\s\S]*?assertSecurityContextOwner\(identity\.securityFence, identity\.pk\)/);
+  assert.match(body, /await encodeGroupPayload\([\s\S]*?assertSecurityContextOwner\(identity\.securityFence, identity\.pk\)/);
+  assert.match(body, /await publishAuthedGroupEvent\(identity, event\);\s*assertSecurityContextOwner\(identity\.securityFence, identity\.pk\);\s*dropSecuringSend/);
+  assert.match(body, /await getCurrentGroupKey\(groupId, identity\.securityFence\);\s*assertSecurityContextOwner\(identity\.securityFence, identity\.pk\)/);
+});
+
 function frameFromExpression(expression, bindings) {
   // Re-executes the captured send expression's array literal with the
   // names the send site itself uses, bound to the stored value.
@@ -215,8 +263,39 @@ test('SEC-1: createGroup passes its stored genesis secret to the real document p
   const call = SOURCE.slice(publishStart, SOURCE.indexOf('});', publishStart) + 2);
   assert.match(call, /docKey:\s*genesisDocKey/, 'the real genesis caller supplies the held random key');
   const preCreate = SOURCE.slice(createStart, SOURCE.indexOf('const createEv', createStart));
-  assert.match(preCreate, /putDocKey\(groupId,\s*1,\s*generatedDocKey\)/,
-    'createGroup persists the random secret before publishing the group create event');
+  assert.match(preCreate, /putDocKey\(groupId,\s*1,\s*generatedDocKey,\s*identity\.securityFence\)/,
+    'createGroup persists the random secret through its captured account context before publishing');
   assert.match(preCreate, /if \(!genesisDocKey\)\s*\{[\s\S]*?throw new Error/,
     'createGroup stops before publishing if secure key storage fails');
+});
+
+test('group mutations recheck the account incarnation before durable, relay, and UI effects', () => {
+  const create = SOURCE.slice(SOURCE.indexOf('const createGroup = useCallback'), SOURCE.indexOf('const joinGroupById = useCallback'));
+  assert.match(create, /await getAuthenticatedPool\(identity\);\s*assertSecurityContextOwner/);
+  assert.match(create, /await Promise\.allSettled\(pool\.publish\(groupRelays, createEv\)\);\s*assertSecurityContextOwner/);
+  assert.match(create, /distributeGroupKey\(\{[\s\S]*?securityFence: identity\.securityFence/);
+  assert.match(create, /rememberMembers\(groupId, \[identity\.pk\], \{ securityFence:/);
+
+  const send = SOURCE.slice(SOURCE.indexOf('const sendGroupMessage = useCallback'), SOURCE.indexOf('const requestGroupKey = useCallback'));
+  assert.match(send, /await encodeGroupPayload\([\s\S]*?\);\s*assertSecurityContextOwner/);
+  assert.match(send, /reserveMessageEffect\(\{[\s\S]*?securityFence: identity\.securityFence/);
+  assert.match(send, /completeMessageEffect\(\{[\s\S]*?securityFence: identity\.securityFence/);
+  assert.match(send, /publishWriteAhead\([\s\S]*?assertCurrent: \(\) => assertSecurityContextOwner/);
+  assert.match(send, /SECURITY_CONTEXT_EXPIRED/);
+
+  const memberOps = SOURCE.slice(SOURCE.indexOf('const kickMember = useCallback'), SOURCE.indexOf('const updateGroupSettings = useCallback'));
+  assert.match(memberOps, /publishMemberDocUpdate\(groupId, standing, \{ roleChanges: \{ \[account\]: nextRole \}, securityFence:/);
+  assert.match(memberOps, /publishMemberDocUpdate\(groupId, nextMembers, \{ pins: observedPins, securityFence:/);
+  assert.match(memberOps, /rememberMembers\(groupId, nextMembers, \{[\s\S]*?securityFence:/);
+});
+
+test('group frame ingestion and history refresh discard stale-context effects', () => {
+  const subscription = SOURCE.slice(SOURCE.indexOf('const subscribeToGroups = useCallback'));
+  assert.match(subscription, /const assertCurrent = \(\) => assertSecurityContextOwner\(identity\?\.securityFence, identity\?\.pk\)/);
+  assert.match(subscription, /const onFrame = async \(msg\) => \{\s*try \{ assertCurrent\(\); \} catch \{ return; \}/);
+  assert.match(subscription, /await rememberMembers\(groupId, members, \{ securityFence: identity\.securityFence, owner: identity\.pk \}\);\s*assertCurrent\(\);/);
+  assert.match(subscription, /await saveMessageOnce\(groupId, baseMsg\);\s*assertCurrent\(\);/);
+  assert.match(subscription, /await saveMessage\(groupId, baseMsg\);\s*assertCurrent\(\);/);
+  assert.match(subscription, /keyHandler = async \(e\) => \{[\s\S]*?try \{ assertCurrent\(\); \} catch \{ return; \}/);
+  assert.match(subscription, /await decodeGroupEvent\([\s\S]*?\);\s*assertCurrent\(\);/);
 });

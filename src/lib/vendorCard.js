@@ -1,4 +1,5 @@
 import { urlsFor } from './egress';
+import { assertSecurityContextOwner } from './securityContextFence.js';
 
 // The public card a vendor's menu carries on the group relay.
 //
@@ -68,7 +69,13 @@ export async function publishVendorCard({
   relays,
   pool: injected,
   now = Date.now(),
+  securityFence = identity?.securityFence,
+  owner = identity?.pk,
 } = {}) {
+  const assertCurrent = () => {
+    if (securityFence) assertSecurityContextOwner(securityFence, owner);
+  };
+  assertCurrent();
   const targets = Array.isArray(relays) ? relays : vendorCardRelays();
   const refused = (skipped) => ({ published: false, skipped, relays: [...targets] });
 
@@ -76,6 +83,11 @@ export async function publishVendorCard({
   if (!targets.length) return refused('group-relay-off');
 
   const signed = event || await buildVendorCardEvent(profile || {}, identity?.sk, now);
+  assertCurrent();
+  if (import.meta.env?.VITE_TEST_HOOKS === '1' && typeof window !== 'undefined' && window.__beforeVendorCardPublish) {
+    await window.__beforeVendorCardPublish();
+    assertCurrent();
+  }
   if (!signed) return refused('no-account');
   if (!carriesOnlyTheCard(signed)) return refused('card-carries-extra');
 
@@ -83,16 +95,20 @@ export async function publishVendorCard({
   try {
     if (!pool) {
       const { SimplePool } = await import('nostr-tools');
+      assertCurrent();
       pool = new SimplePool();
     }
+    assertCurrent();
     const results = await Promise.allSettled(pool.publish(targets, signed));
+    assertCurrent();
     return {
       published: results.some((result) => result.status === 'fulfilled'),
       skipped: null,
       relays: [...targets],
       id: signed.id,
     };
-  } catch {
+  } catch (error) {
+    if (error?.code === 'SECURITY_CONTEXT_EXPIRED') throw error;
     return refused('publish-failed');
   } finally {
     if (pool && !injected) {

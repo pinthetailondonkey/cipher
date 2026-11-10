@@ -79,6 +79,13 @@ uses a proof per outbound operation, but through the legacy v1 authority.
 | 5-minute existing-session lease | Fewer authority round trips and better tolerance of short relay/authority outages | A single valid lease can remain usable up to five minutes after revocation; needs a new proof schema scoped to a session/device, not a per-operation response |
 | 1-hour existing-session lease | Better tolerance of longer outages | Much larger stale-authorization period; high value if an endpoint or lease is compromised; also requires a new schema and replay controls |
 
+The product owner separately selected a five-minute post-revocation D1
+grace and a 24-hour maximum age for the sender's pinned registry head at send
+time as test-profile defaults; see `R5-SEND-TIME-REVOCATION-DECISION.md`.
+These do not change the current 30-second per-operation proof cap and do not
+approve a reusable five-minute session lease. The time evidence, receiver
+freshness, and offline-delivery rules still need specification and review.
+
 Longer lifetimes do not bound a compromised old authority that can issue new
 leases to peers still pinned to the old policy. Any lease duration bounds only
 one issued authorization, and a partitioned peer cannot know a replacement
@@ -253,6 +260,28 @@ generation number alone.
 
 ## R5 authority bridge implementation status (isolated, not production)
 
+### Local account lifecycle fence (isolated, not production)
+
+`src/lib/securityContextFence.js` supplies a tab-specific incarnation marker
+and a fail-closed capability. Account restore/unlock/login creates a fresh
+marker; a local lock retires only that tab, while account removal and panic
+wipe invalidate all known same-origin markers for the account (panic wipe
+enumerates all known accounts). Cross-tab BroadcastChannel messages prompt
+immediate cleanup, and suspended tabs re-check durable marker state before
+the fenced R5 transaction/outbox operations continue. The marker is a
+cancellation signal, not an authorization credential. It cannot stop hostile
+same-origin code, revoke already-sent network bytes, or provide an atomic
+transaction boundary with IndexedDB.
+
+The isolated v2 ratchet commit and outbox paths now require/recheck this
+fence, and a real Chromium test mounts two `useIdentity` instances over shared
+browser storage to verify independent tab incarnations, tab-local lock, and
+account-wide invalidation. This is lifecycle groundwork only: production
+NIP-44 DM sends are not fenced or switched, and authority secret/pin/peer
+databases and asynchronous recovery/provider operations are not yet bound to
+the fence. A stronger cross-tab commit/invalidation serialization contract
+and resource-complete wipe outcomes remain required before R5 production use.
+
 The following experimental bridge is implemented behind explicit module APIs
 with no call site in `useNIP44DM.js`:
 
@@ -306,8 +335,13 @@ WebSocket, or vodozemac message processing.
    is no safe proof refresh for that immutable envelope yet. Strict expiry
    therefore limits delayed/offline delivery; accepting the proof at message
    creation time would permit a compromised sender to backdate a previously
-   authorized message. A protocol decision is required before claiming both
-   strict 30-second freshness and long-offline delivery.
+   authorized message. `docs/R5-DELIVERY-SEMANTICS-DECISION.md` records a
+   candidate that keeps the ratchet operation immutable and refreshes a
+   separately authenticated delivery envelope. It is explicitly for
+   independent review; duplicate ordering, expiry at relay versus receipt,
+   deduplication retention, rollback, and exact wire bytes remain undecided.
+   Do not extend the prototype or claim both strict freshness and long-offline
+   delivery until those points are specified and reviewed.
 3. The contact fingerprint and recovery-root candidate functions have no
    ordinary-user screens, QR scanning/display, or usability validation. A
    typed fingerprint check alone is not evidence of an independent channel.

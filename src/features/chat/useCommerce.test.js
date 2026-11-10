@@ -21,6 +21,8 @@ const SOURCE = readFileSync(new URL('./useCommerce.js', import.meta.url), 'utf8'
   .replace(/\s+\)/g, ')')
   .replace(/\[\s+/g, '[')
   .replace(/\s+\]/g, ']');
+const CHECKOUT_SHEET = readFileSync(new URL('../../components/OneTapCheckout.jsx', import.meta.url), 'utf8')
+  .replace(/\s+/g, ' ');
 
 test('row 6b: the shared-address lookup is guarded by Object.hasOwn, not a bare index', () => {
   assert.match(
@@ -78,4 +80,49 @@ test('the checkout callback reports failed, queued, or relay-accepted sends from
     'the thread opens after the write result is known');
   assert.doesNotMatch(SOURCE, /setCheckoutProduct\(null\)/,
     'the shared checkout stays mounted long enough to show the outcome');
+});
+
+test('chain checks capture the active incarnation and recheck after the watcher before local effects', () => {
+  const branch = SOURCE.slice(SOURCE.indexOf("if (action === 'check_chain')"), SOURCE.indexOf("if (action === 'mark_shipped')"));
+  assert.match(branch, /const securityFence = identity\?\.securityFence/);
+  assert.match(branch, /const assertCurrent = \(\) => \{ assertSecurityContextOwner\(securityFence, identity\?\.pk\)/);
+  assert.match(branch, /const outcome = await runPaymentCheck\([\s\S]*?\); assertCurrent\(\); if \(outcome\.short\)/);
+  assert.match(branch, /assertCurrent\(\); if \(!scopedSetVerified\(`receipt_\$\{msg\.id\}`, receipt\)\)/);
+  assert.match(branch, /assertCurrent\(\); if \(!scopedSetVerified\('consumed_txids', nextLedger\)\)/);
+  assert.match(branch, /await deliverOrderUpdate\([\s\S]*?securityFence,/);
+});
+
+test('payment order updates recheck the supplied context after sending and before local persistence', () => {
+  assert.match(SOURCE, /const deliverOrderUpdate = async \([\s\S]*?securityFence = identity\?\.securityFence\) => \{ let result; try \{ assertSecurityContextOwner\(securityFence, identity\?\.pk\); result = await sendDM\([\s\S]*?assertSecurityContextOwner\(securityFence, identity\?\.pk\);/);
+  // Own-row persistence sits between the post-send recheck and the saved
+  // patch; its inner try keeps a fence assert of its own, then control
+  // returns to the original before-persist check ahead of updateLocalOrder.
+  assert.match(SOURCE, /assertSecurityContextOwner\(securityFence, identity\?\.pk\); \/\/ Persist this device's own sent update row under the rumor id[\s\S]*?await saveMessage\(peer, ownRow\); assertSecurityContextOwner\(securityFence, identity\?\.pk\);[\s\S]*?\} catch \(rowError\)[\s\S]*?\} const saved = await updateLocalOrder\(peer, payload\.orderId, localPatch\); assertSecurityContextOwner\(securityFence, identity\?\.pk\);/);
+});
+
+test('order acceptance, delivery-note access, and local order patches retain the action incarnation', () => {
+  assert.match(SOURCE, /const updateLocalOrder = async \([\s\S]*?assertSecurityContextOwner\(securityFence, identity\?\.pk\); useChatStore\.getState\(\)\.setDms[\s\S]*?const saved = await patchMessage\(orderId, updateData\); assertSecurityContextOwner\(securityFence, identity\?\.pk\);/);
+  const note = SOURCE.slice(SOURCE.indexOf("if (action === 'open_delivery_note')"), SOURCE.indexOf("if (!['accept_order'"));
+  assert.match(note, /await getAuthenticatedPool\(identity\); assertSecurityContextOwner\(securityFence, identity\?\.pk\)/);
+  assert.match(note, /await openDeadDropNote\([\s\S]*?assertSecurityContextOwner\(securityFence, identity\?\.pk\)/);
+  const acceptance = SOURCE.slice(SOURCE.indexOf("if (action === 'accept_order')"), SOURCE.indexOf("if (action === 'decline_order'"));
+  assert.match(acceptance, /await loadVendorPaymentConfig\(identity\); assertCurrent\(\)/);
+  assert.match(acceptance, /await getOrderPaymentMethods\([\s\S]*?assertCurrent\(\)/);
+  assert.match(acceptance, /await sendDM\(msg\.pubkey, payload\); assertCurrent\(\)/);
+});
+
+test('checkout and product-send callbacks fence async completion before UI effects', () => {
+  const checkout = SOURCE.slice(SOURCE.indexOf('const sendCheckoutOrder = async'), SOURCE.indexOf('// Keep the delivery-note checkout'));
+  assert.match(checkout, /securityFence = requireIdentityFence\(\)/);
+  assert.match(checkout, /await saveMessage\(vendorPubkey, optimisticMessage\); securityFence\.assertCurrent\(\)/);
+  assert.match(checkout, /await sendDM\(vendorPubkey, payload, tempId\); securityFence\.assertCurrent\(\)/);
+  assert.match(checkout, /securityFence\.assertCurrent\(\); setDms\([\s\S]*?openChat\('dm', vendorPubkey\)/);
+  const edited = SOURCE.slice(SOURCE.indexOf('const handleSaveEditedProduct'), SOURCE.indexOf('const handleBroadcastSubmit'));
+  assert.match(edited, /await sendGroupMessage\([\s\S]*?securityFence\.assertCurrent\(\)/);
+  assert.match(edited, /await sendDM\(activeDm, payload\); securityFence\.assertCurrent\(\)/);
+  const broadcastStart = SOURCE.indexOf('const handleBroadcastSubmit');
+  const broadcast = SOURCE.slice(broadcastStart, SOURCE.indexOf('return {', broadcastStart));
+  assert.match(broadcast, /await Promise\.allSettled\([\s\S]*?\); securityFence\.assertCurrent\(\)/);
+  assert.match(CHECKOUT_SHEET, /const securityFence = identity\?\.securityFence;[\s\S]*?const pool = await getAuthenticatedPool\(identity\); assertSecurityContextOwner\(securityFence, identity\?\.pk\)/);
+  assert.match(CHECKOUT_SHEET, /await createDeadDropNote\([\s\S]*?assertSecurityContextOwner\(securityFence, identity\?\.pk\); const result = await onConfirmOrder/);
 });

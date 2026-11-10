@@ -14,14 +14,19 @@ import { publishOwnRelayList, relaysForPeer } from '../lib/dmRelays';
 import { sortMessages, stampArrival } from '../features/chat/media';
 import { rumorTags, sealAndWrap, withBuzzLabel, wrapForGateway, buzzLabelFor, GIFT_WRAP_KIND, padRumorContent, unpadRumorBody } from '../lib/giftWrap';
 import { openDmTransportEvent } from '../lib/giftUnwrap';
-import { storedGatewayPubkey as activeGatewayPubkey, rememberGatewayPubkey } from '../lib/pushGatewayStore';
+import { storedGatewayPubkey as activeGatewayPubkey } from '../lib/pushGatewayStore';
 import { conversationKey } from '../lib/dmKeys';
 import { dmSubscriptionFilters } from '../lib/dmSubscription';
 import { noteFirstSeen } from '../lib/safetyNumber';
 import { clampedExpiresAt } from '../lib/disappearing';
 import { acceptPayment, rememberPublicView, receiptBindsOrder, sendCountersignOnce, stripArrivingReceiptMark } from '../lib/proofOfTrade';
 import { deviceWatchedOrderOf, orderRecordForReceipt } from '../lib/orderActions';
-import { scopedSet, scopedSetVerified } from '../lib/storage';
+import { scopedSetVerified } from '../lib/storage';
+import { assertSecurityContextOwner } from '../lib/securityContextFence';
+
+function assertIdentityCurrent(identity) {
+  assertSecurityContextOwner(identity?.securityFence, identity?.pk);
+}
 
 function sendCountersign(sendDM, counterparty, orderId, accepted) {
   return sendCountersignOnce({
@@ -124,7 +129,9 @@ export function useNIP44DM({ identity }) {
         : null);
 
     try {
+      assertIdentityCurrent(identity);
       const { nip44, nip59 } = await import('nostr-tools');
+      assertIdentityCurrent(identity);
       // NIP-59: the label moves inside the sealed payload as `t`, so the
       // relay-visible event carries no sender and no t-tag. Only the
       // recipient's key opens the wrap and reads what kind of message it was.
@@ -139,15 +146,18 @@ export function useNIP44DM({ identity }) {
         tags: rumorTags({ recipient: targetDm, clientId, replyId }),
         content: encrypted,
       }, identity.sk);
-      const { seal, wrap } = sealAndWrap(rumor, { senderSk: identity.sk, recipientPubkey: targetDm });
+      const { wrap } = sealAndWrap(rumor, { senderSk: identity.sk, recipientPubkey: targetDm });
 
       let targets = generalRelays.slice();
       let pool = null;
       try {
         pool = await getAuthenticatedPool(identity);
+        assertIdentityCurrent(identity);
         publishOwnRelayList(identity).catch(() => {});
         targets = await relaysForPeer(identity, targetDm);
+        assertIdentityCurrent(identity);
       } catch (publishError) {
+        assertIdentityCurrent(identity);
         console.warn('[DM] Offline publish deferred to outbox:', publishError);
       }
       // Write-ahead (see publishWriteAhead): the signed event is in the outbox
@@ -160,6 +170,7 @@ export function useNIP44DM({ identity }) {
       // tag off the wire. Silent signals wrap nothing. The box reads only its
       // own layer; the recipient's seal inside stays sealed.
       if (!effectKey && gatewayKey && pool && buzzLabelFor(payload)) {
+        assertIdentityCurrent(identity);
         const gatewayWrap = wrapForGateway({
           senderSk: identity.sk,
           recipientPubkey: targetDm,
@@ -174,6 +185,7 @@ export function useNIP44DM({ identity }) {
         // A countersign or other application effect reserves one signed event
         // and its outbox row atomically. A second tab or crash retry reuses
         // that exact event id; it never constructs a second logical send.
+        assertIdentityCurrent(identity);
         const reservation = await reserveMessageEffect({
           owner: identity.pk,
           idempotencyKey: effectKey,
@@ -181,10 +193,12 @@ export function useNIP44DM({ identity }) {
           event: wrap,
           relays: targets,
         });
+        assertIdentityCurrent(identity);
         if (reservation.status === 'sent') {
           return { success: true, duplicate: true, eventId: reservation.eventId, relayCount: 0 };
         }
         if (reservation.created && gatewayKey && pool && buzzLabelFor(payload)) {
+          assertIdentityCurrent(identity);
           const gatewayWrap = wrapForGateway({
             senderSk: identity.sk,
             recipientPubkey: targetDm,
@@ -197,24 +211,29 @@ export function useNIP44DM({ identity }) {
         }
         const effectEvent = reservation.event;
         const effectRelays = reservation.relays.length ? reservation.relays : targets;
+        assertIdentityCurrent(identity);
         const results = pool
           ? await Promise.allSettled(pool.publish(effectRelays, effectEvent))
           : [];
+        assertIdentityCurrent(identity);
         const okCount = results.filter((result) => result.status === 'fulfilled').length;
         if (okCount > 0) {
           try { await completeMessageEffect({ owner: identity.pk, eventId: reservation.eventId }); }
           catch (error) { console.warn('[DM] A delivered effect remains queued for idempotent recovery:', error); }
-          return { success: true, event: effectEvent, results, relayCount: okCount };
+          return { success: true, event: effectEvent, rumorId: rumor.id, results, relayCount: okCount };
         }
-        return { success: true, queued: true, event: effectEvent, results, relayCount: 0 };
+        return { success: true, queued: true, event: effectEvent, rumorId: rumor.id, results, relayCount: 0 };
       }
+      assertIdentityCurrent(identity);
       const sent = await publishWriteAhead(wrap, targets, () => {
+        assertIdentityCurrent(identity);
         if (!pool) throw new Error('No relay connection yet.');
         return pool.publish(targets, wrap);
-      }, { writeAhead: !ephemeral });
-      if (!sent.queued) return { success: true, event: wrap, results: sent.results, relayCount: sent.okCount };
+      }, { writeAhead: !ephemeral, assertCurrent: () => assertIdentityCurrent(identity) });
+      assertIdentityCurrent(identity);
+      if (!sent.queued) return { success: true, event: wrap, rumorId: rumor.id, results: sent.results, relayCount: sent.okCount };
       console.warn('[DM] All relays rejected:', sent.results);
-      return { success: true, queued: true, event: wrap, results: sent.results, relayCount: 0 };
+      return { success: true, queued: true, event: wrap, rumorId: rumor.id, results: sent.results, relayCount: 0 };
     } catch (err) {
       console.error('[useNIP44DM] Send failed:', err);
       return { success: false, error: err.message };
@@ -236,9 +255,13 @@ export function useNIP44DM({ identity }) {
   const sendTypingIndicator = useCallback(async (recipientPubkey) => {
     if (!recipientPubkey || !identity?.sk || !/^[0-9a-f]{64}$/i.test(recipientPubkey) || !allowsTyping()) return;
     try {
+      assertIdentityCurrent(identity);
       const { nip44, nip59 } = await import('nostr-tools');
+      assertIdentityCurrent(identity);
       const pool = await getAuthenticatedPool(identity);
+      assertIdentityCurrent(identity);
       const targets = await relaysForPeer(identity, recipientPubkey);
+      assertIdentityCurrent(identity);
       const targetDm = recipientPubkey.trim().toLowerCase();
       // Same two layers sendDM uses: the payload is encrypted to the pair, and
       // the rumor carries that ciphertext. Ingest decrypts event.content, so a
@@ -254,7 +277,9 @@ export function useNIP44DM({ identity }) {
         content: encrypted,
       }, identity.sk);
       const { wrap } = sealAndWrap(rumor, { senderSk: identity.sk, recipientPubkey: targetDm });
+      assertIdentityCurrent(identity);
       const results = await Promise.allSettled(pool.publish(targets.length ? targets : generalRelays, wrap));
+      assertIdentityCurrent(identity);
       if (results.every((result) => result.status === 'rejected')) {
         console.warn('[DM] Typing indicator was rejected by all relays:', results);
       }
@@ -270,6 +295,7 @@ export function useNIP44DM({ identity }) {
 
     const setup = async () => {
       const pool = await getAuthenticatedPool(identity);
+      assertIdentityCurrent(identity);
       if (!mounted.current) return;
       publishOwnRelayList(identity).catch(() => {});
       const dmFilters = dmSubscriptionFilters(identity.pk, since);
@@ -292,7 +318,9 @@ export function useNIP44DM({ identity }) {
           onevent: async (incoming) => {
             if (!mounted.current) return;
             try {
+              assertIdentityCurrent(identity);
               const { nip44 } = await import('nostr-tools');
+              assertIdentityCurrent(identity);
               // NIP-59 transition: a wrapped DM (kind 1059) opens here before
               // anything downstream reads it; a legacy bare kind-4 keeps its
               // old shape and goes through unchanged.
@@ -308,7 +336,7 @@ export function useNIP44DM({ identity }) {
               // forget — never blocks ingestion.
               const serving = servingRelay.get(event.id);
               servingRelay.delete(event.id);
-              noteFirstSeen(counterparty, serving ? [serving] : null).catch(() => {});
+              noteFirstSeen(counterparty, serving ? [serving] : null, undefined, identity.securityFence).catch(() => {});
               // Audit H8: drop messages from blocked users at ingestion
               const blocked = useChatStore.getState().blockedUsers || [];
               if (blocked.includes(counterparty)) return;
@@ -325,7 +353,9 @@ export function useNIP44DM({ identity }) {
               // event. Receipt updates remain eligible for their explicit
               // durable countersign retry path.
               const alreadyStored = !isSender && !!(await db.messages.get(event.id));
+              assertIdentityCurrent(identity);
               const tombstoned = !isSender && !!(await db.tombstones.get(event.id));
+              assertIdentityCurrent(identity);
               if (tombstoned) return;
               if (alreadyStored && !(data.type === 'order_update' && data.receipt)) return;
 
@@ -336,6 +366,7 @@ export function useNIP44DM({ identity }) {
                   const thread = useChatStore.getState().dms?.[counterparty] || [];
                   const known = thread.some((message) => message?.isSender);
                   await handleCallSignal({ data, from: counterparty, known, eventId: event.id, createdAt: event.created_at });
+                  assertIdentityCurrent(identity);
                 }
                 return;
               }
@@ -355,6 +386,7 @@ export function useNIP44DM({ identity }) {
                 // our messages as 'sent', and a tick held only in memory died
                 // on reload. Scoped to messages at or before the receipt.
                 await markSentMessagesRead(counterparty, upTo);
+                assertIdentityCurrent(identity);
                 setDms(prev => {
                   const msgs = prev[counterparty] || [];
                   return { ...prev, [counterparty]: msgs.map(m => (m.isSender && Number(m.timestamp) <= upTo && m.deliveryStatus !== 'sending' && m.deliveryStatus !== 'failed' ? { ...m, read: true, deliveryStatus: 'read' } : m)) };
@@ -379,8 +411,10 @@ export function useNIP44DM({ identity }) {
                 data = { ...data, expires_at: clampedExpiresAt(data.expires_at) ?? undefined };
               }
               if (dmControlAction(data) === 'gkey') {
-                openDBFor(identity.pk);
-                const installed = await installMemberGroupKey(data, event.pubkey);
+                if (!identity.securityFence) return;
+                openDBFor(identity.pk, identity.securityFence);
+                const installed = await installMemberGroupKey(data, event.pubkey, identity.securityFence);
+                assertIdentityCurrent(identity);
                 if (!installed) console.error('[group-key] A key message arrived and was not installed.');
                 return;
               }
@@ -392,6 +426,7 @@ export function useNIP44DM({ identity }) {
                 // written back only if the gate says yes.
                 data = stripArrivingReceiptMark(data);
                 if (await receiptMayBind(data, counterparty)) {
+                  assertIdentityCurrent(identity);
                   const accepted = acceptPayment(data, identity.sk);
                   if (accepted) {
                     acceptedReceipt = accepted;
@@ -412,6 +447,7 @@ export function useNIP44DM({ identity }) {
                 replyTo: replyTag ? replyTag[1] : null
               });
               const insertion = await saveMessageOnce(counterparty, newMsg);
+              assertIdentityCurrent(identity);
               if (insertion.status === 'tombstoned') return;
               if (!['inserted', 'exists'].includes(insertion.status)) {
                 console.warn('[DM] The event was not durably stored; its application effects were deferred.', insertion.status);
@@ -432,6 +468,7 @@ export function useNIP44DM({ identity }) {
               }
               if (isSender && clientId) {
                 const optimisticMessage = await db.messages.where('clientId').equals(clientId).first();
+                assertIdentityCurrent(identity);
                 if (optimisticMessage?.chatId === counterparty && optimisticMessage.isSender && optimisticMessage.id !== event.id) {
                   await db.messages.delete(optimisticMessage.id);
                 }
@@ -439,7 +476,9 @@ export function useNIP44DM({ identity }) {
               // Read before the save: whether this id is already stored, was
               // deleted here, and where the chat's read marker stands.
               const lastRead = isSender ? 0 : ((await db.chatReads.get(counterparty))?.lastRead || 0);
+              assertIdentityCurrent(identity);
               await saveMessage(counterparty, newMsg);
+              assertIdentityCurrent(identity);
               if (!isSender && insertion.status === 'inserted') {
                 const state = useChatStore.getState();
                 const chatOpen = state.activeDm === counterparty;
@@ -482,12 +521,16 @@ export function useNIP44DM({ identity }) {
 
   // FULL FETCH OF DM HISTORY
   const fetchDMs = useCallback(async () => {
+    assertIdentityCurrent(identity);
     const pool = await getAuthenticatedPool(identity);
+    assertIdentityCurrent(identity);
     const { nip44 } = await import('nostr-tools');
+    assertIdentityCurrent(identity);
     const [sentDms, recvDms] = await Promise.all([
       queryAllPages(pool, generalRelays, { kinds: [4], authors: [identity.pk] }),
       queryAllPages(pool, generalRelays, { kinds: [4, GIFT_WRAP_KIND], '#p': [identity.pk] })
     ]);
+    assertIdentityCurrent(identity);
     // NIP-59 transition: wraps open into their rumors before the merge, so
     // every branch below reads one shape. A bare kind-4 passes through as its
     // own envelope, so an old message still opens.
@@ -500,16 +543,19 @@ export function useNIP44DM({ identity }) {
     const readUpTo = new Map();
     for (const ev of allDms) {
       try {
+        assertIdentityCurrent(identity);
         const isSender = ev.pubkey === identity.pk;
         const counterparty = isSender ? ev.tags.find(t => t[0] === 'p')?.[1] : ev.pubkey;
         if (!counterparty) continue;
         const existingMessage = await db.messages.get(ev.id);
+        assertIdentityCurrent(identity);
         const deletedMessage = await db.tombstones.get(ev.id);
+        assertIdentityCurrent(identity);
         if (deletedMessage) continue;
         // Safety numbers: same first-seen freeze on the history path. A
         // merged history fetch has no per-event attribution, so the honest
         // first-seen answer here is the set the query itself ran on.
-        noteFirstSeen(counterparty).catch(() => {});
+        noteFirstSeen(counterparty, null, undefined, identity.securityFence).catch(() => {});
         const blocked = useChatStore.getState().blockedUsers || [];
         if (blocked.includes(counterparty)) continue;
         const shared = conversationKey(identity.sk, counterparty);
@@ -524,8 +570,10 @@ export function useNIP44DM({ identity }) {
         // and countersigns no receipt, and it saves nowhere.
         if (dmExpired(data)) continue;
         if (dmControlAction(data) === 'gkey') {
-          openDBFor(identity.pk);
-          const installed = await installMemberGroupKey(data, ev.pubkey);
+          if (!identity.securityFence) continue;
+          openDBFor(identity.pk, identity.securityFence);
+          const installed = await installMemberGroupKey(data, ev.pubkey, identity.securityFence);
+          assertIdentityCurrent(identity);
           if (!installed) console.error('[group-key] A key message arrived and was not installed.');
           continue;
         }
@@ -545,6 +593,7 @@ export function useNIP44DM({ identity }) {
           // comes back through history is the peer's text too.
           data = stripArrivingReceiptMark(data);
           if (await receiptMayBind(data, counterparty)) {
+            assertIdentityCurrent(identity);
             const accepted = acceptPayment(data, identity.sk);
             if (accepted) {
               acceptedReceipt = accepted;
@@ -557,6 +606,7 @@ export function useNIP44DM({ identity }) {
         const clientId = ev.tags.find(t => t[0] === 'client')?.[1];
         if (isSender && clientId) {
           const optimisticMessage = await db.messages.where('clientId').equals(clientId).first();
+          assertIdentityCurrent(identity);
           if (optimisticMessage?.chatId === counterparty && optimisticMessage.isSender && optimisticMessage.id !== ev.id) {
             await db.messages.delete(optimisticMessage.id);
           }
@@ -570,6 +620,7 @@ export function useNIP44DM({ identity }) {
           isGroup: false
         };
         const insertion = await saveMessageOnce(counterparty, historyMessage);
+        assertIdentityCurrent(identity);
         if (insertion.status === 'tombstoned') continue;
         if (!['inserted', 'exists'].includes(insertion.status)) continue;
         if (acceptedReceipt) {
@@ -582,11 +633,18 @@ export function useNIP44DM({ identity }) {
           sendCountersign(sendDM, counterparty, data.orderId, acceptedReceipt);
         }
         await saveMessage(counterparty, historyMessage);
+        assertIdentityCurrent(identity);
       } catch (error) {
+        if (error?.code === 'SECURITY_CONTEXT_EXPIRED') throw error;
         console.error('[DM] Could not save a message:', error);
       }
     }
-    for (const [peer, upTo] of readUpTo) await markSentMessagesRead(peer, upTo);
+    assertIdentityCurrent(identity);
+    for (const [peer, upTo] of readUpTo) {
+      assertIdentityCurrent(identity);
+      await markSentMessagesRead(peer, upTo);
+      assertIdentityCurrent(identity);
+    }
     const counterparties = new Set();
     for (const ev of allDms) {
       const isSender = ev.pubkey === identity.pk;

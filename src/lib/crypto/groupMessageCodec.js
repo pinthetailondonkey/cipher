@@ -3,14 +3,14 @@ import { verifyEvent } from 'nostr-tools';
 import { encryptGroupMessage, decryptGroupMessage } from './groupCipher';
 import { resolveControlSender } from './groupMembership';
 const KEY_WAIT_MS = 5000; const KEY_POLL_MS = 200;
-async function waitForKey(groupId) {
+async function waitForKey(groupId, securityFence) {
   const start = Date.now();
-  while (Date.now() - start < KEY_WAIT_MS) { const k = await groupKeyStore.getCurrentGroupKey(groupId); if (k) return k; await new Promise(r => setTimeout(r, KEY_POLL_MS)); }
+  while (Date.now() - start < KEY_WAIT_MS) { const k = await groupKeyStore.getCurrentGroupKey(groupId, securityFence); if (k) return k; await new Promise(r => setTimeout(r, KEY_POLL_MS)); }
   return null;
 }
-export async function encodeGroupPayload({ groupId, payload, senderPubkey, by, waitForKey: wfk = false }) {
-  let current = await groupKeyStore.getCurrentGroupKey(groupId);
-  if (!current && wfk) current = await waitForKey(groupId);
+export async function encodeGroupPayload({ groupId, payload, senderPubkey, by, waitForKey: wfk = false, securityFence = null }) {
+  let current = await groupKeyStore.getCurrentGroupKey(groupId, securityFence);
+  if (!current && wfk) current = await waitForKey(groupId, securityFence);
   if (!current) return { pending: true };
   // Step 2 (gmIdentityWire.js): senderPubkey may be the per-group ACTOR pin
   // rather than the account pubkey. The AAD binds whatever key sits on the
@@ -58,7 +58,7 @@ function parseBody(plaintext) {
 //     sender's own claim, so there is no cutoff to trust. A group that
 //     already holds a key is an encrypted group: its tagless content is
 //     refused, not shown.
-export async function decodeGroupEvent({ event, groupId, store = groupKeyStore, members = null, requireMember = true }) {
+export async function decodeGroupEvent({ event, groupId, store = groupKeyStore, members = null, requireMember = true, securityFence = null }) {
   let sender = '';
   if (requireMember) {
     // Historical epoch keys remain useful for authorized members' history,
@@ -80,7 +80,7 @@ export async function decodeGroupEvent({ event, groupId, store = groupKeyStore, 
   if (!epTag) {
     const parsed = parseBody(event.content);
     if (parsed.type === 'gkey_req') return { plaintext: event.content, parsed, legacy: true, ...(sender ? { sender } : {}) };
-    const held = await store.getCurrentGroupKey(groupId);
+    const held = await store.getCurrentGroupKey(groupId, securityFence);
     if (held) {
       return { error: 'unencrypted-refused', refused: true, reason: 'This group is encrypted; a message with no epoch is not one of its messages.' };
     }
@@ -88,7 +88,7 @@ export async function decodeGroupEvent({ event, groupId, store = groupKeyStore, 
   }
   const epoch = parseInt(epTag[1], 10);
   if (!Number.isInteger(epoch) || epoch < 0) return { error: 'decrypt-failed', epoch, reason: 'bad epoch tag' };
-  const key = await store.getGroupKey(groupId, epoch);
+  const key = await store.getGroupKey(groupId, epoch, securityFence);
   if (!key) return { pending: true, epoch, ...(sender ? { sender } : {}) };
   try {
     const env = JSON.parse(event.content);

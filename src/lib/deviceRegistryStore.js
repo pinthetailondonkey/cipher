@@ -1,7 +1,7 @@
 // Local monotonic checkpoint for account-authorized device registry events.
 // The registry remains out of relay-visible group traffic; these helpers do
 // not publish it or claim that a relay can prove global freshness.
-import { db, currentOwner } from '../db.js';
+import { db, currentOwner, runAccountDbWriteForFence } from '../db.js';
 import { openRatchetState, sealRatchetState } from './ratchetStateAtRest.js';
 import { verifyDeviceRegistryEvent } from './deviceEnrollment.js';
 import { getPublicKey } from 'nostr-tools/pure';
@@ -13,15 +13,23 @@ export class DeviceRegistryConflict extends Error {
   }
 }
 
-function assertOwner(owner) {
-  if (!owner || currentOwner() !== owner) throw new Error('Unlock the matching account before updating its device registry.');
+function assertOwner(owner, securityFence) {
+  if (!owner || currentOwner() !== owner || securityFence?.context?.owner !== owner
+    || typeof securityFence?.assertCurrent !== 'function') {
+    const error = new Error('A captured security context for the matching account is required.');
+    error.code = 'SECURITY_CONTEXT_EXPIRED';
+    throw error;
+  }
+  securityFence.assertCurrent();
 }
 
-export async function loadDeviceRegistry(owner, now = Math.floor(Date.now() / 1000)) {
-  assertOwner(owner);
+export async function loadDeviceRegistry(owner, now = Math.floor(Date.now() / 1000), securityFence = null) {
+  assertOwner(owner, securityFence);
   const row = await db.deviceAuth.get(owner);
+  assertOwner(owner, securityFence);
   if (!row) return null;
   const event = await openRatchetState({ owner, collection: 'device-registry', id: owner, sealed: row.sealed });
+  assertOwner(owner, securityFence);
   const registry = verifyDeviceRegistryEvent(event, owner, now, { minimumGeneration: row.generation });
   if (!registry || registry.generation !== row.generation) throw new Error('The stored device registry failed authentication.');
   return { version: row.version, generation: row.generation, event, registry };
@@ -31,8 +39,8 @@ export async function loadDeviceRegistry(owner, now = Math.floor(Date.now() / 10
 // DM envelope. The signer is the peer account itself; generation checkpoints
 // and equivocation checks mirror the local registry, while the event remains
 // sealed under this account's at-rest key.
-export async function acceptPeerDeviceRegistry(owner, event, now = Math.floor(Date.now() / 1000)) {
-  assertOwner(owner);
+export async function acceptPeerDeviceRegistry(owner, event, now = Math.floor(Date.now() / 1000), securityFence = null) {
+  assertOwner(owner, securityFence);
   const peerPubkey = String(event?.pubkey || '').toLowerCase();
   const verified = verifyDeviceRegistryEvent(event, peerPubkey, now);
   if (!verified) throw new Error('The peer device registry signature, identity, or freshness is invalid.');
@@ -42,10 +50,11 @@ export async function acceptPeerDeviceRegistry(owner, event, now = Math.floor(Da
     id: peerPubkey,
     value: event,
   });
+  assertOwner(owner, securityFence);
   let version = 0;
-  await db.transaction('rw', 'peerDeviceAuth', async () => {
-    assertOwner(owner);
-    const existing = await db.peerDeviceAuth.get(peerPubkey);
+  await runAccountDbWriteForFence(securityFence, ['peerDeviceAuth'], async (database) => {
+    assertOwner(owner, securityFence);
+    const existing = await database.peerDeviceAuth.get(peerPubkey);
     if (existing && verified.generation < existing.generation) throw new DeviceRegistryConflict(peerPubkey);
     if (existing && verified.generation === existing.generation) {
       if (existing.eventId !== event.id) throw new DeviceRegistryConflict(peerPubkey);
@@ -53,7 +62,7 @@ export async function acceptPeerDeviceRegistry(owner, event, now = Math.floor(Da
       return;
     }
     version = (existing?.version ?? -1) + 1;
-    await db.peerDeviceAuth.put({
+    await database.peerDeviceAuth.put({
       peerPubkey,
       generation: verified.generation,
       eventId: event.id,
@@ -62,14 +71,16 @@ export async function acceptPeerDeviceRegistry(owner, event, now = Math.floor(Da
       sealed,
     });
   });
+  assertOwner(owner, securityFence);
   return version;
 }
 
-export async function loadPeerDeviceRegistry(owner, peerPubkey, now = Math.floor(Date.now() / 1000)) {
-  assertOwner(owner);
+export async function loadPeerDeviceRegistry(owner, peerPubkey, now = Math.floor(Date.now() / 1000), securityFence = null) {
+  assertOwner(owner, securityFence);
   const peer = String(peerPubkey || '').toLowerCase();
   if (!/^[0-9a-f]{64}$/.test(peer)) throw new Error('A valid peer account is required.');
   const row = await db.peerDeviceAuth.get(peer);
+  assertOwner(owner, securityFence);
   if (!row) return null;
   const event = await openRatchetState({
     owner,
@@ -77,6 +88,7 @@ export async function loadPeerDeviceRegistry(owner, peerPubkey, now = Math.floor
     id: peer,
     sealed: row.sealed,
   });
+  assertOwner(owner, securityFence);
   const registry = verifyDeviceRegistryEvent(event, peer, now, { minimumGeneration: row.generation });
   if (!registry || registry.generation !== row.generation || event.id !== row.eventId) {
     throw new Error('The stored peer device registry failed authentication.');
@@ -84,15 +96,16 @@ export async function loadPeerDeviceRegistry(owner, peerPubkey, now = Math.floor
   return { version: row.version, generation: row.generation, event, registry };
 }
 
-export async function acceptDeviceRegistry(owner, event, now = Math.floor(Date.now() / 1000)) {
-  assertOwner(owner);
+export async function acceptDeviceRegistry(owner, event, now = Math.floor(Date.now() / 1000), securityFence = null) {
+  assertOwner(owner, securityFence);
   const verified = verifyDeviceRegistryEvent(event, owner, now);
   if (!verified) throw new Error('The device registry signature, account binding, or freshness is invalid.');
   const sealed = await sealRatchetState({ owner, collection: 'device-registry', id: owner, value: event });
+  assertOwner(owner, securityFence);
   let version = 0;
-  await db.transaction('rw', 'deviceAuth', 'ratchetDevices', async () => {
-    assertOwner(owner);
-    const existing = await db.deviceAuth.get(owner);
+  await runAccountDbWriteForFence(securityFence, ['deviceAuth', 'ratchetDevices'], async (database) => {
+    assertOwner(owner, securityFence);
+    const existing = await database.deviceAuth.get(owner);
     if (existing && verified.generation < existing.generation) throw new DeviceRegistryConflict(owner);
     if (existing && verified.generation === existing.generation) {
       if (existing.eventId !== event.id) throw new DeviceRegistryConflict(owner);
@@ -100,7 +113,7 @@ export async function acceptDeviceRegistry(owner, event, now = Math.floor(Date.n
       return;
     }
     version = (existing?.version ?? -1) + 1;
-    await db.deviceAuth.put({
+    await database.deviceAuth.put({
       accountPubkey: owner,
       generation: verified.generation,
       eventId: event.id,
@@ -109,11 +122,12 @@ export async function acceptDeviceRegistry(owner, event, now = Math.floor(Date.n
       sealed,
     });
     const revokedIds = new Set(verified.devices.filter((device) => device.status === 'revoked').map((device) => device.deviceId));
-    const localDeviceRows = await db.ratchetDevices.toArray();
+    const localDeviceRows = await database.ratchetDevices.toArray();
     for (const row of localDeviceRows) {
-      if (revokedIds.has(row.deviceId)) await db.ratchetDevices.delete(row.deviceId);
+      if (revokedIds.has(row.deviceId)) await database.ratchetDevices.delete(row.deviceId);
     }
   });
+  assertOwner(owner, securityFence);
   return version;
 }
 
@@ -130,9 +144,9 @@ function hexToBytes(value) {
 // transaction. If the write fails, neither the registry checkpoint nor the
 // credential becomes durable; callers must not publish the device bundle.
 export async function commitEnrolledDevice({
-  owner, event, deviceId, deviceSecret, now = Math.floor(Date.now() / 1000),
+  owner, event, deviceId, deviceSecret, now = Math.floor(Date.now() / 1000), securityFence = null,
 }) {
-  assertOwner(owner);
+  assertOwner(owner, securityFence);
   if (!(deviceSecret instanceof Uint8Array) || deviceSecret.length !== 32) {
     throw new Error('A valid independent device signing secret is required.');
   }
@@ -151,17 +165,18 @@ export async function commitEnrolledDevice({
       value: { deviceId, secretHex: bytesToHex(deviceSecret) },
     }),
   ]);
+  assertOwner(owner, securityFence);
   let version = 0;
-  await db.transaction('rw', 'deviceAuth', 'ratchetDevices', async () => {
-    assertOwner(owner);
+  await runAccountDbWriteForFence(securityFence, ['deviceAuth', 'ratchetDevices'], async (database) => {
+    assertOwner(owner, securityFence);
     const [authRow, deviceRow] = await Promise.all([
-      db.deviceAuth.get(owner),
-      db.ratchetDevices.get(deviceId),
+      database.deviceAuth.get(owner),
+      database.ratchetDevices.get(deviceId),
     ]);
     if (deviceRow) throw new DeviceRegistryConflict(owner);
     if (authRow && registry.generation <= authRow.generation) throw new DeviceRegistryConflict(owner);
     version = (authRow?.version ?? -1) + 1;
-    await db.deviceAuth.put({
+    await database.deviceAuth.put({
       accountPubkey: owner,
       generation: registry.generation,
       eventId: event.id,
@@ -169,22 +184,25 @@ export async function commitEnrolledDevice({
       updatedAt: Date.now(),
       sealed: sealedRegistry,
     });
-    await db.ratchetDevices.put({ deviceId, version: 0, updatedAt: Date.now(), sealed: sealedCredential });
+    await database.ratchetDevices.put({ deviceId, version: 0, updatedAt: Date.now(), sealed: sealedCredential });
   });
+  assertOwner(owner, securityFence);
   return version;
 }
 
-export async function loadDeviceCredential(owner, deviceId, now = Math.floor(Date.now() / 1000)) {
-  assertOwner(owner);
+export async function loadDeviceCredential(owner, deviceId, now = Math.floor(Date.now() / 1000), securityFence = null) {
+  assertOwner(owner, securityFence);
   const [authRow, deviceRow] = await Promise.all([
     db.deviceAuth.get(owner),
     db.ratchetDevices.get(deviceId),
   ]);
+  assertOwner(owner, securityFence);
   if (!authRow || !deviceRow) throw new Error('The enrolled device credential is unavailable.');
   const [event, credential] = await Promise.all([
     openRatchetState({ owner, collection: 'device-registry', id: owner, sealed: authRow.sealed }),
     openRatchetState({ owner, collection: 'devices', id: deviceId, sealed: deviceRow.sealed }),
   ]);
+  assertOwner(owner, securityFence);
   const registry = verifyDeviceRegistryEvent(event, owner, now, { minimumGeneration: authRow.generation });
   const secret = hexToBytes(credential?.secretHex);
   if (!registry || registry.generation !== authRow.generation

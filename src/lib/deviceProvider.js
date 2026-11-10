@@ -25,6 +25,16 @@ export async function ensureDeviceProvider() {
   return null;
 }
 
+// Drop only the in-memory copy for an account being locked. Providers without
+// a page-memory cache may omit this method.
+export function forgetDeviceProviderSecret(pubkey) {
+  if (!pubkey) return false;
+  const provider = getDeviceProvider();
+  if (typeof provider?.forget !== 'function') return true;
+  provider.forget(pubkey);
+  return true;
+}
+
 // One plain sentence for a screen that must say why it cannot go on. The
 // check runs before any recovery words are asked for: a device that cannot
 // hold a key cannot make or take an account, and telling someone after their

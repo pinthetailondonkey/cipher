@@ -225,6 +225,8 @@ export function signSpend({ privateKeyBytes, digest }) {
 }
 
 export function verifySpendSignature({ signatureBytes, publicKeyBytes, digest }) {
+  if (!(signatureBytes instanceof Uint8Array) || signatureBytes.length < 9
+    || signatureBytes[signatureBytes.length - 1] !== SIGHASH_ALL) return false;
   const der = signatureBytes.slice(0, signatureBytes.length - 1); // drop the sighash byte
   return secp256k1.verify(der, digest, publicKeyBytes, { format: 'der', prehash: false, lowS: true });
 }
@@ -243,8 +245,8 @@ export function finalizeReleaseTx({ fundingTxid, fundingVout = 0, fundingSats, w
   const digest = p2wshSignatureDigest({ tx, vinIndex: 0, witnessScriptHex, prevAmountSats: fundingSats });
   const vendorSig = signSpend({ privateKeyBytes: vendorKeyBytes, digest });
   const buyerSig = signSpend({ privateKeyBytes: buyerKeyBytes, digest });
-  const bytes = witnessTx(tx, [[buyerSig, vendorSig, RELEASE_WITNESS_CONTROL]]);
-  return { tx, digest, vendorSig, buyerSig, bytes: hexOf(bytes), txid: txidOf(bytes) };
+  const bytes = witnessTx(tx, [[buyerSig, vendorSig, RELEASE_WITNESS_CONTROL, hexToBytes(witnessScriptHex)]]);
+  return { tx, digest, vendorSig, buyerSig, bytes: hexOf(bytes), txid: spendTxId(tx) };
 }
 
 export function finalizeTimedRefundTx({ fundingTxid, fundingVout = 0, fundingSats, witnessScriptHex, outputs, delayBlocks, buyerKeyBytes }) {
@@ -255,8 +257,8 @@ export function finalizeTimedRefundTx({ fundingTxid, fundingVout = 0, fundingSat
   });
   const digest = p2wshSignatureDigest({ tx, vinIndex: 0, witnessScriptHex, prevAmountSats: fundingSats });
   const buyerSig = signSpend({ privateKeyBytes: buyerKeyBytes, digest });
-  const bytes = witnessTx(tx, [[buyerSig, REFUND_WITNESS_CONTROL]]);
-  return { tx, digest, buyerSig, bytes: hexOf(bytes), txid: txidOf(bytes) };
+  const bytes = witnessTx(tx, [[buyerSig, REFUND_WITNESS_CONTROL, hexToBytes(witnessScriptHex)]]);
+  return { tx, digest, buyerSig, bytes: hexOf(bytes), txid: spendTxId(tx) };
 }
 
 function hexOf(bytes) {

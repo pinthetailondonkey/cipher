@@ -1,4 +1,4 @@
-import { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useMemo } from 'react';
 import { nip19 } from 'nostr-tools';
 import { db, saveMessage, saveMessageOnce, markChatRead } from '../db';
 import { showNotification } from '../lib/notifications';
@@ -33,12 +33,14 @@ import { allowsGroupJoins } from '../lib/privacy.js';
 import { groupMetaAnnouncement } from '../lib/groupMetaAnnouncement.js';
 import { clampGroupBody } from '../lib/disappearing';
 import { buildSignedAct, buildControlAct, resolveActorSigner, signActProof } from '../lib/crypto/gmIdentityWire';
+import { forgetActors } from '../lib/crypto/gmIdentity.js';
 import { socketProofGroupId } from '../lib/groupSocketProof';
 import { buildAdmissionRequest, openAdmissionRequest } from '../lib/crypto/groupAdmission.js';
 import { pendingJoinsFor } from '../lib/groupJoinQueue.js';
 import { readAuthorityPin } from '../lib/crypto/authorityPins.js';
 import { actorPinOfRow } from '../lib/crypto/groupDoc.js';
 import { queueMemberBaseline } from '../lib/crypto/memberBaseline.js';
+import { assertSecurityContextOwner } from '../lib/securityContextFence.js';
 
 // How long an authenticated group stream must have held before its close counts
 // as a real drop rather than a refused handshake. A stream that authenticated
@@ -53,10 +55,14 @@ function currentGroupRelay() {
 }
 
 async function publishKeyDm(identity, dmEvent) {
+  assertSecurityContextOwner(identity?.securityFence, identity?.pk);
   const peer = dmEvent.tags?.find((tag) => tag[0] === 'p')?.[1];
   const relays = peer ? await relaysForPeer(identity, peer) : generalRelays.slice();
+  assertSecurityContextOwner(identity.securityFence, identity.pk);
   const pool = await getAuthenticatedPool(identity);
+  assertSecurityContextOwner(identity.securityFence, identity.pk);
   const results = await Promise.allSettled(pool.publish(relays.length ? relays : generalRelays, dmEvent));
+  assertSecurityContextOwner(identity.securityFence, identity.pk);
   if (!results.some((result) => result.status === 'fulfilled')) throw new Error('dm rejected');
 }
 
@@ -347,7 +353,7 @@ export async function refreshMemberDocs(identity, groupId) {
     ).catch(() => []);
     let stored = 0;
     for (const event of events) {
-      const result = await ingestMemberDocEvent(event, { pin, groupId });
+      const result = await ingestMemberDocEvent(event, { pin, groupId, securityFence: identity.securityFence });
       if (result?.stored) stored += 1;
     }
     return { stored };
@@ -389,6 +395,8 @@ function rejectAuthWaiters(session, error) {
 
 function flushGroupSubs(session) {
   if (session.ws?.readyState !== WebSocket.OPEN) return;
+  try { assertSecurityContextOwner(session.identity?.securityFence, session.identity?.pk); }
+  catch { return; }
   for (const [subId, filter] of session.subs) {
     session.ws.send(JSON.stringify(['REQ', subId, ...filter]));
   }
@@ -408,6 +416,8 @@ function markGroupAuthed(session) {
 
 function sendAuthResponse(session, challenge) {
   if (!challenge || !session.identity?.sk || session.authSent) return;
+  try { assertSecurityContextOwner(session.identity.securityFence, session.identity.pk); }
+  catch (error) { rejectAuthWaiters(session, error); return; }
   session.pendingChallenge = challenge;
   // Step 2 (MEMBERSHIP-DESIGN.md): the proof that opens a group box is
   // signed by this account's per-group actor key, not by the account key.
@@ -425,6 +435,7 @@ function sendAuthResponse(session, challenge) {
     challenge,
   }).then((signed) => {
     if (!signed || !session.ws || session.ws.readyState !== WebSocket.OPEN) return;
+    assertSecurityContextOwner(session.identity?.securityFence, session.identity?.pk);
     session.actorPin = signed.pin;
     session.actorGid = gid;
     session.proofGroupId = '';
@@ -469,6 +480,8 @@ export function groupIdsOnSession(session) {
 }
 
 function handleGroupSocketFrame(session, raw) {
+  try { assertSecurityContextOwner(session.identity?.securityFence, session.identity?.pk); }
+  catch { return; }
   let msg;
   try {
     msg = JSON.parse(raw);
@@ -523,12 +536,22 @@ function handleGroupSocketFrame(session, raw) {
   }
 
   for (const listener of session.listeners) {
-    try { listener(msg); } catch (error) { console.error('[NIP29] Group frame listener failed:', error); }
+    try {
+      const result = listener(msg);
+      if (result && typeof result.then === 'function') {
+        result.catch((error) => {
+          if (error?.code === 'SECURITY_CONTEXT_EXPIRED') return;
+          console.error('[NIP29] Group frame listener failed:', error);
+        });
+      }
+    } catch (error) { console.error('[NIP29] Group frame listener failed:', error); }
   }
 }
 
 function connectGroupSocket(session) {
   if (session.closed) return;
+  try { assertSecurityContextOwner(session.identity?.securityFence, session.identity?.pk); }
+  catch { session.closed = true; return; }
   session.authed = false;
   session.authedAt = null;
   session.authSent = false;
@@ -544,6 +567,8 @@ function connectGroupSocket(session) {
   session.ws = ws;
 
   ws.onopen = () => {
+    try { assertSecurityContextOwner(session.identity?.securityFence, session.identity?.pk); }
+    catch { session.closed = true; ws.close(); return; }
     // Opening is not working. A relay that accepts the socket and then refuses
     // AUTH would otherwise reset the ladder on every attempt, so the backoff
     // never grew: one connection a second, for as long as the screen was open.
@@ -568,6 +593,8 @@ function connectGroupSocket(session) {
       waiter.reject(new Error('Group relay socket closed'));
       session.okWaiters.delete(eventId);
     }
+    try { assertSecurityContextOwner(session.identity?.securityFence, session.identity?.pk); }
+    catch { session.closed = true; }
     if (!session.closed) {
       // A stream that authenticated and then held earns a fresh ladder, so the
       // next outage starts from one second rather than from the cap. A stream
@@ -586,6 +613,7 @@ function connectGroupSocket(session) {
 }
 
 export function closeGroupSessions() {
+  forgetActors();
   for (const session of groupSessions.values()) {
     session.closed = true;
     if (session.reconnectTimer) clearTimeout(session.reconnectTimer);
@@ -649,11 +677,13 @@ function whenGroupAuthed(session) {
 }
 
 async function publishAuthedGroupEvent(identity, event) {
+  assertSecurityContextOwner(identity?.securityFence, identity?.pk);
   const session = openGroupRelaySession(identity);
   const eventGroupId = event.tags?.find((tag) => tag[0] === 'h' && tag[1])?.[1];
   if (!session.authed && !session.actorGid && eventGroupId) session.proofGroupId = eventGroupId;
   if (session.pendingChallenge && !session.authSent) sendAuthResponse(session, session.pendingChallenge);
   await whenGroupAuthed(session);
+  assertSecurityContextOwner(identity.securityFence, identity.pk);
   if (!event.tags?.some((tag) => tag[0] === 'h' && tag[1])) {
     throw new Error('Group event is missing the h tag');
   }
@@ -664,6 +694,7 @@ async function publishAuthedGroupEvent(identity, event) {
     }, 12000);
     session.okWaiters.set(event.id, { resolve, reject, timer });
     try {
+      assertSecurityContextOwner(identity.securityFence, identity.pk);
       session.ws.send(JSON.stringify(['EVENT', event]));
     } catch (error) {
       clearTimeout(timer);
@@ -671,6 +702,7 @@ async function publishAuthedGroupEvent(identity, event) {
       reject(error);
     }
   });
+  assertSecurityContextOwner(identity.securityFence, identity.pk);
   return event;
 }
 
@@ -684,18 +716,23 @@ const shouldSuppressGroup = (groupId) => {
 
 export async function flushSecuringGroupSends(identity, groupId) {
   if (!identity?.sk || !groupId) return;
+  assertSecurityContextOwner(identity.securityFence, identity.pk);
   if (await isGroupRotationPending(groupId)) return;
+  assertSecurityContextOwner(identity.securityFence, identity.pk);
   const items = securingSendsFor(identity.pk, groupId);
   // Step 2: the AAD binds the pin that will sit on the wire event
   // (groupCipher.aad() reads the sender field off the received event), so the
   // encoder folds the SAME actor pin that signs these kind-9s.
   const signer = await resolveActorSigner({ identity, groupId });
+  assertSecurityContextOwner(identity.securityFence, identity.pk);
   if (!signer) {
     console.warn('[group-key] The waiting message has no signer (locked tab or unknown owner).');
     return;
   }
   for (const item of items) {
-    const encoded = await encodeGroupPayload({ groupId: item.groupId, payload: item.payload, senderPubkey: signer.wireSender, by: identity.pk });
+    assertSecurityContextOwner(identity.securityFence, identity.pk);
+    const encoded = await encodeGroupPayload({ groupId: item.groupId, payload: item.payload, senderPubkey: signer.wireSender, by: identity.pk, securityFence: identity.securityFence });
+    assertSecurityContextOwner(identity.securityFence, identity.pk);
     if (encoded.pending) return;
     const tags = withGroupTag(item.groupId, encoded.tags);
     if (item.id) tags.push(['client', item.id]);
@@ -707,16 +744,23 @@ export async function flushSecuringGroupSends(identity, groupId) {
       content: encoded.content,
       tags,
     });
+    assertSecurityContextOwner(identity.securityFence, identity.pk);
     try {
       await publishAuthedGroupEvent(identity, event);
+      assertSecurityContextOwner(identity.securityFence, identity.pk);
       dropSecuringSend(identity.pk, item.id);
     } catch (error) {
+      if (error?.code === 'SECURITY_CONTEXT_EXPIRED') throw error;
       console.warn('[group-key] Waiting message did not go out:', error);
       return;
     }
   }
-  if (items.length && (await getCurrentGroupKey(groupId)) && securingSendsFor(identity.pk, groupId).length === 0) {
-    forgetPendingKeyRequest(identity.pk, groupId);
+  if (items.length) {
+    const groupKey = await getCurrentGroupKey(groupId, identity.securityFence);
+    assertSecurityContextOwner(identity.securityFence, identity.pk);
+    if (groupKey && securingSendsFor(identity.pk, groupId).length === 0) {
+      forgetPendingKeyRequest(identity.pk, groupId);
+    }
   }
 }
 
@@ -747,6 +791,10 @@ export async function retrySecuringGroup(identity, groupId) {
 }
 
 export function useNIP29Group({ identity }) {
+  const sessionIdentity = useMemo(
+    () => ({ pk: identity?.pk, sk: identity?.sk, securityFence: identity?.securityFence }),
+    [identity?.pk, identity?.sk, identity?.securityFence]
+  );
   const setGroupsStore = useChatStore((s) => s.setGroups);
   const setGroups = useCallback((val) => {
     setGroupsStore((prev) => {
@@ -762,9 +810,9 @@ export function useNIP29Group({ identity }) {
   const activeGroup = useChatStore((s) => s.activeGroup);
 
   useEffect(() => {
-    if (!identity?.sk) return undefined;
-    return startOutboxSync(identity);
-  }, [identity?.pk, identity?.sk]);
+    if (!sessionIdentity.sk) return undefined;
+    return startOutboxSync(sessionIdentity);
+  }, [sessionIdentity]);
 
   // A sealed label that arrived in a key bundle was written to the device's
   // own record by the crypto layer, which may not reach the store. This is the
@@ -807,7 +855,9 @@ export function useNIP29Group({ identity }) {
   }, [setGroupMessages]);
 
   const createGroup = useCallback(async (name, about, isChannel, { access = ACCESS_PUBLIC, joinPolicy = JOIN_APPROVAL } = {}) => {
+    assertSecurityContextOwner(identity?.securityFence, identity?.pk);
     const pool = await getAuthenticatedPool(identity);
+    assertSecurityContextOwner(identity.securityFence, identity.pk);
     const groupId = (globalThis.crypto?.randomUUID?.() || Date.now().toString()).replace(/-/g, '').slice(0, 16);
     setAuthProofGroup(pool, groupId);
 
@@ -819,6 +869,7 @@ export function useNIP29Group({ identity }) {
     // Failure throws: a mixed-shape creation window would hand a relay-written
     // create event a legitimacy it has not earned.
     const signer = await resolveActorSigner({ identity, groupId });
+    assertSecurityContextOwner(identity.securityFence, identity.pk);
     if (!signer) throw new Error('Unlock your account to create a group.');
 
     // The relay author is the group actor and the p-tag must name that same
@@ -830,16 +881,20 @@ export function useNIP29Group({ identity }) {
     // published under the publicly derivable historical v1 key.
     let genesisDocKey = null;
     try {
-      const heldDocKey = await getDocKey(groupId);
+      const heldDocKey = await getDocKey(groupId, identity.securityFence);
+      assertSecurityContextOwner(identity.securityFence, identity.pk);
       if (heldDocKey) {
         genesisDocKey = normalizeDocKey(heldDocKey.bytes);
       } else {
         const generatedDocKey = generateDocKey();
-        if (await putDocKey(groupId, 1, generatedDocKey)) {
-          genesisDocKey = normalizeDocKey((await getDocKey(groupId))?.bytes);
+        if (await putDocKey(groupId, 1, generatedDocKey, identity.securityFence)) {
+          assertSecurityContextOwner(identity.securityFence, identity.pk);
+          genesisDocKey = normalizeDocKey((await getDocKey(groupId, identity.securityFence))?.bytes);
+          assertSecurityContextOwner(identity.securityFence, identity.pk);
         }
       }
     } catch (docKeyError) {
+      if (docKeyError?.code === 'SECURITY_CONTEXT_EXPIRED') throw docKeyError;
       console.warn('[createGroup] Could not secure the governance-doc key:', docKeyError?.message || docKeyError);
     }
     if (!genesisDocKey) {
@@ -850,8 +905,10 @@ export function useNIP29Group({ identity }) {
       identity, groupId, kind: 9007,
       tags: tags.create, createdAt, signer: { skBytes: signer.skBytes, pin: signer.pin },
     });
+    assertSecurityContextOwner(identity.securityFence, identity.pk);
 
     const r9007 = await Promise.allSettled(pool.publish(groupRelays, createEv));
+    assertSecurityContextOwner(identity.securityFence, identity.pk);
     const ok = r9007.some(r => r.status === 'fulfilled');
     if (!ok) throw new Error('No relay accepted 9007');
 
@@ -859,7 +916,9 @@ export function useNIP29Group({ identity }) {
       identity, groupId, kind: 9002,
       tags: tags.meta, createdAt, signer: { skBytes: signer.skBytes, pin: signer.pin },
     });
+    assertSecurityContextOwner(identity.securityFence, identity.pk);
     await Promise.allSettled(pool.publish(groupRelays, metaEv));
+    assertSecurityContextOwner(identity.securityFence, identity.pk);
 
     // The join policy also goes out on its own 9002, through the update path
     // that has been seen working. Whether the relay honours the tag set on the
@@ -875,20 +934,26 @@ export function useNIP29Group({ identity }) {
         identity, groupId, kind: 9002,
         tags: tags.meta, createdAt: createdAt + 1, signer: { skBytes: signer.skBytes, pin: signer.pin },
       });
+      assertSecurityContextOwner(identity.securityFence, identity.pk);
       await Promise.allSettled(pool.publish(groupRelays, policyEv));
+      assertSecurityContextOwner(identity.securityFence, identity.pk);
     }
 
     const joinEv = await buildControlAct({
       identity, groupId, kind: 9021,
       tags: tags.join, createdAt, content: 'Creator', signer: { skBytes: signer.skBytes, pin: signer.pin },
     });
+    assertSecurityContextOwner(identity.securityFence, identity.pk);
     await Promise.allSettled(pool.publish(groupRelays, joinEv));
+    assertSecurityContextOwner(identity.securityFence, identity.pk);
 
     try {
-      const existing = await getCurrentGroupKey(groupId);
+      const existing = await getCurrentGroupKey(groupId, identity.securityFence);
+      assertSecurityContextOwner(identity.securityFence, identity.pk);
       if (!existing) {
         const key = generateGroupKey();
-        await putGroupKey(groupId, 1, key);
+        await putGroupKey(groupId, 1, key, {}, identity.securityFence);
+        assertSecurityContextOwner(identity.securityFence, identity.pk);
         await distributeGroupKey({
           senderPrivkey: identity.sk, senderPubkey: identity.pk,
           groupId, epoch: 1, keyBytes: key, recipients: [identity.pk],
@@ -898,10 +963,16 @@ export function useNIP29Group({ identity }) {
           // bundle it has always been.
           label: tags.sealed,
           publish: (dmEvent) => publishKeyDm(identity, dmEvent),
+          securityFence: identity.securityFence,
         });
-        await rememberMembers(groupId, [identity.pk]);
+        assertSecurityContextOwner(identity.securityFence, identity.pk);
+        await rememberMembers(groupId, [identity.pk], { securityFence: identity.securityFence, owner: identity.pk });
+        assertSecurityContextOwner(identity.securityFence, identity.pk);
       }
-    } catch (e) { console.warn('[createGroup] key bootstrap deferred', e); }
+    } catch (e) {
+      if (e?.code === 'SECURITY_CONTEXT_EXPIRED') throw e;
+      console.warn('[createGroup] key bootstrap deferred', e);
+    }
 
     const newGroup = { id: groupId, name, about: about || '', isChannel, access, creator: identity.pk, members: [identity.pk], metaAt: metaEv.created_at, ...(tags.sealed ? { labelSealed: true } : {}) };
     const saveCreatedGroup = () => {
@@ -920,11 +991,16 @@ export function useNIP29Group({ identity }) {
     // stays local with its held key and signed doc so recovery can be retried.
     try {
       const { groupAuthorityKey } = await import('../lib/crypto/groupAuthority.js');
+      assertSecurityContextOwner(identity.securityFence, identity.pk);
       const { genesisDocBody, signDocEvent } = await import('../lib/crypto/groupDoc.js');
+      assertSecurityContextOwner(identity.securityFence, identity.pk);
       const { buildMemberDocEvent, rememberVerifiedDoc } = await import('../lib/crypto/groupDocWire.js');
+      assertSecurityContextOwner(identity.securityFence, identity.pk);
       const { rememberAuthorityPin } = await import('../lib/crypto/authorityPins.js');
+      assertSecurityContextOwner(identity.securityFence, identity.pk);
       const skBytes = identity.sk instanceof Uint8Array ? identity.sk : Uint8Array.from(identity.sk);
       const { privateKeyBytes, pin } = await groupAuthorityKey(skBytes, groupId);
+      assertSecurityContextOwner(identity.securityFence, identity.pk);
       rememberAuthorityPin(identity.pk, groupId, pin);
       // Step 2 slice 3: the genesis row names this account's actor pin beside
       // it — the same key that signs this device's kind-9s and docs. Every
@@ -937,25 +1013,32 @@ export function useNIP29Group({ identity }) {
         members: [identity.pk.toLowerCase()],
         actorPins: { [identity.pk.toLowerCase()]: pin },
       });
+      assertSecurityContextOwner(identity.securityFence, identity.pk);
       const signed = await signDocEvent(body, privateKeyBytes);
+      assertSecurityContextOwner(identity.securityFence, identity.pk);
       const nowSec = Math.floor(Date.now() / 1000);
-      await rememberVerifiedDoc({ groupId, pin, signed });
+      await rememberVerifiedDoc({ groupId, pin, signed, securityFence: identity.securityFence });
+      assertSecurityContextOwner(identity.securityFence, identity.pk);
       const docEv = await buildMemberDocEvent({
         signedDoc: signed, authoritySk: privateKeyBytes, pin, groupId, createdAt: nowSec,
         docKey: genesisDocKey,
       });
+      assertSecurityContextOwner(identity.securityFence, identity.pk);
       if (!docEv) throw new Error('Could not build the encrypted genesis member document.');
       const targets = [...new Set([...groupRelays, ...generalRelays])];
       const results = await Promise.allSettled(pool.publish(targets, docEv));
+      assertSecurityContextOwner(identity.securityFence, identity.pk);
       if (!results.some((result) => result.status === 'fulfilled')) {
         throw new Error('No relay accepted the encrypted genesis member document.');
       }
     } catch (e) {
+      if (e?.code === 'SECURITY_CONTEXT_EXPIRED') throw e;
       console.error('[createGroup] Group was created, but its encrypted genesis member document was not confirmed. The held key and signed local document remain available for recovery.', e);
       saveCreatedGroup();
       throw new Error('The group was created, but its encrypted membership document could not be published. It remains on this device; restore relay access and retry recovery before inviting members.');
     }
 
+    assertSecurityContextOwner(identity.securityFence, identity.pk);
     appendSystemMessage(groupId, 'You created the group');
     // metaAt marks the bootstrap 9002 as the applied metadata: a replayed
     // older or equal metadata event must not announce a fake rename.
@@ -969,7 +1052,9 @@ export function useNIP29Group({ identity }) {
   }, [identity, setGroups, appendSystemMessage]);
 
   const joinGroupById = useCallback(async (groupId, passedName = null) => {
+    assertSecurityContextOwner(identity?.securityFence, identity?.pk);
     const profile = await loadGroupProfile(identity, groupId, passedName);
+    assertSecurityContextOwner(identity.securityFence, identity.pk);
     if (!profile.id) return;
     const newGroup = { ...profile };
     const localGroups = getMyGroups(identity.pk);
@@ -989,13 +1074,19 @@ export function useNIP29Group({ identity }) {
     // link stamped at bootstrap, or owner derivation at create). Fetch and
     // verify the group's member-set doc now so standing reads doc-backed from
     // the first membership decision instead of falling back to the roster.
-    refreshMemberDocs(identity, groupId).catch(() => {});
+    assertSecurityContextOwner(identity.securityFence, identity.pk);
+    refreshMemberDocs(identity, groupId).catch((error) => {
+      if (error?.code !== 'SECURITY_CONTEXT_EXPIRED') return;
+    });
     return newGroup;
   }, [identity, setGroups]);
 
   const leaveGroup = useCallback(async (groupId) => {
+    assertSecurityContextOwner(identity?.securityFence, identity?.pk);
     const pool = await getAuthenticatedPool(identity);
+    assertSecurityContextOwner(identity.securityFence, identity.pk);
     const known = await loadVerifiedMemberSnapshot(groupId);
+    assertSecurityContextOwner(identity.securityFence, identity.pk);
     if (!Array.isArray(known)) throw new Error('This device has no verified membership document. Restore it before leaving.');
     const remaining = known.map(memberKey).filter((pubkey) => pubkey && pubkey !== identity.pk);
     try {
@@ -1005,6 +1096,7 @@ export function useNIP29Group({ identity }) {
         remainingPubkeys: remaining,
         publish: (dmEvent) => publishKeyDm(identity, dmEvent),
       });
+      assertSecurityContextOwner(identity.securityFence, identity.pk);
       if (!rotation?.rotated) {
         const reason = rotation?.reason === 'missing-doc-key'
           ? 'This group has no readable governance key. Recover it from an authorized member before leaving.'
@@ -1022,8 +1114,10 @@ export function useNIP29Group({ identity }) {
       identity, groupId, kind: 9022,
       tags: [['h', groupId]],
     });
+    assertSecurityContextOwner(identity.securityFence, identity.pk);
     if (!leaveEv) throw new Error('Unlock your account before leaving.');
     await Promise.allSettled(pool.publish(groupRelays, leaveEv));
+    assertSecurityContextOwner(identity.securityFence, identity.pk);
     appendSystemMessage(groupId, 'You left the group', leaveEv.id);
 
     const localGroups = getMyGroups(identity.pk);
@@ -1037,15 +1131,19 @@ export function useNIP29Group({ identity }) {
 
   const sendGroupMessage = useCallback(async (groupId, payload, clientId = null, replyId = null) => {
     try {
+      assertSecurityContextOwner(identity?.securityFence, identity?.pk);
       if (await isGroupRotationPending(groupId)) {
         return { success: false, error: 'Group key rotation is recovering. Sending is paused until the remaining members receive the new key.' };
       }
+      assertSecurityContextOwner(identity.securityFence, identity.pk);
       // Step 2: resolve the actor once; the SAME pin folds into the group
       // cipher's AAD and signs the event. Two derivations racing here would
       // produce an event a receiver cannot open.
       const signer = await resolveActorSigner({ identity, groupId });
+      assertSecurityContextOwner(identity.securityFence, identity.pk);
       if (!signer) throw new Error('Unlock your account to write in this group.');
-      const encoded = await encodeGroupPayload({ groupId, payload, senderPubkey: signer.wireSender, by: identity.pk, waitForKey: true });
+      const encoded = await encodeGroupPayload({ groupId, payload, senderPubkey: signer.wireSender, by: identity.pk, waitForKey: true, securityFence: identity.securityFence });
+      assertSecurityContextOwner(identity.securityFence, identity.pk);
       if (encoded.pending) {
         if (clientId) queueSecuringSend(identity.pk, { id: clientId, groupId, payload, replyId, since: Date.now() });
         // Drills D4: the keyless install floor opens on this record — it is
@@ -1059,9 +1157,12 @@ export function useNIP29Group({ identity }) {
             tags: withGroupTag(groupId),
             content: JSON.stringify({ type: 'gkey_req' }),
           });
+          assertSecurityContextOwner(identity.securityFence, identity.pk);
           if (!reqEvent) throw new Error('No signer for the key request.');
           await publishAuthedGroupEvent(identity, reqEvent);
+          assertSecurityContextOwner(identity.securityFence, identity.pk);
         } catch (error) {
+          if (error?.code === 'SECURITY_CONTEXT_EXPIRED') throw error;
           console.error('[NIP29] Failed to request a group key:', error);
         }
         return { success: false, error: 'NO_KEY' };
@@ -1078,6 +1179,7 @@ export function useNIP29Group({ identity }) {
         tags,
         signer: { skBytes: signer.skBytes, pin: signer.pin },
       });
+      assertSecurityContextOwner(identity.securityFence, identity.pk);
       if (!event) throw new Error('This group message has no signer: unlock your account.');
       if (clientId) {
         const idempotencyKey = `group-message-v1|${identity.pk}|${groupId}|${clientId}`;
@@ -1087,14 +1189,18 @@ export function useNIP29Group({ identity }) {
           intent: JSON.stringify({ groupId, clientId, replyId, payload }),
           event,
           relays: groupRelays,
+          securityFence: identity.securityFence,
         });
+        assertSecurityContextOwner(identity.securityFence, identity.pk);
         if (reservation.status === 'sent') {
           return { success: true, duplicate: true, eventId: reservation.eventId, relayCount: 0 };
         }
         try {
           await publishAuthedGroupEvent(identity, reservation.event);
-          try { await completeMessageEffect({ owner: identity.pk, eventId: reservation.eventId }); }
+          assertSecurityContextOwner(identity.securityFence, identity.pk);
+          try { await completeMessageEffect({ owner: identity.pk, eventId: reservation.eventId, securityFence: identity.securityFence }); }
           catch (error) { console.warn('[group] A delivered message remains queued for idempotent recovery:', error); }
+          assertSecurityContextOwner(identity.securityFence, identity.pk);
           return { success: true, event: reservation.event, relayCount: 1 };
         } catch (error) {
           // The immutable event is already in the write-ahead outbox. A retry
@@ -1106,17 +1212,21 @@ export function useNIP29Group({ identity }) {
       }
       // Write-ahead: the signed event is in the outbox before the relay is
       // tried and leaves it on the first accept (publishWriteAhead).
-      const sent = await publishWriteAhead(event, null, () => [publishAuthedGroupEvent(identity, event)]);
+      const sent = await publishWriteAhead(event, null, () => [publishAuthedGroupEvent(identity, event)], {
+        assertCurrent: () => assertSecurityContextOwner(identity.securityFence, identity.pk),
+      });
       if (!sent.queued) return { success: true, event, relayCount: 1 };
       console.warn('[NIP29] Group relay did not accept the message after AUTH:', sent.results);
       return { success: true, queued: true, event, relayCount: 0 };
     } catch (error) {
+      if (error?.code === 'SECURITY_CONTEXT_EXPIRED') return { success: false, error: 'The account context expired before the group message completed.' };
       console.error('[NIP29] Failed to send group message:', error);
       return { success: false, error: error?.message || 'Group message failed' };
     }
   }, [identity]);
 
   const requestGroupKey = useCallback(async (groupId) => {
+    assertSecurityContextOwner(identity?.securityFence, identity?.pk);
     // The floor reads this record before the request even clears the relay.
     rememberPendingKeyRequest(identity.pk, groupId);
     try {
@@ -1127,22 +1237,30 @@ export function useNIP29Group({ identity }) {
         tags: withGroupTag(groupId),
         content: JSON.stringify({ type: 'gkey_req' }),
       });
+      assertSecurityContextOwner(identity.securityFence, identity.pk);
       if (!ev) throw new Error('No signer for the key request.');
       await publishAuthedGroupEvent(identity, ev);
+      assertSecurityContextOwner(identity.securityFence, identity.pk);
     } catch (error) {
+      if (error?.code === 'SECURITY_CONTEXT_EXPIRED') return;
       console.error('[group] Key request did not send:', error);
     }
   }, [identity]);
 
   const sendGroupTypingIndicator = useCallback(async (groupId) => {
+    try { assertSecurityContextOwner(identity?.securityFence, identity?.pk); }
+    catch { return; }
     if (!allowsTyping()) return;
     try {
       if (await isGroupRotationPending(groupId)) return;
+      assertSecurityContextOwner(identity.securityFence, identity.pk);
       // Step 2: the typing act is encrypted under the SAME actor pin that
       // signs it, because receivers derive the cipher AAD from event.pubkey.
       const signer = await resolveActorSigner({ identity, groupId });
+      assertSecurityContextOwner(identity.securityFence, identity.pk);
       if (!signer) return;
-      const encoded = await encodeGroupPayload({ groupId, payload: { type: 'typing' }, senderPubkey: signer.wireSender, by: identity.pk });
+      const encoded = await encodeGroupPayload({ groupId, payload: { type: 'typing' }, senderPubkey: signer.wireSender, by: identity.pk, securityFence: identity.securityFence });
+      assertSecurityContextOwner(identity.securityFence, identity.pk);
       if (encoded.pending) return;
       // Step 2: actor-signed.
       const ev = await buildSignedAct({
@@ -1151,22 +1269,30 @@ export function useNIP29Group({ identity }) {
         tags: withGroupTag(groupId, encoded.tags),
         content: encoded.content,
       });
+      assertSecurityContextOwner(identity.securityFence, identity.pk);
       if (!ev) return;
       await publishAuthedGroupEvent(identity, ev);
-    } catch (e) {}
+      assertSecurityContextOwner(identity.securityFence, identity.pk);
+    } catch (e) {
+      if (e?.code !== 'SECURITY_CONTEXT_EXPIRED') return;
+    }
   }, [identity]);
 
   const kickMember = useCallback(async (groupId, memberPubkey) => {
+    assertSecurityContextOwner(identity?.securityFence, identity?.pk);
     // Drills D3-B: a kick is a durable removal, not a snapshot edit. The
     // rotation rotated, but the grant path read only the deny list — and
     // the kick never wrote one — so a replayed 9021 into an open-join
     // relay re-armed the kicked peer and shipped them the post-kick epoch.
     // The removal rides the same durable record the deny path uses.
     const targetPin = await actorPinForMember(identity, groupId, memberPubkey);
+    assertSecurityContextOwner(identity.securityFence, identity.pk);
     if (!targetPin) throw new Error('This member has no verified group identity yet. Refresh the membership document before removing them.');
     denyPendingJoin(groupId, memberPubkey);
     const pool = await getAuthenticatedPool(identity);
+    assertSecurityContextOwner(identity.securityFence, identity.pk);
     const allMembers = await loadVerifiedMemberSnapshot(groupId);
+    assertSecurityContextOwner(identity.securityFence, identity.pk);
     if (!Array.isArray(allMembers)) throw new Error('This device has no verified membership document. Restore it before removing anyone.');
     if (!allMembers.some((member) => memberKey(member) === String(memberPubkey).toLowerCase())) {
       throw new Error('This person is not in the verified membership document. Refresh the group and retry.');
@@ -1180,6 +1306,7 @@ export function useNIP29Group({ identity }) {
         remainingPubkeys: remaining,
         publish: (dmEvent) => publishKeyDm(identity, dmEvent),
       });
+      assertSecurityContextOwner(identity.securityFence, identity.pk);
       if (!rotation?.rotated) {
         const reason = rotation?.reason === 'missing-doc-key'
           ? 'This group has no readable governance key. Recover it from an authorized member before removing anyone.'
@@ -1197,33 +1324,42 @@ export function useNIP29Group({ identity }) {
       identity, groupId, kind: 9001,
       tags: [['h', groupId], ['p', targetPin.slice(2)]],
     });
+    assertSecurityContextOwner(identity.securityFence, identity.pk);
     if (!ev) throw new Error('Unlock your account first.');
     await Promise.allSettled(pool.publish(groupRelays, ev));
+    assertSecurityContextOwner(identity.securityFence, identity.pk);
     setGroupMembers(prev => prev.filter(m => m.pubkey !== memberPubkey));
     appendSystemMessage(groupId, `${shortNpub(memberPubkey)} was kicked from the group`, ev.id);
   }, [identity, setGroupMembers, appendSystemMessage]);
 
   const promoteMember = useCallback(async (groupId, memberPubkey, isAdmin) => {
+    assertSecurityContextOwner(identity?.securityFence, identity?.pk);
     const standing = await loadVerifiedMemberSnapshot(groupId);
+    assertSecurityContextOwner(identity.securityFence, identity.pk);
     if (!Array.isArray(standing)) throw new Error('This device has no verified membership document. Restore it before changing roles.');
     const account = String(memberPubkey || '').toLowerCase();
     const target = standing.find((member) => memberKey(member) === account);
     if (!target) throw new Error('This person is not in the verified membership document.');
     const targetPin = await actorPinForMember(identity, groupId, memberPubkey);
+    assertSecurityContextOwner(identity.securityFence, identity.pk);
     if (!targetPin) throw new Error('This member has no verified group identity yet. Refresh the membership document before changing their role.');
     const nextRole = isAdmin ? 'member' : 'admin';
     // Governance standing is authoritative. Publish its signed role first;
     // if the relay control event is refused, authorization is already changed
     // and the user can retry the idempotent relay update.
-    await publishMemberDocUpdate(groupId, standing, { roleChanges: { [account]: nextRole } });
+    await publishMemberDocUpdate(groupId, standing, { roleChanges: { [account]: nextRole }, securityFence: identity.securityFence, owner: identity.pk });
+    assertSecurityContextOwner(identity.securityFence, identity.pk);
     // Step 2 slice 2: a role change is a group act.
     const ev = await buildControlAct({
       identity, groupId, kind: 9000,
       tags: [['h', groupId], ['p', targetPin.slice(2)], ['role', nextRole]],
     });
+    assertSecurityContextOwner(identity.securityFence, identity.pk);
     if (!ev) throw new Error('Unlock your account first.');
     const pool = await getAuthenticatedPool(identity);
+    assertSecurityContextOwner(identity.securityFence, identity.pk);
     const results = await Promise.allSettled(pool.publish(groupRelays, ev));
+    assertSecurityContextOwner(identity.securityFence, identity.pk);
     if (!results.some((result) => result.status === 'fulfilled')) {
       throw new Error('The signed governance role changed, but the relay roster update was refused. Retry the role action after relay access returns.');
     }
@@ -1232,11 +1368,13 @@ export function useNIP29Group({ identity }) {
   }, [identity, setGroupMembers, appendSystemMessage]);
 
   const addMember = useCallback(async (groupId, memberPubkey) => {
+    assertSecurityContextOwner(identity?.securityFence, identity?.pk);
     const pending = pendingJoinsFor(groupId).find((row) => row.pubkey === String(memberPubkey || '').toLowerCase());
     let admittedPin = '';
     if (pending) {
       if (!pending.requestEvent) throw new Error('This request needs to be sent again before it can be approved.');
       const proof = await openAdmissionRequest({ identity, groupId, event: pending.requestEvent });
+      assertSecurityContextOwner(identity.securityFence, identity.pk);
       if (proof.accountPubkey !== String(memberPubkey || '').toLowerCase()
         || proof.actorPin !== pending.actor || proof.nonce !== pending.nonce
         || proof.eventId !== pending.eventId) {
@@ -1245,19 +1383,23 @@ export function useNIP29Group({ identity }) {
       admittedPin = proof.actorPin;
     }
     const targetPin = admittedPin || await actorPinForMember(identity, groupId, memberPubkey);
+    assertSecurityContextOwner(identity.securityFence, identity.pk);
     if (!targetPin || !/^0[23][0-9a-f]{64}$/.test(targetPin)) {
       throw new Error('This person has not sent a private admission request. Ask them for a new group invite request.');
     }
     const observedPins = { [String(memberPubkey).toLowerCase()]: targetPin };
     const snapshot = await loadVerifiedMemberSnapshot(groupId);
+    assertSecurityContextOwner(identity.securityFence, identity.pk);
     if (!Array.isArray(snapshot)) throw new Error('This device has no verified membership document. Restore it before approving a member.');
     const nextMembers = [...new Map([...snapshot, memberPubkey, identity.pk]
       .map((member) => [memberKey(member), member])
       .filter(([pubkey]) => /^[0-9a-f]{64}$/.test(pubkey))).values()];
     // Publish the signed authorization first. If this fails, no relay control
     // event is sent and the pending request remains available for retry.
-    await publishMemberDocUpdate(groupId, nextMembers, { pins: observedPins });
-    await rememberMembers(groupId, nextMembers, { pins: observedPins, strict: true, publishDoc: false });
+    await publishMemberDocUpdate(groupId, nextMembers, { pins: observedPins, securityFence: identity.securityFence, owner: identity.pk });
+    assertSecurityContextOwner(identity.securityFence, identity.pk);
+    await rememberMembers(groupId, nextMembers, { pins: observedPins, strict: true, publishDoc: false, securityFence: identity.securityFence, owner: identity.pk });
+    assertSecurityContextOwner(identity.securityFence, identity.pk);
     // Step 2 slice 2: an add-back receipt is a group act. Same kind the kick
     // wall's receiver arm reads to clear its own removal record — an actor-
     // signed receipt resolves through standing rows' actor field exactly like
@@ -1266,12 +1408,15 @@ export function useNIP29Group({ identity }) {
       identity, groupId, kind: 9000,
       tags: [['h', groupId], ['p', targetPin.slice(2)]],
     });
+    assertSecurityContextOwner(identity.securityFence, identity.pk);
     if (!ev) throw new Error('Unlock your account first.');
     const pool = await getAuthenticatedPool(identity);
+    assertSecurityContextOwner(identity.securityFence, identity.pk);
     // The publish outcome decides the relay roster row. If every relay rejected the add,
     // the owner must see the failure instead of a false success that drops
     // the request silently until a someday replay re-queues it.
     const results = await Promise.allSettled(pool.publish(groupRelays, ev));
+    assertSecurityContextOwner(identity.securityFence, identity.pk);
     if (!results.some((result) => result.status === 'fulfilled')) {
       throw new Error('No relay accepted the add. Try again.');
     }
@@ -1291,7 +1436,9 @@ export function useNIP29Group({ identity }) {
   }, [identity, setGroupMembers, appendSystemMessage]);
 
   const updateGroupSettings = useCallback(async (groupId, updates) => {
+    assertSecurityContextOwner(identity?.securityFence, identity?.pk);
     const pool = await getAuthenticatedPool(identity);
+    assertSecurityContextOwner(identity.securityFence, identity.pk);
     // A sealed group edits its name and description for its members, not for
     // the relay: the relay is re-sent the same fixed placeholder it already
     // holds, so a rename is byte-identical relay-side and reveals nothing by
@@ -1319,8 +1466,10 @@ export function useNIP29Group({ identity }) {
     }
     // Step 2 slice 2: a metadata edit is a group act.
     const ev = await buildControlAct({ identity, groupId, kind: 9002, tags });
+    assertSecurityContextOwner(identity.securityFence, identity.pk);
     if (!ev) throw new Error('Unlock your account first.');
     await Promise.allSettled(pool.publish(groupRelays, ev));
+    assertSecurityContextOwner(identity.securityFence, identity.pk);
     // The local edit is now the applied metadata: record the mark so a
     // replayed older 9002 can neither announce a fake change nor roll the
     // name back. (no group AAD touched — announcement dedup only)
@@ -1334,8 +1483,10 @@ export function useNIP29Group({ identity }) {
       const sealedAbout = updates.about !== undefined ? updates.about : (sealedRecord.about || '');
       rememberAppliedGroupMeta(identity.pk, groupId, { name: sealedName, about: sealedAbout, labelSealed: true }, ev.created_at);
       try {
-        const current = await getCurrentGroupKey(groupId);
+        const current = await getCurrentGroupKey(groupId, identity.securityFence);
+        assertSecurityContextOwner(identity.securityFence, identity.pk);
         const recipients = await labelRecipientsFor(identity, groupId);
+        assertSecurityContextOwner(identity.securityFence, identity.pk);
         if (current && recipients.length) {
           await distributeGroupKey({
             senderPrivkey: identity.sk, senderPubkey: identity.pk,
@@ -1343,9 +1494,12 @@ export function useNIP29Group({ identity }) {
             recipients,
             label: { name: sealedName, about: sealedAbout },
             publish: (dmEvent) => publishKeyDm(identity, dmEvent),
+            securityFence: identity.securityFence,
           });
+          assertSecurityContextOwner(identity.securityFence, identity.pk);
         }
-      } catch {
+      } catch (error) {
+        if (error?.code === 'SECURITY_CONTEXT_EXPIRED') return { success: false, error: 'The account context expired before the group update completed.' };
         // The id only. The name is the thing this fix keeps off the wire and
         // out of logs, so a failure may not carry it into either.
         console.warn('[group] A sealed group name could not be sent to every member.', { groupId });
@@ -1360,27 +1514,34 @@ export function useNIP29Group({ identity }) {
 
   const fetchGroupMembers = useCallback(async (groupId) => {
     try {
+      assertSecurityContextOwner(identity?.securityFence, identity?.pk);
       // Step 1 live arm: every roster read is also the moment a newer doc
       // generation would arrive. Same verify-then-store door as the join
       // fetch — nothing trusts an unverified row. Fire-and-forget: the roster
       // read below does not wait on it, and a failure here is a warn, not a
       // refused roster (H4's fallback law stands until the doc verifies).
-      refreshMemberDocs(identity, groupId).catch(() => {});
+      refreshMemberDocs(identity, groupId).catch((error) => {
+        if (error?.code !== 'SECURITY_CONTEXT_EXPIRED') return;
+      });
       const pool = await getAuthenticatedPool(identity);
+      assertSecurityContextOwner(identity.securityFence, identity.pk);
       const [byDTag, byHTag] = await Promise.all([
         queryWithTimeout(pool, groupRelays, { kinds: [39002], '#d': [groupId] }),
         queryWithTimeout(pool, groupRelays, { kinds: [39002], '#h': [groupId] }),
       ]);
+      assertSecurityContextOwner(identity.securityFence, identity.pk);
       // F2 fix (audit finding 2): the snapshot must be signed by the group
       // relay. Hand-parsing the newest event let any key impersonate the
       // member list — and that list is what key grants and admin checks
       // trust. Same gate the live subscription applies (authorizeMemberSnapshot).
       const relayPubkey = await groupRelayPubkey();
+      assertSecurityContextOwner(identity.securityFence, identity.pk);
       // H1 fix (round-three re-hack): the stripped roster is the one the
       // member list, the owner reconciler and every grant read from — the
       // deny outvotes the relay wherever its snapshot names a denied peer.
       const relayMembers = pickMemberSnapshot([...byDTag, ...byHTag], relayPubkey, groupId);
       const standing = await loadMemberSnapshot(groupId).catch(() => null);
+      assertSecurityContextOwner(identity.securityFence, identity.pk);
       const members = withoutDenied(groupId, mapRelayRosterToAccounts(relayMembers, standing));
       if (!members) {
         console.warn(`[NIP29] No relay-signed membership snapshot found for group ${groupId}`);
@@ -1400,14 +1561,16 @@ export function useNIP29Group({ identity }) {
       }
       return members;
     } catch (err) {
+      if (err?.code === 'SECURITY_CONTEXT_EXPIRED') return null;
       console.error('[useNIP29Group] fetchGroupMembers failed:', err);
       return null;
     }
-  }, [identity?.pk, identity?.sk, activeGroup?.creator, setGroupMembers]);
+  }, [identity, activeGroup, setGroupMembers]);
 
   const subscribeToGroups = useCallback((groupIds, since) => {
     if (!groupIds || groupIds.length === 0 || !identity?.sk) return () => {};
     const session = openGroupRelaySession(identity);
+    const assertCurrent = () => assertSecurityContextOwner(identity?.securityFence, identity?.pk);
     const plans = groupTimelinePlans(groupIds, since);
     const subIds = new Map();
     let notedRestricted = false;
@@ -1423,6 +1586,7 @@ export function useNIP29Group({ identity }) {
     let keyHandler = null;
 
     const onFrame = async (msg) => {
+      try { assertCurrent(); } catch { return; }
       if (msg[0] === 'CLOSED' && subIds.has(msg[1])) {
         const closedGroup = subIds.get(msg[1]);
         const reason = String(msg[2] || '');
@@ -1452,11 +1616,14 @@ export function useNIP29Group({ identity }) {
       // pin) rows into every future control authorization and key-DM
       // send-off; verify-then-store is inside ingestMemberDocEvent.
       if (event.kind === MEMBER_DOC_KIND) {
-        refreshMemberDocs(identity, groupId).catch(() => {});
+        refreshMemberDocs(identity, groupId).catch((error) => {
+          if (error?.code !== 'SECURITY_CONTEXT_EXPIRED') return;
+        });
         return;
       }
       if (event.kind === 39002) {
         const relayPubkey = await groupRelayPubkey();
+        assertCurrent();
         if (!authorizeMemberSnapshot({ event, relayPubkey })) {
           console.warn('[group] Ignored a membership snapshot not signed by the group relay', event.id);
           return;
@@ -1465,13 +1632,16 @@ export function useNIP29Group({ identity }) {
         // deny outvotes the relay, so their row never lands or grants a key.
         const relaySnapshot = pickMemberSnapshot([event], relayPubkey, groupId) || [];
         const standing = await loadMemberSnapshot(groupId).catch(() => null);
+        assertCurrent();
         const relayMembers = withoutDenied(groupId, mapRelayRosterToAccounts(relaySnapshot, standing));
         // On the owner's device a name the owner never approved is a join
         // request, not a member: it goes to the queue and stays off the
         // stored roster until the owner approves it.
         const owned = useChatStore.getState().groups.some((g) => g.id === groupId && g.creator === identity.pk);
+        const previous = owned ? await loadMemberSnapshot(groupId) : null;
+        assertCurrent();
         const { members, unapproved } = admitRelayRoster({
-          previous: owned ? await loadMemberSnapshot(groupId) : null,
+          previous,
           incoming: relayMembers,
           isOwner: owned,
           selfPk: identity.pk,
@@ -1482,7 +1652,8 @@ export function useNIP29Group({ identity }) {
             appendSystemMessage(groupId, `${shortNpub(pk)} wants to join. Approve it in Join requests.`, event.id);
           }
         }
-        await rememberMembers(groupId, members);
+        await rememberMembers(groupId, members, { securityFence: identity.securityFence, owner: identity.pk });
+        assertCurrent();
         if (useChatStore.getState().activeGroup?.id === groupId) {
           setGroupMembers(members);
           // Same rule as the read above, and this is the arm that can hand
@@ -1495,6 +1666,7 @@ export function useNIP29Group({ identity }) {
       }
       if (event.kind === 9021) {
         const { members } = await controlContext(groupId, identity.pk);
+        assertCurrent();
         const knownSender = resolveControlSender({ wirePubkey: event.pubkey, members });
         if (!knownSender) {
           // First-contact actor pins are intentionally not resolvable from a
@@ -1508,6 +1680,7 @@ export function useNIP29Group({ identity }) {
               event,
               seenNonces: new Set(queued.map((row) => row.nonce).filter(Boolean)),
             });
+            assertCurrent();
             if (opened.accountPubkey === identity.pk) return;
             if (!allowsGroupJoins()) {
               denyPendingJoin(groupId, opened.accountPubkey);
@@ -1527,6 +1700,7 @@ export function useNIP29Group({ identity }) {
               if (owned) appendSystemMessage(groupId, `${shortNpub(opened.accountPubkey)} wants to join. Approve it in Join requests.`, event.id);
             }
           } catch (error) {
+            if (error?.code === 'SECURITY_CONTEXT_EXPIRED') return;
             // Other members and non-owners see the same relay event but do
             // not hold the authority secret needed to decrypt this proof.
             console.warn('[group] Ignored an unverified private admission request:', error?.message || error);
@@ -1538,6 +1712,7 @@ export function useNIP29Group({ identity }) {
       let resolvedSubject = '';
       if ([9000, 9001, 9002, 9021, 9022].includes(event.kind)) {
         const { creator, members } = await controlContext(groupId, identity.pk);
+        assertCurrent();
         // Step 2 slice 2: the sender resolves through standing rows first —
         // an actor-signed control event carries its account only via the doc's
         // (account -> pin) map; a legacy event still signs with the account
@@ -1560,6 +1735,7 @@ export function useNIP29Group({ identity }) {
         // Gate-verified above; the actor-signed shape names the account here.
         const pk = resolvedSender || event.pubkey;
         const members = await loadMemberSnapshot(groupId);
+        assertCurrent();
         // One pure decision, in a fixed order (joinRequestDecision): a denied
         // or already-queued sender is stopped BEFORE the roster is looked at,
         // and presence in the stored roster is not approval — on the owner's
@@ -1604,7 +1780,8 @@ export function useNIP29Group({ identity }) {
         }
         // 'self' (the creator's bootstrap join echo) and 'known' (a member of
         // record re-stating a join) fall through to the no-op patch below.
-        await patchMemberSnapshot(groupId, (members) => (members.includes(pk) ? members : [...members, pk]));
+        await patchMemberSnapshot(groupId, (members) => (members.includes(pk) ? members : [...members, pk]), { securityFence: identity.securityFence, owner: identity.pk });
+        assertCurrent();
         if (useChatStore.getState().activeGroup?.id === groupId) {
           setGroupMembers(prev => {
             const updated = Array.isArray(prev) ? [...prev] : [];
@@ -1617,7 +1794,8 @@ export function useNIP29Group({ identity }) {
       }
       if (event.kind === 9022) {
         const pk = resolvedSender || event.pubkey;
-        await patchMemberSnapshot(groupId, (members) => members.filter((member) => member !== pk));
+        await patchMemberSnapshot(groupId, (members) => members.filter((member) => member !== pk), { securityFence: identity.securityFence, owner: identity.pk });
+        assertCurrent();
         if (useChatStore.getState().activeGroup?.id === groupId) {
           setGroupMembers(prev => Array.isArray(prev) ? prev.filter(m => m.pubkey !== pk) : []);
         }
@@ -1627,6 +1805,7 @@ export function useNIP29Group({ identity }) {
       if (event.kind === 9000) {
         const pk = resolvedSubject;
         const standing = await loadVerifiedMemberSnapshot(groupId);
+        assertCurrent();
         const governanceMember = Array.isArray(standing)
           ? standing.find((member) => memberKey(member) === pk)
           : null;
@@ -1657,7 +1836,10 @@ export function useNIP29Group({ identity }) {
         // clears the record. The kick is authorized above — a plain roster
         // row cannot write it.
         if (pk && String(pk) === String(identity.pk)) denyPendingJoin(groupId, identity.pk);
-        if (pk) await patchMemberSnapshot(groupId, (members) => members.filter((member) => member !== pk));
+        if (pk) {
+          await patchMemberSnapshot(groupId, (members) => members.filter((member) => member !== pk), { securityFence: identity.securityFence, owner: identity.pk });
+          assertCurrent();
+        }
         if (useChatStore.getState().activeGroup?.id === groupId) {
           setGroupMembers(prev => Array.isArray(prev) ? prev.filter(m => m.pubkey !== pk) : []);
         }
@@ -1720,9 +1902,11 @@ export function useNIP29Group({ identity }) {
       // proof. Only the signed governance binding (or a legacy direct account
       // signer) resolves an actor to an account.
       const messageMembers = await loadVerifiedMemberSnapshot(groupId);
+      assertCurrent();
       const decoded = await decodeGroupEvent({
-        event, groupId, members: messageMembers, requireMember: true,
+        event, groupId, members: messageMembers, requireMember: true, securityFence: identity.securityFence,
       });
+      assertCurrent();
       if (decoded.refused) {
         console.warn('[group] Dropped a message from outside verified current membership', event.id);
         return;
@@ -1735,6 +1919,7 @@ export function useNIP29Group({ identity }) {
       // current-epoch rate limit below. Pending ciphertext is the exception:
       // when its epoch key arrives, history must retry decryption.
       const storedMessage = await db.messages.get(event.id);
+      assertCurrent();
       if (storedMessage && !storedMessage.pending) {
         if (storedMessage.pubkey !== identity.pk && useChatStore.getState().activeGroup?.id === groupId) {
           // Read state belongs to the shared account database. A duplicate
@@ -1761,6 +1946,7 @@ export function useNIP29Group({ identity }) {
           // requester is the account the bundle is addressed to: only that
           // account's devices can open a key DM.
           const record = await loadMemberSnapshotRecord(groupId);
+          assertCurrent();
           const requesterMembers = messageMembers;
           const requester = resolveKeyRequestRequester({
             wirePubkey: event.pubkey,
@@ -1768,8 +1954,10 @@ export function useNIP29Group({ identity }) {
             members: requesterMembers,
           });
           if (requester && requester !== identity.pk) {
-            const current = await getCurrentGroupKey(groupId);
+            const current = await getCurrentGroupKey(groupId, identity.securityFence);
+            assertCurrent();
             const { creator } = await controlContext(groupId, identity.pk);
+            assertCurrent();
             const decision = await grantKeyRequest({
               groupId,
               requester,
@@ -1784,6 +1972,7 @@ export function useNIP29Group({ identity }) {
               keyObtainedAt: current?.obtainedAt,
               fetchMembers: () => fetchRelayMemberSnapshot(identity, groupId),
             });
+            assertCurrent();
             if (decision === 'allow' && current) {
               await distributeGroupKey({
                 senderPrivkey: identity.sk, senderPubkey: identity.pk,
@@ -1799,11 +1988,14 @@ export function useNIP29Group({ identity }) {
                 // verifies its invite pin and exact account binding.
                 bootstrapRecipient: requester,
                 publish: (dmEvent) => publishKeyDm(identity, dmEvent),
+                securityFence: identity.securityFence,
               });
+              assertCurrent();
             }
           }
         }
       } catch (e) {
+        if (e?.code === 'SECURITY_CONTEXT_EXPIRED') return;
         // A silent catch here left a member on Securing forever with no
         // trace of why the request went unanswered.
         if (isGkeyReq) console.warn('[group-key] A key request was not answered:', e);
@@ -1839,6 +2031,7 @@ export function useNIP29Group({ identity }) {
       // A local actor key is known by derivation. Other account mappings must
       // come from the verified governance document, never the shared-key body.
       const ownActor = await resolveActorSigner({ identity, groupId });
+      assertCurrent();
       const docSender = resolveControlSender({ wirePubkey: event.pubkey, members: messageMembers });
       const actByClamped = docSender || (event.pubkey === ownActor?.wireSender ? identity.pk : event.pubkey);
 
@@ -1864,8 +2057,10 @@ export function useNIP29Group({ identity }) {
 
       if (actByClamped === identity.pk && clientId) {
         const optimisticMessage = await db.messages.where('clientId').equals(clientId).first();
+        assertCurrent();
         if (optimisticMessage?.chatId === groupId && optimisticMessage.isSender && optimisticMessage.id !== event.id) {
           await db.messages.delete(optimisticMessage.id);
+          assertCurrent();
         }
       }
 
@@ -1879,7 +2074,9 @@ export function useNIP29Group({ identity }) {
         epoch: decEpoch, pending: isPending,
         replyTo: replyTag ? replyTag[1] : null, isGroup: true
       });
+      assertCurrent();
       const insertion = await saveMessageOnce(groupId, baseMsg);
+      assertCurrent();
       if (insertion.status === 'tombstoned') return;
       if (!['inserted', 'exists'].includes(insertion.status)) {
         console.warn('[group] The event was not durably stored; application effects were deferred.', insertion.status);
@@ -1888,8 +2085,12 @@ export function useNIP29Group({ identity }) {
       // This event id can already own a ciphertext-only pending row. Once its
       // epoch key arrives, merge the plaintext into that row without claiming
       // a second notification or unread effect.
-      if (storedMessage?.pending) await saveMessage(groupId, baseMsg);
+      if (storedMessage?.pending) {
+        await saveMessage(groupId, baseMsg);
+        assertCurrent();
+      }
 
+      assertCurrent();
       setGroupMessages(prev => {
         const groupMsgs = prev[groupId] || [];
         const existingIndex = groupMsgs.findIndex((m) => sameOutgoingMessage(m, event, identity, clientId, actByClamped));
@@ -1906,6 +2107,7 @@ export function useNIP29Group({ identity }) {
       // and read effects. Keep those effects outside the React updater, which
       // React may invoke more than once in development or concurrent renders.
       if (useChatStore.getState().activeGroup?.id === groupId) {
+        assertCurrent();
         markChatRead(groupId, Math.max(Math.floor(Date.now() / 1000), event.created_at));
       }
       if (insertion.status !== 'inserted') return;
@@ -1938,21 +2140,29 @@ export function useNIP29Group({ identity }) {
     keyHandler = async (e) => {
       const { groupId: gid } = e.detail || {};
       if (!groupIds.includes(gid)) return;
+      try { assertCurrent(); } catch { return; }
       try {
         await flushSecuringGroupSends(identity, gid);
       } catch (error) {
+        if (error?.code === 'SECURITY_CONTEXT_EXPIRED') return;
         console.warn('[group-key] Could not send messages waiting on the key:', error);
       }
       try {
         const pool = await getAuthenticatedPool(identity);
+        assertCurrent();
         const events = await queryWithTimeout(pool, groupRelays, { kinds: [9], '#h': [gid], limit: 100 }, 4000);
+        assertCurrent();
         for (const event of events) {
+          assertCurrent();
           const standingMembers = await loadVerifiedMemberSnapshot(gid);
+          assertCurrent();
           const decoded = await decodeGroupEvent({
-            event, groupId: gid, members: standingMembers, requireMember: true,
+            event, groupId: gid, members: standingMembers, requireMember: true, securityFence: identity.securityFence,
           });
+          assertCurrent();
           if (decoded.refused || decoded.pending || decoded.error) continue;
           const storedMessage = await db.messages.get(event.id);
+          assertCurrent();
           if (storedMessage && !storedMessage.pending) continue;
           const parsed = decoded.parsed || {};
           if (parsed.type === 'typing') continue;
@@ -1976,9 +2186,11 @@ export function useNIP29Group({ identity }) {
             replyTo: replyTag ? replyTag[1] : null, isGroup: true,
           });
           const insertion = await saveMessageOnce(gid, historyMessage);
+          assertCurrent();
           if (insertion.status === 'tombstoned'
             || !['inserted', 'exists'].includes(insertion.status)) continue;
           await saveMessage(gid, historyMessage);
+          assertCurrent();
           setGroupMessages(prev => {
             const groupMsgs = prev[gid] || [];
             const idx = groupMsgs.findIndex((m) => sameOutgoingMessage(m, event, identity, clientId, actBy));
@@ -1990,7 +2202,10 @@ export function useNIP29Group({ identity }) {
             return { ...prev, [gid]: [...groupMsgs, historyMessage].sort(sortMessages) };
           });
         }
-      } catch (err) { console.warn('[group-key] refresh failed', err); }
+      } catch (err) {
+        if (err?.code === 'SECURITY_CONTEXT_EXPIRED') return;
+        console.warn('[group-key] refresh failed', err);
+      }
     };
     window.addEventListener('cipher:group-key-updated', keyHandler);
 
@@ -2007,6 +2222,7 @@ export function useNIP29Group({ identity }) {
   }, [identity, setGroupMessages, setGroupTypingUsers, setGroupMembers, appendSystemMessage]);
 
   const pinMessage = useCallback(async (groupId, messageEventId) => {
+    assertSecurityContextOwner(identity?.securityFence, identity?.pk);
     // A temp- id is this device's own placeholder for a row still sending
     // or securing. A kind-9005 e-tag pointing at it can never resolve for
     // any peer, and the row's id changes the moment the relay answers, so
@@ -2018,49 +2234,60 @@ export function useNIP29Group({ identity }) {
     // creator or admin — the same standing the membership control kinds
     // demand. A member's pin goes nowhere and moves no one's slot.
     const standing = await controlContext(groupId, identity.pk);
+    assertSecurityContextOwner(identity.securityFence, identity.pk);
     if (!authorizeGroupPin({ sender: identity.pk, members: standing.members, creator: standing.creator })) {
       throw new Error('Only the group owner or an admin can pin.');
     }
     const pool = await getAuthenticatedPool(identity);
+    assertSecurityContextOwner(identity.securityFence, identity.pk);
     // Step 2 slice 2: a pin is a group act (S9 standing checked above).
     const ev = await buildControlAct({
       identity, groupId, kind: 9005,
       tags: [['h', groupId], ['e', messageEventId]],
     });
+    assertSecurityContextOwner(identity.securityFence, identity.pk);
     if (!ev) throw new Error('Unlock your account first.');
     const results = await Promise.allSettled(pool.publish(groupRelays, ev));
+    assertSecurityContextOwner(identity.securityFence, identity.pk);
     if (!results.some((result) => result.status === 'fulfilled')) {
       throw new Error('All group relays rejected the pin.');
     }
     setPinnedMessages(prev => ({ ...prev, [groupId]: messageEventId }));
     return { success: true };
-  }, [identity?.pk, identity?.sk, setPinnedMessages]);
+  }, [identity, setPinnedMessages]);
 
   const unpinMessage = useCallback(async (groupId) => {
+    assertSecurityContextOwner(identity?.securityFence, identity?.pk);
     // S9: unpinning moves the shared slot too, so it demands the same standing.
     const standing = await controlContext(groupId, identity.pk);
+    assertSecurityContextOwner(identity.securityFence, identity.pk);
     if (!authorizeGroupPin({ sender: identity.pk, members: standing.members, creator: standing.creator })) {
       throw new Error('Only the group owner or an admin can unpin.');
     }
     const pool = await getAuthenticatedPool(identity);
+    assertSecurityContextOwner(identity.securityFence, identity.pk);
     // Step 2 slice 2: an unpin is a group act too.
     const ev = await buildControlAct({
       identity, groupId, kind: 9005,
       tags: [['h', groupId]],
       content: 'unpin',
     });
+    assertSecurityContextOwner(identity.securityFence, identity.pk);
     if (!ev) throw new Error('Unlock your account first.');
     const results = await Promise.allSettled(pool.publish(groupRelays, ev));
+    assertSecurityContextOwner(identity.securityFence, identity.pk);
     if (!results.some((result) => result.status === 'fulfilled')) {
       throw new Error('All group relays rejected the unpin.');
     }
     setPinnedMessages(prev => ({ ...prev, [groupId]: null }));
     return { success: true };
-  }, [identity?.pk, identity?.sk, setPinnedMessages]);
+  }, [identity, setPinnedMessages]);
 
   const fetchPinnedMessage = useCallback(async (groupId) => {
     try {
+      assertSecurityContextOwner(identity?.securityFence, identity?.pk);
       const pool = await getAuthenticatedPool(identity);
+      assertSecurityContextOwner(identity.securityFence, identity.pk);
       // Wide enough that a member flooding pins cannot push an admin's out
       // of the window: the standing check runs on everything, so a bigger
       // fetch only reads more events, never trusts more of them. (security S9)
@@ -2069,6 +2296,7 @@ export function useNIP29Group({ identity }) {
       // pin wins the shared slot, and an admin's pin fills it only when the
       // owner has none. (security S9 re-attack)
       const standing = await controlContext(groupId, identity.pk);
+      assertSecurityContextOwner(identity.securityFence, identity.pk);
       const read = (filter) => queryWithTimeout(pool, groupRelays, filter, 3000).catch(() => []);
       // Step 2 slice 2: the creator's pin event is authored by their actor
       // key's x-only form once captured, so the dedicated filter asks for BOTH
@@ -2085,6 +2313,7 @@ export function useNIP29Group({ identity }) {
             // the account arm shipping four REQ frames that named the
             // account on the group box. The held out-of-band pin answers.
             const { readAuthorityPin } = await import('../lib/crypto/authorityPins.js');
+            assertSecurityContextOwner(identity.securityFence, identity.pk);
             const held = readAuthorityPin(identity.pk, groupId);
             if (/^[0-9a-f]{66}$/.test(held || '')) actor = held.slice(2);
           }
@@ -2097,6 +2326,7 @@ export function useNIP29Group({ identity }) {
         ownerAuthorFilter ? read(ownerAuthorFilter) : [],
         read({ kinds: [9005], '#h': [groupId], limit: 500 }),
       ]);
+      assertSecurityContextOwner(identity.securityFence, identity.pk);
       const pin = pinnedMessageOf(ownerEvents, memberEvents, (event) => (
         // Step 2 slice 2: actor-shaped pin events resolve through rows first.
         authorizeGroupPin({
@@ -2105,12 +2335,14 @@ export function useNIP29Group({ identity }) {
           creator: standing.creator,
         })
       ));
+      assertSecurityContextOwner(identity.securityFence, identity.pk);
       setPinnedMessages(prev => ({ ...prev, [groupId]: pin }));
       return pin;
     } catch (e) {
+      if (e?.code === 'SECURITY_CONTEXT_EXPIRED') return null;
       return null;
     }
-  }, [identity?.pk, identity?.sk, setPinnedMessages]);
+  }, [identity, setPinnedMessages]);
 
   return {
     createGroup,

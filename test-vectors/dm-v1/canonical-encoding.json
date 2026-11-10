@@ -1,0 +1,88 @@
+{
+  "schema": "cipher-dm-kat/v1",
+  "kind": "canonical-encoding",
+  "cases": [
+    {
+      "id": "sorted-keys",
+      "input": {
+        "zeta": 1,
+        "alpha": 2,
+        "Mid": 3,
+        "a": 4,
+        "é": 5
+      },
+      "expectEncoding": "{\"Mid\":3,\"a\":4,\"alpha\":2,\"zeta\":1,\"é\":5}",
+      "expectDigest": "39bbef55df41274b44daed5b361c71b44005238ed11a3d9174f8790849949818",
+      "expectError": null
+    },
+    {
+      "id": "safe-integers-and-nested-array",
+      "input": {
+        "n": [
+          -5,
+          0,
+          7
+        ],
+        "s": "keepémoji 😀",
+        "b": false,
+        "nil": null
+      },
+      "expectEncoding": "{\"b\":false,\"n\":[-5,0,7],\"nil\":null,\"s\":\"keepémoji 😀\"}",
+      "expectDigest": "cef2393572b80c4fe2cc99cec877f8e28efbeb703b34f866ad8ec24065a6b070",
+      "expectError": null
+    },
+    {
+      "id": "decimal-string-not-float",
+      "input": {
+        "amount": "0.500000000000"
+      },
+      "expectEncoding": "{\"amount\":\"0.500000000000\"}",
+      "expectDigest": "482d157ab074dbec05a6fe1e11bb05a8c03e3dfac3670cd3325021c8f8dcd3d0",
+      "expectError": null
+    },
+    {
+      "id": "empty-object-and-array",
+      "input": {
+        "o": {},
+        "a": []
+      },
+      "expectEncoding": "{\"a\":[],\"o\":{}}",
+      "expectDigest": "87cdbc0612368e055fe4b606b43adedafa7e624d96f40206dcd797344ba70098",
+      "expectError": null
+    },
+    {
+      "id": "float-refused",
+      "input": null,
+      "inputValueClass": "0.5",
+      "expectEncoding": null,
+      "expectDigest": null,
+      "expectError": "Canonical encoding refused: 0.5 at $ is not a safe integer. Amounts ride as decimal STRINGS per docs/DM-TEST-PROFILE-V1.md."
+    },
+    {
+      "id": "nonfinite-refused",
+      "input": null,
+      "inputValueClass": "NaN",
+      "expectEncoding": null,
+      "expectDigest": null,
+      "expectError": "Canonical encoding refused: non-finite number at $"
+    },
+    {
+      "id": "bigint-refused-error-class",
+      "input": null,
+      "inputValueClass": "9007199254740992",
+      "expectEncoding": null,
+      "expectDigest": null,
+      "expectError": "Canonical encoding refused: 9007199254740992 at $ is not a safe integer. Amounts ride as decimal STRINGS per docs/DM-TEST-PROFILE-V1.md."
+    },
+    {
+      "id": "canonical-vs-insertion-order",
+      "note": "two objects with identical entries in different insertion order encode identically",
+      "expectEncoding": "{\"a\":2,\"b\":1}",
+      "expectSameAsId": "sorted-keys-equal"
+    },
+    {
+      "id": "sorted-keys-equal",
+      "expectEncoding": "{\"a\":2,\"b\":1}"
+    }
+  ]
+}

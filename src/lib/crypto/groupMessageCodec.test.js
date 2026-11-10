@@ -66,6 +66,34 @@ test('an encrypted message still round-trips, and the AAD binding is unchanged',
   assert.equal((await decodeForCipherTest({ event: ev('{}', [['ep', 'x']]), groupId: GROUP, store })).error, 'decrypt-failed');
 });
 
+test('encrypted group decode passes the captured account fence to the key store', async () => {
+  const key = generateGroupKey();
+  const fence = { id: 'captured-incarnation' };
+  let receivedFence;
+  const store = {
+    getGroupKey: async (_groupId, _epoch, capturedFence) => {
+      receivedFence = capturedFence;
+      return key;
+    },
+    getCurrentGroupKey: async () => ({ epoch: 1, bytes: key }),
+  };
+  const envelope = await encryptGroupMessage({
+    rawKey: key,
+    plaintext: JSON.stringify({ type: 'text', message: 'fenced read' }),
+    groupId: GROUP,
+    epoch: 1,
+    senderPubkey: SENDER,
+  });
+  const decoded = await decodeForCipherTest({
+    event: ev(JSON.stringify(envelope), [['ep', '1']]),
+    groupId: GROUP,
+    store,
+    securityFence: fence,
+  });
+  assert.equal(decoded.parsed.message, 'fenced read');
+  assert.equal(receivedFence, fence);
+});
+
 test('a group-key holder outside current governance standing cannot inject or replay a message', async () => {
   const key = generateGroupKey();
   const store = storeHolding(new Map([[1, key], [2, key]]));

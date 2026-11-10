@@ -1,0 +1,57 @@
+{
+  "date": "2026-11-10",
+  "milestone": "independent-account commerce app path over local relay",
+  "environment": {
+    "node": "v20.20.2",
+    "npm": "10.8.2",
+    "repository_head": "2172f726f83923801b87ea93de897d4b271add9a",
+    "tested_staged_index_tree": "c2578e5ed280326978139cb9f4f735666382fcc6",
+    "execution": "isolated source snapshot of the staged index with node_modules linked; .grok excluded; disposable loopback NIP-01 relay, local watcher, and synthetic wallet RPC"
+  },
+  "checks": [
+    {
+      "command": "npm run test:commerce-local-relay",
+      "result": "pass",
+      "exit_code": 0,
+      "coverage": [
+        "Restored distinct synthetic buyer and vendor Nostr accounts in separate Chromium contexts.",
+        "Buyer order request and vendor address-issued update traveled through the existing browser NIP-44/NIP-59 app path and were received by the other account over the local relay.",
+        "Vendor paymentWatch.checkPayment accepted the actual local watcher handler's signed v2 report for one synthetic incoming Monero transfer.",
+        "Vendor's confirmed update was delivered back to and received by the buyer.",
+        "The three outer kind-1059 events were retained by the local relay and did not expose the order title as plaintext.",
+        "Watcher preflight and report read succeeded; the derived child token was in Authorization and absent from the request URL."
+      ],
+      "observations": {
+        "buyer_received_confirmed_update": true,
+        "watcher_state": "confirmed",
+        "synthetic_txid": "synthetic-commerce-order-tx",
+        "request_event_id": "f2bbdee6993856674fb08e9e73dea2cbc8b0c0911084d838d31739f4794a59bd",
+        "acceptance_event_id": "e951b5d75c2887a7f065b782d3dd9af75e83915c44a214684b62d606623a2f5e",
+        "confirmation_event_id": "fb872b9953a64268c08828badf719ba7039280f751783a411c265093153c7af7"
+      }
+    },
+    {
+      "command": "npx oxlint scripts/commerce-local-relay-integration.mjs && node --check scripts/commerce-local-relay-integration.mjs",
+      "result": "pass",
+      "exit_code": 0
+    },
+    {
+      "command": "git diff --cached --check && git diff --check",
+      "result": "pass",
+      "exit_code": 0
+    }
+  ],
+  "source_sha256": {
+    "scripts/commerce-local-relay-integration.mjs": "e45e9b92355d9a3ec0152091cf7ac869aea2a5da79a4eda76bf7fe9e0742fb63",
+    "package.json": "6df11672502ff2bf1ae1a4ee5854a707999533913384f4c93805e803bca59e69",
+    "scripts/payment-watcher.mjs": "880fec2f60e8e8c7604e2e6aadf6fdab57e1bb58ed43fffdbd95fe38c666861c",
+    "src/lib/paymentWatch.js": "348cffca1e4217d76d6b0aa9ca8833b9dc84d4c3b0d16ed2696ca06e3ad2e770",
+    "src/lib/paymentWatcherTrust.js": "5c2d09fcf6ce91756bac04419241b0e428bc336ef7c94a1dfead879884e63d52"
+  },
+  "limits": [
+    "Accounts, wallet RPC response, transfer, and transaction identifier are synthetic; no chain or wallet-daemon evidence.",
+    "The harness exercises app DM APIs for order payloads rather than clicking buyer/vendor commerce UI, and it does not create or verify the vendor receipt-ledger entry.",
+    "Relay and watcher are local test services; no deployed operator setup or public-relay test.",
+    "This does not change or migrate production DMs and is not a commerce release decision."
+  ]
+}

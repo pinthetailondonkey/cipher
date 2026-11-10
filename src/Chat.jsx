@@ -44,7 +44,7 @@ export default function Chat({
   } = useNIP29Group({ identity });
   const { sendReaction, subscribeToReactions, subscribeToGroupReactions } = useReactions({ identity });
   const { sendVouch } = useReputation({ identity });
-  const setGroups = useMyGroups(identity?.pk);
+  const setGroups = useMyGroups(identity?.pk, identity?.securityFence);
   const directory = useGroupDirectory({ identity, createGroupHook, setGroups });
   const { fetchChats } = useChatBootstrap({
     identity,

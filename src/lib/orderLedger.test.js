@@ -332,7 +332,7 @@ test('the checkout failure branch cleans up, and a queued order never takes that
   // Accepted and queued writes settle the stored row; neither runs rollback.
   const accepted = checkout.slice(checkout.indexOf('let confirmedMessage ='));
   assert.match(accepted, /deliveryStatus: outcome/);
-  assert.match(accepted, /result\.queued && !\(await db\.outbox\.get\(result\.event\.id\)\)/);
+  assert.match(accepted, /if \(result\.queued\) \{\s*const queuedEvent = await db\.outbox\.get\(result\.event\.id\);\s*securityFence\.assertCurrent\(\);\s*if \(!queuedEvent\)/);
   assert.match(accepted, /return \{ outcome: confirmedMessage\.deliveryStatus === 'queued' \? 'queued' : 'sent' \}/);
   assert.equal(/db\.messages\.delete|outcome: 'failed'/.test(accepted), false);
 });

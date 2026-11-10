@@ -75,6 +75,62 @@ const VECTOR = {
 
 const displayTxid = () => hexToScript(VECTOR.leTxid).slice().reduceRight((t, b) => t + b.toString(16).padStart(2, '0'), '');
 
+function independentlyDecodeWitnessTx(hex) {
+  const bytes = hexToScript(hex);
+  let cursor = 0;
+  const take = (size) => {
+    assert.ok(Number.isSafeInteger(size) && size >= 0 && cursor + size <= bytes.length, 'serialized transaction is not truncated');
+    const value = bytes.slice(cursor, cursor + size);
+    cursor += size;
+    return value;
+  };
+  const compact = () => {
+    const first = take(1)[0];
+    if (first < 253) return first;
+    const size = first === 253 ? 2 : first === 254 ? 4 : 8;
+    const encoded = take(size);
+    let value = 0n;
+    for (let index = size - 1; index >= 0; index -= 1) value = (value << 8n) | BigInt(encoded[index]);
+    assert.ok(value <= BigInt(Number.MAX_SAFE_INTEGER), 'fixture count fits a safe integer');
+    return Number(value);
+  };
+  const version = take(4);
+  assert.deepEqual([...take(2)], [0, 1], 'segwit marker and flag');
+  const inputStart = cursor;
+  const inputCount = compact();
+  const inputs = [];
+  for (let index = 0; index < inputCount; index += 1) {
+    const txid = take(32);
+    const vout = take(4);
+    const script = take(compact());
+    const sequence = take(4);
+    inputs.push({ txid, vout, script, sequence });
+  }
+  const outputCount = compact();
+  const outputs = [];
+  for (let index = 0; index < outputCount; index += 1) {
+    const amount = take(8);
+    const script = take(compact());
+    outputs.push({ amount, script });
+  }
+  const outputsEnd = cursor;
+  const witnesses = [];
+  for (let index = 0; index < inputCount; index += 1) {
+    const itemCount = compact();
+    const items = [];
+    for (let item = 0; item < itemCount; item += 1) items.push(take(compact()));
+    witnesses.push(items);
+  }
+  const locktime = take(4);
+  assert.equal(cursor, bytes.length, 'no trailing serialized transaction bytes');
+  const base = new Uint8Array(version.length + (outputsEnd - inputStart) + locktime.length);
+  base.set(version, 0);
+  base.set(bytes.slice(inputStart, outputsEnd), version.length);
+  base.set(locktime, base.length - locktime.length);
+  const displayHash = (serialized) => [...sha256(sha256(serialized)).reverse()].map((byte) => byte.toString(16).padStart(2, '0')).join('');
+  return { inputs, outputs, witnesses, txid: displayHash(base), wtxid: displayHash(bytes) };
+}
+
 function vectorTx() {
   return {
     version: 1, // the BIP-143 example uses version 1
@@ -204,6 +260,35 @@ test('a timed refund carries the CSV clock on the input sequence, not anywhere e
   assert.equal(result.tx.vout[0].sats < result.tx.vin[0].amountSats, true); // miner fee came out
 });
 
+test('release and refund wire bytes independently decode with the witness script last and distinct txid/wtxid', () => {
+  const release = finalizeReleaseTx({
+    fundingTxid: FUNDING_TXID, fundingSats: FUNDING, witnessScriptHex: SCRIPT_HEX,
+    outputs: TX_OUTS(), vendorKeyBytes: VENDOR_PRIV, buyerKeyBytes: BUYER_PRIV,
+  });
+  const releaseWire = independentlyDecodeWitnessTx(release.bytes);
+  assert.equal(releaseWire.inputs.length, 1);
+  assert.equal(releaseWire.inputs[0].sequence[0], 0xff);
+  assert.equal(scriptToHex(releaseWire.witnesses[0].at(-1)), SCRIPT_HEX);
+  assert.deepEqual([...releaseWire.witnesses[0][2]], [1]);
+  assert.equal(releaseWire.witnesses[0][0].at(-1), 1);
+  assert.equal(releaseWire.witnesses[0][1].at(-1), 1);
+  assert.equal(releaseWire.txid, release.txid);
+  assert.notEqual(releaseWire.txid, releaseWire.wtxid);
+
+  const refund = finalizeTimedRefundTx({
+    fundingTxid: FUNDING_TXID, fundingSats: Q.depositSats, witnessScriptHex: SCRIPT_HEX,
+    outputs: [{ sats: Q.depositSats - 1440n, scriptHex: '76a914' + '33'.repeat(20) + '88ac' }],
+    delayBlocks: 2880, buyerKeyBytes: BUYER_PRIV,
+  });
+  const refundWire = independentlyDecodeWitnessTx(refund.bytes);
+  assert.equal(refundWire.inputs[0].sequence[0], 0x40);
+  assert.deepEqual([...refundWire.witnesses[0][1]], [], 'false branch selector is an empty stack item');
+  assert.equal(scriptToHex(refundWire.witnesses[0].at(-1)), SCRIPT_HEX);
+  assert.equal(refundWire.witnesses[0][0].at(-1), 1);
+  assert.equal(refundWire.txid, refund.txid);
+  assert.notEqual(refundWire.txid, refundWire.wtxid);
+});
+
 test('signatures are DER with one SIGHASH_ALL byte, checked byte by byte', () => {
   const digest = doubleSha256(new Uint8Array([9]));
   const sig = signSpend({ privateKeyBytes: VENDOR_PRIV, digest });
@@ -215,6 +300,9 @@ test('signatures are DER with one SIGHASH_ALL byte, checked byte by byte', () =>
     verifySpendSignature({ signatureBytes: sig, publicKeyBytes: secp256k1.getPublicKey(VENDOR_PRIV, true), digest }),
     true,
   );
+  for (const malformed of [new Uint8Array(), sig.slice(0, -1), Uint8Array.from([...sig.slice(0, -1), 0x02])]) {
+    assert.equal(verifySpendSignature({ signatureBytes: malformed, publicKeyBytes: secp256k1.getPublicKey(VENDOR_PRIV, true), digest }), false);
+  }
   assert.throws(() => signSpend({ privateKeyBytes: 'x', digest }), /32-byte/);
 });
 

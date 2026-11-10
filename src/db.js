@@ -3,6 +3,12 @@ import Dexie from 'dexie';
 import { mergeStoredMessage, patchStoredMessage, markReadThrough, replacedTempId, planTempSweep } from './lib/messageMerge';
 import { createWriteQueue } from './lib/writeQueue';
 import { clearSessionKey, setSessionKey } from './lib/sessionKey';
+import { accountDatabaseNames } from './lib/accountDatabaseInventory.js';
+import { assertSecurityContextOwner } from './lib/securityContextFence.js';
+import {
+  activateIndexedDbContext, assertIndexedDbContextActive, retireIndexedDbContext,
+  runAuthorizedIndexedDbWrite, SECURITY_CONTEXT_STORE,
+} from './lib/indexedDbContextGate.js';
 import {
   trySealMessageRow, openMessageRow, isSealedRow,
   queueAtRestWrite, takeAtRestWrites, requeueAtRestWrites, dropAtRestWrites,
@@ -13,6 +19,10 @@ const writeQueue = createWriteQueue();
 
 let _current = null;
 let _currentOwner = null;
+let _currentFence = null;
+let _queuedOwner = null;
+let _queuedFence = null;
+let _contextActivation = Promise.resolve();
 let _warnedOnce = false;
 
 function makeDB(name) {
@@ -131,22 +141,167 @@ function makeDB(name) {
   d.version(19).stores({
     messageEffects: '&effectKey, eventId, status, updatedAt',
   });
+  // v20 adds per-tab context markers. Every account data write in this build
+  // must serialize through the same marker store as context retirement.
+  d.version(20).stores({
+    securityContexts: '&id, owner, incarnation',
+  });
   return d;
 }
 
-export function openDBFor(pubkey) {
+export function openDBFor(pubkey, securityFence = null) {
   if (!pubkey) return null;
+  // A same-account reopen after `closeDB()` belongs to the captured
+  // incarnation unless the caller supplies a newer fence. Keep that fence
+  // when older non-UI call sites omit the optional argument; its live check
+  // below still rejects it if lock, switch, removal, or wipe retired it.
+  const activeFence = securityFence
+    || (_queuedOwner === pubkey ? _queuedFence : null);
+  if (activeFence && (activeFence.context?.owner !== pubkey
+    || typeof activeFence.assertCurrent !== 'function')) {
+    throw new Error('The database requires a security context for the same account.');
+  }
+  activeFence?.assertCurrent();
   localStorage.setItem('cipher_db_owner', pubkey);
-  if (_currentOwner === pubkey && _current) return _current;
+  if (_currentOwner === pubkey && _current) {
+    _currentFence = activeFence;
+    _queuedOwner = pubkey;
+    _queuedFence = activeFence;
+    _contextActivation = activateContextForCurrentDatabase(pubkey, activeFence);
+    queueWriteFlush(pubkey, activeFence);
+    return _current;
+  }
   if (_current) { try { _current.close(); } catch (_) {} }
   const name = 'CipherDB_v7_' + pubkey.slice(0, 16);
   _current = makeDB(name);
   _currentOwner = pubkey;
-  writeQueue.flush(flushTargetFor(_current));
+  _currentFence = activeFence;
+  _queuedOwner = pubkey;
+  _queuedFence = activeFence;
+  _contextActivation = activateContextForCurrentDatabase(pubkey, activeFence);
+  queueWriteFlush(pubkey, activeFence);
   // Writes that waited in memory for this account's vault key can be stored
   // now (src/lib/messageAtRest.js).
-  setTimeout(() => flushAtRestWrites(pubkey), 0);
+  setTimeout(() => flushAtRestWrites(pubkey, activeFence), 0);
   return _current;
+}
+
+function activateContextForCurrentDatabase(owner, securityFence) {
+  if (!securityFence) return Promise.resolve();
+  if (securityFence.context?.owner !== owner) {
+    return Promise.reject(new Error('The account database context belongs to another account.'));
+  }
+  const database = _current;
+  return activateIndexedDbContext(database, securityFence.context).then(() => {
+    securityFence.assertCurrent();
+  });
+}
+
+function queueWriteFlush(owner, securityFence) {
+  const database = _current;
+  const ready = _contextActivation;
+  void ready.then(() => {
+    if (_currentOwner !== owner || _current !== database || _currentFence !== securityFence) return;
+    return writeQueue.flush(flushTargetFor(database, owner, securityFence), {
+      owner, securityFence, requireContext: Boolean(securityFence),
+    });
+  }).catch((error) => {
+    if (error?.code !== 'SECURITY_CONTEXT_EXPIRED') {
+      console.error('[db] Account context could not be activated; queued writes remain held:', error);
+    }
+  });
+}
+
+async function runAccountDbWrite(database, owner, securityFence, stores, callback) {
+  await _contextActivation;
+  if (_current !== database || _currentOwner !== owner) {
+    throw new Error('The account database changed before the write could start.');
+  }
+  if (!securityFence) return database.transaction('rw', ...stores, callback);
+  if (securityFence.context?.owner !== owner) {
+    const error = new Error('The account database context belongs to another account.');
+    error.code = 'SECURITY_CONTEXT_EXPIRED';
+    throw error;
+  }
+  securityFence.assertCurrent();
+  const currentTransaction = Dexie.currentTransaction;
+  if (currentTransaction?.db === database
+    && currentTransaction.storeNames?.includes(SECURITY_CONTEXT_STORE)) {
+    await assertIndexedDbContextActive(database, securityFence.context);
+    const result = await callback();
+    securityFence.assertCurrent();
+    return result;
+  }
+  return runAuthorizedIndexedDbWrite(database, {
+    context: securityFence.context, stores,
+  }, async () => {
+    securityFence.assertCurrent();
+    const result = await callback();
+    securityFence.assertCurrent();
+    return result;
+  });
+}
+
+// Cross-module stores must pass the fence captured by their originating async
+// operation. Using the current global DB fence here would let an old callback
+// from a locked account join a later incarnation of the same account.
+export async function runAccountDbWriteForFence(securityFence, stores, callback) {
+  const owner = securityFence?.context?.owner;
+  if (!owner || typeof securityFence?.assertCurrent !== 'function') {
+    const error = new Error('A live account security context is required for this database write.');
+    error.code = 'SECURITY_CONTEXT_EXPIRED';
+    throw error;
+  }
+  securityFence.assertCurrent();
+  await _contextActivation;
+  const database = _current;
+  if (!database || _currentOwner !== owner || _currentFence !== securityFence) {
+    const error = new Error('The captured account security context no longer owns the open database.');
+    error.code = 'SECURITY_CONTEXT_EXPIRED';
+    throw error;
+  }
+  return runAccountDbWrite(database, owner, securityFence, stores,
+    () => callback(database));
+}
+
+export async function waitForSecurityContextActivation() {
+  await _contextActivation;
+}
+
+export async function retireDatabaseSecurityContext(context) {
+  if (_current && _currentOwner === context?.owner) {
+    try { await _contextActivation; } catch { /* retirement still attempts to remove any marker */ }
+    return retireIndexedDbContext(_current, context);
+  }
+  const name = accountDatabaseNames(context?.owner)[0];
+  const database = makeDB(name);
+  try {
+    await database.open();
+    return await retireIndexedDbContext(database, context);
+  } catch (error) {
+    return { retired: false, error: error?.message || String(error) };
+  } finally {
+    try { database.close(); } catch { /* close best-effort after marker result */ }
+  }
+}
+
+export async function retireAccountDatabaseContexts(owner) {
+  const name = accountDatabaseNames(owner)[0];
+  const database = makeDB(name);
+  try {
+    await database.open();
+    return await database.transaction('rw', SECURITY_CONTEXT_STORE, async () => {
+      const table = database.table(SECURITY_CONTEXT_STORE);
+      const rows = await table.where('owner').equals(owner).toArray();
+      for (const row of rows) await table.delete(row.id);
+      const leftovers = await table.where('owner').equals(owner).count();
+      return { retired: leftovers === 0, count: rows.length };
+    });
+  } catch (error) {
+    return { retired: false, error: error?.message || String(error) };
+  } finally {
+    try { database.close(); } catch { /* close best-effort after marker result */ }
+  }
 }
 
 // Rows that arrived while the vault was locked are sealed and stored now that
@@ -155,20 +310,24 @@ export function openDBFor(pubkey) {
 // the database changed hands mid-batch, or the vault key went away again —
 // are put back in the queue, never dropped (takeAtRestWrites already emptied
 // it, so anything left here exists nowhere else).
-async function flushAtRestWrites(owner) {
-  if (!owner || _currentOwner !== owner || !_current) return;
-  const rows = takeAtRestWrites(owner);
+async function flushAtRestWrites(owner, securityFence = _currentFence) {
+  if (!owner || _currentOwner !== owner || !_current || securityFence !== _currentFence) return;
+  try { securityFence?.assertCurrent(); } catch { return; }
+  const database = _current;
+  const rows = takeAtRestWrites(owner, securityFence);
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i];
     try {
-      if (_currentOwner !== owner || !_current) {
-        requeueAtRestWrites(owner, rows.slice(i));
+      if (_currentOwner !== owner || _current !== database || _currentFence !== securityFence) {
+        requeueAtRestWrites(owner, rows.slice(i), securityFence);
         return;
       }
+      securityFence?.assertCurrent();
       const [rawExisting, tombstone] = await Promise.all([
-        _current.messages.get(row.id),
-        _current.tombstones.get(row.id),
+        database.messages.get(row.id),
+        database.tombstones.get(row.id),
       ]);
+      securityFence?.assertCurrent();
       if (tombstone) continue;
       // The raw store returns the sealed envelope: open it before merging. A
       // merge over the envelope would carry `sealed` forward — the row's
@@ -179,47 +338,80 @@ async function flushAtRestWrites(owner) {
       const merged = mergeStoredMessage(existing, row, row.chatId || existing?.chatId);
       if (merged) delete merged.sealed;
       const sealed = await trySealMessageRow(merged || row);
+      securityFence?.assertCurrent();
       if (sealed === null) {
         // The vault key went away again mid-flush: hold this row, do not
         // drop it and do not write it in plaintext.
-        requeueAtRestWrites(owner, [row]);
+        requeueAtRestWrites(owner, [row], securityFence);
         continue;
       }
-      await _current.messages.put(sealed);
+      if (_currentOwner !== owner || _current !== database || _currentFence !== securityFence) {
+        requeueAtRestWrites(owner, rows.slice(i), securityFence);
+        return;
+      }
+      await runAccountDbWrite(database, owner, securityFence, ['messages'], async () => {
+        securityFence?.assertCurrent();
+        if (_currentOwner !== owner || _current !== database || _currentFence !== securityFence) {
+          throw new Error('The account database changed while an at-rest row was being flushed.');
+        }
+        await database.messages.put(sealed);
+        securityFence?.assertCurrent();
+      });
     } catch (error) {
+      if (error?.code === 'SECURITY_CONTEXT_EXPIRED') return;
       console.error('[db] A queued message could not be stored:', error);
     }
   }
 }
 
 export function closeDB() {
+  if (_currentOwner) {
+    _queuedOwner = _currentOwner;
+    _queuedFence = _currentFence;
+  }
   if (_current) { try { _current.close(); } catch (_) {} }
   _current = null;
   _currentOwner = null;
+  _currentFence = null;
+  _contextActivation = Promise.resolve();
 }
 
 export function currentOwner() { return _currentOwner; }
 
 // Deletes one account's whole database: messages, group keys, grants, and its
 // outbox. Used when that account is locked out. False when it did not go.
+export { accountDatabaseNames };
+
 export function deleteAccountDatabase(pubkey) {
-  if (!pubkey || typeof indexedDB === 'undefined') return Promise.resolve(false);
+  const names = accountDatabaseNames(pubkey);
+  if (typeof indexedDB === 'undefined') return Promise.resolve({
+    success: false, deleted: [], failures: names.map((name) => ({ name, status: 'unavailable' })),
+  });
   if (_currentOwner === pubkey) closeDB();
   // Pending at-rest rows belong to the gone database.
   dropAtRestWrites(pubkey);
-  const name = 'CipherDB_v7_' + pubkey.slice(0, 16);
-  return new Promise((resolve) => {
-    const request = indexedDB.deleteDatabase(name);
-    request.onsuccess = () => resolve(true);
+  return Promise.all(names.map((name) => new Promise((resolve) => {
+    let request;
+    try { request = indexedDB.deleteDatabase(name); }
+    catch (error) {
+      console.error(`[db] Could not start deleting ${name}:`, error);
+      resolve({ name, status: 'failed', error: error?.message || String(error) });
+      return;
+    }
+    request.onsuccess = () => resolve({ name, status: 'deleted' });
     request.onerror = () => {
       console.error(`[db] Could not delete ${name}:`, request.error);
-      resolve(false);
+      resolve({ name, status: 'failed', error: request.error?.message || 'IndexedDB deletion failed' });
     };
     request.onblocked = () => {
       console.error(`[db] Deleting ${name} was blocked by another open tab.`);
-      resolve(false);
+      resolve({ name, status: 'blocked' });
     };
-  });
+  }))).then((resources) => ({
+    success: resources.every((resource) => resource.status === 'deleted'),
+    deleted: resources.filter((resource) => resource.status === 'deleted').map(({ name }) => name),
+    failures: resources.filter((resource) => resource.status !== 'deleted'),
+  }));
 }
 
 // Safe stub returned when accessed before openDBFor().
@@ -227,8 +419,10 @@ export function deleteAccountDatabase(pubkey) {
 const stubTable = (tableName) => ({
   toArray: () => Promise.resolve([]),
   get: () => Promise.resolve(undefined),
-  put: (...args) => writeQueue.enqueue(tableName, 'put', args),
-  add: (...args) => writeQueue.enqueue(tableName, 'add', args),
+  put: (...args) => writeQueue.enqueue(tableName, 'put', args,
+    _queuedOwner && _queuedFence ? { owner: _queuedOwner, securityFence: _queuedFence } : null),
+  add: (...args) => writeQueue.enqueue(tableName, 'add', args,
+    _queuedOwner && _queuedFence ? { owner: _queuedOwner, securityFence: _queuedFence } : null),
   clear: () => Promise.resolve(),
   delete: () => Promise.resolve(),
   count: () => Promise.resolve(0),
@@ -286,13 +480,25 @@ const queryMessages = (table) => ({
 // One message put through the at-rest layer. Without the vault key the row is
 // held in memory for this account (messageAtRest) and never reaches disk.
 const writeMessage = async (table, row) => {
-  if (isSealedRow(row) || currentOwner() === null) return table.put(await trySealMessageRow(row) ?? row);
+  const database = _current;
+  const owner = _currentOwner;
+  const fence = _currentFence;
+  fence?.assertCurrent();
+  if (isSealedRow(row) || currentOwner() === null) {
+    const sealed = await trySealMessageRow(row) ?? row;
+    const result = await runAccountDbWrite(database, owner, fence, ['messages'], () => table.put(sealed));
+    fence?.assertCurrent();
+    return result;
+  }
   const sealed = await trySealMessageRow(row);
+  fence?.assertCurrent();
   if (sealed === null) {
-    queueAtRestWrite(currentOwner(), row);
+    queueAtRestWrite(currentOwner(), row, _currentFence);
     return;
   }
-  return table.put(sealed);
+  const result = await runAccountDbWrite(database, owner, fence, ['messages'], () => table.put(sealed));
+  fence?.assertCurrent();
+  return result;
 };
 // The app's view of the messages table: sealed on write, opened on read.
 const messagesView = (table) => ({
@@ -319,11 +525,13 @@ const messagesView = (table) => ({
       if (sealed === undefined) return rows.length;
       if (sealed !== null) sealedRows.push(sealed);
     }
-    if (sealedRows.length) return table.bulkPut(sealedRows, ...rest);
+    if (sealedRows.length) {
+      return runAccountDbWrite(_current, _currentOwner, _currentFence, ['messages'], () => table.bulkPut(sealedRows, ...rest));
+    }
   },
-  clear: () => table.clear(),
-  delete: (...args) => table.delete(...args),
-  bulkDelete: (...args) => table.bulkDelete(...args),
+  clear: () => runAccountDbWrite(_current, _currentOwner, _currentFence, ['messages'], () => table.clear()),
+  delete: (...args) => runAccountDbWrite(_current, _currentOwner, _currentFence, ['messages'], () => table.delete(...args)),
+  bulkDelete: (...args) => runAccountDbWrite(_current, _currentOwner, _currentFence, ['messages'], () => table.bulkDelete(...args)),
   count: (...args) => table.count(...args),
 });
 
@@ -331,7 +539,7 @@ async function writeSealedForRow(table, row) {
   if (isSealedRow(row)) return row;
   if (currentOwner() === null) return (await trySealMessageRow(row)) ?? row;
   const sealed = await trySealMessageRow(row);
-  if (sealed === null) queueAtRestWrite(currentOwner(), row);
+  if (sealed === null) queueAtRestWrite(currentOwner(), row, _currentFence);
   return sealed;
 }
 
@@ -339,26 +547,28 @@ async function writeSealedForRow(table, row) {
 // the raw Dexie stores, except `messages` — a queued message written straight
 // to the store would land in plaintext, bypassing the at-rest seal, so it
 // must take the same view as every other message write.
-function flushTargetFor(d) {
+function flushTargetFor(d, owner, securityFence) {
   return new Proxy({}, {
     get(_t, name) {
       if (name === 'messages') return messagesView(d.messages);
-      return d[name];
+      const table = d[name];
+      if (!table || typeof table.put !== 'function' || !securityFence) return table;
+      return new Proxy(table, {
+        get(target, member) {
+          const value = target[member];
+          if (!['put', 'add', 'bulkPut', 'update', 'delete', 'bulkDelete', 'clear'].includes(member)
+            || typeof value !== 'function') return typeof value === 'function' ? value.bind(target) : value;
+          return (...args) => runAccountDbWrite(d, owner, securityFence, [String(name)], () => value.apply(target, args));
+        },
+      });
     },
   });
 }
 
-// Restore DB connection if HMR reloads this module. Sits below the at-rest
-// views so flushTargetFor resolves `messagesView` when the queue is applied.
-try {
-  const saved = localStorage.getItem('cipher_db_owner');
-  if (saved) {
-    const name = 'CipherDB_v7_' + saved.slice(0, 16);
-    _current = makeDB(name);
-    _currentOwner = saved;
-    writeQueue.flush(flushTargetFor(_current));
-  }
-} catch (e) {}
+// Do not restore a database handle from the persisted owner string after HMR.
+// That value names an account, but carries no proof that the same unlocked
+// incarnation is still active. The authenticated application path calls
+// openDBFor with its live fence and flushes only writes captured by that fence.
 
 export const db = new Proxy({}, {
   get(_t, prop) {
@@ -372,29 +582,112 @@ export const db = new Proxy({}, {
       }
       return () => Promise.resolve();
     }
+    if (prop === 'transaction') {
+      const database = _current;
+      const fence = _currentFence;
+      return (...args) => {
+        if (!fence) return database.transaction(...args);
+        fence.assertCurrent();
+        const callback = args.at(-1);
+        if (typeof callback !== 'function') return database.transaction(...args);
+        const [mode, ...requestedStores] = args.slice(0, -1);
+        if (mode !== 'rw' && mode !== 'readwrite') {
+          return database.transaction(...args.slice(0, -1), async (...callbackArgs) => {
+            await _contextActivation;
+            fence.assertCurrent();
+            const result = await callback(...callbackArgs);
+            fence.assertCurrent();
+            return result;
+          });
+        }
+        const stores = requestedStores.flat().filter((name) => typeof name === 'string');
+        return runAuthorizedIndexedDbWrite(database, {
+          context: fence.context,
+          stores,
+        }, async () => {
+          fence.assertCurrent();
+          const result = await callback(Dexie.currentTransaction);
+          fence.assertCurrent();
+          return result;
+        });
+      };
+    }
     if (prop === 'messages') return messagesView(_current.messages);
     const v = _current[prop];
+    if (v && typeof v === 'object' && typeof v.put === 'function') {
+      const fence = _currentFence;
+      if (!fence) return v;
+      return new Proxy(v, {
+        get(table, member) {
+          const value = table[member];
+          if (!['put', 'add', 'bulkPut', 'update', 'delete', 'bulkDelete', 'clear'].includes(member)
+            || typeof value !== 'function') return typeof value === 'function' ? value.bind(table) : value;
+          const database = _current;
+          const owner = _currentOwner;
+          return (...args) => runAccountDbWrite(database, owner, fence, [String(prop)], () => value.apply(table, args));
+        },
+      });
+    }
     return typeof v === 'function' ? v.bind(_current) : v;
   },
 });
 
 export const saveMessage = async (chatId, msg) => {
-  try {
-    if (!currentOwner()) {
-      await db.messages.put({ ...msg, chatId });
-      return;
+  const database = _current;
+  const owner = _currentOwner;
+  const fence = _currentFence;
+  if (!msg?.id) return;
+  if (!database || !owner) {
+    // A close can race a relay callback that already belongs to the current
+    // account. Preserve that row with its captured owner/fence so a later
+    // open can merge and seal it; the flush will discard it if the account
+    // incarnation was retired in the meantime.
+    const queuedOwner = _queuedOwner;
+    const queuedFence = _queuedFence;
+    if (!queuedOwner) return;
+    try {
+      queuedFence?.assertCurrent();
+      queueAtRestWrite(queuedOwner, { ...msg, chatId }, queuedFence);
+    } catch {
+      // A retired callback is held out of both IndexedDB and the queue.
     }
-    await db.transaction('rw', 'messages', 'tombstones', async () => {
-      const [existing, tombstone] = await Promise.all([db.messages.get(msg.id), db.tombstones.get(msg.id)]);
+    return;
+  }
+  try {
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      fence?.assertCurrent();
+      if (_current !== database || _currentOwner !== owner || _currentFence !== fence) return;
+      const rawExisting = await database.messages.get(msg.id);
+      const existingFingerprint = rawExisting == null ? null : JSON.stringify(rawExisting);
+      const [existing, tombstone] = await Promise.all([
+        rawExisting ? openMessageRow(rawExisting) : rawExisting,
+        database.tombstones.get(msg.id),
+      ]);
       const merged = mergeStoredMessage(existing, msg, chatId, { tombstoned: !!tombstone });
-      if (merged) {
-        await db.messages.put(merged);
+      if (!merged) return;
+      const sealed = await trySealMessageRow(merged);
+      if (!sealed) {
+        // `saveMessage` does not go through the table proxy below. Preserve
+        // its merged row in the at-rest queue while locked so the next unlock
+        // can re-read the existing sealed row, apply this update, and re-seal.
+        queueAtRestWrite(owner, merged, fence);
+        return;
+      }
+      fence?.assertCurrent();
+      const result = await db.transaction('rw', 'messages', 'tombstones', async () => {
+        const current = await database.messages.get(msg.id);
+        if ((current == null ? null : JSON.stringify(current)) !== existingFingerprint) return 'retry';
+        if (await database.tombstones.get(msg.id)) return 'tombstoned';
+        await database.messages.put(sealed);
         // The real row is in: the temporary one it replaces goes in the same
         // transaction.
         const temp = replacedTempId(merged);
-        if (temp) await db.messages.delete(temp);
-      }
-    });
+        if (temp) await database.messages.delete(temp);
+        return 'saved';
+      });
+      if (result !== 'retry') return;
+    }
+    throw new Error('The message changed repeatedly while its update was being prepared.');
   } catch (error) {
     console.error('[db] Could not save message:', error);
   }
@@ -432,14 +725,18 @@ export const saveMessageOnce = async (chatId, msg) => {
 // The read marker of a chat, written to the database. It only moves forward:
 // opening a chat and a message arriving into an open chat both call it, and a
 // stale caller must not pull the marker back.
-export const markChatRead = async (chatId, at = Math.floor(Date.now() / 1000)) => {
+export const markChatRead = async (chatId, at = Math.floor(Date.now() / 1000), securityFence = null, owner = securityFence?.context?.owner) => {
   if (!currentOwner() || !chatId) return false;
   try {
+    if (securityFence) assertSecurityContextOwner(securityFence, owner);
     await db.transaction('rw', 'chatReads', async () => {
+      if (securityFence) assertSecurityContextOwner(securityFence, owner);
       const current = await db.chatReads.get(chatId);
+      if (securityFence) assertSecurityContextOwner(securityFence, owner);
       if ((current?.lastRead || 0) >= at) return;
       await db.chatReads.put({ chatId, lastRead: at });
     });
+    if (securityFence) assertSecurityContextOwner(securityFence, owner);
     return true;
   } catch (error) {
     console.error('[db] Could not save the read marker:', error);
@@ -450,14 +747,27 @@ export const markChatRead = async (chatId, at = Math.floor(Date.now() / 1000)) =
 // Settles temporary send rows a closed app left behind (see planTempSweep).
 // Returns the plan that was applied.
 export const sweepTempMessages = async () => {
-  if (!currentOwner()) return null;
+  const database = _current;
+  const owner = _currentOwner;
+  const fence = _currentFence;
+  if (!owner || !database) return null;
   try {
     const [rows, outbox] = await Promise.all([db.messages.toArray(), db.outbox.toArray()]);
     const plan = planTempSweep(rows, outbox.map((row) => row.event));
+    const sealedUpdates = [];
+    for (const [ids, deliveryStatus] of [[plan.queued, 'queued'], [plan.failed, 'failed']]) {
+      for (const id of ids) {
+        const row = rows.find((item) => item.id === id);
+        const sealed = row && await trySealMessageRow({ ...row, deliveryStatus });
+        if (!sealed) return null;
+        sealedUpdates.push(sealed);
+      }
+    }
+    fence?.assertCurrent();
+    if (_current !== database || _currentOwner !== owner || _currentFence !== fence) return null;
     await db.transaction('rw', 'messages', async () => {
-      for (const id of plan.remove) await db.messages.delete(id);
-      for (const id of plan.queued) await db.messages.put({ ...rows.find((r) => r.id === id), deliveryStatus: 'queued' });
-      for (const id of plan.failed) await db.messages.put({ ...rows.find((r) => r.id === id), deliveryStatus: 'failed' });
+      for (const id of plan.remove) await database.messages.delete(id);
+      for (const row of sealedUpdates) await database.messages.put(row);
     });
     return plan;
   } catch (error) {
@@ -495,17 +805,30 @@ export const deletedMessageIds = async () => {
 // Records a change this device made to a stored message, so it survives the
 // next history fetch. False when nothing was written.
 export const patchMessage = async (id, patch) => {
-  if (!currentOwner()) return false;
+  const database = _current;
+  const owner = _currentOwner;
+  const fence = _currentFence;
+  if (!owner || !database || !id) return false;
   try {
-    let written = false;
-    await db.transaction('rw', 'messages', async () => {
-      const existing = await db.messages.get(id);
-      if (!existing) return;
-      await db.messages.put(patchStoredMessage(existing, patch));
-      written = true;
-    });
-    if (!written) console.error('[db] No stored message to change:', id);
-    return written;
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      fence?.assertCurrent();
+      if (_current !== database || _currentOwner !== owner || _currentFence !== fence) return false;
+      const rawExisting = await database.messages.get(id);
+      if (!rawExisting) return false;
+      const fingerprint = JSON.stringify(rawExisting);
+      const existing = await openMessageRow(rawExisting);
+      const sealed = await trySealMessageRow(patchStoredMessage(existing, patch));
+      if (!sealed) return false;
+      fence?.assertCurrent();
+      const result = await db.transaction('rw', 'messages', async () => {
+        const current = await database.messages.get(id);
+        if (!current || JSON.stringify(current) !== fingerprint) return 'retry';
+        await database.messages.put(sealed);
+        return 'saved';
+      });
+      if (result === 'saved') return true;
+    }
+    throw new Error('The message changed repeatedly while its update was being prepared.');
   } catch (error) {
     console.error('[db] Could not save the change to a message:', error);
     return false;
@@ -516,15 +839,33 @@ export const patchMessage = async (id, patch) => {
 // chat at or before `upTo` become 'read'. Returns the ids changed. The next
 // history fetch re-saves the relay copy as 'sent' and the merge keeps 'read'.
 export const markSentMessagesRead = async (chatId, upTo) => {
-  if (!currentOwner() || !chatId) return [];
+  const database = _current;
+  const owner = _currentOwner;
+  const fence = _currentFence;
+  if (!owner || !database || !chatId) return [];
   try {
-    let changed = [];
-    await db.transaction('rw', 'messages', async () => {
-      const rows = await db.messages.where('chatId').equals(chatId).toArray();
-      changed = markReadThrough(rows, upTo);
-      for (const row of changed) await db.messages.put(row);
-    });
-    return changed.map((row) => row.id);
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      fence?.assertCurrent();
+      if (_current !== database || _currentOwner !== owner || _currentFence !== fence) return [];
+      const rawRows = await database.messages.where('chatId').equals(chatId).toArray();
+      const openedRows = await Promise.all(rawRows.map(openMessageRow));
+      const changed = markReadThrough(openedRows, upTo);
+      const changedById = new Map(changed.map((row) => [row.id, row]));
+      const sealedUpdates = await Promise.all(changed.map(trySealMessageRow));
+      if (sealedUpdates.some((row) => !row)) return [];
+      const fingerprints = new Map(rawRows.map((row) => [row.id, JSON.stringify(row)]));
+      fence?.assertCurrent();
+      const result = await db.transaction('rw', 'messages', async () => {
+        for (const id of changedById.keys()) {
+          const current = await database.messages.get(id);
+          if (!current || JSON.stringify(current) !== fingerprints.get(id)) return 'retry';
+        }
+        for (const row of sealedUpdates) await database.messages.put(row);
+        return 'saved';
+      });
+      if (result === 'saved') return changed.map((row) => row.id);
+    }
+    throw new Error('The message list changed repeatedly while read marks were being prepared.');
   } catch (error) {
     console.error('[db] Could not save the read mark:', error);
     return [];

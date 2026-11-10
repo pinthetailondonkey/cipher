@@ -1,4 +1,4 @@
-import { lazy, Suspense, useRef, useState, useEffect } from 'react'
+import { lazy, Suspense, useCallback, useRef, useState, useEffect } from 'react'
 import {
   User, AlertCircle, RefreshCw,
   Lock, ArrowLeft, Copy, CreditCard, Camera,
@@ -10,7 +10,6 @@ import AccountSwitcher from './components/chat/AccountSwitcher';
 import IdentityBackup from './components/chat/IdentityBackup';
 import MyOrders from './components/chat/MyOrders';
 import MessageRequests from './components/chat/MessageRequests';
-import { db } from './db';
 // N1: a listing photo and the account avatar upload under throwaway keys.
 // The identity-keyed Blossom auth this file used before let every media host
 // build an npub-to-IP-to-file-hash log of vendors who published a menu —
@@ -80,6 +79,17 @@ export default function Wallet({ identity, onOpenChat, startView = 'main' }) {
   const [btcNetwork, setBtcNetwork] = useState('bc')
   const [xmrPrivateViewKey, setXmrPrivateViewKey] = useState('')
   const [status, setStatus] = useState('')
+  const assertWalletContext = useCallback(() => {
+    const fence = identity?.securityFence;
+    if (!identity?.pk || fence?.context?.owner !== identity.pk
+      || typeof fence?.assertCurrent !== 'function') {
+      const error = new Error('The account security context is unavailable.');
+      error.code = 'SECURITY_CONTEXT_EXPIRED';
+      throw error;
+    }
+    fence.assertCurrent();
+    return fence;
+  }, [identity]);
   // ui/Toast queue — this screen only feeds it.
   useEffect(() => {
     if (!status) return undefined;
@@ -101,29 +111,48 @@ export default function Wallet({ identity, onOpenChat, startView = 'main' }) {
   const [confXmr, setConfXmr] = useState(savedConf.xmr != null ? String(savedConf.xmr) : '');
   const [autoVouch, setAutoVouch] = useState(() => scopedGet('auto_vouch_on_delivery', false) !== false);
 
-  const saveConfirmations = (event) => {
+  const setPreferredPaymentMethod = useCallback((method) => {
+    let securityFence;
+    try { securityFence = assertWalletContext(); } catch { return; }
+    if (method !== 'btc' && method !== 'xmr') return;
+    securityFence.assertCurrent();
+    scopedSet('preferred_payment_method', method);
+    securityFence.assertCurrent();
+    setPreferredMethod(method);
+  }, [assertWalletContext]);
+
+  const saveConfirmations = useCallback((event) => {
     event.preventDefault();
+    let securityFence;
+    try { securityFence = assertWalletContext(); } catch { return; }
     const overrides = {};
     const btc = Number.parseInt(confBtc, 10);
     const xmr = Number.parseInt(confXmr, 10);
     if (Number.isInteger(btc) && btc >= 1) overrides.btc = btc;
     if (Number.isInteger(xmr) && xmr >= 1) overrides.xmr = xmr;
     // An empty save returns to the defaults: Bitcoin 3, Monero 10.
+    securityFence.assertCurrent();
     scopedSet('confirmations', overrides);
+    securityFence.assertCurrent();
     setStatus('Confirmation counts saved on this device.');
-  };
+  }, [confBtc, confXmr, assertWalletContext]);
 
-  const toggleAutoVouch = () => {
+  const toggleAutoVouch = useCallback(() => {
+    let securityFence;
+    try { securityFence = assertWalletContext(); } catch { return; }
     const next = !autoVouch;
-    setAutoVouch(next);
+    securityFence.assertCurrent();
     scopedSet('auto_vouch_on_delivery', next);
-  };
+    securityFence.assertCurrent();
+    setAutoVouch(next);
+  }, [autoVouch, assertWalletContext]);
   const [isPublishing, setIsPublishing] = useState(false)
   const [uploadingImage, setUploadingImage] = useState(false)
   const [copied, setCopied] = useState(false)
   const [savingAdvanced, setSavingAdvanced] = useState(false)
   const [showUploadSheet, setShowUploadSheet] = useState(false)
   const avatarInput = useRef(null)
+  const walletLifecycleRef = useRef(null)
 
   useEffect(() => {
     if (myProfile.name) setUsername(myProfile.name)
@@ -143,40 +172,50 @@ export default function Wallet({ identity, onOpenChat, startView = 'main' }) {
 
   useEffect(() => {
     let active = true;
+    const securityFence = identity?.securityFence;
     loadVendorPaymentConfig(identity)
       .then((config) => {
-        if (active) {
+        if (active && securityFence?.isCurrent?.()) {
           setBtcXpub(config.btcXpub);
           setXmrPrivateViewKey(config.xmrPrivateViewKey);
           setBtcNetwork(config.btcNetwork || 'bc');
         }
       })
       .catch((error) => {
+        if (!active || !securityFence?.isCurrent?.()) return;
         console.error('[Wallet] Could not load encrypted vendor settings:', error);
-        if (active) setStatus('Could not unlock encrypted vendor settings.');
+        setStatus('Could not unlock encrypted vendor settings.');
       });
     return () => { active = false; };
-  }, [identity?.pk, identity?.sk]);
+  }, [identity, identity?.pk, identity?.sk, identity?.securityFence]);
 
   const saveAdvancedSettings = async (event) => {
     event.preventDefault();
+    let securityFence;
+    try { securityFence = assertWalletContext(); }
+    catch (error) { setStatus(error?.message || 'The account security context is unavailable.'); return; }
     setSavingAdvanced(true);
     setStatus('');
     try {
       await saveVendorPaymentConfig(identity, { btcXpub, xmrPrivateViewKey, btcNetwork });
-      savePaymentAddresses({ btc: btcAddress, xmr: xmrAddress });
+      securityFence.assertCurrent();
+      savePaymentAddresses({ btc: btcAddress, xmr: xmrAddress }, securityFence);
+      securityFence.assertCurrent();
       setStatus('Advanced vendor settings saved on this device.');
     } catch (error) {
       console.error('[Wallet] Could not save advanced vendor settings:', error);
-      setStatus(error?.message || 'Could not save advanced vendor settings.');
+      if (securityFence.isCurrent()) setStatus(error?.message || 'Could not save advanced vendor settings.');
     } finally {
-      setSavingAdvanced(false);
+      if (securityFence.isCurrent()) setSavingAdvanced(false);
     }
   };
 
   const handleImageUpload = async (e, type) => {
     const file = e.target.files?.[0]
     if (!file) return
+    let securityFence;
+    try { securityFence = assertWalletContext(); }
+    catch (error) { setStatus(error?.message || 'The account security context is unavailable.'); return; }
 
     setUploadingImage(true)
     setStatus('Uploading...')
@@ -184,40 +223,58 @@ export default function Wallet({ identity, onOpenChat, startView = 'main' }) {
     try {
       // N1: the private-media door. Compress inside the door (it re-encodes
       // images anyway), encrypt, upload under a per-server throwaway key.
-      const entry = await uploadAttachment(file, blossomServers())
+      const upload = import.meta.env?.VITE_TEST_HOOKS === '1' && typeof window !== 'undefined'
+        && typeof window.__cipherMediaUpload === 'function'
+        ? window.__cipherMediaUpload : uploadAttachment;
+      const entry = await upload(file, blossomServers(), securityFence, identity?.pk, `wallet-${type}`)
+      securityFence.assertCurrent();
 
       if (type === 'profile') {
         setPicture(entry)
-        if (view === 'main') await saveProfile(null, entry)
+        if (view === 'main') { await saveProfile(null, entry); securityFence.assertCurrent(); }
       }
+      securityFence.assertCurrent();
       if (type === 'product') setImage(entry)
       setStatus('Image uploaded!')
     } catch (err) {
+      if (!securityFence.isCurrent()) return;
       console.error(err)
       useChatStore.getState().setToast({ type: 'info', message: photoRefusalToast(err.message) });
     } finally {
-      setUploadingImage(false)
-      setTimeout(() => setStatus(''), 3000)
+      if (securityFence.isCurrent()) {
+        setUploadingImage(false)
+        setTimeout(() => { if (securityFence.isCurrent()) setStatus(''); }, 3000)
+      }
     }
   }
 
   const copyNpub = async () => {
     if (!identity.npub) return;
+    let securityFence;
+    try { securityFence = assertWalletContext(); } catch { return; }
     // "Copied!" waits for the write to land. copyText says what went wrong
     // when it does not, so a refused clipboard never wears a success word.
     const ok = await copyText(identity.npub);
+    if (!securityFence.isCurrent()) return;
     if (!ok) {
       setCopied(false);
       return;
     }
     setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    setTimeout(() => { if (securityFence.isCurrent()) setCopied(false); }, 2000);
   }
 
   const saveProfile = async (e, overridePicture = null) => {
     if (e) e.preventDefault()
-    savePaymentAddresses({ btc: btcAddress, xmr: xmrAddress });
     if (!displayName) return useChatStore.getState().setToast({ type: 'info', message: "Display Name is required" });
+    let securityFence;
+    try {
+      securityFence = assertWalletContext();
+      savePaymentAddresses({ btc: btcAddress, xmr: xmrAddress }, securityFence);
+    } catch (error) {
+      setStatus('Error: ' + (error?.message || 'The account security context is unavailable.'));
+      return;
+    }
     
     setIsPublishing(true); setStatus('Saving Profile...')
     const picToSave = overridePicture || picture
@@ -228,23 +285,39 @@ export default function Wallet({ identity, onOpenChat, startView = 'main' }) {
         displayName,
         about,
         picture: picToSave,
-      })
+      }, undefined, identity.securityFence)
+      securityFence.assertCurrent();
       if (!published.profilePublished) throw new Error('No relay accepted the profile')
 
       updateProfileCache(identity.pk, { name: username, displayName, picture: picToSave, about })
       setStatus('Profile Saved!')
       setView('main')
-    } catch (err) { setStatus('Error: ' + err.message) }
-    finally { setIsPublishing(false); setTimeout(() => setStatus(''), 3000) }
+    } catch (err) {
+      if (securityFence.isCurrent()) setStatus('Error: ' + err.message)
+    }
+    finally { if (securityFence.isCurrent()) { setIsPublishing(false); setTimeout(() => { if (securityFence.isCurrent()) setStatus(''); }, 3000); } }
   }
 
   const publishProduct = async () => {
     if (!title || !price) return useChatStore.getState().setToast({ type: 'info', message: "Title and Price required" });
-    setIsPublishing(true); setStatus('Publishing...')
+    let securityFence;
+    try { securityFence = assertWalletContext(); } catch { return; }
+    const assertCurrent = () => {
+      if (!identity?.pk || securityFence?.context?.owner !== identity.pk
+        || typeof securityFence?.assertCurrent !== 'function') {
+        const error = new Error('The account security context is unavailable.')
+        error.code = 'SECURITY_CONTEXT_EXPIRED'
+        throw error
+      }
+      securityFence.assertCurrent()
+    }
     let pool;
     const relays = productRelays;
     try {
+      assertCurrent()
+      setIsPublishing(true); setStatus('Publishing...')
       const { SimplePool, finalizeEvent } = await import('nostr-tools')
+      assertCurrent()
       pool = new SimplePool()
       const dTag = Date.now().toString()
       // N1: the image tag carries the upload's whole shape — a private entry
@@ -263,16 +336,20 @@ export default function Wallet({ identity, onOpenChat, startView = 'main' }) {
       // derived fresh for that order. (security S2)
       
       const content = JSON.stringify({ name: title, description, price, currency, image: imageTag })
+      assertCurrent()
       const ev = finalizeEvent({ kind: 30402, created_at: Math.floor(Date.now() / 1000), tags, content }, identity.sk)
 
       // The outbox door, block 31–'s shape: wait for what the relays
       // actually said. The old 3-second race then wrote
       // "Product Published!" with no relay's word behind it — a dead-door
       // cache row that read as live to the vendor and existed on no relay.
+      assertCurrent()
+      const publishResults = pool.publish(relays, ev)
       const results = await Promise.race([
-        Promise.allSettled(pool.publish(relays, ev)),
+        Promise.allSettled(publishResults),
         new Promise((resolve) => setTimeout(() => resolve(null), 3000)),
       ])
+      assertCurrent()
       const accepted = Boolean(Array.isArray(results)
         && results.some((result) => result.status === 'fulfilled'))
       let queued = false
@@ -281,9 +358,12 @@ export default function Wallet({ identity, onOpenChat, startView = 'main' }) {
         // words below wait for that write to land.
         try {
           const { enqueueNostrEvent } = await import('./lib/outbox')
-          await enqueueNostrEvent(ev, relays)
+          assertCurrent()
+          await enqueueNostrEvent(ev, relays, securityFence)
+          assertCurrent()
           queued = true
         } catch (queueError) {
+          if (queueError?.code === 'SECURITY_CONTEXT_EXPIRED') throw queueError
           console.warn('[product] Could not queue the listing for retry:', queueError)
         }
       }
@@ -295,6 +375,7 @@ export default function Wallet({ identity, onOpenChat, startView = 'main' }) {
         return
       }
 
+      assertCurrent()
       // `d` is kept beside the event id because store orders name the menus by
       // the d tag, not by the event id. (security F5)
       const newProduct = { id: ev.id, d: dTag, name: title, description, price, currency, image: image || '/app-icon-512.png', stock: '1', vendorPubkey: identity.pk, created_at: ev.created_at, delivery: outcome.delivery, event: { kind: ev.kind, created_at: ev.created_at, tags: ev.tags, content: ev.content, pubkey: ev.pubkey } }
@@ -304,8 +385,16 @@ export default function Wallet({ identity, onOpenChat, startView = 'main' }) {
       setStatus(outcome.status)
       setTitle(''); setDescription(''); setPrice(''); setImage('')
       setView('main')
-    } catch (err) { setStatus('Error: ' + err.message) } 
-    finally { pool?.close(relays); setIsPublishing(false); setTimeout(() => setStatus(''), 3000) }
+    } catch (err) {
+      if (err?.code !== 'SECURITY_CONTEXT_EXPIRED') setStatus('Error: ' + err.message)
+    }
+    finally {
+      pool?.close(relays)
+      if (securityFence?.isCurrent?.()) {
+        setIsPublishing(false)
+        setTimeout(() => setStatus(''), 3000)
+      }
+    }
   }
 
   const saveVendorSetup = (event) => {
@@ -314,15 +403,46 @@ export default function Wallet({ identity, onOpenChat, startView = 'main' }) {
       setStatus('Add at least one BTC or XMR receiving address to enable Vendor mode.');
       return;
     }
-    savePaymentAddresses({ btc: btcAddress, xmr: xmrAddress });
+    let securityFence;
+    try {
+      securityFence = assertWalletContext();
+      savePaymentAddresses({ btc: btcAddress, xmr: xmrAddress }, securityFence);
+    } catch (error) {
+      setStatus(error?.message || 'The account security context is unavailable.');
+      return;
+    }
     setIsVendor(true);
     setStatus('Vendor mode is active. Payment addresses are saved on this device.');
     setView('main');
     // Turning on selling is when an account becomes a vendor, so it is also
     // when the card can go to the group relay. A failure here does not undo
     // selling: the next profile save says plainly that the card did not go.
-    publishVendorCard({ isVendor: true, identity, profile: myProfile }).catch(() => {});
+    publishVendorCard({ isVendor: true, identity, profile: myProfile, securityFence, owner: identity.pk }).catch(() => {});
   }
+
+  useEffect(() => {
+    walletLifecycleRef.current = {
+      handleImageUpload,
+      publishVendorCard: (pool) => publishVendorCard({ isVendor: true, identity, profile: myProfile,
+        securityFence: identity?.securityFence, owner: identity?.pk, pool }),
+    };
+  });
+  useEffect(() => {
+    if (import.meta.env?.VITE_TEST_HOOKS !== '1' || typeof window === 'undefined') return undefined;
+    window.__walletLifecycle = {
+      handleImageUpload: (...args) => walletLifecycleRef.current?.handleImageUpload(...args),
+      publishVendorCard: (...args) => walletLifecycleRef.current?.publishVendorCard(...args),
+    };
+    return () => { delete window.__walletLifecycle; };
+  }, []);
+  useEffect(() => {
+    if (import.meta.env?.VITE_TEST_HOOKS !== '1' || typeof window === 'undefined') return undefined;
+    const callbacks = { saveConfirmations, toggleAutoVouch, setPreferredPaymentMethod };
+    window.__walletSettingsLifecycle = callbacks;
+    return () => {
+      if (window.__walletSettingsLifecycle === callbacks) delete window.__walletSettingsLifecycle;
+    };
+  }, [saveConfirmations, toggleAutoVouch, setPreferredPaymentMethod]);
 
   if (view === 'order_settings') {
     return (
@@ -335,8 +455,8 @@ export default function Wallet({ identity, onOpenChat, startView = 'main' }) {
               <p className="text-[15px] font-semibold text-ink">Preferred payment</p>
               <p className="mt-0.5 text-[13px] text-inkMuted">The coin a new order asks for first.</p>
               <div className="mt-3 grid grid-cols-2 rounded-xl border border-line p-1">
-                <button type="button" onClick={() => { setPreferredMethod('xmr'); scopedSet('preferred_payment_method', 'xmr'); }} className={`min-h-[40px] rounded-lg py-2 text-[13px] font-bold ${preferredMethod === 'xmr' ? 'bg-accent text-accentInk' : 'text-inkMuted'}`}>Monero</button>
-                <button type="button" onClick={() => { setPreferredMethod('btc'); scopedSet('preferred_payment_method', 'btc'); }} className={`min-h-[40px] rounded-lg py-2 text-[13px] font-bold ${preferredMethod === 'btc' ? 'bg-accent text-accentInk' : 'text-inkMuted'}`}>Bitcoin</button>
+                <button type="button" onClick={() => setPreferredPaymentMethod('xmr')} className={`min-h-[40px] rounded-lg py-2 text-[13px] font-bold ${preferredMethod === 'xmr' ? 'bg-accent text-accentInk' : 'text-inkMuted'}`}>Monero</button>
+                <button type="button" onClick={() => setPreferredPaymentMethod('btc')} className={`min-h-[40px] rounded-lg py-2 text-[13px] font-bold ${preferredMethod === 'btc' ? 'bg-accent text-accentInk' : 'text-inkMuted'}`}>Bitcoin</button>
               </div>
               <p className="mt-2 text-[12px] leading-snug text-inkSubtle">Monero leads so a payment does not write a public chain trail the way Bitcoin does.</p>
             </div>
@@ -523,6 +643,12 @@ export default function Wallet({ identity, onOpenChat, startView = 'main' }) {
               <ListRow
                 title="Switch to buyer mode"
                 onClick={async () => {
+                  let securityFence;
+                  try { securityFence = assertWalletContext(); }
+                  catch (error) {
+                    useChatStore.getState().setToast({ type: 'error', message: error?.message || 'The account security context is unavailable.' });
+                    return;
+                  }
                   setIsVendor(false);
                   // Leaving vendor mode clears what the mode saved. The words
                   // below wait for that write to land: a wipe that failed
@@ -530,7 +656,9 @@ export default function Wallet({ identity, onOpenChat, startView = 'main' }) {
                   // instead of claiming they are gone.
                   try {
                     await saveVendorPaymentConfig(identity, { btcXpub: '', xmrPrivateViewKey: '', btcNetwork: 'bc' });
+                    securityFence.assertCurrent();
                   } catch (wipeError) {
+                    if (!securityFence.isCurrent()) return;
                     useChatStore.getState().setToast({
                       type: 'error',
                       message: `Switched to buyer mode. The saved payment settings could not be cleared and are still on this device. ${wipeError?.message || ''}`.trim(),
@@ -544,7 +672,7 @@ export default function Wallet({ identity, onOpenChat, startView = 'main' }) {
                   setBtcXpub('');
                   setXmrPrivateViewKey('');
                   setBtcNetwork('bc');
-                  savePaymentAddresses({ btc: '', xmr: '' });
+                  savePaymentAddresses({ btc: '', xmr: '' }, securityFence);
                   useChatStore.getState().setToast({ type: 'success', message: 'Switched to buyer mode. Payment details were cleared from this device.' });
                 }}
               />
@@ -597,11 +725,6 @@ export default function Wallet({ identity, onOpenChat, startView = 'main' }) {
         danger
         onConfirm={async () => {
           setShowPanicConfirm(false);
-          try {
-            await db.messages.clear();
-          } catch (error) {
-            console.error('[Wallet] Could not clear active message table before full wipe:', error);
-          }
           await identity.panicWipe();
         }}
       >

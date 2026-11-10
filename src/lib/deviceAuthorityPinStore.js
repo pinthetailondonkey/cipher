@@ -1,6 +1,7 @@
 // Public, monotonic recovery-policy pins for an isolated device authority
 // prototype. This stores no private credentials and has no relay call site.
 import { verifyDeviceAuthorityPolicy, verifyDeviceAuthorityReplacement } from './deviceAuthority.js';
+import { assertDeviceAuthorityContext, withDeviceAuthorityContext } from './deviceAuthorityContext.js';
 
 const STORE = 'pins';
 
@@ -42,13 +43,15 @@ function readPin(db, accountPubkey) {
   });
 }
 
-function savePin(db, row, expectedPolicyId) {
+function savePin(db, row, expectedPolicyId, securityFence) {
   return new Promise((resolve, reject) => {
     const transaction = db.transaction(STORE, 'readwrite');
     const store = transaction.objectStore(STORE);
     const request = store.get(row.accountPubkey);
     let idempotent = false;
     request.onsuccess = () => {
+      try { assertDeviceAuthorityContext(securityFence); }
+      catch { transaction.abort(); return; }
       const existing = request.result || null;
       if (existing?.policyId === row.policyId) {
         if (existing.recoveryPubkey !== row.recoveryPubkey || existing.authorityEpoch !== row.authorityEpoch) {
@@ -86,15 +89,19 @@ function pinRow(policyEvent, policy) {
 
 // Initial pinning must receive the recovery fingerprint through a separately
 // authenticated ceremony; this function deliberately provides no TOFU path.
-export async function pinInitialDeviceAuthorityPolicy({
+async function pinInitialDeviceAuthorityPolicyCore({
   policyEvent, expectedAccountPubkey, expectedRecoveryPubkey,
-  now = Math.floor(Date.now() / 1000), indexedDBImpl = globalThis.indexedDB,
+  now = Math.floor(Date.now() / 1000), indexedDBImpl = globalThis.indexedDB, securityFence,
 }) {
+  assertDeviceAuthorityContext(securityFence);
   const policy = checkedPolicy(policyEvent, expectedAccountPubkey, expectedRecoveryPubkey, now);
   if (policy.authorityEpoch !== 1) throw new Error('Initial policy pinning requires the recovery-root genesis policy.');
   const db = await openDb(policy.accountPubkey, indexedDBImpl);
   try {
-    return await savePin(db, pinRow(policyEvent, policy), null);
+    assertDeviceAuthorityContext(securityFence);
+    const result = await savePin(db, pinRow(policyEvent, policy), null, securityFence);
+    assertDeviceAuthorityContext(securityFence);
+    return result;
   } finally {
     db.close();
   }
@@ -102,10 +109,11 @@ export async function pinInitialDeviceAuthorityPolicy({
 
 // A replacement is accepted only from the exact locally pinned predecessor.
 // IndexedDB's read/write transaction is the cross-tab compare-and-swap gate.
-export async function advanceDeviceAuthorityPolicyPin({
+async function advanceDeviceAuthorityPolicyPinCore({
   currentPolicyEvent, nextPolicyEvent, expectedAccountPubkey, expectedRecoveryPubkey,
-  now = Math.floor(Date.now() / 1000), indexedDBImpl = globalThis.indexedDB,
+  now = Math.floor(Date.now() / 1000), indexedDBImpl = globalThis.indexedDB, securityFence,
 }) {
+  assertDeviceAuthorityContext(securityFence);
   const current = checkedPolicy(currentPolicyEvent, expectedAccountPubkey, expectedRecoveryPubkey, now);
   const next = verifyDeviceAuthorityReplacement(nextPolicyEvent, currentPolicyEvent, {
     recoveryPubkey: expectedRecoveryPubkey, now,
@@ -113,7 +121,9 @@ export async function advanceDeviceAuthorityPolicyPin({
   if (!next || next.accountPubkey !== expectedAccountPubkey) throw new Error('The authority policy update is not a valid recovery-signed successor.');
   const db = await openDb(current.accountPubkey, indexedDBImpl);
   try {
+    assertDeviceAuthorityContext(securityFence);
     const stored = await readPin(db, current.accountPubkey);
+    assertDeviceAuthorityContext(securityFence);
     if (stored?.policyId === nextPolicyEvent.id && stored.policyEvent?.id === nextPolicyEvent.id
       && stored.recoveryPubkey === expectedRecoveryPubkey && stored.authorityEpoch === next.authorityEpoch) {
       const storedPolicy = checkedPolicy(stored.policyEvent, expectedAccountPubkey, expectedRecoveryPubkey, now);
@@ -125,19 +135,23 @@ export async function advanceDeviceAuthorityPolicyPin({
       || stored.authorityEpoch !== current.authorityEpoch || stored.policyEvent?.id !== currentPolicyEvent.id) {
       throw new Error('The authority update does not extend the locally pinned policy head.');
     }
-    return await savePin(db, pinRow(nextPolicyEvent, next), currentPolicyEvent.id);
+    const result = await savePin(db, pinRow(nextPolicyEvent, next), currentPolicyEvent.id, securityFence);
+    assertDeviceAuthorityContext(securityFence);
+    return result;
   } finally {
     db.close();
   }
 }
 
-export async function loadPinnedDeviceAuthorityPolicy({
+async function loadPinnedDeviceAuthorityPolicyCore({
   expectedAccountPubkey, expectedRecoveryPubkey,
-  now = Math.floor(Date.now() / 1000), indexedDBImpl = globalThis.indexedDB,
+  now = Math.floor(Date.now() / 1000), indexedDBImpl = globalThis.indexedDB, securityFence,
 }) {
+  assertDeviceAuthorityContext(securityFence);
   const db = await openDb(expectedAccountPubkey, indexedDBImpl);
   try {
     const row = await readPin(db, expectedAccountPubkey);
+    assertDeviceAuthorityContext(securityFence);
     if (!row || row.accountPubkey !== expectedAccountPubkey || row.recoveryPubkey !== expectedRecoveryPubkey
       || row.policyId !== row.policyEvent?.id) throw new Error('The locally pinned recovery policy is missing or inconsistent.');
     const policy = checkedPolicy(row.policyEvent, expectedAccountPubkey, expectedRecoveryPubkey, now);
@@ -146,4 +160,16 @@ export async function loadPinnedDeviceAuthorityPolicy({
   } finally {
     db.close();
   }
+}
+
+export function pinInitialDeviceAuthorityPolicy(args = {}) {
+  return withDeviceAuthorityContext(args.securityFence, () => pinInitialDeviceAuthorityPolicyCore(args));
+}
+
+export function advanceDeviceAuthorityPolicyPin(args = {}) {
+  return withDeviceAuthorityContext(args.securityFence, () => advanceDeviceAuthorityPolicyPinCore(args));
+}
+
+export function loadPinnedDeviceAuthorityPolicy(args = {}) {
+  return withDeviceAuthorityContext(args.securityFence, () => loadPinnedDeviceAuthorityPolicyCore(args));
 }

@@ -81,6 +81,13 @@ export async function actorForGroup(ownerPk, groupId) {
     // Same derivation, same salt string, same curve as Step 1b: this IS the
     // doc authority key. A fork here would split one pinned identity into two.
     const { privateKeyBytes, pin } = await groupAuthorityKey(accountSk, groupId);
+    // HKDF yields asynchronously. Lock or account replacement can happen
+    // while it runs, so do not cache its result unless the exact session-key
+    // object that began the derivation is still installed.
+    if (getSessionKey() !== accountSk) {
+      privateKeyBytes.fill(0);
+      return null;
+    }
     actor = { privateKeyBytes, pin, ownerPk: slot };
     actors.set(slotKey, actor);
   }

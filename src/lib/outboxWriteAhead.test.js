@@ -1,6 +1,15 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { publishWriteAhead } from './outbox.js';
+import 'fake-indexeddb/auto';
+import { db, openDBFor } from '../db.js';
+import { flushNostrOutbox, publishWriteAhead, outboxRow } from './outbox.js';
+
+globalThis.localStorage ||= {
+  values: new Map(),
+  getItem(key) { return this.values.get(key) ?? null; },
+  setItem(key, value) { this.values.set(key, String(value)); },
+  removeItem(key) { this.values.delete(key); },
+};
 
 const event = { id: 'evt-wa', kind: 4, created_at: 5, content: 'x' };
 
@@ -71,4 +80,65 @@ test('writeAhead:false keeps the old order for ephemeral signals: nothing queued
   await publishWriteAhead(event, null, () => { rowsAtPublish = store.rows.size; return [Promise.resolve('ok')]; }, { ...store, writeAhead: false });
   assert.equal(rowsAtPublish, 0);
   assert.equal(store.rows.size, 0);
+});
+
+test('a retired caller leaves its committed event queued and does not publish it', async () => {
+  const store = fakeStore();
+  let current = true;
+  let publishes = 0;
+  let checks = 0;
+  const assertCurrent = () => {
+    checks += 1;
+    if (checks === 3) current = false;
+    if (!current) { const error = new Error('retired'); error.code = 'SECURITY_CONTEXT_EXPIRED'; throw error; }
+  };
+  await assert.rejects(publishWriteAhead(event, null, () => { publishes += 1; return [Promise.resolve('ok')]; }, {
+    ...store,
+    assertCurrent,
+  }), { code: 'SECURITY_CONTEXT_EXPIRED' });
+  assert.equal(publishes, 0);
+  assert.equal(store.rows.has(event.id), true);
+});
+
+test('lock after relay acceptance keeps the exact event queued for a later authorized retry', async () => {
+  const store = fakeStore();
+  let current = true;
+  const assertCurrent = () => {
+    if (!current) { const error = new Error('retired'); error.code = 'SECURITY_CONTEXT_EXPIRED'; throw error; }
+  };
+  await assert.rejects(publishWriteAhead(event, null, () => {
+    current = false;
+    return [Promise.resolve('accepted')];
+  }, { ...store, assertCurrent }), { code: 'SECURITY_CONTEXT_EXPIRED' });
+  assert.deepEqual(store.rows.get(event.id), { ev: event, relays: null });
+});
+
+test('ratchet outbox rechecks proof expiry after awaited status writes before publish', async () => {
+  const owner = 'a'.repeat(64);
+  const fence = { context: { owner }, assertCurrent() {} };
+  openDBFor(owner);
+  await db.open();
+  const wrapped = { ...event, id: 'evt-proof-expiry', kind: 1059 };
+  await db.outbox.put(outboxRow(wrapped, 499_000, ['wss://relay.example'], {
+    ratchetDelivery: {
+      protocol: 'cipher-ratchet-device-delivery-v2',
+      freshUntil: 500,
+    },
+  }));
+  let clockCalls = 0;
+  let publishes = 0;
+  const result = await flushNostrOutbox({
+    pk: owner,
+    sk: new Uint8Array([1]),
+    securityFence: fence,
+  }, {
+    force: true,
+    getPool: async () => ({
+      publish() { publishes += 1; return [Promise.resolve('accepted')]; },
+    }),
+    clockNow: () => (clockCalls++ === 0 ? 499_000 : 500_000),
+  });
+  assert.equal(result, undefined);
+  assert.equal(publishes, 0, 'force cannot bypass proof expiry after database awaits');
+  assert.equal((await db.outbox.get(wrapped.id)).status, 'queued');
 });

@@ -350,7 +350,7 @@ Verification snapshot (2026-11-07): `npm test` — 1,133 tests, 1,129 passed,
 0 with 103 warnings and no errors; `npm run lint:ratchet` — exit 0;
 `npm run test:ratchet-browser` — passed in a real browser; targeted
 group-key/removal suite — 29 passed; `cargo test --manifest-path
-crypto/mls-eval/Cargo.toml --locked` — 1 passed; `npm run build` — passed.
+crypto/mls-wasm/Cargo.toml --locked` — 1 passed; `npm run build` — passed.
 `npm run test:mls-browser` — passed in headless Chromium against the actual
 OpenMLS 0.9.2 WASM module, using the same add/commit/remove and Welcome
 failure/retry flow as the native test, including duplicate removal-commit
@@ -359,8 +359,8 @@ failed stage; the evaluation's copy-on-write retry preserved the key and
 accepted a later valid Welcome. Two commits built from the same epoch also
 demonstrated that a client rejects the competing stale branch it receives.
 The MLS evaluation crate passed `cargo fmt --manifest-path
-crypto/mls-eval/Cargo.toml --check` and `cargo check --manifest-path
-crypto/mls-eval/Cargo.toml --locked --target wasm32-unknown-unknown`. The
+crypto/mls-wasm/Cargo.toml --check` and `cargo check --manifest-path
+crypto/mls-wasm/Cargo.toml --locked --target wasm32-unknown-unknown`. The
 NIP-29 relay integration could not
 be repeated because no compatible test relay was listening on
 `127.0.0.1:18888`; the earlier Phase 0 captured-frame result remains its only
@@ -369,6 +369,13 @@ and UI run temporarily moved `.grok/app-env.json` out of the workspace as
 required by the build guard; the original file was restored after the run.
 
 ### Phase 2 — group forward secrecy and post-compromise recovery
+
+Item 18 progress note (2026-11-10, LOCAL-TEST evidence tier): the pinned
+OpenMLS 0.9.2 / IETF MLS CS1 vector run now executes green natively
+(`npm run test:mls-vectors`, backed by `crypto/mls-wasm/src/pinned_vectors.rs`)
+with loud skips only where OpenMLS 0.9.2 keeps KAT internals crate-private
+(secret-tree, treekem). This is library conformance evidence against pinned
+vectors; it is NOT interoperability or a production-selection result.
 
 - [ ] MLS RFC 9420 or another mature implementation is selected with published
   implementation evidence; protocol-to-Cipher trust-model review is complete.

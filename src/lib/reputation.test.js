@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
-import { averageRating, clampRating, profileAgeDays, receiptBindingOf, vouchCoversTrade, vouchTradeOf } from './reputation.js';
+import { averageRating, clampRating, profileAgeDays, receiptBindingOf, tradeEvidenceOf, vouchCoversTrade, vouchTradeOf } from './reputation.js';
 
 test('a vouch counts only when it names a receipt hash', () => {
   assert.equal(receiptBindingOf({ tags: [['p', 'ab'], ['vouch', 'true'], ['receipt', 'f'.repeat(64)]] }), 'f'.repeat(64));
@@ -13,6 +13,19 @@ test('a vouch counts only when it names a receipt hash', () => {
   assert.equal(receiptBindingOf({ tags: [['receipt', 'f'.repeat(64)]] }), 'f'.repeat(64));
   assert.equal(receiptBindingOf({}), '');
   assert.equal(receiptBindingOf(null), '');
+});
+
+test('receipt hashes and self-reported party tags remain endorsements only', () => {
+  const event = { pubkey: 'aa', tags: [['receipt', 'f'.repeat(64)], ['trade_vendor', 'bb'], ['trade_buyer', 'aa']] };
+  assert.equal(tradeEvidenceOf(event).state, 'unverified-endorsement');
+  assert.equal(tradeEvidenceOf({ tags: [['receipt', 'f'.repeat(64)]] }).state, 'unverified-endorsement');
+});
+
+test('social vouch counts stay visible without shield or threshold trust styling', () => {
+  const menu = fs.readFileSync(new URL('../components/chat/VendorMenuHome.jsx', import.meta.url), 'utf8');
+  assert.doesNotMatch(menu, /ShieldCheck/);
+  assert.doesNotMatch(menu, /vouchCount\s*>=/);
+  assert.match(menu, /\$\{vouchCount\} \$\{vouchCount === 1 \? 'vouch' : 'vouches'\}/);
 });
 
 test('a rating outside 0..5 clamps, and junk is a zero', () => {

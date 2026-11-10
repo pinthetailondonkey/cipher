@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
-import { createHmac } from 'node:crypto';
 import { schnorr } from '@noble/curves/secp256k1.js';
 import { seedVault, unlock } from './fixtures.js';
+import { pinWatcherKey, signedWatcherReport } from './payment-watcher-fixture.js';
 
 // Row 6b at the screen: the shared-address refusal must read this device's
 // own rails and nothing else. The rails are a literal { btc, xmr }, so an
@@ -29,8 +29,6 @@ const NO_ADDRESS = 'This order has no payment address to check.';
 // address fail its own check before the rails are read at all. The sentence
 // moved; the facts the row is about did not, and all of them stay asserted.
 const NO_DETAILS = 'This order does not have the payment details needed for a chain check. The chain was not checked.';
-
-const sign = (token, ts, raw) => createHmac('sha256', token).update(`${ts}:${raw}`).digest('hex');
 
 // The vendor's own view of an order: the buyer's request arrived, and this
 // device accepted it with its own pair. `currency` is what the acceptance
@@ -96,17 +94,15 @@ async function openThread(page, address, currency) {
     const url = new URL(route.request().url());
     const askedAddress = url.searchParams.get('address') || '';
     const askedCurrency = url.searchParams.get('currency') || 'btc';
-    const token = url.searchParams.get('token') || '';
+    const nonce = url.searchParams.get('nonce') || '';
     asked.push({ address: askedAddress, currency: askedCurrency });
-    const raw = JSON.stringify({
-      address: askedAddress, currency: askedCurrency, txid: 'ab', confirmations: 3, amount: AMOUNT,
-      time: Math.floor(Date.now() / 1000),
+    const { rawBody, signature } = signedWatcherReport({
+      address: askedAddress, currency: askedCurrency, nonce, txid: 'ab', confirmations: 3, amount: AMOUNT,
     });
-    const ts = String(Math.floor(Date.now() / 1000));
     await route.fulfill({
       status: 200,
-      headers: { 'content-type': 'application/json', 'x-cipher-sig': `v1=${sign(token, ts, raw)}`, 'x-cipher-ts': ts },
-      body: raw,
+      headers: { 'content-type': 'application/json', 'x-cipher-signature': signature },
+      body: rawBody,
     });
   });
   await page.addInitScript(seedVault);
@@ -117,6 +113,7 @@ async function openThread(page, address, currency) {
   });
   await page.goto('/');
   await unlock(page);
+  await pinWatcherKey(page);
   await expect(page.getByRole('heading', { name: 'Chats' })).toBeVisible({ timeout: 20000 });
   // The seam arrives through a dynamic import after first paint, so wait for
   // it rather than for a fixed delay.

@@ -129,3 +129,18 @@ test('writes that arrive with the vault locked wait in memory, per account', asy
   dropAtRestWrites('pk-a');
   assert.deepEqual(takeAtRestWrites('pk-a'), [], 'deleting the account database drops its pending rows');
 });
+
+test('pending at-rest rows are discarded after their account incarnation expires', () => {
+  const owner = 'pk-incarnation';
+  dropAtRestWrites(owner);
+  let oldCurrent = true;
+  const oldFence = { context: { owner }, assertCurrent() { if (!oldCurrent) throw new Error('expired'); } };
+  let nextCurrent = true;
+  const nextFence = { context: { owner }, assertCurrent() { if (!nextCurrent) throw new Error('expired'); } };
+  queueAtRestWrite(owner, { id: 'received-before-lock' }, oldFence);
+  oldCurrent = false;
+  assert.deepEqual(takeAtRestWrites(owner, nextFence), [], 'a later unlock cannot flush another incarnation’s row');
+  queueAtRestWrite(owner, { id: 'received-after-unlock' }, nextFence);
+  assert.deepEqual(takeAtRestWrites(owner, nextFence), [{ id: 'received-after-unlock' }]);
+  dropAtRestWrites(owner);
+});

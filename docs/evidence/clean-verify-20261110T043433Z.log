@@ -1,0 +1,1185 @@
+
+===== npm_ci (exit 0) =====
+npm warn deprecated @nostr-wot/blossom@1.0.1: Use nostr-wot-sdk/blossom instead. The implementation moved to nostr-wot-sdk; this package only forwards the existing API. See https://github.com/nostr-wot/nostr-wot-sdk/blob/main/docs/package-migration.md
+
+added 247 packages in 22s
+
+58 packages are looking for funding
+  run `npm fund` for details
+
+
+===== lint (exit 0) =====
+
+> cipher@0.0.0 lint
+> oxlint
+
+generate-icons.js:83:20: warning eslint(no-unused-vars): Variable 'size' is declared but never used. Unused variables should start with a '_'. help: Consider removing this declaration.
+scripts/wire-capture.mjs:266:38: warning eslint(no-unused-vars): Parameter 'p' is declared but never used. Unused parameters should start with a '_'. help: Consider removing this parameter.
+src/lib/giftWrap.test.js:16:7: warning eslint(no-unused-vars): Variable 'hex' is declared but never used. Unused variables should start with a '_'. help: Consider removing this declaration.
+src/lib/giftWrap.test.js:40:31: warning eslint(no-unused-vars): Variable 'recipientSk' is declared but never used. Unused variables should start with a '_'. help: Consider removing this declaration.
+src/lib/orderLedger.js:120:23: warning eslint(no-extra-boolean-cast): Redundant Boolean call help: Remove the Boolean call as it will already be coerced to a boolean
+src/lib/orderMembrane.js:22:3: warning eslint(no-unused-vars): Identifier 'PAYMENT_STATES' is imported but never used. help: Consider removing this import.
+src/lib/orderMembrane.js:23:3: warning eslint(no-unused-vars): Identifier 'nextPaymentState' is imported but never used. help: Consider removing this import.
+src/lib/orderMembrane.js:523:13: warning eslint(no-unused-vars): Variable 'processed' is declared but never used. Unused variables should start with a '_'. help: Consider removing this declaration.
+src/lib/pushGateway.js:108:65: warning eslint(no-unused-vars): Parameter 'sk' is declared but never used. Unused parameters should start with a '_'. help: Consider removing this parameter.
+src/useProfiles.js:86:20: warning eslint(no-unused-vars): Catch parameter 'e' is caught but never used. help: Consider handling this error.
+src/useProfiles.js:28:7: warning react-hooks(exhaustive-deps): React Hook useEffect has a complex expression in the dependency array. help: Extract the expression to a separate variable so it can be statically checked.
+src/useProfiles.js:20:24: warning react-hooks(exhaustive-deps): React Hook useEffect has missing dependencies: 'pubkeys', and 'pubkeys.length' help: Either include it or remove the dependency array.
+src/useProfiles.js:44:7: warning react-hooks(exhaustive-deps): React Hook useEffect has a complex expression in the dependency array. help: Extract the expression to a separate variable so it can be statically checked.
+src/useProfiles.js:34:26: warning react-hooks(exhaustive-deps): React Hook useEffect has a missing dependency: 'pubkeys' help: Either include it or remove the dependency array.
+src/useProfiles.js:99:7: warning react-hooks(exhaustive-deps): React Hook useEffect has a complex expression in the dependency array. help: Extract the expression to a separate variable so it can be statically checked.
+src/useProfiles.js:47:10: warning react-hooks(exhaustive-deps): React Hook useEffect has missing dependencies: 'pubkeys', and 'pubkeys.length' help: Either include it or remove the dependency array.
+src/lib/dmLocalRelayProbe.jsx:28:10: warning react(only-export-components): Fast refresh only works when a file has exports. Move your component(s) to a separate file.
+src/lib/deadDrop.test.js:19:49: warning eslint(no-unused-vars): Variable 'fromB64Url' is declared but never used. Unused variables should start with a '_'. help: Consider removing this declaration.
+src/lib/relayDirectoryRead.test.js:22:15: warning eslint(no-unused-vars): Variable 'closed' is assigned a value but never used. Unused variables should start with a '_'. help: Did you mean to use this variable?
+src/lib/escrowPsbt.test.js:20:3: warning eslint(no-unused-vars): Identifier 'MAX_CSV_BLOCK_DELAY' is imported but never used. help: Consider removing this import.
+src/lib/safetyNumber.js:30:7: warning eslint(no-unused-vars): Variable 'bytesToHex' is declared but never used. Unused variables should start with a '_'. help: Consider removing this declaration.
+tests/ui/fixtures.js:41:7: warning eslint(no-unused-vars): Variable 'TEST_VAULT' is declared but never used. Unused variables should start with a '_'. help: Consider removing this declaration.
+src/lib/securityContextLifecycleProbe.jsx:58:10: warning react(only-export-components): Fast refresh only works when a file has exports. Move your component(s) to a separate file.
+src/LockScreen.jsx:31:14: warning eslint(no-unused-vars): Catch parameter 'e' is caught but never used. help: Consider handling this error.
+src/Menus.jsx:122:5: warning react(set-state-in-effect): Calling setState synchronously within an effect can trigger cascading renders help: Effects should synchronize React with external systems. Calling setState synchronously inside an effect starts another render and is usually unnecessary. Derive the value during render, initialize state directly, or update it from the event that caused the change. Use an effect only when synchronizing with an external system.
+src/notePage.test.js:165:5: warning eslint(no-unused-vars): Variable 'calls' is assigned a value but never used. Unused variables should start with a '_'. help: Did you mean to use this variable?
+src/components/MessageInput.jsx:64:7: warning react(set-state-in-effect): Calling setState synchronously within an effect can trigger cascading renders help: Effects should synchronize React with external systems. Calling setState synchronously inside an effect starts another render and is usually unnecessary. Derive the value during render, initialize state directly, or update it from the event that caused the change. Use an effect only when synchronizing with an external system.
+src/AuthenticatedApp.jsx:66:27: warning react(set-state-in-effect): Calling setState synchronously within an effect can trigger cascading renders help: Effects should synchronize React with external systems. Calling setState synchronously inside an effect starts another render and is usually unnecessary. Derive the value during render, initialize state directly, or update it from the event that caused the change. Use an effect only when synchronizing with an external system.
+src/AuthenticatedApp.jsx:90:7: warning react(set-state-in-effect): Calling setState synchronously within an effect can trigger cascading renders help: Effects should synchronize React with external systems. Calling setState synchronously inside an effect starts another render and is usually unnecessary. Derive the value during render, initialize state directly, or update it from the event that caused the change. Use an effect only when synchronizing with an external system.
+src/components/MessageBubble.jsx:291:10: warning eslint(no-unused-vars): Function 'PaymentBlock' is declared but never used. help: Consider removing this declaration.
+src/components/MessageBubble.jsx:347:28: warning react(purity): Cannot call impure function during render help: `Date.now` is an impure function. Calling an impure function can produce unstable results that update unpredictably when the component re-renders
+src/components/MessageBubble.jsx:456:95: warning react(refs): Cannot access refs during render help: React refs are values that are not needed for rendering. Refs should only be accessed outside of render, such as in event handlers or effects. Accessing a ref value (the `current` property) during render can cause your component not to update as expected
+src/components/ui/Picture.jsx:7:17: warning react(only-export-components): Fast refresh only works when a file only exports components. Use a new file to share constants or functions between components.
+src/components/ui/Avatar.jsx:36:10: warning react-hooks(exhaustive-deps): React Hook useEffect has missing dependencies: 'privateEntry', and 'privateEntry.mime' help: Either include it or remove the dependency array.
+src/components/ui/CommandPalette.jsx:14:84: warning eslint(no-unused-vars): Parameter 'activeTab' is declared but never used. Unused parameters should start with a '_'. help: Consider removing this parameter.
+src/components/ui/CommandPalette.jsx:56:5: warning react(set-state-in-effect): Calling setState synchronously within an effect can trigger cascading renders help: Effects should synchronize React with external systems. Calling setState synchronously inside an effect starts another render and is usually unnecessary. Derive the value during render, initialize state directly, or update it from the event that caused the change. Use an effect only when synchronizing with an external system.
+src/components/ui/CommandPalette.jsx:60:7: warning react(set-state-in-effect): Calling setState synchronously within an effect can trigger cascading renders help: Effects should synchronize React with external systems. Calling setState synchronously inside an effect starts another render and is usually unnecessary. Derive the value during render, initialize state directly, or update it from the event that caused the change. Use an effect only when synchronizing with an external system.
+src/components/ui/Dialog.jsx:39:5: warning react(set-state-in-effect): Calling setState synchronously within an effect can trigger cascading renders help: Effects should synchronize React with external systems. Calling setState synchronously inside an effect starts another render and is usually unnecessary. Derive the value during render, initialize state directly, or update it from the event that caused the change. Use an effect only when synchronizing with an external system.
+src/components/ui/PrivateMedia.jsx:8:17: warning react(only-export-components): Fast refresh only works when a file only exports components. Use a new file to share constants or functions between components.
+src/components/chat/ProductEditModal.jsx:31:5: warning react(set-state-in-effect): Calling setState synchronously within an effect can trigger cascading renders help: Effects should synchronize React with external systems. Calling setState synchronously inside an effect starts another render and is usually unnecessary. Derive the value during render, initialize state directly, or update it from the event that caused the change. Use an effect only when synchronizing with an external system.
+src/components/chat/ChatRow.jsx:1:18: warning eslint(no-unused-vars): Identifier 'useState' is imported but never used. help: Consider removing this import.
+src/hooks/useNIP44DM.js:346:22: warning eslint(no-unused-vars): Catch parameter 'e' is caught but never used. help: Consider handling this error.
+src/hooks/useNIP44DM.js:348:71: warning eslint(no-unused-vars): Catch parameter 'e' is caught but never used. help: Consider handling this error.
+src/hooks/useNIP44DM.js:518:53: warning eslint(no-unused-vars): Catch parameter 'e' is caught but never used. help: Consider handling this error.
+src/hooks/useNIP44DM.js:564:16: warning eslint(no-unused-vars): Catch parameter 'e' is caught but never used. help: Consider handling this error.
+src/hooks/useNIP44DM.js:566:49: warning eslint(no-unused-vars): Catch parameter 'e' is caught but never used. help: Consider handling this error.
+src/hooks/useNIP44DM.js:112:28: warning react-hooks(exhaustive-deps): React Hook useEffect has a missing dependency: 'identity' help: Either include it or remove the dependency array.
+src/components/chat/VendorDashboard.jsx:105:5: warning react(set-state-in-effect): Calling setState synchronously within an effect can trigger cascading renders help: Effects should synchronize React with external systems. Calling setState synchronously inside an effect starts another render and is usually unnecessary. Derive the value during render, initialize state directly, or update it from the event that caused the change. Use an effect only when synchronizing with an external system.
+src/components/chat/VendorDashboard.jsx:121:49: warning react-hooks(exhaustive-deps): React Hook useEffect has a missing dependency: 'identity' help: Either include it or remove the dependency array.
+src/hooks/useVouchCount.js:14:7: warning react(set-state-in-effect): Calling setState synchronously within an effect can trigger cascading renders help: Effects should synchronize React with external systems. Calling setState synchronously inside an effect starts another render and is usually unnecessary. Derive the value during render, initialize state directly, or update it from the event that caused the change. Use an effect only when synchronizing with an external system.
+src/hooks/useVouchCount.js:21:49: warning react-hooks(exhaustive-deps): React Hook useEffect has a missing dependency: 'identity' help: Either include it or remove the dependency array.
+src/hooks/usePanicWipe.js:12:14: warning react(refs): Cannot access refs during render help: React refs are values that are not needed for rendering. Refs should only be accessed outside of render, such as in event handlers or effects. Accessing a ref value (the `current` property) during render can cause your component not to update as expected
+src/components/chat/ChatHeader.jsx:56:17: warning react(only-export-components): Fast refresh only works when a file only exports components. Use a new file to share constants or functions between components.
+src/components/chat/BroadcastModal.jsx:11:17: warning react(set-state-in-effect): Calling setState synchronously within an effect can trigger cascading renders help: Effects should synchronize React with external systems. Calling setState synchronously inside an effect starts another render and is usually unnecessary. Derive the value during render, initialize state directly, or update it from the event that caused the change. Use an effect only when synchronizing with an external system.
+src/components/chat/MessageContextMenu.jsx:7:14: warning react(only-export-components): Fast refresh only works when a file only exports components. Use a new file to share constants or functions between components.
+src/components/chat/LinkPreview.jsx:15:7: warning react(set-state-in-effect): Calling setState synchronously within an effect can trigger cascading renders help: Effects should synchronize React with external systems. Calling setState synchronously inside an effect starts another render and is usually unnecessary. Derive the value during render, initialize state directly, or update it from the event that caused the change. Use an effect only when synchronizing with an external system.
+src/components/chat/ChatList.jsx:145:6: warning react-hooks(exhaustive-deps): React Hook useMemo has unnecessary dependency: dms help: Either include it or remove the dependency array.
+src/hooks/useNIP29Group.js:2130:18: warning eslint(no-unused-vars): Catch parameter 'e' is caught but never used. help: Consider handling this error.
+src/hooks/useVendorReviews.js:54:22: warning react-hooks(exhaustive-deps): React Hook useEffect has a missing dependency: 'dealsProvenOf' help: Either include it or remove the dependency array.
+src/components/chat/chatHeaderPill.test.js:376:85: warning eslint(no-unused-vars): Parameter 'fn' is declared but never used. Unused parameters should start with a '_'. help: Consider removing this parameter.
+src/useIdentity.js:161:16: warning eslint(no-unused-vars): Catch parameter '_' is caught but never used. help: Consider handling this error.
+src/useIdentity.js:542:11: warning eslint(no-unused-vars): Variable 'lookupId' is declared but never used. Unused variables should start with a '_'. help: Consider removing this declaration.
+src/useIdentity.js:941:14: warning eslint(no-unused-vars): Catch parameter 'e' is caught but never used. help: Consider handling this error.
+src/useIdentity.js:1051:13: warning eslint(no-unused-vars): Catch parameter 'e' is caught but never used. help: Consider handling this error.
+src/useIdentity.js:1057:13: warning eslint(no-unused-vars): Catch parameter 'e' is caught but never used. help: Consider handling this error.
+src/useIdentity.js:1206:29: warning eslint(no-unused-vars): Variable 'nip19' is declared but never used. Unused variables should start with a '_'. help: Consider removing this declaration.
+src/useIdentity.js:1262:16: warning eslint(no-unused-vars): Catch parameter 'e' is caught but never used. help: Consider handling this error.
+src/db.js:174:52: warning eslint(no-unused-vars): Catch parameter '_' is caught but never used. help: Consider handling this error.
+src/db.js:372:52: warning eslint(no-unused-vars): Catch parameter '_' is caught but never used. help: Consider handling this error.
+src/Wallet.jsx:158:25: warning react(set-state-in-effect): Calling setState synchronously within an effect can trigger cascading renders help: Effects should synchronize React with external systems. Calling setState synchronously inside an effect starts another render and is usually unnecessary. Derive the value during render, initialize state directly, or update it from the event that caused the change. Use an effect only when synchronizing with an external system.
+src/features/chat/useChatBootstrap.js:661:6: warning react(preserve-manual-memoization): Existing memoization could not be preserved help: React Compiler has skipped optimizing this component because the existing manual memoization could not be preserved. The inferred dependencies did not match the manually specified dependencies, which could cause the value to change more or less frequently than expected. The inferred dependency was `activeGroup.id`, but the source dependencies were [activeGroup?.id, groupMessages]. Inferred different dependency than source
+src/features/chat/useChatBootstrap.js:137:31: warning react-hooks(exhaustive-deps): React Hook useEffect has a missing dependency: 'identity' help: Either include it or remove the dependency array.
+src/features/chat/useChatBootstrap.js:203:47: warning react-hooks(exhaustive-deps): React Hook useEffect has a missing dependency: 'identity' help: Either include it or remove the dependency array.
+src/features/chat/useChatBootstrap.js:299:40: warning react-hooks(exhaustive-deps): React Hook useEffect has missing dependencies: 'lockedUsername', and 'identity' help: Either include it or remove the dependency array.
+src/features/chat/useChatBootstrap.js:588:7: warning react-hooks(exhaustive-deps): React Hook useEffect has missing dependencies: 'subscribeToDMs', 'subscribeToGroupReactions', 'subscribeToGroups', and 'fetchChats' help: Either include it or remove the dependency array.
+src/features/chat/useChatBootstrap.js:606:5: warning react-hooks(exhaustive-deps): React Hook useEffect has a missing dependency: 'fetchGroups' help: Either include it or remove the dependency array.
+src/features/chat/useChatBootstrap.js:665:5: warning react-hooks(exhaustive-deps): React Hook useEffect has a missing dependency: 'fetchProfilesForPubkeys' help: Either include it or remove the dependency array.
+src/features/chat/useChatBootstrap.js:675:5: warning react-hooks(exhaustive-deps): React Hook useEffect has a missing dependency: 'fetchProfilesForPubkeys' help: Either include it or remove the dependency array.
+src/features/chat/useChatBootstrap.js:842:7: warning react-hooks(exhaustive-deps): React Hook useEffect has missing dependencies: 'joinGroupById', and 'identity' help: Either include it or remove the dependency array.
+src/features/chat/useChatBootstrap.js:876:9: warning react-hooks(exhaustive-deps): React Hook useEffect has a missing dependency: 'setUnreadCounts' help: Either include it or remove the dependency array.
+src/features/chat/usePeopleSearch.js:18:12: warning eslint(no-unused-vars): Catch parameter 'e' is caught but never used. help: Consider handling this error.
+src/features/chat/usePeopleSearch.js:57:14: warning eslint(no-unused-vars): Catch parameter 'e' is caught but never used. help: Consider handling this error.
+src/features/chat/usePeopleSearch.js:84:20: warning eslint(no-unused-vars): Catch parameter 'e' is caught but never used. help: Consider handling this error.
+src/features/chat/usePeopleSearch.js:186:18: warning eslint(no-unused-vars): Catch parameter 'e' is caught but never used. help: Consider handling this error.
+src/features/chat/usePeopleSearch.js:215:20: warning eslint(no-unused-vars): Catch parameter 'e' is caught but never used. help: Consider handling this error.
+src/features/chat/usePeopleSearch.js:238:20: warning eslint(no-unused-vars): Catch parameter 'e' is caught but never used. help: Consider handling this error.
+src/features/chat/usePeopleSearch.js:245:20: warning eslint(no-unused-vars): Catch parameter 'e' is caught but never used. help: Consider handling this error.
+
+
+===== build (exit 0) =====
+
+> cipher@0.0.0 build
+> node scripts/with-app-env.mjs vite --config vite.config.js build && node scripts/asset-manifest.mjs dist
+
+vite v8.3.4 building client environment for production...
+transforming...
+✓ 2644 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                                 4.76 kB │ gzip:   1.79 kB
+dist/assets/ForwardPicker-BXsanBLm.css          0.33 kB │ gzip:   0.22 kB
+dist/assets/index-DXN07IDJ.css                 39.00 kB │ gzip:   9.02 kB
+dist/assets/groupKeyStore-C_v-lwN0.js           0.05 kB │ gzip:   0.07 kB
+dist/assets/voiceCall-BAxujFqc.js               0.06 kB │ gzip:   0.08 kB
+dist/assets/groupKeyRotation-CWg2AD3_.js        0.07 kB │ gzip:   0.09 kB
+dist/assets/authorityPins-D3sNG9p8.js           0.08 kB │ gzip:   0.09 kB
+dist/assets/gmIdentityWire-DaBrmx52.js          0.09 kB │ gzip:   0.11 kB
+dist/assets/esm-tahkP35W.js                     0.10 kB │ gzip:   0.10 kB
+dist/assets/deliveryAddress-M78aqKuv.js         0.17 kB │ gzip:   0.13 kB
+dist/assets/sessionKey-DuHjwGKg.js              0.25 kB │ gzip:   0.18 kB
+dist/assets/heart-C0COaoJv.js                   0.28 kB │ gzip:   0.23 kB
+dist/assets/groupDocWire-bQjMhzDX.js            0.30 kB │ gzip:   0.21 kB
+dist/assets/groupDoc-BpnhXv8k.js                0.37 kB │ gzip:   0.26 kB
+dist/assets/badge-check-m44F1FT8.js             0.37 kB │ gzip:   0.25 kB
+dist/assets/package-CvaVmwj0.js                 0.40 kB │ gzip:   0.27 kB
+dist/assets/myGroups-R5xTv-CG.js                0.41 kB │ gzip:   0.27 kB
+dist/assets/dmKeys-z1pf3Yht.js                  0.47 kB │ gzip:   0.34 kB
+dist/assets/star-g-KRa2ei.js                    0.50 kB │ gzip:   0.31 kB
+dist/assets/npub-BKkcLrJx.js                    0.63 kB │ gzip:   0.38 kB
+dist/assets/rolldown-runtime-XKyaHtl9.js        0.72 kB │ gzip:   0.42 kB
+dist/assets/useVouchCount-DMJpAoJ6.js           0.91 kB │ gzip:   0.57 kB
+dist/assets/esm-C3nU0H0K.js                     1.22 kB │ gzip:   0.66 kB
+dist/assets/hmac-DKUdAf2Z.js                    1.38 kB │ gzip:   0.61 kB
+dist/assets/memberDocStanding-_5MFTO9_.js       1.38 kB │ gzip:   0.70 kB
+dist/assets/pure-BKwLDPnw.js                    1.40 kB │ gzip:   0.72 kB
+dist/assets/gmIdentity-yy8RAZuU.js              1.48 kB │ gzip:   0.80 kB
+dist/assets/preload-helper-BLdHbfdN.js          1.51 kB │ gzip:   0.79 kB
+dist/assets/storage-m9dRwxH0.js                 1.87 kB │ gzip:   0.74 kB
+dist/assets/DmView-Do3Ou6L_.js                  2.82 kB │ gzip:   1.36 kB
+dist/assets/useVendorReviews-D2FtBCox.js        3.03 kB │ gzip:   1.59 kB
+dist/assets/_md-CZngKTmy.js                     3.04 kB │ gzip:   1.43 kB
+dist/assets/Textarea-Y4KEBY_g.js                3.11 kB │ gzip:   1.20 kB
+dist/assets/legacy-B5E-K2U1.js                  3.82 kB │ gzip:   1.72 kB
+dist/assets/relayDirectoryRead-DYUkcZth.js      3.85 kB │ gzip:   1.73 kB
+dist/assets/ProfileModal-DypaNVwQ.js            4.03 kB │ gzip:   1.87 kB
+dist/assets/web-D_IrJkSJ.js                     4.43 kB │ gzip:   1.29 kB
+dist/assets/pool-BAxW7XGE.js                    4.46 kB │ gzip:   1.89 kB
+dist/assets/utils-C60r2jPn.js                   4.74 kB │ gzip:   1.99 kB
+dist/assets/bip39-Dz-dJw2h.js                   4.99 kB │ gzip:   2.12 kB
+dist/assets/ProfileEditor-DURVVzuf.js           4.99 kB │ gzip:   2.02 kB
+dist/assets/securityContextFence-D_92RIEj.js    5.72 kB │ gzip:   1.87 kB
+dist/assets/sha2-DS2gc3mu.js                    5.90 kB │ gzip:   2.86 kB
+dist/assets/relays-DSNTM8z0.js                  6.04 kB │ gzip:   2.56 kB
+dist/assets/sha2-BkVGSKNb.js                    6.83 kB │ gzip:   3.53 kB
+dist/assets/Sheet-C20Q5kol.js                   7.71 kB │ gzip:   3.38 kB
+dist/assets/react-DlmbjZJV.js                   7.87 kB │ gzip:   3.00 kB
+dist/assets/commerceWalletStore-DQ1cnTNa.js     7.90 kB │ gzip:   2.42 kB
+dist/assets/ReviewPrompt-DLtBuj1B.js            8.21 kB │ gzip:   3.09 kB
+dist/assets/egress-BcmIn4mK.js                  8.98 kB │ gzip:   3.16 kB
+dist/assets/VendorMenuHome-CBS3Zao1.js          9.36 kB │ gzip:   3.46 kB
+dist/assets/VendorDashboard-xVRcmDkX.js        11.06 kB │ gzip:   4.40 kB
+dist/assets/dist-Bnke4LLK.js                   12.52 kB │ gzip:   4.20 kB
+dist/assets/english-oOihPoMM.js                13.17 kB │ gzip:   6.50 kB
+dist/assets/outbox-Il68gjG7.js                 19.08 kB │ gzip:   7.04 kB
+dist/assets/hkdf-gycqMyVV.js                   21.29 kB │ gzip:   8.48 kB
+dist/assets/AuthenticatedApp-UfDSlrwG.js       28.78 kB │ gzip:   9.88 kB
+dist/assets/GroupView-BFFNC4vi.js              31.05 kB │ gzip:   9.83 kB
+dist/assets/bip32-Ne2F0m-Z.js                  37.83 kB │ gzip:  13.77 kB
+dist/assets/secp256k1-CaeHYq1l.js              38.30 kB │ gzip:  15.70 kB
+dist/assets/esm-BS7p_zk4.js                    58.65 kB │ gzip:  19.80 kB
+dist/assets/paymentWatcherTrust-iLmYyoD5.js    64.58 kB │ gzip:  23.30 kB
+dist/assets/Wallet-BEdLuVDI.js                 65.42 kB │ gzip:  18.24 kB
+dist/assets/ForwardPicker-B1JYF2sv.js          71.29 kB │ gzip:  23.68 kB
+dist/assets/useNIP29Group-DNbIL24w.js         128.02 kB │ gzip:  37.19 kB
+dist/assets/jsQR-Ct1FLwmy.js                  129.98 kB │ gzip:  47.50 kB
+dist/assets/db-BRYKdqz_.js                    131.28 kB │ gzip:  42.26 kB
+dist/assets/Chat-DUsfMisj.js                  180.03 kB │ gzip:  54.78 kB
+dist/assets/index-CATbfyyK.js                 472.67 kB │ gzip: 147.11 kB
+
+[33m[INEFFECTIVE_DYNAMIC_IMPORT] [0msrc/store/chatStore.js is dynamically imported by src/useIdentity.js but also statically imported by src/App.jsx, src/AuthenticatedApp.jsx, src/Chat.jsx, src/Discover.jsx, src/Menus.jsx, ..., dynamic import will not move module into another chunk.
+
+[33m[INEFFECTIVE_DYNAMIC_IMPORT] [0msrc/lib/deliveryAddress.js is dynamically imported by src/features/chat/useCommerce.js but also statically imported by src/components/OneTapCheckout.jsx, dynamic import will not move module into another chunk.
+
+[33m[INEFFECTIVE_DYNAMIC_IMPORT] [0msrc/lib/crypto/groupKeyStore.js is dynamically imported by src/lib/crypto/groupDocWire.js but also statically imported by src/hooks/useGroupKeyReconciler.js, src/hooks/useNIP29Group.js, src/lib/crypto/groupKeyDistribution.js, src/lib/crypto/groupKeyRotation.js, src/lib/crypto/groupMessageCodec.js, dynamic import will not move module into another chunk.
+
+[33m[INEFFECTIVE_DYNAMIC_IMPORT] [0msrc/lib/crypto/groupDoc.js is dynamically imported by src/hooks/useGroupKeyReconciler.js, src/hooks/useNIP29Group.js, src/lib/crypto/groupDocWire.js, src/lib/crypto/groupKeyDistribution.js, src/lib/crypto/groupKeyRotation.js but also statically imported by src/hooks/useNIP29Group.js, src/lib/crypto/groupDocWire.js, src/lib/crypto/memberDocStanding.js, dynamic import will not move module into another chunk.
+
+[33m[INEFFECTIVE_DYNAMIC_IMPORT] [0msrc/lib/crypto/groupDocWire.js is dynamically imported by src/hooks/useGroupKeyReconciler.js, src/hooks/useNIP29Group.js, src/lib/crypto/groupKeyDistribution.js, src/lib/crypto/groupKeyRotation.js but also statically imported by src/hooks/useNIP29Group.js, src/lib/crypto/groupMembership.js, src/lib/crypto/memberDocStanding.js, dynamic import will not move module into another chunk.
+
+[33m[INEFFECTIVE_DYNAMIC_IMPORT] [0msrc/lib/crypto/groupKeyRotation.js is dynamically imported by src/lib/crypto/groupKeyDistribution.js but also statically imported by src/components/chat/GroupInfoSidebar.jsx, src/features/chat/useChatBootstrap.js, src/hooks/useGroupKeyReconciler.js, src/hooks/useNIP29Group.js, src/lib/crypto/groupKeyDistribution.js, dynamic import will not move module into another chunk.
+
+[33m[INEFFECTIVE_DYNAMIC_IMPORT] [0msrc/lib/crypto/gmIdentityWire.js is dynamically imported by src/lib/groupJoin.js but also statically imported by src/hooks/useNIP29Group.js, src/lib/crypto/groupAdmission.js, dynamic import will not move module into another chunk.
+
+[33m[INEFFECTIVE_DYNAMIC_IMPORT] [0msrc/lib/crypto/authorityPins.js is dynamically imported by src/components/chat/GroupInfoSidebar.jsx, src/features/chat/useChatBootstrap.js, src/hooks/useNIP29Group.js, src/lib/crypto/groupKeyDistribution.js, src/lib/crypto/groupKeyRotation.js but also statically imported by src/features/chat/useChatBootstrap.js, src/hooks/useNIP29Group.js, dynamic import will not move module into another chunk.
+
+[33m[INEFFECTIVE_DYNAMIC_IMPORT] [0msrc/hooks/useNIP29Group.js is dynamically imported by src/features/chat/useChatBootstrap.js, src/hooks/usePanicWipe.js, src/lib/groupJoin.js, src/useIdentity.js but also statically imported by src/Chat.jsx, src/components/chat/GroupView.jsx, src/features/chat/useChatBootstrap.js, src/features/chat/useMessageCommands.js, src/features/chat/usePeopleSearch.js, dynamic import will not move module into another chunk.
+
+✓ built in 18.58s
+[33m[PLUGIN_TIMINGS] [0mJavaScript callbacks ran for 14.7s of this 18.5s build (80%).
+2 callbacks are listed without a time. Their calls overlapped, so the time inside one call includes work from other calls. To find their cost, profile the build with `node --cpu-prof`:
+  - plugin vite:css transform (4 calls)
+  - plugin vite:css-post transform (4 calls)
+See https://rolldown.rs/reference/InputOptions.checks#bundlertimings for more details.
+
+[assets] 68 files listed in dist/asset-manifest.json
+
+
+===== unit (exit 1) =====
+
+> cipher@0.0.0 test
+> node --import ./scripts/resolve-extensionless.mjs --test src/lib/storage.test.js src/lib/passkeyRecord.test.js src/lib/passkeyMessages.test.js src/lib/sendOutcome.test.js src/lib/singleFlight.test.js src/lib/vaultLockout.test.js src/lib/vaultEntry.test.js src/lib/outboxPolicy.test.js src/lib/moneroAddress.test.js src/lib/vendorPayments.test.js src/lib/paymentAddress.test.js src/lib/paymentState.test.js src/lib/paymentWatch.test.js src/lib/messageMerge.test.js src/lib/messageAtRest.test.js src/lib/sessionKey.test.js src/lib/paymentUri.test.js src/lib/mediaCrypto.test.js src/lib/mediaUrl.test.js src/lib/voiceCall.test.js src/lib/groupJoin.test.js src/lib/groupJoinQueue.test.js src/lib/groupMetaAnnouncement.test.js src/lib/orderActions.test.js src/lib/listing.test.js src/lib/orderLedger.test.js src/lib/releaseSurface.test.js src/lib/writeQueue.test.js src/lib/shakeDetector.test.js src/lib/pushGateway.test.js src/lib/giftWrap.test.js src/lib/giftWrapPad.test.js src/lib/pushGatewayStore.test.js src/lib/nativePushSend.test.js src/lib/privacy.test.js src/lib/linkPreview.test.js src/lib/tabs.test.js src/lib/crypto/groupCipher.test.js src/lib/crypto/groupKeyGrant.test.js src/lib/crypto/groupKeyMember.test.js src/lib/crypto/memberBaseline.test.js src/lib/crypto/groupKeyRequest.test.js src/lib/crypto/groupMembership.test.js src/lib/crypto/groupAuthority.test.js src/lib/crypto/groupDoc.test.js src/lib/crypto/groupDocWire.test.js src/lib/crypto/memberDocStanding.test.js src/lib/crypto/authorityPins.test.js src/lib/crypto/memberDocPublish.test.js src/lib/crypto/groupKeyInstall.test.js src/lib/crypto/groupKeyAtRest.test.js src/lib/vaultCrypto.test.js src/lib/reactions.test.js src/lib/egress.test.js src/lib/mediaDoorEgress.test.js src/lib/nip65.test.js src/lib/palette.test.js src/lib/uiWords.test.js src/lib/proofOfTrade.test.js src/lib/idempotentMessageEffect.test.js src/lib/paymentLedgerLock.test.js src/lib/reputation.test.js src/lib/notificationThrottle.test.js src/lib/notifications.test.js src/lib/dmKeys.test.js src/lib/ratchetStateAtRest.test.js src/lib/dmRatchetTransactions.test.js src/lib/dmRatchetAuthority.test.js src/lib/dmRatchetWire.test.js src/lib/dmRatchetMigration.test.js src/store/snapshot.test.js src/features/chat/media.test.js src/features/chat/chatSubscriptions.test.js src/features/chat/useChatBootstrap.test.js src/features/chat/useMessageCommands.test.js src/features/chat/useGroupDirectory.test.js src/hooks/useReactions.test.js src/hooks/securityRecordLifecycle.test.js src/lib/safetyNumber.test.js src/lib/deadDrop.test.js src/lib/deliveryAddress.test.js src/components/chat/relativeTime.test.js src/components/chat/NotificationCenter.test.js src/components/chat/GroupView.test.js scripts/boxes.test.mjs src/components/ui/ui.test.js src/components/ui/modal.test.js src/lib/vendorStats.test.js src/lib/disputes.test.js src/lib/vendorShopReaders.test.js src/lib/vendorReviews.test.js src/lib/disappearing.test.js src/lib/crypto/groupMessageCodec.test.js src/lib/crypto/gmIdentity.test.js src/lib/crypto/gmIdentityWire.test.js src/lib/crypto/groupAdmission.test.js src/lib/panicWipe.test.js src/lib/outboxWriteAhead.test.js src/lib/messageQueryOpen.test.js src/lib/unreadCounts.test.js src/lib/scannedTarget.test.js src/lib/npub.test.js src/lib/crypto/groupRemoval.test.js src/lib/deviceLock.test.js src/lib/deviceLockReplace.test.js src/lib/accountPick.test.js src/lib/devicePrf.test.js src/lib/vaultEnvelope.test.js src/features/chat/recordingSession.test.js src/lib/relayDirectoryRead.test.js src/lib/escrowActions.test.js src/lib/escrowFsm.test.js src/lib/escrowMembrane.test.js src/lib/escrowPsbt.test.js src/lib/escrowScript.test.js src/lib/vaultCommit.test.js src/lib/deviceDesktop.test.js scripts/build-desktop.test.mjs src/features/chat/usePeopleSearch.test.js src/components/chat/chatList.test.js src/features/chat/useCommerce.test.js src/features/chat/useComposer.test.js src/lib/pool.test.js src/lib/vendorCard.test.js src/Wallet.test.js src/lib/groupCreate.test.js src/lib/handleClaim.test.js src/components/onboarding/Create.test.js src/lib/crypto/groupKeyDistribution.test.js src/components/chat/groupMemberCount.test.js src/lib/memberRosterNotice.test.js scripts/note-carrier.test.mjs src/lib/orderMembrane.test.js scripts/preview.test.mjs scripts/with-app-env.test.mjs src/lib/seesText.test.js src/lib/testRelayOverride.test.js src/lib/deadDropLedger.test.js src/notePage.test.js src/lib/noteReader.test.js src/lib/noteRoute.test.js scripts/asset-manifest.test.mjs scripts/vite-config-guard.test.mjs src/lib/relayRace.test.js src/components/ui/toast.test.js src/components/chat/chatList-refresh.test.js src/features/chat/dmPeerProfiles.test.js src/features/chat/usernameRecord.test.js src/hooks/useNIP29Group.test.js src/hooks/useGroupKeyReconciler.test.js src/howToScreen.test.js src/components/chat/menuPhoto.test.js src/hooks/useLongPress.test.js src/lib/testRunner.test.js src/components/chat/chatHeaderPill.test.js src/lib/groupSocketProof.test.js src/lib/deviceEnrollment.test.js src/lib/deviceFreshness.test.js src/lib/deviceAuthority.test.js src/lib/deviceAuthorityRecovery.test.js src/lib/deviceAuthorityPeerStore.test.js src/lib/deviceAuthorityTransport.test.js src/lib/deviceAuthorityWebAuthn.test.js src/lib/deviceAuthorityStorage.test.js src/lib/deviceAuthorityCheckpoint.test.js src/lib/deviceAuthorityRecoveryPackage.test.js src/lib/deviceAuthorityPinStore.test.js src/lib/mlsStateTransactions.test.js src/lib/deviceRegistryStore.test.js src/lib/deviceRegistryWire.test.js src/lib/identityCompartments.test.js src/lib/ratchetProofAwareTransport.test.js src/lib/securityContextCoordination.test.js src/lib/securityContextFence.test.js src/lib/indexedDbContextGate.test.js src/lib/dmSubscription.test.js src/lib/privacyHandoff.test.js src/lib/identityPublisher.test.js src/lib/accountDatabaseCleanup.test.js src/lib/crypto/groupKeyStoreLifecycle.test.js src/lib/protocolTestMode.test.js scripts/protocol-test-build-config.test.mjs
+
+TAP version 13
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/scripts/asset-manifest.test.mjs
+ok 1 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/scripts/asset-manifest.test.mjs
+  ---
+  duration_ms: 657.098259
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/scripts/boxes.test.mjs
+ok 2 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/scripts/boxes.test.mjs
+  ---
+  duration_ms: 533.321073
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/scripts/build-desktop.test.mjs
+not ok 3 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/scripts/build-desktop.test.mjs
+  ---
+  duration_ms: 1950.05935
+  location: '/home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/scripts/build-desktop.test.mjs:1:1'
+  failureType: 'testCodeFailure'
+  exitCode: 1
+  signal: ~
+  error: 'test failed'
+  code: 'ERR_TEST_FAILURE'
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/scripts/note-carrier.test.mjs
+not ok 4 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/scripts/note-carrier.test.mjs
+  ---
+  duration_ms: 684.594621
+  location: '/home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/scripts/note-carrier.test.mjs:1:1'
+  failureType: 'testCodeFailure'
+  exitCode: 1
+  signal: ~
+  error: 'test failed'
+  code: 'ERR_TEST_FAILURE'
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/scripts/preview.test.mjs
+ok 5 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/scripts/preview.test.mjs
+  ---
+  duration_ms: 630.439617
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/scripts/protocol-test-build-config.test.mjs
+ok 6 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/scripts/protocol-test-build-config.test.mjs
+  ---
+  duration_ms: 511.196262
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/scripts/vite-config-guard.test.mjs
+not ok 7 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/scripts/vite-config-guard.test.mjs
+  ---
+  duration_ms: 81719.244858
+  location: '/home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/scripts/vite-config-guard.test.mjs:1:1'
+  failureType: 'testCodeFailure'
+  exitCode: 1
+  signal: ~
+  error: 'test failed'
+  code: 'ERR_TEST_FAILURE'
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/scripts/with-app-env.test.mjs
+not ok 8 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/scripts/with-app-env.test.mjs
+  ---
+  duration_ms: 2960.987492
+  location: '/home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/scripts/with-app-env.test.mjs:1:1'
+  failureType: 'testCodeFailure'
+  exitCode: 1
+  signal: ~
+  error: 'test failed'
+  code: 'ERR_TEST_FAILURE'
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/Wallet.test.js
+ok 9 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/Wallet.test.js
+  ---
+  duration_ms: 721.288152
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/components/chat/GroupView.test.js
+ok 10 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/components/chat/GroupView.test.js
+  ---
+  duration_ms: 503.477088
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/components/chat/NotificationCenter.test.js
+ok 11 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/components/chat/NotificationCenter.test.js
+  ---
+  duration_ms: 1161.589647
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/components/chat/chatHeaderPill.test.js
+ok 12 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/components/chat/chatHeaderPill.test.js
+  ---
+  duration_ms: 4608.518758
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/components/chat/chatList-refresh.test.js
+ok 13 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/components/chat/chatList-refresh.test.js
+  ---
+  duration_ms: 5554.300077
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/components/chat/chatList.test.js
+ok 14 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/components/chat/chatList.test.js
+  ---
+  duration_ms: 8807.016763
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/components/chat/groupMemberCount.test.js
+ok 15 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/components/chat/groupMemberCount.test.js
+  ---
+  duration_ms: 1013.267338
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/components/chat/menuPhoto.test.js
+ok 16 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/components/chat/menuPhoto.test.js
+  ---
+  duration_ms: 5859.367753
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/components/chat/relativeTime.test.js
+ok 17 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/components/chat/relativeTime.test.js
+  ---
+  duration_ms: 557.561108
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/components/onboarding/Create.test.js
+ok 18 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/components/onboarding/Create.test.js
+  ---
+  duration_ms: 477.84785
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/components/ui/modal.test.js
+ok 19 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/components/ui/modal.test.js
+  ---
+  duration_ms: 1014.80327
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/components/ui/toast.test.js
+ok 20 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/components/ui/toast.test.js
+  ---
+  duration_ms: 4451.541972
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/components/ui/ui.test.js
+ok 21 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/components/ui/ui.test.js
+  ---
+  duration_ms: 10925.912373
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/features/chat/chatSubscriptions.test.js
+ok 22 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/features/chat/chatSubscriptions.test.js
+  ---
+  duration_ms: 445.397865
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/features/chat/dmPeerProfiles.test.js
+ok 23 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/features/chat/dmPeerProfiles.test.js
+  ---
+  duration_ms: 669.463273
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/features/chat/media.test.js
+ok 24 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/features/chat/media.test.js
+  ---
+  duration_ms: 555.707627
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/features/chat/recordingSession.test.js
+ok 25 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/features/chat/recordingSession.test.js
+  ---
+  duration_ms: 494.461682
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/features/chat/useChatBootstrap.test.js
+ok 26 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/features/chat/useChatBootstrap.test.js
+  ---
+  duration_ms: 477.627393
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/features/chat/useCommerce.test.js
+ok 27 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/features/chat/useCommerce.test.js
+  ---
+  duration_ms: 533.825236
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/features/chat/useComposer.test.js
+ok 28 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/features/chat/useComposer.test.js
+  ---
+  duration_ms: 471.062094
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/features/chat/useGroupDirectory.test.js
+ok 29 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/features/chat/useGroupDirectory.test.js
+  ---
+  duration_ms: 457.752532
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/features/chat/useMessageCommands.test.js
+ok 30 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/features/chat/useMessageCommands.test.js
+  ---
+  duration_ms: 447.46081
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/features/chat/usePeopleSearch.test.js
+ok 31 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/features/chat/usePeopleSearch.test.js
+  ---
+  duration_ms: 6777.710934
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/features/chat/usernameRecord.test.js
+ok 32 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/features/chat/usernameRecord.test.js
+  ---
+  duration_ms: 480.742506
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/hooks/securityRecordLifecycle.test.js
+ok 33 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/hooks/securityRecordLifecycle.test.js
+  ---
+  duration_ms: 512.899386
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/hooks/useGroupKeyReconciler.test.js
+ok 34 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/hooks/useGroupKeyReconciler.test.js
+  ---
+  duration_ms: 2191.594755
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/hooks/useLongPress.test.js
+ok 35 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/hooks/useLongPress.test.js
+  ---
+  duration_ms: 623.652657
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/hooks/useNIP29Group.test.js
+ok 36 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/hooks/useNIP29Group.test.js
+  ---
+  duration_ms: 1181.018772
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/hooks/useReactions.test.js
+ok 37 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/hooks/useReactions.test.js
+  ---
+  duration_ms: 452.055269
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/howToScreen.test.js
+ok 38 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/howToScreen.test.js
+  ---
+  duration_ms: 7028.592835
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/accountDatabaseCleanup.test.js
+ok 39 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/accountDatabaseCleanup.test.js
+  ---
+  duration_ms: 1236.137885
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/accountPick.test.js
+ok 40 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/accountPick.test.js
+  ---
+  duration_ms: 481.84936
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/crypto/authorityPins.test.js
+ok 41 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/crypto/authorityPins.test.js
+  ---
+  duration_ms: 525.203819
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/crypto/gmIdentity.test.js
+ok 42 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/crypto/gmIdentity.test.js
+  ---
+  duration_ms: 1181.245798
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/crypto/gmIdentityWire.test.js
+ok 43 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/crypto/gmIdentityWire.test.js
+  ---
+  duration_ms: 1927.842556
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/crypto/groupAdmission.test.js
+ok 44 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/crypto/groupAdmission.test.js
+  ---
+  duration_ms: 1554.244231
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/crypto/groupAuthority.test.js
+ok 45 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/crypto/groupAuthority.test.js
+  ---
+  duration_ms: 1176.016997
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/crypto/groupCipher.test.js
+ok 46 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/crypto/groupCipher.test.js
+  ---
+  duration_ms: 485.075973
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/crypto/groupDoc.test.js
+ok 47 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/crypto/groupDoc.test.js
+  ---
+  duration_ms: 1172.99036
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/crypto/groupDocWire.test.js
+ok 48 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/crypto/groupDocWire.test.js
+  ---
+  duration_ms: 2173.230816
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/crypto/groupKeyAtRest.test.js
+ok 49 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/crypto/groupKeyAtRest.test.js
+  ---
+  duration_ms: 1111.187255
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/crypto/groupKeyDistribution.test.js
+ok 50 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/crypto/groupKeyDistribution.test.js
+  ---
+  duration_ms: 1773.633763
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/crypto/groupKeyGrant.test.js
+ok 51 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/crypto/groupKeyGrant.test.js
+  ---
+  duration_ms: 2387.58848
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/crypto/groupKeyInstall.test.js
+ok 52 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/crypto/groupKeyInstall.test.js
+  ---
+  duration_ms: 1295.287908
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/crypto/groupKeyMember.test.js
+ok 53 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/crypto/groupKeyMember.test.js
+  ---
+  duration_ms: 1243.89547
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/crypto/groupKeyRequest.test.js
+ok 54 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/crypto/groupKeyRequest.test.js
+  ---
+  duration_ms: 767.88326
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/crypto/groupKeyStoreLifecycle.test.js
+ok 55 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/crypto/groupKeyStoreLifecycle.test.js
+  ---
+  duration_ms: 1627.19988
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/crypto/groupMembership.test.js
+ok 56 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/crypto/groupMembership.test.js
+  ---
+  duration_ms: 2293.923309
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/crypto/groupMessageCodec.test.js
+ok 57 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/crypto/groupMessageCodec.test.js
+  ---
+  duration_ms: 1719.381133
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/crypto/groupRemoval.test.js
+ok 58 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/crypto/groupRemoval.test.js
+  ---
+  duration_ms: 5294.241475
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/crypto/memberBaseline.test.js
+ok 59 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/crypto/memberBaseline.test.js
+  ---
+  duration_ms: 4174.407428
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/crypto/memberDocPublish.test.js
+ok 60 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/crypto/memberDocPublish.test.js
+  ---
+  duration_ms: 6404.046235
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/crypto/memberDocStanding.test.js
+ok 61 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/crypto/memberDocStanding.test.js
+  ---
+  duration_ms: 1711.545345
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/deadDrop.test.js
+ok 62 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/deadDrop.test.js
+  ---
+  duration_ms: 2450.156928
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/deadDropLedger.test.js
+ok 63 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/deadDropLedger.test.js
+  ---
+  duration_ms: 480.911754
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/deliveryAddress.test.js
+ok 64 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/deliveryAddress.test.js
+  ---
+  duration_ms: 518.061396
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/deviceAuthority.test.js
+ok 65 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/deviceAuthority.test.js
+  ---
+  duration_ms: 2494.462315
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/deviceAuthorityCheckpoint.test.js
+ok 66 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/deviceAuthorityCheckpoint.test.js
+  ---
+  duration_ms: 1920.321362
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/deviceAuthorityPeerStore.test.js
+ok 67 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/deviceAuthorityPeerStore.test.js
+  ---
+  duration_ms: 2380.360552
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/deviceAuthorityPinStore.test.js
+ok 68 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/deviceAuthorityPinStore.test.js
+  ---
+  duration_ms: 2074.284615
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/deviceAuthorityRecovery.test.js
+ok 69 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/deviceAuthorityRecovery.test.js
+  ---
+  duration_ms: 977.408688
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/deviceAuthorityRecoveryPackage.test.js
+ok 70 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/deviceAuthorityRecoveryPackage.test.js
+  ---
+  duration_ms: 8056.191183
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/deviceAuthorityStorage.test.js
+ok 71 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/deviceAuthorityStorage.test.js
+  ---
+  duration_ms: 2782.276265
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/deviceAuthorityTransport.test.js
+ok 72 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/deviceAuthorityTransport.test.js
+  ---
+  duration_ms: 4159.445949
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/deviceAuthorityWebAuthn.test.js
+ok 73 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/deviceAuthorityWebAuthn.test.js
+  ---
+  duration_ms: 447.704132
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/deviceDesktop.test.js
+ok 74 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/deviceDesktop.test.js
+  ---
+  duration_ms: 498.037244
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/deviceEnrollment.test.js
+ok 75 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/deviceEnrollment.test.js
+  ---
+  duration_ms: 1299.47175
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/deviceFreshness.test.js
+ok 76 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/deviceFreshness.test.js
+  ---
+  duration_ms: 1822.755487
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/deviceLock.test.js
+ok 77 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/deviceLock.test.js
+  ---
+  duration_ms: 29711.33177
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/deviceLockReplace.test.js
+ok 78 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/deviceLockReplace.test.js
+  ---
+  duration_ms: 16846.243128
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/devicePrf.test.js
+ok 79 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/devicePrf.test.js
+  ---
+  duration_ms: 477.398112
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/deviceRegistryStore.test.js
+ok 80 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/deviceRegistryStore.test.js
+  ---
+  duration_ms: 3091.931489
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/deviceRegistryWire.test.js
+ok 81 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/deviceRegistryWire.test.js
+  ---
+  duration_ms: 1740.581837
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/disappearing.test.js
+ok 82 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/disappearing.test.js
+  ---
+  duration_ms: 591.079752
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/disputes.test.js
+ok 83 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/disputes.test.js
+  ---
+  duration_ms: 513.784661
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/dmKeys.test.js
+ok 84 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/dmKeys.test.js
+  ---
+  duration_ms: 751.77453
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/dmRatchetAuthority.test.js
+ok 85 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/dmRatchetAuthority.test.js
+  ---
+  duration_ms: 8679.826783
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/dmRatchetMigration.test.js
+ok 86 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/dmRatchetMigration.test.js
+  ---
+  duration_ms: 1428.51533
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/dmRatchetTransactions.test.js
+ok 87 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/dmRatchetTransactions.test.js
+  ---
+  duration_ms: 3234.98843
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/dmRatchetWire.test.js
+ok 88 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/dmRatchetWire.test.js
+  ---
+  duration_ms: 1560.030025
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/dmSubscription.test.js
+ok 89 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/dmSubscription.test.js
+  ---
+  duration_ms: 740.215801
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/egress.test.js
+ok 90 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/egress.test.js
+  ---
+  duration_ms: 695.139382
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/escrowActions.test.js
+ok 91 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/escrowActions.test.js
+  ---
+  duration_ms: 1072.5642
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/escrowFsm.test.js
+ok 92 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/escrowFsm.test.js
+  ---
+  duration_ms: 566.749974
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/escrowMembrane.test.js
+ok 93 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/escrowMembrane.test.js
+  ---
+  duration_ms: 649.543254
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/escrowPsbt.test.js
+ok 94 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/escrowPsbt.test.js
+  ---
+  duration_ms: 1191.219077
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/escrowScript.test.js
+ok 95 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/escrowScript.test.js
+  ---
+  duration_ms: 540.673706
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/giftWrap.test.js
+ok 96 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/giftWrap.test.js
+  ---
+  duration_ms: 2481.648534
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/giftWrapPad.test.js
+ok 97 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/giftWrapPad.test.js
+  ---
+  duration_ms: 1229.849563
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/groupCreate.test.js
+ok 98 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/groupCreate.test.js
+  ---
+  duration_ms: 1610.950812
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/groupJoin.test.js
+ok 99 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/groupJoin.test.js
+  ---
+  duration_ms: 2803.652507
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/groupJoinQueue.test.js
+ok 100 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/groupJoinQueue.test.js
+  ---
+  duration_ms: 13319.456042
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/groupMetaAnnouncement.test.js
+ok 101 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/groupMetaAnnouncement.test.js
+  ---
+  duration_ms: 552.417763
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/groupSocketProof.test.js
+ok 102 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/groupSocketProof.test.js
+  ---
+  duration_ms: 5235.01345
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/handleClaim.test.js
+ok 103 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/handleClaim.test.js
+  ---
+  duration_ms: 554.231781
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/idempotentMessageEffect.test.js
+ok 104 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/idempotentMessageEffect.test.js
+  ---
+  duration_ms: 4129.987135
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/identityCompartments.test.js
+ok 105 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/identityCompartments.test.js
+  ---
+  duration_ms: 1842.802554
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/identityPublisher.test.js
+ok 106 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/identityPublisher.test.js
+  ---
+  duration_ms: 685.366387
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/indexedDbContextGate.test.js
+ok 107 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/indexedDbContextGate.test.js
+  ---
+  duration_ms: 1162.586082
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/linkPreview.test.js
+ok 108 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/linkPreview.test.js
+  ---
+  duration_ms: 552.190001
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/listing.test.js
+ok 109 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/listing.test.js
+  ---
+  duration_ms: 489.103724
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/mediaCrypto.test.js
+not ok 110 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/mediaCrypto.test.js
+  ---
+  duration_ms: 1687.484631
+  location: '/home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/mediaCrypto.test.js:1:1'
+  failureType: 'testCodeFailure'
+  exitCode: 1
+  signal: ~
+  error: 'test failed'
+  code: 'ERR_TEST_FAILURE'
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/mediaDoorEgress.test.js
+not ok 111 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/mediaDoorEgress.test.js
+  ---
+  duration_ms: 1413.397641
+  location: '/home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/mediaDoorEgress.test.js:1:1'
+  failureType: 'testCodeFailure'
+  exitCode: 1
+  signal: ~
+  error: 'test failed'
+  code: 'ERR_TEST_FAILURE'
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/mediaUrl.test.js
+ok 112 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/mediaUrl.test.js
+  ---
+  duration_ms: 685.909175
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/memberRosterNotice.test.js
+ok 113 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/memberRosterNotice.test.js
+  ---
+  duration_ms: 580.138417
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/messageAtRest.test.js
+ok 114 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/messageAtRest.test.js
+  ---
+  duration_ms: 559.35434
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/messageMerge.test.js
+ok 115 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/messageMerge.test.js
+  ---
+  duration_ms: 732.536352
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/messageQueryOpen.test.js
+ok 116 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/messageQueryOpen.test.js
+  ---
+  duration_ms: 1213.434103
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/mlsStateTransactions.test.js
+ok 117 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/mlsStateTransactions.test.js
+  ---
+  duration_ms: 2700.465965
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/moneroAddress.test.js
+ok 118 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/moneroAddress.test.js
+  ---
+  duration_ms: 1498.713065
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/nativePushSend.test.js
+ok 119 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/nativePushSend.test.js
+  ---
+  duration_ms: 1664.53172
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/nip65.test.js
+ok 120 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/nip65.test.js
+  ---
+  duration_ms: 521.414381
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/noteReader.test.js
+ok 121 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/noteReader.test.js
+  ---
+  duration_ms: 4079.55208
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/noteRoute.test.js
+ok 122 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/noteRoute.test.js
+  ---
+  duration_ms: 482.666123
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/notificationThrottle.test.js
+ok 123 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/notificationThrottle.test.js
+  ---
+  duration_ms: 591.908828
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/notifications.test.js
+ok 124 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/notifications.test.js
+  ---
+  duration_ms: 671.857949
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/npub.test.js
+ok 125 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/npub.test.js
+  ---
+  duration_ms: 751.973606
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/orderActions.test.js
+ok 126 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/orderActions.test.js
+  ---
+  duration_ms: 1780.381891
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/orderLedger.test.js
+ok 127 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/orderLedger.test.js
+  ---
+  duration_ms: 1517.7222
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/orderMembrane.test.js
+ok 128 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/orderMembrane.test.js
+  ---
+  duration_ms: 597.420326
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/outboxPolicy.test.js
+ok 129 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/outboxPolicy.test.js
+  ---
+  duration_ms: 2015.69989
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/outboxWriteAhead.test.js
+ok 130 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/outboxWriteAhead.test.js
+  ---
+  duration_ms: 1656.434143
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/palette.test.js
+ok 131 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/palette.test.js
+  ---
+  duration_ms: 748.105257
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/panicWipe.test.js
+ok 132 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/panicWipe.test.js
+  ---
+  duration_ms: 1934.568743
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/passkeyMessages.test.js
+ok 133 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/passkeyMessages.test.js
+  ---
+  duration_ms: 816.376084
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/passkeyRecord.test.js
+ok 134 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/passkeyRecord.test.js
+  ---
+  duration_ms: 684.440432
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/paymentAddress.test.js
+ok 135 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/paymentAddress.test.js
+  ---
+  duration_ms: 628.948929
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/paymentLedgerLock.test.js
+ok 136 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/paymentLedgerLock.test.js
+  ---
+  duration_ms: 479.149831
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/paymentState.test.js
+ok 137 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/paymentState.test.js
+  ---
+  duration_ms: 573.973538
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/paymentUri.test.js
+ok 138 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/paymentUri.test.js
+  ---
+  duration_ms: 479.357595
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/paymentWatch.test.js
+not ok 139 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/paymentWatch.test.js
+  ---
+  duration_ms: 1360.162249
+  location: '/home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/paymentWatch.test.js:1:1'
+  failureType: 'testCodeFailure'
+  exitCode: 1
+  signal: ~
+  error: 'test failed'
+  code: 'ERR_TEST_FAILURE'
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/pool.test.js
+ok 140 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/pool.test.js
+  ---
+  duration_ms: 7814.94254
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/privacy.test.js
+ok 141 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/privacy.test.js
+  ---
+  duration_ms: 1278.241225
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/privacyHandoff.test.js
+ok 142 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/privacyHandoff.test.js
+  ---
+  duration_ms: 1149.952381
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/proofOfTrade.test.js
+ok 143 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/proofOfTrade.test.js
+  ---
+  duration_ms: 2391.824946
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/protocolTestMode.test.js
+ok 144 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/protocolTestMode.test.js
+  ---
+  duration_ms: 1091.54386
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/pushGateway.test.js
+ok 145 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/pushGateway.test.js
+  ---
+  duration_ms: 485.885204
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/pushGatewayStore.test.js
+ok 146 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/pushGatewayStore.test.js
+  ---
+  duration_ms: 458.552495
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/ratchetProofAwareTransport.test.js
+ok 147 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/ratchetProofAwareTransport.test.js
+  ---
+  duration_ms: 718.096914
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/ratchetStateAtRest.test.js
+ok 148 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/ratchetStateAtRest.test.js
+  ---
+  duration_ms: 570.743797
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/reactions.test.js
+ok 149 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/reactions.test.js
+  ---
+  duration_ms: 1252.221451
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/relayDirectoryRead.test.js
+ok 150 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/relayDirectoryRead.test.js
+  ---
+  duration_ms: 2331.420945
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/relayRace.test.js
+ok 151 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/relayRace.test.js
+  ---
+  duration_ms: 1963.098422
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/releaseSurface.test.js
+ok 152 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/releaseSurface.test.js
+  ---
+  duration_ms: 702.945084
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/reputation.test.js
+ok 153 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/reputation.test.js
+  ---
+  duration_ms: 1191.818836
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/safetyNumber.test.js
+ok 154 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/safetyNumber.test.js
+  ---
+  duration_ms: 2544.84016
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/scannedTarget.test.js
+ok 155 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/scannedTarget.test.js
+  ---
+  duration_ms: 1814.909777
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/securityContextCoordination.test.js
+ok 156 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/securityContextCoordination.test.js
+  ---
+  duration_ms: 982.179326
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/securityContextFence.test.js
+ok 157 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/securityContextFence.test.js
+  ---
+  duration_ms: 533.781562
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/seesText.test.js
+ok 158 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/seesText.test.js
+  ---
+  duration_ms: 612.568988
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/sendOutcome.test.js
+ok 159 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/sendOutcome.test.js
+  ---
+  duration_ms: 515.149754
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/sessionKey.test.js
+ok 160 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/sessionKey.test.js
+  ---
+  duration_ms: 564.891618
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/shakeDetector.test.js
+ok 161 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/shakeDetector.test.js
+  ---
+  duration_ms: 1073.283703
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/singleFlight.test.js
+ok 162 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/singleFlight.test.js
+  ---
+  duration_ms: 448.105353
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/storage.test.js
+ok 163 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/storage.test.js
+  ---
+  duration_ms: 497.923557
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/tabs.test.js
+ok 164 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/tabs.test.js
+  ---
+  duration_ms: 1511.893708
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/testRelayOverride.test.js
+not ok 165 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/testRelayOverride.test.js
+  ---
+  duration_ms: 3726.943505
+  location: '/home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/testRelayOverride.test.js:1:1'
+  failureType: 'testCodeFailure'
+  exitCode: 1
+  signal: ~
+  error: 'test failed'
+  code: 'ERR_TEST_FAILURE'
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/testRunner.test.js
+ok 166 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/testRunner.test.js
+  ---
+  duration_ms: 499.48132
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/uiWords.test.js
+ok 167 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/uiWords.test.js
+  ---
+  duration_ms: 857.311219
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/unreadCounts.test.js
+ok 168 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/unreadCounts.test.js
+  ---
+  duration_ms: 488.884205
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/vaultCommit.test.js
+ok 169 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/vaultCommit.test.js
+  ---
+  duration_ms: 480.263739
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/vaultCrypto.test.js
+ok 170 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/vaultCrypto.test.js
+  ---
+  duration_ms: 5641.009747
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/vaultEntry.test.js
+ok 171 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/vaultEntry.test.js
+  ---
+  duration_ms: 472.839779
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/vaultEnvelope.test.js
+ok 172 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/vaultEnvelope.test.js
+  ---
+  duration_ms: 22458.471394
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/vaultLockout.test.js
+ok 173 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/vaultLockout.test.js
+  ---
+  duration_ms: 1910.209779
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/vendorCard.test.js
+ok 174 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/vendorCard.test.js
+  ---
+  duration_ms: 1408.976218
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/vendorPayments.test.js
+ok 175 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/vendorPayments.test.js
+  ---
+  duration_ms: 3508.538884
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/vendorReviews.test.js
+ok 176 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/vendorReviews.test.js
+  ---
+  duration_ms: 2843.929097
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/vendorShopReaders.test.js
+ok 177 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/vendorShopReaders.test.js
+  ---
+  duration_ms: 4532.25917
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/vendorStats.test.js
+ok 178 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/vendorStats.test.js
+  ---
+  duration_ms: 527.671134
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/voiceCall.test.js
+ok 179 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/voiceCall.test.js
+  ---
+  duration_ms: 486.840462
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/writeQueue.test.js
+ok 180 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/lib/writeQueue.test.js
+  ---
+  duration_ms: 477.844598
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/notePage.test.js
+ok 181 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/notePage.test.js
+  ---
+  duration_ms: 1262.870237
+  ...
+# Subtest: /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/store/snapshot.test.js
+ok 182 - /home/aegis/.cache/cipher-clean-verify/run.Z7UyDk/worktree/src/store/snapshot.test.js
+  ---
+  duration_ms: 1050.957106
+  ...
+1..182
+# tests 182
+# suites 0
+# pass 174
+# fail 8
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 468295.189582

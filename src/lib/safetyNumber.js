@@ -107,12 +107,14 @@ export function safetyRecord(contactPubkey) {
 // Record first contact. The relay set is read from the connection the message
 // actually came through when the caller knows it; otherwise the app's current
 // general relays are the honest "where I first saw this key" answer.
-export async function noteFirstSeen(contactPubkey, relays = null, nowSec = Math.floor(Date.now() / 1000)) {
+export async function noteFirstSeen(contactPubkey, relays = null, nowSec = Math.floor(Date.now() / 1000), securityFence = null) {
+  securityFence?.assertCurrent();
   const all = loadAll();
   const existing = all[contactPubkey];
   if (existing) return existing; // first-seen never moves
   if (!relays) {
     const { generalRelays } = await import('./relays.js');
+    securityFence?.assertCurrent();
     relays = generalRelays;
   }
   const record = {
@@ -121,6 +123,7 @@ export async function noteFirstSeen(contactPubkey, relays = null, nowSec = Math.
     safetyNumber: deriveSafetyNumber(contactPubkey, relays),
     changed: false,
   };
+  securityFence?.assertCurrent();
   all[contactPubkey] = record;
   saveAll(all);
   return record;

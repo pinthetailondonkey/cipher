@@ -1,7 +1,7 @@
 import { useRef } from 'react';
 import { useChatStore } from '../../store/chatStore';
 import { db, patchMessage, saveMessage } from '../../db';
-import { getActivePubkey, scopedGet, scopedSet, scopedSetVerified } from '../../lib/storage';
+import { scopedGet, scopedSet, scopedSetVerified } from '../../lib/storage';
 import { addressSpokenFor, consumedKey, getOrderPaymentMethods, loadVendorPaymentConfig, markConsumed, readConsumedLedger, readPaymentAddresses, txidSpokenFor } from '../../lib/vendorPayments';
 import { getAuthenticatedPool } from '../../lib/pool';
 import { generalRelays } from '../../lib/relays';
@@ -16,6 +16,7 @@ import { paymentAddressesProblem } from '../../lib/paymentAddress';
 import { stampArrival } from './media';
 import { createSingleFlight } from '../../lib/singleFlight';
 import { withPaymentLedgerLock } from '../../lib/paymentLedgerLock.js';
+import { assertSecurityContextOwner } from '../../lib/securityContextFence.js';
 
 // The device mark for a chain check that could not run. It is a fact about
 // this device, never about the order, so it is written to its own top-level
@@ -29,7 +30,8 @@ import { withPaymentLedgerLock } from '../../lib/paymentLedgerLock.js';
 // It lives at module scope rather than inside the hook because everything it
 // touches is an import — the store and the database — and because the refusal
 // branch behind a signed watcher answer is otherwise unreachable for a control.
-const writeDeviceMark = async (peerPubkey, orderId, mark) => {
+const writeDeviceMark = async (peerPubkey, orderId, mark, securityFence = null) => {
+  securityFence?.assertCurrent();
   const applyToStore = (value) => useChatStore.getState().setDms((prev) => {
     const msgs = prev[peerPubkey] || [];
     return {
@@ -43,12 +45,14 @@ const writeDeviceMark = async (peerPubkey, orderId, mark) => {
   try {
     // The row goes down through the at-rest view, which wakes the opened row
     // and seals it again; the count says whether there was a row to change.
-    if (await db.messages.update(orderId, { deviceMark: mark })) return true;
+    const updated = await db.messages.update(orderId, { deviceMark: mark });
+    securityFence?.assertCurrent();
+    if (updated) return true;
     throw new Error('no stored row for this order');
   } catch (error) {
     // A mark that cannot survive a reload is not drawn: the card would
     // claim a device note the next load does not have.
-    applyToStore(previous);
+    if (!securityFence || securityFence.isCurrent()) applyToStore(previous);
     console.error('[orders] Could not save the check mark:', error);
     return false;
   }
@@ -71,7 +75,20 @@ function withLedgerLock(run, scope) {
   return withPaymentLedgerLock(run, { scope });
 }
 
+async function runPaymentCheck(input) {
+  if (import.meta.env?.VITE_TEST_HOOKS === '1'
+    && typeof window !== 'undefined' && typeof window.__cipherPaymentCheck === 'function') {
+    return window.__cipherPaymentCheck(input);
+  }
+  return checkPayment(input);
+}
+
 export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, openChat }) {
+  const requireIdentityFence = () => {
+    const securityFence = identity?.securityFence;
+    assertSecurityContextOwner(securityFence, identity?.pk);
+    return securityFence;
+  };
   // One order request per press. The Buy button has no disabled state, so a
   // second tap while the first is still sending used to post a second request
   // and a second "sent" toast. The guard lives in a ref so it holds across the
@@ -101,6 +118,9 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
       const error = 'You cannot place an order with yourself.';
       return { outcome: 'failed', error };
     }
+    let securityFence;
+    try { securityFence = requireIdentityFence(); }
+    catch (error) { return { outcome: 'failed', error: error?.message || 'The account security context is unavailable.' }; }
 
     const paymentMethod = scopedGet('preferred_payment_method', 'xmr');
     const payload = { type: 'cipher_order', status: ORDER_STATUS.PENDING, paymentState: 'created', paymentMethod, product: orderProduct(order), delivery: order.delivery };
@@ -121,31 +141,51 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
       ...current,
       [vendorPubkey]: [...(current[vendorPubkey] || []), optimisticMessage],
     }));
+    securityFence.assertCurrent();
     await saveMessage(vendorPubkey, optimisticMessage);
+    securityFence.assertCurrent();
 
+    securityFence.assertCurrent();
     const result = await sendDM(vendorPubkey, payload, tempId);
+    securityFence.assertCurrent();
     const outcome = sendOutcome(result);
     if (outcome !== 'sent' && outcome !== 'queued') {
       setDms((current) => ({
         ...current,
         [vendorPubkey]: (current[vendorPubkey] || []).filter((message) => message.clientId !== tempId),
       }));
+      securityFence.assertCurrent();
       await db.messages.delete(tempId);
+      securityFence.assertCurrent();
       const error = result.error || 'The order request could not be sent.';
       return { outcome: 'failed', error };
     }
 
+    // The confirmed row keys on the RUMOR id, the canonical thread identity:
+    // it is what every peer-side reference (reply tags, acceptance orderId,
+    // receipt binding) names. Keying on the kind-1059 wrap id left this
+    // device's own cards unreachable by those references after the NIP-59
+    // transition — the recipient unwraps to a rumor whose id is not the
+    // wrap's. Legacy sends (no rumorId in the result) keep the old key.
     let confirmedMessage = {
       ...optimisticMessage,
-      id: result.event.id,
+      id: result.rumorId || result.event.id,
       timestamp: result.event.created_at,
       deliveryStatus: outcome,
     };
+    securityFence.assertCurrent();
     await saveMessage(vendorPubkey, confirmedMessage);
-    if (result.queued && !(await db.outbox.get(result.event.id))) {
-      confirmedMessage = { ...confirmedMessage, deliveryStatus: 'sent' };
-      await saveMessage(vendorPubkey, confirmedMessage);
+    securityFence.assertCurrent();
+    if (result.queued) {
+      const queuedEvent = await db.outbox.get(result.event.id);
+      securityFence.assertCurrent();
+      if (!queuedEvent) {
+        confirmedMessage = { ...confirmedMessage, deliveryStatus: 'sent' };
+        await saveMessage(vendorPubkey, confirmedMessage);
+        securityFence.assertCurrent();
+      }
     }
+    securityFence.assertCurrent();
     setDms((current) => ({
       ...current,
       [vendorPubkey]: (current[vendorPubkey] || []).map((message) => (
@@ -167,7 +207,8 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
 
   // The screen and the database both take the change. A history fetch rebuilds
   // the chat from the database, so a change kept only on screen is lost on reload.
-  const updateLocalOrder = async (peerPubkey, orderId, updateData) => {
+  const updateLocalOrder = async (peerPubkey, orderId, updateData, securityFence = identity?.securityFence) => {
+    assertSecurityContextOwner(securityFence, identity?.pk);
     useChatStore.getState().setDms(prev => {
       const msgs = prev[peerPubkey] || [];
       const updated = msgs.map(m => m.id === orderId
@@ -175,7 +216,9 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
         : m);
       return { ...prev, [peerPubkey]: updated };
     });
-    return patchMessage(orderId, updateData);
+    const saved = await patchMessage(orderId, updateData);
+    assertSecurityContextOwner(securityFence, identity?.pk);
+    return saved;
   };
   const NOT_SAVED = 'It was not saved on this device and will be lost on reload.';
 
@@ -189,12 +232,16 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
     readCachedProducts().filter((row) => row && row.vendorPubkey === identity.pk)
   );
 
-  const deliverOrderUpdate = async (peer, payload, localPatch, okText, sendOptions = undefined) => {
+  const deliverOrderUpdate = async (peer, payload, localPatch, okText, sendOptions = undefined,
+    securityFence = identity?.securityFence) => {
     let result;
     try {
+      assertSecurityContextOwner(securityFence, identity?.pk);
       result = await sendDM(peer, payload, null, null, sendOptions);
+      assertSecurityContextOwner(securityFence, identity?.pk);
     } catch (error) {
       console.error('[orders] Update threw:', error);
+      if (securityFence && !securityFence.isCurrent()) return false;
       setToast({ type: 'error', message: error?.message || 'The order update did not send.' });
       return false;
     }
@@ -203,7 +250,27 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
       setToast({ type: 'error', message: result?.error || 'The order update did not send.' });
       return false;
     }
+    assertSecurityContextOwner(securityFence, identity?.pk);
+    // Persist this device's own sent update row under the rumor id — the
+    // canonical thread identity every peer-side reference names. Own gift
+    // wraps never echo back (no filter matches the author of a kind-1059
+    // wrap), so without this row the F4 vendor gate (an own-sent order_update
+    // in the chat) and the newest-claim status walk could never see this
+    // device's own write. Legacy sends without a rumorId keep the wrap key.
+    try {
+      const ownRow = stampArrival({
+        id: result.rumorId || result.event.id,
+        isSender: true, isGroup: false, pubkey: identity.pk,
+        timestamp: result.event.created_at, local_timestamp: Date.now(),
+        deliveryStatus: 'sent', data: { ...payload },
+      });
+      await saveMessage(peer, ownRow);
+      assertSecurityContextOwner(securityFence, identity?.pk);
+    } catch (rowError) {
+      console.error('[orders] The sent update did not store its own row:', rowError);
+    }
     const saved = await updateLocalOrder(peer, payload.orderId, localPatch);
+    assertSecurityContextOwner(securityFence, identity?.pk);
     const sentText = result.queued ? `${okText} It will send when connected.` : okText;
     setToast(saved ? { type: 'success', message: sentText } : { type: 'error', message: `${sentText} ${NOT_SAVED}` });
     setSelectedMessage(null);
@@ -218,6 +285,15 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
     // openable on this device; nothing here touches encryption of the
     // chat itself.
     if (action === 'open_delivery_note') {
+      const securityFence = identity?.securityFence;
+      try { assertSecurityContextOwner(securityFence, identity?.pk); }
+      catch (error) {
+        if (!securityFence || securityFence.isCurrent()) {
+          setToast({ type: 'error', message: error?.message || 'The account security context is unavailable.' });
+          setSelectedMessage(null);
+        }
+        return true;
+      }
       const noteUrl = msg.data?.delivery?.note;
       if (!noteUrl || msg.data?.delivery?.address) {
         setSelectedMessage(null);
@@ -230,12 +306,16 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
         return true;
       }
       try {
+        assertSecurityContextOwner(securityFence, identity?.pk);
         const pool = await getAuthenticatedPool(identity);
+        assertSecurityContextOwner(securityFence, identity?.pk);
         const [{ openDeadDropNote }, { deliveryFromNoteText, addressFromForm }] = await Promise.all([
           import('../../lib/deadDrop'),
           import('../../lib/deliveryAddress'),
         ]);
+        assertSecurityContextOwner(securityFence, identity?.pk);
         const opened = await openDeadDropNote({ identity, fragment, pool, relays: generalRelays, hold: true, author: msg.pubkey });
+        assertSecurityContextOwner(securityFence, identity?.pk);
         const { form, misses } = deliveryFromNoteText(opened.text);
         if (misses.length) {
           setToast({ type: 'error', message: `${misses[0].message} Nothing was saved, and the note is still open.` });
@@ -244,26 +324,43 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
         }
         const saved = await updateLocalOrder(msg.pubkey, msg.id, {
           delivery: { note: noteUrl, address: addressFromForm(form) },
-        });
+        }, securityFence);
+        assertSecurityContextOwner(securityFence, identity?.pk);
         if (!saved) {
           setToast({ type: 'error', message: 'The address did not save. The note is still open — try again.' });
           return true;
         }
         await opened.burn();
+        assertSecurityContextOwner(securityFence, identity?.pk);
         setToast({ type: 'success', message: 'Address saved. The note will not open again on this device.' });
         setSelectedMessage(null);
         return true;
       } catch (error) {
         console.error('[orders] The delivery note would not open:', error);
-        setToast({ type: 'error', message: error?.message || 'The note would not open. Nothing was saved.' });
+        if (!securityFence || securityFence.isCurrent()) {
+          setToast({ type: 'error', message: error?.message || 'The note would not open. Nothing was saved.' });
+        }
         return true;
       }
     }
     if (!['accept_order', 'decline_order', 'cancel_order', 'confirm_payment', 'check_chain', 'mark_shipped', 'confirm_delivery', 'report_issue', 'mark_refunded', 'resume_order'].includes(action)) {
       return false;
     }
+    const actionFence = identity?.securityFence;
+    try {
+      assertSecurityContextOwner(actionFence, identity?.pk);
+    } catch (error) {
+      if (!actionFence || actionFence.isCurrent()) {
+        setToast({ type: 'error', message: error?.message || 'The account security context is unavailable.' });
+        setSelectedMessage(null);
+      }
+      return true;
+    }
   
       if (action === 'accept_order') {
+        const securityFence = actionFence;
+        const assertCurrent = () => assertSecurityContextOwner(securityFence, identity?.pk);
+        assertCurrent();
         // The order card is this vendor's own message, but its payload words
         // are the buyer's text. A card whose stated order ID differs from the
         // message it rides on could name a slot in the derivation record
@@ -293,8 +390,10 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
           // chain check reads. No such update — derive fresh, as before.
           try {
             const history = await db.messages.where('chatId').equals(msg.pubkey).toArray();
+            assertCurrent();
             frozen = newestOwnIssuedMethods(history, readPaymentAddresses(), msg.id);
           } catch (error) {
+            if (!securityFence.isCurrent()) return true;
             console.error('[orders] Could not read the order history for the frozen pair:', error);
           }
         }
@@ -316,7 +415,9 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
           let config = null;
           try {
             config = await loadVendorPaymentConfig(identity);
+            assertCurrent();
           } catch (error) {
+            if (!securityFence.isCurrent()) return true;
             console.error('[orders] Could not read the vendor payment settings:', error);
           }
           canIssue = { btc: !!(config && config.btcXpub), xmr: !!(config && config.xmrPrivateViewKey) };
@@ -325,6 +426,7 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
         const derivationPreferenceFor = (coin) => acceptanceDerivationPreference(preference, canIssue, coin);
 
         const sendAcceptance = async (rawAmount, payCoin) => {
+          assertCurrent();
           // An acceptance only locks in an amount the chain can express. A
           // string finer than the coin counts would sit 'short of the order'
           // forever, and rail the vendor onto their own wallet. (security S7)
@@ -350,7 +452,9 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
                 { btc: baseBtc, xmr: baseXmr },
                 derivationPreferenceFor(payCoin),
               );
+              assertCurrent();
             } catch (error) {
+              if (!securityFence.isCurrent()) return;
               console.error('[orders] Could not prepare private payment addresses:', error);
               setToast({ type: 'error', message: error?.message || 'Could not create order payment addresses.' });
               setSelectedMessage(null);
@@ -426,7 +530,9 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
             // before the address existed, on any device. (security S1)
             issuedAt,
           };
+          assertCurrent();
           const result = await sendDM(msg.pubkey, payload);
+          assertCurrent();
           if (!result.success) {
             setToast({ type: 'error', message: result.error || 'Could not send order acceptance.' });
             setSelectedMessage(null);
@@ -439,7 +545,8 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
             coinAmount,
             coinCurrency: payCoin,
             issuedAt,
-          });
+          }, securityFence);
+          assertCurrent();
           const acceptedText = result.queued ? 'Acceptance queued; it will send when connected.' : 'Order accepted';
           setToast(saved ? { type: 'success', message: acceptedText } : { type: 'error', message: `${acceptedText} ${NOT_SAVED}` });
           setSelectedMessage(null);
@@ -512,6 +619,7 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
           // F7: the current payment state comes from the order's evidence,
           // not from whatever a received card once wrote into itself.
           const history = await db.messages.where('chatId').equals(msg.pubkey).toArray();
+          assertSecurityContextOwner(actionFence, identity?.pk);
           // N2: the chat peer is named explicitly — a sent subject card
           // defaults to this device's own key, which never matches a receipt.
           const current = orderState(history, msg.id, msg, identity.pk, msg.pubkey).paymentState;
@@ -526,8 +634,10 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
           // empty toast on the money path. The trigger is the error; the
           // words are this device's own, and they say what did not happen.
           console.error('[orders] The payment state could not be read, so nothing was marked seen:', error);
-          setToast({ type: 'error', message: 'The payment was not marked seen. This device could not read the order. Try again; if it keeps failing, reload and try once more.' });
-          setSelectedMessage(null);
+          if (actionFence.isCurrent()) {
+            setToast({ type: 'error', message: 'The payment was not marked seen. This device could not read the order. Try again; if it keeps failing, reload and try once more.' });
+            setSelectedMessage(null);
+          }
           return true;
         }
         const payload = {
@@ -548,12 +658,18 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
         return true;
       }
       if (action === 'check_chain') {
+        const securityFence = identity?.securityFence;
+        const assertCurrent = () => {
+          assertSecurityContextOwner(securityFence, identity?.pk);
+        };
         const isBuyer = !!msg.isSender;
         let details = null;
         let chainedState;
         let vendorPair = null;
         try {
+          assertCurrent();
           const history = await db.messages.where('chatId').equals(msg.pubkey).toArray();
+          assertCurrent();
           // Either side runs this (security S6): a buyer is party to the
           // receiving address by definition — they paid it. The buyer's own
           // card never carried an address (the buyer wrote the request), so
@@ -589,8 +705,10 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
           // A read that failed proves nothing about the chain. The old catch
           // lifted the card to address_issued, a state no watcher earned, and
           // the check then ran on it. Nothing was read, so nothing moves.
-          setToast({ type: 'error', message: 'The check could not be done, so nothing changed.' });
-          setSelectedMessage(null);
+          if (!securityFence || securityFence.isCurrent()) {
+            setToast({ type: 'error', message: 'The check could not be done, so nothing changed.' });
+            setSelectedMessage(null);
+          }
           return true;
         }
         const methods = details?.paymentMethods || vendorPair?.paymentMethods || {};
@@ -658,7 +776,7 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
           }
         }
         try {
-          const outcome = await checkPayment({
+          const outcome = await runPaymentCheck({
             watcherUrl: activeUrl(entryById('explorer')),
             address,
             currency,
@@ -670,6 +788,7 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
             // feeds the gate. (security S1)
             issuedAt: details?.issuedAt ?? vendorPair?.issuedAt,
           });
+          assertCurrent();
           if (outcome.short) {
             setToast({ type: 'info', message: 'The payment is short of the order.' });
             setSelectedMessage(null);
@@ -692,7 +811,9 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
           // other side's state on a claim, and that fix (F7) is separate.
           if (isBuyer) {
             const statePatch = { paymentState: outcome.state, paymentSeenBy: 'watcher' };
+            assertCurrent();
             const saved = await updateLocalOrder(msg.pubkey, msg.id, statePatch);
+            assertCurrent();
             const okText = confirmed ? 'Your watcher confirmed the payment.' : 'Your watcher has seen the payment. It is not confirmed yet.';
             setToast(saved ? { type: 'success', message: okText } : { type: 'error', message: `${okText} ${NOT_SAVED}` });
             setSelectedMessage(null);
@@ -711,15 +832,14 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
             // scopedRaw, never the per-tab cached scopedGet, which is stale
             // in the other tab by definition. (W2b)
             const signed = await withLedgerLock(async () => {
-              if (String(getActivePubkey()).toLowerCase() !== String(identity.pk).toLowerCase()) {
-                throw new Error('The active account changed while the watcher was checking. Nothing was confirmed; reopen this order and check again.');
-              }
+              assertCurrent();
               const read = readConsumedLedger();
               if (!read.ok) {
                 // Marked before the refusal goes out, so the card keeps saying
                 // it once the toast is gone and after a reload. Nothing on the
                 // order moves: this is a note on the device, not a payment state.
-                await writeDeviceMark(msg.pubkey, msg.id, { at: Date.now(), kind: 'unreadable_record' });
+                await writeDeviceMark(msg.pubkey, msg.id, { at: Date.now(), kind: 'unreadable_record' }, securityFence);
+                assertCurrent();
                 // The refusal leads with the fact the vendor needs and never
                 // sends anyone to a destructive repair: a wipe takes the
                 // receipts with it, and the phrase brings back the account only.
@@ -730,7 +850,10 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
               // The record read, so the device's own note is no longer true and
               // comes off the card. Written the same way it was put on, so the
               // clear also survives a reload and a refetch.
-              if (msg.deviceMark) await writeDeviceMark(msg.pubkey, msg.id, null);
+              if (msg.deviceMark) {
+                await writeDeviceMark(msg.pubkey, msg.id, null, securityFence);
+                assertCurrent();
+              }
               const ledger = read.ledger;
               const taken = txidSpokenFor(ledger, { currency, txid: outcome.report.txid, orderId: msg.id })
                 || addressSpokenFor(ledger, { address, orderId: msg.id });
@@ -783,6 +906,7 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
                 at: Math.floor(Date.now() / 1000),
                 outcome: RECEIPT_OUTCOME.CONFIRMED,
               });
+              assertCurrent();
               if (!scopedSetVerified(`receipt_${msg.id}`, receipt)) {
                 throw new Error('The receipt could not be saved on this device. Nothing was sent. Make space, then check again.');
               }
@@ -801,12 +925,14 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
                   address,
                   at: Math.floor(Date.now() / 1000),
                 }) };
+                assertCurrent();
                 if (!scopedSetVerified('consumed_txids', nextLedger)) {
                   throw new Error('The payment record could not be saved on this device. Nothing was sent. Make space, then check again.');
                 }
               }
               return receipt;
             }, identity.pk);
+            assertCurrent();
             const payload = {
               type: 'order_update',
               orderId: msg.id,
@@ -818,6 +944,7 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
               published: signPublicView(identity.sk, publicReceipt(signed)),
             };
             rememberPublicView(payload.published);
+            assertCurrent();
             await deliverOrderUpdate(
               msg.pubkey,
               payload,
@@ -827,6 +954,7 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
                 idempotencyKey: `payment-confirm-v1|${msg.pubkey}|${msg.id}|${signed.hash}`,
                 intent: `payment-confirm-v1|${msg.pubkey}|${msg.id}|${currency}|${outcome.report.txid}|${signed.hash}`,
               },
+              securityFence,
             );
           } else {
             const payload = {
@@ -842,12 +970,16 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
               payload,
               { status: payload.status, paymentState: outcome.state, paymentSeenBy: 'watcher' },
               'Your watcher has seen the payment. It is not confirmed yet.',
+              undefined,
+              securityFence,
             );
           }
         } catch (error) {
           console.error('[orders] Chain check failed:', error);
-          setToast({ type: 'error', message: error?.message || 'The payment watcher could not be checked.' });
-          setSelectedMessage(null);
+          if (!securityFence || securityFence.isCurrent()) {
+            setToast({ type: 'error', message: error?.message || 'The payment watcher could not be checked.' });
+            setSelectedMessage(null);
+          }
         }
         return true;
       }
@@ -870,7 +1002,9 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
             vendor: String(stored.body.vendor || '').toLowerCase(),
             buyer: String(stored.body.buyer || '').toLowerCase(),
           } : null;
+          assertSecurityContextOwner(actionFence, identity?.pk);
           const vouchResult = await sendVouch(msg.pubkey, stored?.hash || '', trade);
+          assertSecurityContextOwner(actionFence, identity?.pk);
           if (!vouchResult?.success) {
             console.error('[orders] Automatic delivery vouch failed:', vouchResult?.error);
             setToast({ type: 'error', message: vouchResult?.error || 'The delivery was sent. The vouch was not.' });
@@ -924,6 +1058,7 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
           inputRows: 2,
           placeholder: 'Anything else? (optional)',
           onConfirm: async (reason) => {
+            assertSecurityContextOwner(actionFence, identity?.pk);
             if (!reason || !reason.trim()) return;
             // Audit F4/S10: this device re-signs a stored receipt only when
             // it countersigned it after the receipt passed the order binding
@@ -992,6 +1127,14 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
       setToast({ type: 'error', message: 'You cannot place an order with yourself.' });
       return;
     }
+    const securityFence = identity?.securityFence;
+    try { assertSecurityContextOwner(securityFence, identity?.pk); }
+    catch (error) {
+      if (!securityFence || securityFence.isCurrent()) {
+        setToast({ type: 'error', message: error?.message || 'The account security context is unavailable.' });
+      }
+      return;
+    }
     const orderProduct = {
       id: listingId || product.id || null,
       title: product.title || product.name || 'Product',
@@ -1013,7 +1156,9 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
 
   const handleSaveEditedProduct = async (updatedProduct) => {
     if (!editingProduct) return;
+    let securityFence;
     try {
+      securityFence = requireIdentityFence();
       const { msg } = editingProduct;
       const payload = {
         type: 'product', title: updatedProduct.title, priceUsd: updatedProduct.priceUsd,
@@ -1026,6 +1171,7 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
         // edit — without the id, NO_KEY dropped it forever while the toast
         // promised it would go out.
         const sent = await sendGroupMessage(activeGroup.id, payload, `temp-${Date.now()}`);
+        securityFence.assertCurrent();
         if (sent?.error === 'NO_KEY') {
           setToast({ type: 'success', message: 'Securing… the edit will send when the group key arrives.' });
           setEditingProduct(null);
@@ -1034,16 +1180,22 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
         if (sent && sent.success === false) throw new Error(sent.error || 'send failed');
       } else if (activeDm) {
         const sent = await sendDM(activeDm, payload);
+        securityFence.assertCurrent();
         if (!sent?.success) throw new Error(sent?.error || 'The product edit did not send.');
       }
+      securityFence.assertCurrent();
       setToast({ type: 'success', message: 'Product updated!' });
       setEditingProduct(null);
     } catch (error) {
       console.error('[orders] Product edit did not send:', error);
-      setToast({ type: 'error', message: error?.message || 'Failed to update product' });
+      if (!securityFence || securityFence.isCurrent()) {
+        setToast({ type: 'error', message: error?.message || 'Failed to update product' });
+      }
     }
   };
   const handleBroadcastSubmit = async (groupIds, product) => {
+    const securityFence = requireIdentityFence();
+    securityFence.assertCurrent();
     const payload = {
       type: 'product',
       title: product.title || product.name,
@@ -1056,6 +1208,7 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
     // so the securing count below counts sends the queue really holds.
     const stamp = Date.now();
     const results = await Promise.allSettled([...new Set(groupIds)].map((groupId) => sendGroupMessage(groupId, payload, `temp-${stamp}-${groupId}`)));
+    securityFence.assertCurrent();
     const delivered = results.filter((result) => result.status === 'fulfilled' && result.value?.success && !result.value.queued).length;
     const queued = results.filter((result) => result.status === 'fulfilled' && result.value?.success && result.value.queued).length;
     const securing = results.filter((result) => result.status === 'fulfilled' && result.value?.error === 'NO_KEY').length;

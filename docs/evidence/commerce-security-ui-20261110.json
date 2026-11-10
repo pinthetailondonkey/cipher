@@ -1,0 +1,56 @@
+{
+  "date": "2026-11-10",
+  "command": "npx playwright test --workers=1 --reporter=line",
+  "result": "pass",
+  "tests": {
+    "total": 184,
+    "passed": 184,
+    "failed": 0,
+    "skipped": 0,
+    "duration": "29.9 minutes"
+  },
+  "additional_repository_checks": {
+    "production_build": {
+      "command": "npm run build",
+      "result": "pass",
+      "scope": "same disposable source snapshot, with local .grok configuration excluded"
+    },
+    "unit_suite": {
+      "command": "npm test",
+      "result": "pass",
+      "passed": 1362,
+      "failed": 0,
+      "skipped": 0,
+      "duration": "8 minutes 21 seconds"
+    },
+    "repository_lint": {
+      "command": "npm run lint",
+      "result": "pass",
+      "notes": "Existing warnings remain; no lint errors."
+    },
+    "focused_queue_context_tests": {
+      "command": "node --import ./scripts/resolve-extensionless.mjs --test src/lib/messageAtRest.test.js src/lib/writeQueue.test.js src/lib/indexedDbContextGate.test.js src/lib/securityContextFence.test.js src/lib/securityContextCoordination.test.js",
+      "result": "pass",
+      "passed": 29,
+      "failed": 0
+    }
+  },
+  "source_snapshot": {
+    "repository_head": "2172f726f83923801b87ea93de897d4b271add9a",
+    "temporary_commit": "3ce47251f105c54837e9288cb1191c2c7163eca2",
+    "tree": "15d279ee3fb2bbd681b50562e286c52cca6912c5",
+    "working_tree_clean_at_run_start": true
+  },
+  "browser": "Playwright Chromium; serial workers; local preview on port 8081",
+  "coverage": [
+    "All six previously held commerce paths now use a pinned synthetic Ed25519 v2 watcher key and signed reports.",
+    "Watcher fixture assertions verify the derived bearer token is sent in Authorization and is absent from the URL.",
+    "Confirmed receipt control includes a signed chain timestamp at or after order address issuance.",
+    "Both database queued-write persistence races pass: close/reopen writes remain sealed, and a locked update merges and reseals without stale ciphertext or plaintext fields."
+  ],
+  "limits": [
+    "The app was built as the UI-test artifact and served only from loopback.",
+    "Watcher responses, Ed25519 fixture key, accounts, and payment records are synthetic; no real watcher operator, chain RPC, relay, or buyer/vendor network flow was exercised.",
+    "This run is browser regression evidence, not a commerce release decision or production security proof."
+  ]
+}

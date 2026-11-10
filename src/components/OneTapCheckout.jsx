@@ -13,6 +13,7 @@ import Avatar from './ui/Avatar';
 import { useChatStore } from '../store/chatStore';
 import { noHexName } from '../lib/npub';
 import { orderProduct, priceLabel } from '../lib/listing';
+import { assertSecurityContextOwner } from '../lib/securityContextFence';
 
 // The order body carries a POINTER ONLY (Deal's carrier evaluation): the
 // address itself is sealed into a burn-once dead-drop note at send time and
@@ -93,6 +94,12 @@ export default function OneTapCheckout({ product, open = true, onConfirmOrder, o
 
   const confirmOrder = async () => {
     if (confirmed || sendingRef.current) return;
+    const securityFence = identity?.securityFence;
+    try { assertSecurityContextOwner(securityFence, identity?.pk); }
+    catch (error) {
+      if (!securityFence || securityFence.isCurrent()) setOrderError(error?.message || 'The account security context is unavailable.');
+      return;
+    }
     // Send is the one moment every required field speaks at once.
     const map = deliveryMissMap(delivery);
     setMisses(map);
@@ -104,23 +111,26 @@ export default function OneTapCheckout({ product, open = true, onConfirmOrder, o
       // Seal the address into a burn-once note; the order carries only the
       // note's URL. If no relay takes the note, nothing is sent at all.
       const pool = await getAuthenticatedPool(identity);
+      assertSecurityContextOwner(securityFence, identity?.pk);
       const { url } = await createDeadDropNote({
         identity,
         text: sealedNoteText(delivery),
         pool,
         relays: generalRelays,
       });
+      assertSecurityContextOwner(securityFence, identity?.pk);
       const result = await onConfirmOrder?.(cipherOrder(product, url));
+      assertSecurityContextOwner(securityFence, identity?.pk);
       if (result?.outcome !== 'sent' && result?.outcome !== 'queued') {
         throw new Error(result?.error || 'The order request could not be sent.');
       }
       setConfirmed(result.outcome);
     } catch (error) {
       console.error('[OneTapCheckout] Order confirmation failed:', error);
-      setOrderError(error?.message || 'Could not send your order request.');
+      if (securityFence.isCurrent()) setOrderError(error?.message || 'Could not send your order request.');
     } finally {
       sendingRef.current = false;
-      setSending(false);
+      if (securityFence.isCurrent()) setSending(false);
     }
   };
 

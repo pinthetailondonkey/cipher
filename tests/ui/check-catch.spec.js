@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
-import { createHmac } from 'node:crypto';
 import { seedVault, unlock } from './fixtures.js';
+import { childWatcherToken, pinWatcherKey, signedWatcherReport } from './payment-watcher-fixture.js';
 
 // The chain check's refusal branches, at the screen. A read that failed used
 // to lift the buyer's card to address_issued — a state no watcher earned — and
@@ -21,13 +21,6 @@ const ADDRESS = 'bc1qcatchprobe';
 const AMOUNT = '0.001';
 const CHECK = 'Check the chain';
 const NO_DETAILS = 'This order does not have the payment details needed for a chain check. The chain was not checked.';
-
-const sign = (token, ts, raw) =>
-  createHmac('sha256', token).update(`${ts}:${raw}`).digest('hex');
-// The token on the wire is the order's child: HMAC of the pasted base secret
-// over the version, the currency and the address (childWatcherToken).
-const childToken = (base, currency, address) =>
-  createHmac('sha256', base).update(`cipher-watch-v1:${currency}:${address}`).digest('hex');
 
 // A buyer's own request plus the vendor's acceptance, which is where the
 // buyer's check reads the address and the coin amount from. `details` says
@@ -60,21 +53,16 @@ async function answerWatcher(page, collect, confirmations = 1) {
     const asked = new URL(route.request().url());
     const address = asked.searchParams.get('address') || '';
     const currency = asked.searchParams.get('currency') || 'btc';
-    const token = asked.searchParams.get('token') || '';
-    collect.push({ address, currency, token });
-    const raw = JSON.stringify({
-      address, currency, txid: 'ab', confirmations, amount: AMOUNT,
-      time: Math.floor(Date.now() / 1000),
+    const authorization = route.request().headers().authorization || '';
+    const nonce = asked.searchParams.get('nonce') || '';
+    collect.push({ address, currency, authorization, tokenQuery: asked.searchParams.get('token') });
+    const { rawBody, signature } = signedWatcherReport({
+      address, currency, nonce, txid: 'ab', confirmations, amount: AMOUNT,
     });
-    const ts = String(Math.floor(Date.now() / 1000));
     await route.fulfill({
       status: 200,
-      headers: {
-        'content-type': 'application/json',
-        'x-cipher-sig': `v1=${sign(token, ts, raw)}`,
-        'x-cipher-ts': ts,
-      },
-      body: raw,
+      headers: { 'content-type': 'application/json', 'x-cipher-signature': signature },
+      body: rawBody,
     });
   });
 }
@@ -91,6 +79,7 @@ async function openThread(page, details) {
   });
   await page.goto('/');
   await unlock(page);
+  await pinWatcherKey(page);
   await expect(page.getByRole('heading', { name: 'Chats' })).toBeVisible({ timeout: 20000 });
   // The boot's own history fetch lands first, so the seed is not replaced by
   // an empty relay copy.
@@ -152,7 +141,12 @@ test.describe('the chain check refuses instead of pretending', () => {
     // the same click, on a card that carries its details, DOES reach out.
     await expect(page.getByText('Your watcher has not seen this payment yet.')).toBeVisible({ timeout: 15000 });
     expect(asked.length, 'the watcher was asked exactly once').toBe(1);
-    expect(asked[0]).toEqual({ address: ADDRESS, currency: 'btc', token: childToken('secret', 'btc', ADDRESS) });
+    expect(asked[0]).toEqual({
+      address: ADDRESS,
+      currency: 'btc',
+      authorization: `Bearer ${childWatcherToken('secret', 'btc', ADDRESS)}`,
+      tokenQuery: null,
+    });
     const after = await snapshot(page);
     expect(after, 'a not-yet-seen answer writes nothing').toEqual(before);
   });
@@ -245,7 +239,12 @@ test.describe('the chain check refuses instead of pretending', () => {
     await expect(page.getByText('Your watcher has not seen this payment yet.')).toBeVisible({ timeout: 15000 });
     await expect(page.getByText(NO_DETAILS)).toHaveCount(0);
     expect(asked.length, 'the watcher was asked exactly once').toBe(1);
-    expect(asked[0]).toEqual({ address: ADDRESS, currency: 'btc', token: childToken('secret', 'btc', ADDRESS) });
+    expect(asked[0]).toEqual({
+      address: ADDRESS,
+      currency: 'btc',
+      authorization: `Bearer ${childWatcherToken('secret', 'btc', ADDRESS)}`,
+      tokenQuery: null,
+    });
     expect(await snapshot(page), 'a not-yet-seen answer writes nothing').toEqual(before);
   });
 

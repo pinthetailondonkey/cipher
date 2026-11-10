@@ -1,15 +1,23 @@
 import assert from 'node:assert/strict';
-import test from 'node:test';
+import test, { beforeEach } from 'node:test';
 import 'fake-indexeddb/auto';
 import { finalizeEvent, generateSecretKey, getPublicKey } from 'nostr-tools/pure';
 import {
   createDeviceAuthoritySetup, replaceDeviceAuthority,
 } from './deviceAuthority.js';
 import {
-  advanceDeviceAuthorityPolicyPin, loadPinnedDeviceAuthorityPolicy, pinInitialDeviceAuthorityPolicy,
+  advanceDeviceAuthorityPolicyPin as storeAdvancePin,
+  loadPinnedDeviceAuthorityPolicy as storeLoadPin,
+  pinInitialDeviceAuthorityPolicy as storeInitialPin,
 } from './deviceAuthorityPinStore.js';
+import { activateSharedSecurityContext } from './securityContextCoordination.js';
 
 const now = 1_800_000_000;
+const securityFence = { context: { owner: 'a'.repeat(64), incarnation: 'a'.repeat(32) }, assertCurrent() {} };
+const advanceDeviceAuthorityPolicyPin = (args) => storeAdvancePin({ ...args, securityFence });
+const loadPinnedDeviceAuthorityPolicy = (args) => storeLoadPin({ ...args, securityFence });
+const pinInitialDeviceAuthorityPolicy = (args) => storeInitialPin({ ...args, securityFence });
+beforeEach(async () => { await activateSharedSecurityContext(securityFence); });
 
 test('policy pinning requires an independently authenticated recovery key and preserves the exact local head', async () => {
   const state = createDeviceAuthoritySetup({ accountPubkey: getPublicKey(generateSecretKey()), now });
@@ -114,6 +122,26 @@ test('keeping the same Nostr account identity does not authenticate a replacemen
   assert.throws(() => replaceDeviceAuthority({ currentPolicyEvent: original.policyEvent,
     recoverySecret: attacker.recoverySecret, now: now + 2 }), /cannot authenticate/i,
   'the replacement recovery secret must be the already pinned root');
+});
+
+test('an incarnation invalidated before the IndexedDB write callback cannot create a pin', async () => {
+  const state = createDeviceAuthoritySetup({ accountPubkey: getPublicKey(generateSecretKey()), now });
+  let checks = 0;
+  const expiringFence = {
+    context: { owner: 'd'.repeat(64), incarnation: 'd'.repeat(32) },
+    assertCurrent() {
+      checks += 1;
+      if (checks >= 7) throw new Error('context expired');
+    },
+  };
+  const expectedAccountPubkey = JSON.parse(state.policyEvent.content).accountPubkey;
+  const expectedRecoveryPubkey = getPublicKey(state.recoverySecret);
+  await activateSharedSecurityContext(expiringFence);
+  await assert.rejects(storeInitialPin({ policyEvent: state.policyEvent, expectedAccountPubkey,
+    expectedRecoveryPubkey, now, securityFence: expiringFence }), /changed or the write was interrupted/i);
+  assert.equal(checks, 7, 'the fence is checked again inside the IndexedDB request callback');
+  await assert.rejects(loadPinnedDeviceAuthorityPolicy({ expectedAccountPubkey, expectedRecoveryPubkey, now }),
+    /missing or inconsistent/i, 'the aborted write leaves no durable recovery pin');
 });
 
 test('a stolen pinned recovery root can authorize a valid replacement, so signatures cannot detect root compromise', async () => {

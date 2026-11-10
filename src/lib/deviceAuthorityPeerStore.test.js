@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import test from 'node:test';
+import test, { beforeEach } from 'node:test';
 import 'fake-indexeddb/auto';
 import { generateSecretKey, getPublicKey } from 'nostr-tools/pure';
 import {
@@ -12,8 +12,11 @@ import {
   loadPeerDeviceAuthority,
 } from './deviceAuthorityPeerStore.js';
 import { recoveryIdentityFingerprint } from './deviceAuthorityContactVerification.js';
+import { activateSharedSecurityContext } from './securityContextCoordination.js';
 
 const now = 1_800_000_000;
+const securityFence = { context: { owner: 'b'.repeat(64), incarnation: 'b'.repeat(32) }, assertCurrent() {} };
+beforeEach(async () => { await activateSharedSecurityContext(securityFence); });
 function setup() {
   const state = createDeviceAuthoritySetup({ accountPubkey: getPublicKey(generateSecretKey()), now });
   const candidate = createIndependentDeviceCredential();
@@ -34,7 +37,7 @@ function setup() {
 test('peer checkpoint is durable, idempotent, and rejects replay and conflicting successors across tabs', async () => {
   const s = setup();
   const args = { expectedAccountPubkey: s.expectedAccountPubkey, expectedRecoveryPubkey: s.expectedRecoveryPubkey,
-    now: now + 4 };
+    now: now + 4, securityFence };
   await initializePeerDeviceAuthority({ policyEvent: s.policyEvent, registryEvent: s.registryEvent, ...args });
   const update = { type: 'registry-update', policyEvent: s.policyEvent, previousRegistryEvent: s.registryEvent,
     nextRegistryEvent: s.nextRegistryEvent };
@@ -68,7 +71,7 @@ test('peer checkpoint is durable, idempotent, and rejects replay and conflicting
 test('withheld updates leave the saved checkpoint unchanged, and recovery replacement atomically fences the old policy', async () => {
   const s = setup();
   const args = { expectedAccountPubkey: s.expectedAccountPubkey, expectedRecoveryPubkey: s.expectedRecoveryPubkey,
-    now: now + 10 };
+    now: now + 10, securityFence };
   await initializePeerDeviceAuthority({ policyEvent: s.policyEvent, registryEvent: s.registryEvent, ...args });
   const before = await loadPeerDeviceAuthority(args);
   assert.equal(before.registryId, s.registryEvent.id,
@@ -91,7 +94,7 @@ test('new recovery root requires independent fingerprint confirmation and fences
   const s = setup();
   const args = { expectedAccountPubkey: s.expectedAccountPubkey,
     expectedRecoveryPubkey: s.expectedRecoveryPubkey, expectedOldRecoveryPubkey: s.expectedRecoveryPubkey,
-    now: now + 20 };
+    now: now + 20, securityFence };
   await initializePeerDeviceAuthority({ policyEvent: s.policyEvent, registryEvent: s.registryEvent, ...args });
   const nextRoot = createDeviceRecoveryRootReplacement({ currentPolicyEvent: s.policyEvent,
     newRecoverySecret: generateSecretKey(), now: now + 21 });
@@ -111,7 +114,7 @@ test('new recovery root requires independent fingerprint confirmation and fences
     ...args, confirmedFingerprint: fingerprint.replaceAll(' ', '  ') });
   assert.equal(result.policyId, nextRoot.policyEvent.id);
   const nextArgs = { expectedAccountPubkey: s.expectedAccountPubkey,
-    expectedRecoveryPubkey: nextRecoveryPubkey, now: now + 22 };
+    expectedRecoveryPubkey: nextRecoveryPubkey, now: now + 22, securityFence };
   const loaded = await loadPeerDeviceAuthority(nextArgs);
   assert.equal(loaded.policyId, nextRoot.policyEvent.id);
   assert.equal(loaded.registryId, nextRoot.registryEvent.id);
@@ -120,5 +123,5 @@ test('new recovery root requires independent fingerprint confirmation and fences
   assert.equal((await applyPeerRecoveryRootReplacement({ currentPolicyEvent: s.policyEvent,
     nextPolicyEvent: nextRoot.policyEvent, nextRegistryEvent: nextRoot.registryEvent,
     expectedAccountPubkey: s.expectedAccountPubkey, expectedOldRecoveryPubkey: s.expectedRecoveryPubkey,
-    confirmedFingerprint: fingerprint, now: now + 22 })).idempotent, true);
+    confirmedFingerprint: fingerprint, now: now + 22, securityFence })).idempotent, true);
 });

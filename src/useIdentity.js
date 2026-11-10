@@ -1,15 +1,20 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { LOCKED_OUT_MESSAGE, MIN_PIN_LENGTH, PIN_TOO_SHORT_MESSAGE, isPlausiblePin, deviceKeyFailureMessage, deviceLockUpgradeMessage, failUnlockAttempt, isAcceptableNewPin, isDamagedVault, pinFailureMessage, removeAccountKeys, resetPinFailures } from './lib/vaultLockout'
 import { profileRelays as PROFILE_RELAYS } from './lib/relays'
 import { DeviceKeyMissing, getDeviceProvider, isDeviceKeyError, isDeviceVault, unwrapDeviceVault } from './lib/vaultEnvelope'
 import { destroyDeviceKeys, sealNewVault, upgradeStoredVault } from './lib/deviceLock'
 import { COMMIT_FAILED_MESSAGE, commitWithRollback } from './lib/vaultCommit'
-import { ensureDeviceProvider } from './lib/deviceProvider'
+import { ensureDeviceProvider, forgetDeviceProviderSecret } from './lib/deviceProvider'
 import { confirmDraftAccount, isDraftEntry, pickUnlockAccount } from './lib/accountPick'
 import { runPanicWipe } from './lib/panicWipe'
 import { mergeRestoredEntry } from './lib/vaultEntry'
 import { PASSKEY_WRONG_ACCOUNT, passkeyFailureCode } from './lib/passkeyMessages'
 import { clearSessionKey, getSessionKey, setSessionKey } from './lib/sessionKey'
+import { createSecurityContextFence, establishSecurityContext, invalidateAllSecurityContexts,
+  invalidateSecurityContext, listSecurityContextOwners, retireSecurityContext,
+  SECURITY_CONTEXT_KEY } from './lib/securityContextFence.js'
+import { activateSharedSecurityContext, retireOwnerSharedSecurityContexts,
+  retireSharedSecurityContext } from './lib/securityContextCoordination.js'
 
 // Derive 32-byte secret key from BIP39 mnemonic
 export async function deriveSkFromMnemonic(mnemonic) {
@@ -142,7 +147,7 @@ const setActivePubkey = (pk) => localStorage.setItem('cipher_active_pubkey', pk)
 // Publish one signed event and only close the socket after that relay
 // acknowledges it (OK) or the attempt has actually failed. A timeout that
 // resolves early, followed by pool.close(), drops kind 0 / 10003 on the floor.
-function publishToRelay(url, signedEvent, sk, timeoutMs = 12000) {
+export function publishToRelay(url, signedEvent, sk, timeoutMs = 12000, securityFence = null) {
   return new Promise((resolve, reject) => {
     let settled = false
     let socket
@@ -163,10 +168,14 @@ function publishToRelay(url, signedEvent, sk, timeoutMs = 12000) {
 
     const sendEvent = () => {
       if (!socket || socket.readyState !== WebSocket.OPEN) return
-      socket.send(JSON.stringify(['EVENT', signedEvent]))
+      try {
+        securityFence?.assertCurrent()
+        socket.send(JSON.stringify(['EVENT', signedEvent]))
+      } catch (error) { finish(false, error) }
     }
 
     const sendAuth = async (challenge) => {
+      securityFence?.assertCurrent()
       const { finalizeEvent } = await import('nostr-tools')
       const authEvent = finalizeEvent({
         kind: 22242,
@@ -175,10 +184,16 @@ function publishToRelay(url, signedEvent, sk, timeoutMs = 12000) {
         content: '',
       }, sk)
       if (!socket || socket.readyState !== WebSocket.OPEN) return
+      securityFence?.assertCurrent()
       socket.send(JSON.stringify(['AUTH', authEvent]))
     }
 
     try {
+      if (securityFence?.context?.owner !== signedEvent.pubkey
+        || typeof securityFence?.assertCurrent !== 'function') {
+        throw new Error('The profile signing key does not match its account security context.');
+      }
+      securityFence?.assertCurrent()
       socket = new WebSocket(url)
     } catch (error) {
       finish(false, error)
@@ -220,8 +235,13 @@ function publishToRelay(url, signedEvent, sk, timeoutMs = 12000) {
   })
 }
 
-async function publishSignedEvent(signedEvent, sk, relays = PROFILE_RELAYS) {
-  const settled = await Promise.allSettled(relays.map((url) => publishToRelay(url, signedEvent, sk)))
+async function publishSignedEvent(signedEvent, sk, relays = PROFILE_RELAYS, securityFence = null) {
+  if (securityFence?.context?.owner !== signedEvent.pubkey
+    || typeof securityFence?.assertCurrent !== 'function') {
+    throw new Error('The profile signing key does not match its account security context.');
+  }
+  securityFence.assertCurrent()
+  const settled = await Promise.allSettled(relays.map((url) => publishToRelay(url, signedEvent, sk, 12000, securityFence)))
   settled.forEach((result, index) => {
     const url = relays[index]
     if (result.status === 'fulfilled') {
@@ -233,7 +253,11 @@ async function publishSignedEvent(signedEvent, sk, relays = PROFILE_RELAYS) {
   return settled.some((result) => result.status === 'fulfilled')
 }
 
-export async function publishCipherProfile(sk, profile = {}, relays = PROFILE_RELAYS) {
+export async function publishCipherProfile(sk, profile = {}, relays = PROFILE_RELAYS, securityFence = null) {
+  if (typeof securityFence?.assertCurrent !== 'function') {
+    throw new Error('A current account security context is required to publish a profile.');
+  }
+  securityFence.assertCurrent()
   const username = (profile?.username || profile?.name || '').replace(/^@/, '').trim().toLowerCase()
   const displayName = (profile?.displayName || profile?.display_name || username || 'User').trim()
   const about = profile?.about || 'New to Cipher.'
@@ -245,6 +269,7 @@ export async function publishCipherProfile(sk, profile = {}, relays = PROFILE_RE
   if (profile?.picture) profileData.picture = profile.picture
 
   const { finalizeEvent } = await import('nostr-tools')
+  securityFence?.assertCurrent()
   const now = Math.floor(Date.now() / 1000)
   const events = [
     finalizeEvent({
@@ -268,7 +293,7 @@ export async function publishCipherProfile(sk, profile = {}, relays = PROFILE_RE
     }, sk))
   }
 
-  const results = await Promise.all(events.map((event) => publishSignedEvent(event, sk, relays)))
+  const results = await Promise.all(events.map((event) => publishSignedEvent(event, sk, relays, securityFence)))
   return { profilePublished: results[0] === true, usernamePublished: username ? results[1] === true : false }
 }
 
@@ -289,12 +314,17 @@ export async function getMnemonicFromVault(sk, pk) {
 // the OS store, the Keystore). With the key gone, any old copy of the vault
 // is dead ciphertext: a wipe is then an erasure, not a deleted file.
 async function destroyDeviceKey(pubkey) {
-  if (!pubkey) return
+  if (!pubkey) return { success: false, error: 'An account is required.' }
   try {
     const failed = await destroyDeviceKeys(await ensureDeviceProvider(), [pubkey])
-    if (failed.length) console.error('[identity] The device key may remain on this device.')
+    if (failed.length) {
+      console.error('[identity] The device key may remain on this device.')
+      return { success: false, error: 'The device key may remain on this device.' }
+    }
+    return { success: true }
   } catch (error) {
     console.error('[identity] Could not destroy the device key:', error)
+    return { success: false, error: error?.message || String(error) }
   }
 }
 
@@ -302,22 +332,171 @@ async function destroyDeviceKey(pubkey) {
 // Every path that removes an account (lockout, remove) also ends its device key.
 async function deleteLockedOutDatabase(pubkey) {
   if (!pubkey) return
-  await destroyDeviceKey(pubkey)
+  const invalidation = invalidateSecurityContext({ owner: pubkey })
+  if (!invalidation.persisted) {
+    throw new Error('Could not invalidate the account security context before local account cleanup.')
+  }
   try {
-    const { deleteAccountDatabase } = await import('./db')
-    if (!(await deleteAccountDatabase(pubkey))) {
-      console.error('[identity] The locked-out account database may remain on this device.')
+    const { retireAccountDatabaseContexts, deleteAccountDatabase } = await import('./db')
+    const contextResult = await retireAccountDatabaseContexts(pubkey)
+    if (!contextResult.retired) {
+      throw new Error(`Could not retire IndexedDB contexts before local account cleanup: ${contextResult.error || 'marker remains'}`)
     }
+    const { retireAccountBitcoinAllocationContexts } = await import('./lib/commerceWalletStore')
+    const allocatorContextResult = await retireAccountBitcoinAllocationContexts(pubkey)
+    if (!allocatorContextResult.retired) {
+      throw new Error(`Could not retire wallet allocator contexts before local account cleanup: ${allocatorContextResult.error || 'marker remains'}`)
+    }
+    const keyResult = await destroyDeviceKey(pubkey)
+    const databaseResult = await deleteAccountDatabase(pubkey)
+    if (!databaseResult.success) console.error('[identity] Some locked-out account databases may remain:', databaseResult.failures)
+    return { success: keyResult.success && databaseResult.success, keyResult, databaseResult, contextResult, allocatorContextResult }
   } catch (error) {
     console.error('[identity] Could not delete the locked-out account database:', error)
+    return { success: false, databaseResult: { success: false, failures: [{ status: 'failed', error: error?.message || String(error) }] } }
   }
 }
 
 export function useIdentity() {
   const [keys, setKeys] = useState({ sk: null, pk: null, npub: null })
+  const [securityFence, setSecurityFence] = useState(null)
+  const securityContextRef = useRef(null)
+  const securityFenceRef = useRef(null)
+  const securityChannelRef = useRef(null)
   const [hasVault, setHasVault] = useState(false)
   const [hasBiometric, setHasBiometric] = useState(false)
   const [loadingSession, setLoadingSession] = useState(true)
+
+  const clearUnlockedMemory = () => {
+    void import('./lib/pool').then(({ clearPool }) => clearPool()).catch(() => {});
+    void import('./lib/dmKeys').then(({ clearConversationKeyCache }) => clearConversationKeyCache()).catch(() => {});
+    void import('./hooks/useNIP29Group').then(({ closeGroupSessions }) => closeGroupSessions()).catch(() => {});
+    void import('./store/chatStore').then(({ useChatStore }) => {
+      useChatStore.setState({ dms: {}, groups: [], groupMessages: {}, profiles: {},
+        reactions: {}, activeDm: null, activeGroup: null, view: 'list' });
+      useChatStore.getState().setUnreadCounts({});
+      useChatStore.getState().clearNotificationAck();
+    }).catch(() => {});
+    void import('./db').then(({ closeDB }) => closeDB()).catch(() => {});
+  }
+
+  const retireCurrentContext = async (reason = 'local-lock') => {
+    const context = securityContextRef.current
+    const fence = securityFenceRef.current
+    if (fence) {
+      fence.invalidate(reason)
+      fence.close()
+    } else {
+      clearSessionKey()
+      setKeys({ sk: null, pk: null, npub: null })
+    }
+    securityFenceRef.current = null
+    securityContextRef.current = null
+    setSecurityFence(null)
+    if (context) {
+      try { forgetDeviceProviderSecret(context.owner) }
+      catch (error) { console.error('[identity] Could not forget the cached device secret:', error) }
+      const retired = retireSecurityContext({ context })
+      if (!retired.persisted) console.error('[identity] Could not retire the local security context:', retired.errors)
+      const coordinated = await retireSharedSecurityContext(context, async () => {
+        const { retireDatabaseSecurityContext } = await import('./db')
+        const { retireBitcoinAllocationContext } = await import('./lib/commerceWalletStore')
+        const [durable, allocator] = await Promise.all([
+          retireDatabaseSecurityContext(context), retireBitcoinAllocationContext(context),
+        ])
+        return { retired: durable.retired && allocator.retired, durable, allocator }
+      })
+      const { durable, allocator } = coordinated.result || {}
+      if (!coordinated.retired) {
+        console.error('[identity] Could not retire all durable account contexts:', coordinated)
+        return { retired: false, local: retired, durable, allocator, coordinated }
+      }
+      return { retired: retired.persisted, local: retired, durable, allocator, coordinated }
+    }
+    return { retired: true, local: true, durable: true }
+  }
+
+  const onContextInvalidated = (context) => {
+    if (securityContextRef.current !== context) return
+    try { forgetDeviceProviderSecret(context.owner) }
+    catch (error) { console.error('[identity] Could not forget the cached device secret:', error) }
+    securityFenceRef.current?.close()
+    securityFenceRef.current = null
+    securityContextRef.current = null
+    setSecurityFence(null)
+    clearSessionKey()
+    setKeys({ sk: null, pk: null, npub: null })
+    clearUnlockedMemory()
+  }
+
+  const activateSecurityContext = async (owner) => {
+    if (securityContextRef.current?.owner === owner && securityFenceRef.current?.isCurrent()) {
+      return securityFenceRef.current
+    }
+    if (securityContextRef.current) {
+      const retired = await retireCurrentContext('account-context-replaced')
+      if (!retired.retired) throw new Error('Could not retire the previous account context before unlock.')
+    }
+    const context = establishSecurityContext({ owner })
+    const fence = createSecurityContextFence({ context, channel: securityChannelRef.current,
+      onInvalidate: () => onContextInvalidated(context) })
+    try { await activateSharedSecurityContext(fence) }
+    catch (error) {
+      fence.close()
+      retireSecurityContext({ context })
+      throw error
+    }
+    securityContextRef.current = context
+    securityFenceRef.current = fence
+    fence.assertCurrent()
+    setSecurityFence(fence)
+    return fence
+  }
+
+  const invalidateAccountContext = (owner) => {
+    const result = invalidateSecurityContext({ owner, channel: securityChannelRef.current })
+    if (securityContextRef.current?.owner === owner) {
+      securityFenceRef.current?.invalidate('account-invalidated')
+      securityFenceRef.current?.close()
+      securityFenceRef.current = null
+      securityContextRef.current = null
+      setSecurityFence(null)
+    }
+    return result
+  }
+
+  useEffect(() => {
+    if (typeof BroadcastChannel !== 'undefined') {
+      try { securityChannelRef.current = new BroadcastChannel(`${SECURITY_CONTEXT_KEY}:invalidate`) }
+      catch { securityChannelRef.current = null }
+    }
+    return () => {
+      securityFenceRef.current?.close()
+      securityFenceRef.current = null
+      securityContextRef.current = null
+      securityChannelRef.current?.close?.()
+      securityChannelRef.current = null
+    }
+  }, [])
+
+  // A suspended tab can miss both a storage event and a BroadcastChannel
+  // message. Re-check the durable incarnation when the document becomes
+  // active again; all write paths still check their captured fence directly.
+  useEffect(() => {
+    if (!securityFence) return undefined
+    const checkOnResume = () => {
+      if (document.visibilityState === 'hidden') return
+      securityFence.isCurrent()
+    }
+    window.addEventListener('focus', checkOnResume)
+    window.addEventListener('pageshow', checkOnResume)
+    document.addEventListener('visibilitychange', checkOnResume)
+    return () => {
+      window.removeEventListener('focus', checkOnResume)
+      window.removeEventListener('pageshow', checkOnResume)
+      document.removeEventListener('visibilitychange', checkOnResume)
+    }
+  }, [securityFence])
 
   useEffect(() => {
     const init = async () => {
@@ -445,6 +624,9 @@ export function useIdentity() {
   };
 
   const finalizeLogin = async (sk, pk, npub, profile) => {
+    const fence = await activateSecurityContext(pk)
+    fence.assertCurrent()
+    setSessionKey(sk)
     const username = (profile?.username || '').replace(/^@/, '').trim().toLowerCase()
     const displayName = (profile?.displayName || username || 'User').trim()
     try {
@@ -453,13 +635,14 @@ export function useIdentity() {
         displayName,
         about: 'New to Cipher.',
         picture: profile?.picture || null,
-      })
+      }, PROFILE_RELAYS, fence)
       if (!published.profilePublished || (username && !published.usernamePublished)) {
         console.error('[identity] One or more account events were not accepted by any relay', published)
       }
     } catch (e) {
       console.error('Failed to publish initial profile', e)
     }
+    fence.assertCurrent()
 
     try {
       const { saveProfile } = await import('./db')
@@ -472,7 +655,7 @@ export function useIdentity() {
       })
     } catch (e) { console.error('Profile seed failed:', e) }
 
-    setSessionKey(sk)
+    fence.assertCurrent()
     setKeys({ sk, pk, npub })
     setHasVault(true)
   }
@@ -519,6 +702,8 @@ export function useIdentity() {
       const { getPublicKey, nip19 } = await import('nostr-tools')
       const sk = Uint8Array.from(skArray)
       const pk = getPublicKey(sk)
+      const fence = await activateSecurityContext(pk)
+      fence.assertCurrent()
 
       // The PIN was right. A vault that is not locked to this device is not
       // let in as it is: it is wrapped now, or the person is told why not.
@@ -527,18 +712,22 @@ export function useIdentity() {
           await lockStoredVault({ pk, vault, pin, skArray, activePk })
         } catch (upgradeErr) {
           if (!isDeviceKeyError(upgradeErr)) throw upgradeErr
+          await retireCurrentContext('unlock-needs-device-lock')
           return { success: false, needsDeviceLock: true, error: deviceLockUpgradeMessage(upgradeErr), remaining: undefined, deviceKey: upgradeErr.code }
         }
       }
 
+      fence.assertCurrent()
       setSessionKey(sk)
       resetPinFailures(localStorage, pk)
+      fence.assertCurrent()
       setKeys({ sk, pk, npub: nip19.npubEncode(pk) })
       return { success: true }
     } catch (e) {
       // The vault opened but the account would not load. Plain words only:
       // this is our failure, not a sentence for the person locked out.
       console.error('[identity] Could not load the opened account:', e)
+      if (failureAccount && securityContextRef.current?.owner === failureAccount) await retireCurrentContext('unlock-failed')
       return { success: false, error: 'Could not open this account on this device.' }
     }
   }
@@ -592,8 +781,11 @@ export function useIdentity() {
       if (!getActivePubkey()) setActivePubkey(pubkey)
       const { nip19 } = await import('nostr-tools')
       const sk = Uint8Array.from(secretKey)
+      const fence = await activateSecurityContext(pubkey)
+      fence.assertCurrent()
       setSessionKey(sk)
       resetPinFailures(localStorage, pubkey)
+      fence.assertCurrent()
       setKeys({ sk, pk: pubkey, npub: nip19.npubEncode(pubkey) })
       setHasVault(true)
       setHasBiometric(true)
@@ -718,12 +910,15 @@ export function useIdentity() {
         handle,
         now: Date.now(),
       });
+      let restoreFence
       // One commit, or nothing — the same rule as the other doors: table,
       // pointer, mirror and handle land together, and a storage that refuses
       // part way is shown to have kept everything it had.
       try {
         // The session key rides first: a storage that refuses even it fails
         // before the account has touched anything.
+        restoreFence = await activateSecurityContext(pk)
+        restoreFence.assertCurrent()
         setSessionKey(sk)
         commitWithRollback(localStorage, [
           { key: 'cipher_vaults', value: JSON.stringify(newVaults) },
@@ -731,13 +926,15 @@ export function useIdentity() {
           { key: 'cipher_vault', value: JSON.stringify(targetVault) },
           { key: 'cipher_handle', value: handle },
         ])
+        restoreFence.assertCurrent()
       } catch (storageError) {
         console.error('[identity] Could not save the restored account:', storageError)
+        await retireCurrentContext('restore-commit-failed')
         try { clearSessionKey() } catch { /* the words below still hold */ }
         return { success: false, error: COMMIT_FAILED_MESSAGE }
       }
       resetPinFailures(localStorage, pk);
-      
+      restoreFence.assertCurrent()
       setKeys({ sk, pk, npub: nip19.npubEncode(pk) });
       setHasVault(true);
       return { success: true };
@@ -784,6 +981,7 @@ export function useIdentity() {
         // relaunch and threaten the restored account with a second flow).
         confirmed: true,
       }
+      let restoreFence
       // The account lands as one commit — table, active pointer, mirror —
       // or it does not land. Storage that refuses part way puts every slot
       // back exactly as it was, so the account that was on this device
@@ -791,21 +989,26 @@ export function useIdentity() {
       try {
         // The session key rides first: a storage that refuses even it fails
         // before the account has touched anything.
+        restoreFence = await activateSecurityContext(pk)
+        restoreFence.assertCurrent()
         setSessionKey(sk)
         commitWithRollback(localStorage, [
           { key: 'cipher_vaults', value: JSON.stringify(vaults) },
           { key: 'cipher_active_pubkey', value: pk },
           { key: 'cipher_vault', value: JSON.stringify(newLocalVault) },
         ])
+        restoreFence.assertCurrent()
       } catch (storageError) {
         console.error('[identity] Could not save the restored account:', storageError)
         // The session key went in first; it comes back out, so "nothing was
         // changed" is true of the whole store, not just the account slots.
         // (lockApp empties this slot too — a locked device holds no session.)
+        await retireCurrentContext('restore-commit-failed')
         try { clearSessionKey() } catch { /* the words below still hold */ }
         return { success: false, error: COMMIT_FAILED_MESSAGE }
       }
       resetPinFailures(localStorage, pk)
+      restoreFence.assertCurrent()
       setKeys({ sk, pk, npub: nip19.npubEncode(pk) })
       setHasVault(true)
       return { success: true }
@@ -823,8 +1026,8 @@ export function useIdentity() {
   // no new key material needed.
 
   const lockApp = async () => {
-    clearSessionKey()
-    setKeys({ sk: null, pk: null, npub: null })
+    const retirement = await retireCurrentContext('local-lock')
+    if (!retirement.retired) console.error('[identity] Lock completed with an unretired security context.')
     try {
       const { clearPool } = await import('./lib/pool');
       const { clearConversationKeyCache } = await import('./lib/dmKeys');
@@ -857,7 +1060,26 @@ export function useIdentity() {
   // Every step runs on its own (src/lib/panicWipe.js): a dynamic import that
   // fails or hangs here can no longer skip the deletions or the storage clear.
   const panicWipe = async () => {
-    return runPanicWipe({
+    const ownerInventory = listSecurityContextOwners()
+    const contextResult = invalidateAllSecurityContexts({ channel: securityChannelRef.current })
+    let localRetirement = { retired: true }
+    try { localRetirement = await retireCurrentContext('panic-wipe') }
+    catch (error) { localRetirement = { retired: false, error: error?.message || String(error) } }
+    const durableContexts = await Promise.all(ownerInventory.owners.map(async (owner) => {
+      try {
+        return await retireOwnerSharedSecurityContexts(owner, async () => {
+          const { retireAccountDatabaseContexts } = await import('./db')
+          const { retireAccountBitcoinAllocationContexts } = await import('./lib/commerceWalletStore')
+          const [database, allocator] = await Promise.all([
+            retireAccountDatabaseContexts(owner), retireAccountBitcoinAllocationContexts(owner),
+          ])
+          return { owner, retired: database.retired && allocator.retired, database, allocator }
+        })
+      } catch (error) {
+        return { owner, retired: false, error: error?.message || String(error) }
+      }
+    }))
+    const result = await runPanicWipe({
       stop: [
         // The in-memory secret is not in any storage the wipe clears, so it
         // is dropped here first. It is also the first step, so it runs even if
@@ -875,6 +1097,13 @@ export function useIdentity() {
       destroyKeys: async (pubkeys) => destroyDeviceKeys(await ensureDeviceProvider(), pubkeys),
       reload: () => window.location.reload(),
     });
+    const failedContexts = durableContexts.filter((item) => !item.retired).map((item) => `${item.owner}:security-context`)
+    if (!contextResult.persisted || ownerInventory.errors.length || failedContexts.length || !localRetirement.retired) {
+      return { ...result, failures: [...(result.failures || []), ...ownerInventory.errors, ...failedContexts,
+        ...(!contextResult.persisted ? ['security contexts'] : []),
+        ...(!localRetirement.retired ? ['active security context'] : [])] }
+    }
+    return result
   }
 
   const getAccounts = () => {
@@ -913,14 +1142,36 @@ export function useIdentity() {
       }
       const vaults = getVaults();
       if (!vaults[targetPk]) return { success: false, error: 'Account not found' };
+      const invalidation = invalidateAccountContext(targetPk)
+      if (!invalidation.persisted) {
+        return { success: false, error: 'Could not safely retire this account on other open tabs.' }
+      }
+      const coordinated = await retireOwnerSharedSecurityContexts(targetPk, async () => {
+        const { retireAccountDatabaseContexts } = await import('./db')
+        const { retireAccountBitcoinAllocationContexts } = await import('./lib/commerceWalletStore')
+        const [database, allocator] = await Promise.all([
+          retireAccountDatabaseContexts(targetPk), retireAccountBitcoinAllocationContexts(targetPk),
+        ])
+        return { retired: database.retired && allocator.retired, database, allocator }
+      })
+      if (!coordinated.retired) {
+        return { success: false, error: 'Could not retire this account’s database contexts before removal.' }
+      }
       delete vaults[targetPk];
       saveVaults(vaults);
       resetPinFailures(localStorage, targetPk);
-      await deleteLockedOutDatabase(targetPk);
+      const cleanup = await deleteLockedOutDatabase(targetPk);
       // Scoped per-account keys, in both the legacy first-8-hex drawer and
       // the full-pubkey drawer this build reads. removeAccountKeys leaves a
       // drawer a saved account shares untouched. (security A2)
       removeAccountKeys(localStorage, targetPk);
+      if (!cleanup?.success) {
+        const failed = [
+          ...(cleanup?.keyResult?.success ? [] : ['device key']),
+          ...(cleanup?.databaseResult?.failures || []).map((resource) => resource.name || resource.status),
+        ];
+        return { success: false, error: `The account was removed from this device, but cleanup could not confirm: ${failed.join(', ') || 'one or more resources'}.` };
+      }
       return { success: true };
     } catch (e) {
       return { success: false, error: e.message };
@@ -957,19 +1208,26 @@ export function useIdentity() {
       const pk = getPublicKey(sk);
 
       if (pk !== targetPk) throw new Error('Invalid PIN for this account');
+      await retireCurrentContext('account-switch')
+      const fence = await activateSecurityContext(targetPk)
+      fence.assertCurrent()
 
       let targetVault = vaults[targetPk].vault;
       if (!isDeviceVault(targetVault)) {
         try {
           targetVault = await lockStoredVault({ pk, vault: targetVault, pin, skArray, activePk: getActivePubkey() });
         } catch (upgradeErr) {
-          if (isDeviceKeyError(upgradeErr)) return { success: false, error: deviceLockUpgradeMessage(upgradeErr) };
+          if (isDeviceKeyError(upgradeErr)) {
+            await retireCurrentContext('account-switch-failed')
+            return { success: false, error: deviceLockUpgradeMessage(upgradeErr) }
+          }
           throw upgradeErr;
         }
       }
 
       setActivePubkey(targetPk);
       resetPinFailures(localStorage, targetPk);
+      fence.assertCurrent()
       setSessionKey(sk);
       
       // Update legacy vault too
@@ -980,11 +1238,12 @@ export function useIdentity() {
       window.location.reload();
       return { success: true };
     } catch (e) {
+      if (securityContextRef.current?.owner === targetPk) await retireCurrentContext('account-switch-failed')
       return { success: false, error: e.message };
     }
   };
 
-  const addNewAccount = () => {
+  const addNewAccount = async () => {
     // Migrate current vault to cipher_vaults before switching, so it's not lost
     const legacyVault = localStorage.getItem('cipher_vault');
     const sessionSk = getSessionKey();
@@ -1002,13 +1261,14 @@ export function useIdentity() {
         }
       } catch (e) {}
     }
-    clearSessionKey();
+    await retireCurrentContext('add-account');
     localStorage.removeItem('cipher_active_pubkey');
     window.location.reload();
   };
 
   return {
     ...keys, hasVault, hasBiometric, loadingSession,
+    securityFence,
     getAccounts, switchAccount, removeAccount, addNewAccount, getMnemonic,
     unlock, unlockWithBiometric, enableBiometric, restoreFromRelays, restoreFromMnemonic, createVault, confirmVault, finalizeLogin, lockApp, panicWipe
   }

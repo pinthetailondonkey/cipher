@@ -193,6 +193,9 @@ accepted generation at rest. It rejects lower generations and same-generation
 equivocation, but that is not global freshness: a relay can withhold a newer
 revocation and replay an older valid registry to a device that has not seen
 the update. Event timestamps and the 90-day age limit cannot prove latestness.
+A proposed 24-hour maximum sender-checkpoint age at send time is only a
+test-profile freshness bound; it still cannot prove that a newer registry head
+was not withheld.
 
 Before live DM prekeys or group key delivery depend on the registry, require
 authenticated device-to-device checkpoint gossip, per-contact monotonic

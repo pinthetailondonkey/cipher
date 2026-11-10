@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { MessageCircle, Package, ShieldCheck, Store, X } from 'lucide-react';
+import { MessageCircle, Package, Store, X } from 'lucide-react';
 import { useVouchCount } from '../../hooks/useVouchCount';
 import { useVendorReviews } from '../../hooks/useVendorReviews';
 import { generalRelays } from '../../lib/relays';
@@ -135,8 +135,7 @@ export default function VendorMenuHome({ open, onClose, vendorPubkey, profiles =
           <Avatar src={profile.picture} name={name} size={44} className={profile.picture ? '' : 'text-inkSubtle'} />
           <div className="min-w-0">
             <h1 className="truncate text-[20px] font-bold tracking-tight text-ink">{name}</h1>
-            <p className="flex items-center gap-1.5 text-[13px] text-inkMuted">
-              <ShieldCheck size={15} aria-hidden="true" className={vouchCount >= 3 ? 'text-accentText' : 'text-inkSubtle'} />
+            <p className="text-[13px] text-inkMuted">
               {vouchesLoading ? 'Checking vouches…' : `${vouchCount} ${vouchCount === 1 ? 'vouch' : 'vouches'}`}
             </p>
           </div>

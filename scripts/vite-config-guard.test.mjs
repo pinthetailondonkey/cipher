@@ -63,7 +63,8 @@ const CARRIER_PATH_BUSY = CARRIER_PRESENT
 function cleanEnv() {
   const env = { ...process.env };
   for (const key of ['VITE_TEST_HOOKS', 'CIPHER_UI_TEST_BUILD', 'CIPHER_DESKTOP_BUILD',
-    'VITE_GROUP_ONION', 'VITE_MEDIA_ONION']) delete env[key];
+    'VITE_GROUP_ONION', 'VITE_MEDIA_ONION', 'VITE_PROTOCOL_TEST_MODE',
+    'CIPHER_PROTOCOL_TEST_BUILD', 'VITE_PROTOCOL_TEST_RELAYS']) delete env[key];
   return env;
 }
 
@@ -92,6 +93,17 @@ function builtText(dir) {
   return out.join('\n');
 }
 
+function builtFileNames(dir, prefix = '') {
+  const result = [];
+  for (const name of readdirSync(dir)) {
+    const full = join(dir, name);
+    const relative = prefix ? `${prefix}/${name}` : name;
+    if (statSync(full).isDirectory()) result.push(...builtFileNames(full, relative));
+    else result.push(relative);
+  }
+  return result;
+}
+
 function build({ fileLines = null, env = cleanEnv(), allowCarrier = false } = {}) {
   assertPristineEnv({ allowCarrier });
   assert.equal(existsSync(ENV_LOCAL), false, 'a .env.local exists; refusing to overwrite it');
@@ -101,7 +113,7 @@ function build({ fileLines = null, env = cleanEnv(), allowCarrier = false } = {}
     const run = spawnSync(process.execPath, [VITE, 'build', '--outDir', outDir], {
       cwd: TREE, env, encoding: 'utf8',
     });
-    return { status: run.status, stderr: run.stderr || '', stdout: run.stdout || '', text: builtText(outDir) };
+    return { status: run.status, stderr: run.stderr || '', stdout: run.stdout || '', text: builtText(outDir), files: builtFileNames(outDir) };
   } finally {
     rmSync(ENV_LOCAL, { force: true });
     rmSync(outDir, { recursive: true, force: true });
@@ -134,6 +146,20 @@ test('the deliberate test build still builds, and its bytes carry the wall and n
   assert.ok(run.text.includes(WALL_WS) || run.text.includes(WALL_HTTP),
     'the test build did not carry the wall, so this control proves nothing');
   assert.equal(ONION_LITERAL.test(run.text), false, 'a build that ships carried an onion address');
+});
+
+test('the protocol test artifact has no production app entry or production relay fallback', { skip: NOT_BESIDE_THE_CARRIER }, () => {
+  const run = build({ env: { ...cleanEnv(), VITE_TEST_HOOKS: '1', CIPHER_UI_TEST_BUILD: '1',
+    VITE_PROTOCOL_TEST_MODE: '1', CIPHER_PROTOCOL_TEST_BUILD: '1',
+    VITE_PROTOCOL_TEST_RELAYS: 'ws://127.0.0.1:18888' } });
+  assert.equal(run.status, 0, `the protocol test build failed:\n${run.stderr.slice(-2000)}`);
+  assert.ok(run.files.includes('protocol-test.html'), 'the dedicated protocol test page was not emitted');
+  assert.equal(run.files.includes('index.html'), false, 'the ordinary app entry was emitted into the protocol test artifact');
+  assert.equal(run.files.includes('sw.js'), false, 'the protocol test artifact must not contain the production service worker');
+  assert.equal(run.files.includes('manifest.json'), false, 'the protocol test artifact must not register as the production PWA');
+  assert.equal(run.text.includes('wss://relay.primal.net'), false, 'the test artifact carries the production DM relay');
+  assert.equal(run.text.includes('CipherDB_v7_'), false, 'the test artifact carries the production account DB name');
+  assert.ok(run.text.includes('Experimental protocol tests'), 'the artifact is missing its unmistakable test-mode label');
 });
 
 test('a door in a non-desktop build is refused, because the address would be written into the bytes', { skip: NOT_BESIDE_THE_CARRIER }, () => {

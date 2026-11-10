@@ -417,3 +417,57 @@ the witness/log dependency is acceptable or local-pin-only is sufficient,
 (b) which sensitive operations fail closed, (c) how contacts authenticate
 their first recovery pin, (d) backup/passphrase UX and loss behavior, and (e)
 whether the unchanged Nostr identity is the intended security boundary.
+
+## R5-A/R5-C/R5-D UX decision packet (candidate, not integrated)
+
+The safe design candidate is **local monotonic pin plus strict hold** for
+authority-sensitive actions. This matches the current exact-successor pin
+prototype and does not introduce an unreviewed witness service. A sender holds
+new session creation, prekey publication, ratchet authorization, and delivery
+when authority freshness is missing, expired, forked, or uncertain. It may
+continue to read history and compose a locally held message. This does not
+promise global revocation while a peer is offline; a user-facing status must
+say that the device or contact could not be verified and identify the held
+action.
+
+Initial enrollment for an existing Nostr account must be an explicit,
+separately recoverable ceremony:
+
+1. After normal N-key unlock, explain that Cipher device recovery is a second
+   credential and is not the existing 12-word Nostr phrase. Do not silently
+   derive `R` from `N` or enroll during ordinary unlock.
+2. Generate independent `R`, `A`, and primary `D`; show the 24-word `R`
+   phrase once, offline, with a warning that anyone holding it can replace
+   `A`. Do not copy it to clipboard or persist it in browser storage.
+3. Require random word-position confirmation and show the recovery
+   fingerprint. Do not publish the policy, enroll devices, or enable R5
+   operations until backup confirmation succeeds.
+4. Offer an explicit encrypted export as a second recovery copy only after
+   the same flow is implemented and reviewed. It is never automatic and does
+   not replace the offline words. Losing both recovery routes means there is
+   no safe authority replacement in this model.
+
+Contact enrollment must use a QR or safety-number view of the recovery
+fingerprint and the account/device binding, verified in person or through a
+previously authenticated channel independent of `N`. The first pin is then
+stored locally. A Nostr-signed profile, key bundle, or same-account identity
+is not sufficient to establish the first `R` pin. A contact without an
+independent prior pin cannot safely distinguish recovery replacement from a
+compromised account or recovery root; pause sensitive sends and require a new
+independent comparison.
+
+Recovery replacement requires the offline `R` credential, increments the
+policy epoch from the exact current policy, installs a new `A` and primary
+`D`, revokes old enrolled devices, and leaves the prior local pin intact until
+the exact signed successor is verified and committed. Each contact must
+independently accept that successor; delayed or unavailable contacts remain
+held. A whole-profile rollback, missing peer checkpoint, failed local storage,
+or uncertain restore never triggers automatic TOFU or a silent fresh root.
+
+This is a UX and protocol design decision for review, not shipped UI or
+authorization to integrate. Before R5 release, usability work must exercise
+phrase custody, contact comparison, device loss and replacement, and the
+failure states above with users; independent review must challenge coercion,
+screen capture, clipboard, backup rollback, and contact social-engineering
+paths. Until those gates pass, authority stores and contact pins remain
+prototype-only.

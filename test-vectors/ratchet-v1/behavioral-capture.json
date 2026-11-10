@@ -1,0 +1,66 @@
+{
+  "captureNote": "identities are regenerated per run (vodozemac has no public key injection); vectors pin INVARIANTS and digests, not ciphertext bytes",
+  "kind": "behavioral-capture",
+  "rounds": [
+    {
+      "cipherKind": "PreKey",
+      "ciphertextJsonChars": 298,
+      "plaintextLen": 20,
+      "receiverFrame": "bob-session",
+      "round": 0,
+      "senderFrame": "alice",
+      "side": "alice"
+    },
+    {
+      "cipherKind": "Normal",
+      "ciphertextJsonChars": 158,
+      "plaintextLen": 20,
+      "receiverFrame": "alice-session",
+      "round": 1,
+      "senderFrame": "bob",
+      "side": "bob"
+    },
+    {
+      "cipherKind": "Normal",
+      "ciphertextJsonChars": 158,
+      "plaintextLen": 22,
+      "receiverFrame": "bob-session",
+      "round": 2,
+      "senderFrame": "alice",
+      "side": "alice"
+    },
+    {
+      "cipherKind": "Normal",
+      "ciphertextJsonChars": 158,
+      "plaintextLen": 21,
+      "receiverFrame": "alice-session",
+      "round": 3,
+      "senderFrame": "bob",
+      "side": "bob"
+    },
+    {
+      "cipherKind": "Normal",
+      "ciphertextJsonChars": 158,
+      "plaintextLen": 21,
+      "receiverFrame": "bob-session",
+      "round": 4,
+      "senderFrame": "alice",
+      "side": "alice"
+    },
+    {
+      "cipherKind": "Normal",
+      "ciphertextJsonChars": 158,
+      "plaintextLen": 20,
+      "receiverFrame": "alice-session",
+      "round": 5,
+      "senderFrame": "bob",
+      "side": "bob"
+    }
+  ],
+  "schema": "cipher-ratchet-kat/v1",
+  "skippedKeyCase": {
+    "exercised": true,
+    "note": "receiver decrypted message two while one message key was skipped; crate derived the skipped key internally",
+    "recoveredBoth": true
+  }
+}

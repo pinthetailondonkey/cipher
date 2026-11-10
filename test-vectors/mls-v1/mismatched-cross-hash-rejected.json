@@ -1,0 +1,11 @@
+{
+  "observed": {
+    "good": true,
+    "bad": false
+  },
+  "expectedRejectionReasons": null,
+  "_meta": {
+    "name": "mismatched-cross-hash-rejected",
+    "profile": "MLS-TEST-PROFILE-V1"
+  }
+}

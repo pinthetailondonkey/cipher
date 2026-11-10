@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { assertNodeVersion, ensureEnvFile, makeWatchToken, pickLanIp, REQUIRED_NODE_MAJOR } from './boxes.mjs';
+import { assertNodeVersion, ensureEnvFile, makeWatchToken, makeWatcherSigningKey, pickLanIp, REQUIRED_NODE_MAJOR } from './boxes.mjs';
 
 function envWorkspace(example) {
   const root = mkdtempSync(join(tmpdir(), 'boxes-env-'));
@@ -22,24 +22,27 @@ test('a wrong Node version fails naming the requirement', () => {
 });
 
 test('a fresh clone gets .env from .env.example with a working token', () => {
-  const root = envWorkspace('WATCH_TOKEN=\nWATCH_PORT=8788\n');
-  const { token, created, changed } = ensureEnvFile(root, 'tok-1');
+  const root = envWorkspace('WATCH_TOKEN=\nWATCH_SIGNING_PRIVATE_KEY=\nWATCH_PORT=8788\n');
+  const { token, signingKey, created, changed } = ensureEnvFile(root, 'tok-1', 'sig-1');
   assert.equal(created, true);
   assert.equal(changed, true);
   assert.equal(token, 'tok-1');
+  assert.equal(signingKey, 'sig-1');
   const text = readFileSync(join(root, '.env'), 'utf8');
   assert.match(text, /^WATCH_TOKEN=tok-1$/m);
+  assert.match(text, /^WATCH_SIGNING_PRIVATE_KEY=sig-1$/m);
   assert.match(text, /^WATCH_PORT=8788$/m);
   rmSync(root, { recursive: true, force: true });
 });
 
-test('a blank WATCH_TOKEN line is filled and a set one is never replaced', () => {
-  const root = envWorkspace('XMR_WALLET_RPC=http://127.0.0.1:18083\nWATCH_TOKEN=\n');
-  const first = ensureEnvFile(root, 'tok-2');
+test('blank watcher credentials are filled and existing credentials are never replaced', () => {
+  const root = envWorkspace('XMR_WALLET_RPC=http://127.0.0.1:18083\nWATCH_TOKEN=\nWATCH_SIGNING_PRIVATE_KEY=\n');
+  const first = ensureEnvFile(root, 'tok-2', 'sig-2');
   assert.equal(first.token, 'tok-2');
+  assert.equal(first.signingKey, 'sig-2');
   assert.equal(first.changed, true);
-  const second = ensureEnvFile(root, 'tok-3');
-  assert.deepEqual(second, { token: 'tok-2', created: false, changed: false });
+  const second = ensureEnvFile(root, 'tok-3', 'sig-3');
+  assert.deepEqual(second, { token: 'tok-2', signingKey: 'sig-2', created: false, changed: false });
   rmSync(root, { recursive: true, force: true });
 });
 
@@ -49,12 +52,14 @@ test('without .env.example the failure says what to write', () => {
   rmSync(root, { recursive: true, force: true });
 });
 
-test('an existing token survives a rerun untouched', () => {
+test('an existing token survives and a signing key is added once', () => {
   const root = mkdtempSync(join(tmpdir(), 'boxes-env-'));
   writeFileSync(join(root, '.env'), 'WATCH_TOKEN=already-set\n');
-  const result = ensureEnvFile(root, 'tok-5');
-  assert.deepEqual(result, { token: 'already-set', created: false, changed: false });
-  assert.equal(readFileSync(join(root, '.env'), 'utf8'), 'WATCH_TOKEN=already-set\n');
+  const result = ensureEnvFile(root, 'tok-5', 'sig-5');
+  assert.deepEqual(result, { token: 'already-set', signingKey: 'sig-5', created: false, changed: true });
+  assert.equal(readFileSync(join(root, '.env'), 'utf8'), 'WATCH_TOKEN=already-set\nWATCH_SIGNING_PRIVATE_KEY=sig-5\n');
+  const rerun = ensureEnvFile(root, 'tok-6', 'sig-6');
+  assert.deepEqual(rerun, { token: 'already-set', signingKey: 'sig-5', created: false, changed: false });
   rmSync(root, { recursive: true, force: true });
 });
 
@@ -64,6 +69,9 @@ test('tokens are long enough to paste and not equal twice in a row', () => {
   assert.ok(a.length >= 24);
   assert.notEqual(a, b);
   assert.match(a, /^[A-Za-z0-9_-]+$/);
+  const signingKey = makeWatcherSigningKey();
+  assert.equal(signingKey.length, 43);
+  assert.match(signingKey, /^[A-Za-z0-9_-]+$/);
 });
 
 test('the watcher URL prefers a LAN address and falls back to loopback', () => {

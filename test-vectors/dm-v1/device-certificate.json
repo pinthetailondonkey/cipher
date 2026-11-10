@@ -1,0 +1,62 @@
+{
+  "schema": "cipher-dm-kat/v1",
+  "kind": "device-certificate",
+  "vector": {
+    "inputs": {
+      "authoritySeedLabel": "authority-primary",
+      "authorityPubkey": "7511d87aca7f823bfea6c309d869a6749568d5c17853cc753ccf7d6d9da7ffd1",
+      "devicePubkey": "d4fe49ffaa482f805bf1b1963155d5ca2dcfda0fd40dfdee98236ee84e8ad311",
+      "registryHeadId": "9698496fbb604a429fb0aace1f55280fcd5f749e52b73a6b49d618fa0cc4efd1",
+      "sentAt": 1760000000,
+      "revokeGraceSeconds": 300,
+      "registryMaxAgeSeconds": 86400,
+      "policyNote": "D1 five-minute grace and D3 24h head age are TEST-PROFILE DEFAULTS ONLY, not approved production policy"
+    },
+    "expected": {
+      "certificate": {
+        "id": "fa515631e09f6fa16ebb799f17d6e3e250b8d125c2e6a8b77616e3f8cf9fabd2",
+        "sig": "a4eccf7c154908dddbeedc89ca0f5d827188c751e19ece49c0d0cc8e9866c04108447169dce0db0a217e8a8cded95153856e987bddaa473ae33a3f8084852060",
+        "pubkey": "7511d87aca7f823bfea6c309d869a6749568d5c17853cc753ccf7d6d9da7ffd1",
+        "kind": 30085,
+        "created_at": 1760000000,
+        "tags": [
+          [
+            "d",
+            "device-certificate-v1"
+          ],
+          [
+            "head",
+            "9698496fbb604a429fb0aace1f55280fcd5f749e52b73a6b49d618fa0cc4efd1"
+          ],
+          [
+            "p",
+            "d4fe49ffaa482f805bf1b1963155d5ca2dcfda0fd40dfdee98236ee84e8ad311"
+          ]
+        ],
+        "content": "{\"v\":1,\"device\":\"d4fe49ffaa482f805bf1b1963155d5ca2dcfda0fd40dfdee98236ee84e8ad311\",\"registryHead\":\"9698496fbb604a429fb0aace1f55280fcd5f749e52b73a6b49d618fa0cc4efd1\",\"sentAt\":1760000000}"
+      },
+      "acceptAtT0": {
+        "ok": true,
+        "device": "d4fe49ffaa482f805bf1b1963155d5ca2dcfda0fd40dfdee98236ee84e8ad311",
+        "sentAt": 1760000000
+      },
+      "staleHeadBeyond24h": {
+        "ok": false,
+        "reason": "stale-registry-head"
+      },
+      "revokedWithinGraceAccepts": {
+        "ok": true
+      },
+      "revokedAfterGrace": {
+        "ok": false,
+        "reason": "revoked-after-grace"
+      },
+      "graceBoundarySentAtEqualsRevocationPlusGrace": "boundary: sentAt == revocationEffectiveAt + grace accepts; strictly greater rejects",
+      "wrongAuthority": {
+        "ok": false,
+        "reason": "certificate-authority"
+      },
+      "tamperedTagHead": "certificate-shape"
+    }
+  }
+}

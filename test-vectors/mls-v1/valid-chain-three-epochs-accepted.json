@@ -1,0 +1,7 @@
+{
+  "expectedRejectionReasons": null,
+  "_meta": {
+    "name": "valid-chain-three-epochs-accepted",
+    "profile": "MLS-TEST-PROFILE-V1"
+  }
+}

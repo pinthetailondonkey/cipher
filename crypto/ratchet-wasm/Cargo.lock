@@ -145,6 +145,9 @@ dependencies = [
 name = "cipher-ratchet-wasm"
 version = "0.1.0"
 dependencies = [
+ "base64ct",
+ "chacha20poly1305",
+ "getrandom",
  "serde",
  "serde-wasm-bindgen",
  "serde_json",

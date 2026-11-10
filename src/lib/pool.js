@@ -137,6 +137,35 @@ export async function querySyncAfterAuth(pool, relays, filter, timeoutMs = 4000)
   return again.length ? again : first;
 }
 
+// Detailed counterpart for security-sensitive discovery. Unlike the legacy
+// array facade, this preserves network failures and retry outcomes.
+export async function querySyncAfterAuthDetailed(pool, relays, filter, timeoutMs = 4000) {
+  const list = Array.isArray(relays) ? relays : [relays];
+  let first;
+  try { first = await pool.querySync(relays, filter); }
+  catch (error) { return { status: 'error', events: [], error }; }
+  if (Array.isArray(first) && first.length) return { status: 'events', events: first };
+  const results = await Promise.all(list.map((url) => waitForHost(pool, hostOf(url), timeoutMs)));
+  if (!results.some(Boolean)) return { status: 'empty', events: Array.isArray(first) ? first : [] };
+  try {
+    const again = await pool.querySync(relays, filter);
+    return Array.isArray(again) && again.length
+      ? { status: 'events', events: again }
+      : { status: 'empty', events: Array.isArray(first) ? first : [] };
+  } catch (error) { return { status: 'error', events: Array.isArray(first) ? first : [], error }; }
+}
+
+export async function runWithCurrentSecurityContext(identity, operation) {
+  const fence = identity?.securityFence;
+  if (typeof fence?.assertCurrent !== 'function' || fence.context?.owner !== identity?.pk) {
+    throw new Error('A current account security context is required for this relay operation.');
+  }
+  fence.assertCurrent();
+  const result = await operation();
+  fence.assertCurrent();
+  return result;
+}
+
 export const getAuthenticatedPool = async (identity) => {
   if (pools[identity.pk]) return pools[identity.pk];
 
@@ -170,8 +199,11 @@ export const getAuthenticatedPool = async (identity) => {
   installAutoAuth(pool, (host) => {
     if (!groupHost || host !== groupHost) return null;
     return async (authEvent) => {
+      if (!identity.securityFence || identity.securityFence.context?.owner !== identity.pk) return null;
+      try { identity.securityFence.assertCurrent(); } catch { return null; }
       const { actorForGroup, actorTag } = await import('./crypto/gmIdentity');
       const { getMyGroups } = await import('./myGroups');
+      try { identity.securityFence.assertCurrent(); } catch { return null; }
       const groups = getMyGroups(identity.pk);
       const held = heldProofGroup.get(pool);
       if (!groups.length && !held && !pendingProofGroup.has(pool)) return null;
@@ -181,7 +213,11 @@ export const getAuthenticatedPool = async (identity) => {
         known: groups.map((group) => group.id),
       });
       if (!gid) return null;
-      const actor = await actorForGroup(identity.pk, gid);
+      let actor;
+      try {
+        actor = await runWithCurrentSecurityContext(identity,
+          () => actorForGroup(identity.pk, gid));
+      } catch { return null; }
       if (!actor) return null; // locked tab: no proof, never a fallback
       // The pin rides alongside (same shape signActProof builds), so an
       // observer of the box sees one pseudonym consistently across kinds.

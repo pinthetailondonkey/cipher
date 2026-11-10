@@ -94,7 +94,7 @@ test('the shop picker uses the attachment door, so a menu photo is re-encoded', 
   // This picker accepts only images, so it is the encoder's door. Before the
   // change it handed the raw file straight to the upload.
   const view = fs.readFileSync(new URL('../components/chat/GroupView.jsx', import.meta.url), 'utf8');
-  assert.match(view, /uploadAttachment\(file, blossomServers\(\)\)/,
+  assert.match(view, /const upload = import\.meta\.env\?\.VITE_TEST_HOOKS === '1'[\s\S]*?\? window\.__cipherMediaUpload : uploadAttachment;\s*const uploaded = await upload\(file, blossomServers\(\), securityFence, owner, 'group-listing'\)/,
     'the menu photo goes through the door that drops EXIF and location');
   assert.doesNotMatch(view, /uploadPrivateMedia\(file, blossomServers\(\)\)/,
     'the raw upload is gone from this picker');
@@ -115,7 +115,9 @@ test('N1: no UI uploader signs a media host auth with an account key', () => {
     assert.equal((view.match(/uploadToBlossom/g) || []).length, 0, `${name} still reaches uploadToBlossom`);
     assert.doesNotMatch(view, /getPublicKey[\s\S]{0,80}identity\.pk|getPublicKey[\s\S]{0,80}tempIdentity\.pk/,
       `${name} still hands an identity key to a media host`);
-    assert.match(view, /uploadAttachment\(file, blossomServers\(\)\)/, `${name} uploads through the private door`);
+    assert.match(view, name === 'Wallet'
+      ? /const upload = import\.meta\.env\?\.VITE_TEST_HOOKS === '1'[\s\S]*?\? window\.__cipherMediaUpload : uploadAttachment;\s*const entry = await upload\(file, blossomServers\(\), securityFence, identity\?\.pk/
+      : /uploadAttachment\(file, blossomServers\(\)\)/, `${name} uploads through the private door`);
   }
   // And the listing reader accepts both shapes, so an encrypted listing
   // image parses back to the entry its buyer needs.

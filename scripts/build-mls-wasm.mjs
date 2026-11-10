@@ -4,9 +4,9 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const manifest = path.join(root, 'crypto', 'mls-eval', 'Cargo.toml');
-const wasm = path.join(root, 'crypto', 'mls-eval', 'target', 'wasm32-unknown-unknown', 'release', 'cipher_openmls_wasm_smoke.wasm');
-const output = path.join(root, 'crypto', 'mls-eval', 'target', 'browser-bindings');
+const manifest = path.join(root, 'crypto', 'mls-wasm', 'Cargo.toml');
+const wasm = path.join(root, 'crypto', 'mls-wasm', 'target', 'wasm32-unknown-unknown', 'release', 'cipher_openmls_wasm_smoke.wasm');
+const output = path.join(root, 'crypto', 'mls-wasm', 'target', 'browser-bindings');
 const expectedBindgen = 'wasm-bindgen 0.2.128';
 
 const bindgenVersion = execFileSync('wasm-bindgen', ['--version'], { encoding: 'utf8' }).trim();

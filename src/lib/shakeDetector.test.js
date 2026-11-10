@@ -70,4 +70,8 @@ test('a setting turns shake to wipe on, and the app listens only then', async ()
   const hook = read('../hooks/usePanicWipe.js');
   assert.match(hook, /if \(!enabled\) return;/);
   assert.match(hook, /if \(shaken\(event\.accelerationIncludingGravity \|\| event\.acceleration\)\) triggerWipe\(\);/);
+  assert.match(hook, /import \{ runPanicWipe \} from '\.\.\/lib\/panicWipe'/);
+  assert.match(hook, /invalidateAllSecurityContexts\(\)[\s\S]*?await runPanicWipe\(/);
+  assert.doesNotMatch(hook, /indexedDB\.deleteDatabase\(/,
+    'the fallback uses the shared owner inventory and cleanup coordinator');
 });

@@ -66,6 +66,7 @@ const DESKTOP_BUILD = typeof __CIPHER_DESKTOP_BUILD__ !== 'undefined' && __CIPHE
 // merely unused, and vite.config.js refuses to honour the flag at all unless
 // CIPHER_UI_TEST_BUILD=1 says the build is deliberately a test build.
 const TEST_RELAYS = import.meta.env?.VITE_TEST_HOOKS === '1' ? TEST_RELAY_OVERRIDE : null;
+const PROTOCOL_TEST_BUILD = import.meta.env?.VITE_PROTOCOL_TEST_MODE === '1';
 
 const buildGroupDoor = String(import.meta?.env?.VITE_GROUP_ONION || '').trim();
 const buildGroupDoor2 = String(import.meta?.env?.VITE_GROUP_ONION_2 || '').trim();
@@ -226,6 +227,9 @@ export function activeUrl(entry, config = readNetworkConfig()) {
   if (!entry || entry.called === false || entry.dynamic) return '';
   const override = String(config.overrides?.[entry.id] || '').trim();
   if (override === 'off') return '';
+  // The protocol-only artifact has no ordinary app relay path. Even a saved
+  // local network override cannot turn it into a production-relay client.
+  if (PROTOCOL_TEST_BUILD) return '';
   // A test build reaches this machine and nothing else. Below `off` and below a
   // device's own paste, so a spec can still paste its own host; above the door
   // and the shipped default, so nothing else can win. Absent from every build

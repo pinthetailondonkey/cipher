@@ -2,6 +2,7 @@ import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
+import { validateProtocolTestBuild } from './scripts/protocol-test-build-config.mjs'
 
 // The desktop build is the only one that carries the onion group door: the
 // page runs under the shell's own Tor, and prepare-pack stages this output
@@ -44,6 +45,7 @@ export default defineConfig(({ command, mode }) => {
   // filename list has to keep in step.
   const env = loadEnv(mode, process.cwd(), '')
 
+  let protocolTestBuild = false
   if (command === 'build') {
     const present = VITE_ENV_FILES.filter((name) => existsSync(join(process.cwd(), name)))
     if (present.length) {
@@ -150,10 +152,19 @@ export default defineConfig(({ command, mode }) => {
         + 'if you are deliberately building one.',
       )
     }
+
+    try {
+      protocolTestBuild = validateProtocolTestBuild({ env, desktopBuild }).enabled
+    } catch (error) {
+      throw new Error(`vite refuses: ${error.message}.`)
+    }
   }
 
   return {
     plugins: [react()],
+    // The protocol-test artifact has its own HTML entry and no PWA shell,
+    // service worker, or production static assets to register or serve.
+    publicDir: protocolTestBuild ? false : undefined,
     define: {
       __CIPHER_DESKTOP_BUILD__: JSON.stringify(desktopBuild),
     },
@@ -170,5 +181,8 @@ export default defineConfig(({ command, mode }) => {
     optimizeDeps: {
       include: ['nostr-tools'],
     },
+    build: protocolTestBuild ? {
+      rollupOptions: { input: join(process.cwd(), 'protocol-test.html') },
+    } : {},
   }
 })

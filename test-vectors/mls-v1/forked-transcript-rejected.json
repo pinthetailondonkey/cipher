@@ -1,0 +1,12 @@
+{
+  "observed": [
+    "forked-transcript"
+  ],
+  "expectedRejectionReasons": [
+    "forked-transcript"
+  ],
+  "_meta": {
+    "name": "forked-transcript-rejected",
+    "profile": "MLS-TEST-PROFILE-V1"
+  }
+}

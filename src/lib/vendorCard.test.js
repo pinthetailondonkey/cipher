@@ -122,6 +122,26 @@ test('a locked account cannot build a card', async () => {
   assert.equal(await buildVendorCardEvent({ name: 'Ana' }, null), null);
 });
 
+test('an expired account fence prevents a pending vendor-card publish', async () => {
+  const pool = spyPool();
+  const error = Object.assign(new Error('expired'), { code: 'SECURITY_CONTEXT_EXPIRED' });
+  let checks = 0;
+  const securityFence = {
+    context: { owner: PK },
+    assertCurrent() { checks += 1; if (checks >= 3) throw error; },
+  };
+  await assert.rejects(publishVendorCard({
+    isVendor: true,
+    identity,
+    profile: { name: 'Ana' },
+    securityFence,
+    owner: PK,
+    pool,
+  }), (caught) => caught.code === 'SECURITY_CONTEXT_EXPIRED');
+  assert.ok(checks >= 3, 'the event was prepared before the pre-publish fence check');
+  assert.equal(pool.calls.length, 0, 'no event is sent after retirement');
+});
+
 test('the card the profile editor signs is the card it publishes', async () => {
   // The editor hands over the event it just signed rather than signing twice,
   // so the two relays hold one event, not two that merely look alike.

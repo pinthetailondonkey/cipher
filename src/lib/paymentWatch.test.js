@@ -1,32 +1,46 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
-import { atomicToCoins, checkPayment, childWatcherToken, incomingMoneroTransfers, isPublicExplorer, issuePrecedes, moneroRows, parseExactAmounts, paymentWatchUrl, reportFromTransfers, rowsFromScan, verifyWatcherResponse } from './paymentWatch.js';
+import { scopedSet } from './storage.js';
+import { clearPaymentWatcherPin, keyIdOf, pinPaymentWatcherKey, readPaymentWatcherPin, rotatePaymentWatcherKey, verifyPaymentWatcherReport } from './paymentWatcherTrust.js';
+import { atomicToCoins, checkPayment, childWatcherToken, incomingMoneroTransfers, isPublicExplorer, issuePrecedes, moneroRows, parseExactAmounts, paymentWatchUrl, reportFromTransfers, rowsFromScan } from './paymentWatch.js';
 
 const TOKEN = 'secret';
-const hexOf = (buffer) => [...new Uint8Array(buffer)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
-// The wire token is the order's child: HMAC of the base secret over the
-// payment asked about. A check signs and verifies under that child, never
-// the base token.
-const signBody = async (raw, token = TOKEN, tsSec, address = '', currency = '') => {
-  const wire = address ? await childWatcherToken(token, address, currency) : token;
-  const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(wire), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
-  const ts = String(tsSec ?? Math.floor(Date.now() / 1000));
-  return `v1=${hexOf(await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(`${ts}:${raw}`)))}`;
+const watcherKeys = await crypto.subtle.generateKey({ name: 'Ed25519' }, true, ['sign', 'verify']);
+const watcherPublic = new Uint8Array(await crypto.subtle.exportKey('raw', watcherKeys.publicKey));
+const b64url = (bytes) => btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+const watcherPublicText = b64url(watcherPublic);
+const watcherKeyId = await keyIdOf(watcherPublicText);
+const knownNonce = b64url(new Uint8Array(18).fill(1));
+let nonceSequence = 0;
+let latestNonce = knownNonce;
+crypto.getRandomValues = (bytes) => {
+  nonceSequence += 1;
+  bytes.fill(nonceSequence % 255 || 1);
+  latestNonce = b64url(bytes);
+  return bytes;
 };
-
+globalThis.localStorage = {
+  values: new Map([['cipher_active_pubkey', 'aa'.repeat(32)]]),
+  getItem(key) { return this.values.get(key) ?? null; },
+  setItem(key, value) { this.values.set(key, String(value)); },
+  removeItem(key) { this.values.delete(key); },
+  key(index) { return [...this.values.keys()][index] ?? null; },
+  get length() { return this.values.size; },
+};
+scopedSet('payment_watcher_signing_key', watcherPublicText);
 // A stand-in for a signed watcher answer. Every 200 answer carries the two
 // signature headers over the exact raw text it returns, keyed by the child
 // token of the payment the body names — what a real watcher now derives.
 // signFor signs under a different payment's child, which is how a mismatch
 // between the ask and the answer still reaches the echo gate.
-const watcherAnswer = async (body, { token = TOKEN, tsSec, sig, signFor } = {}) => {
-  const raw = typeof body === 'string' ? body : JSON.stringify(body);
-  const ts = String(tsSec ?? Math.floor(Date.now() / 1000));
-  const headers = { 'content-type': 'application/json', 'x-cipher-ts': ts };
-  const signAddress = signFor?.address ?? body.address;
-  const signCurrency = signFor?.currency ?? body.currency;
-  headers['x-cipher-sig'] = sig ?? (await signBody(raw, token, ts, signAddress, signCurrency));
+const watcherAnswer = async (body, { tsSec, sig, signingKeys = watcherKeys, nonce = latestNonce } = {}) => {
+  const ts = Number(tsSec ?? Math.floor(Date.now() / 1000));
+  const fields = typeof body === 'string' ? JSON.parse(body) : body;
+  const report = { ...fields, version: 2, keyId: await keyIdOf(b64url(new Uint8Array(await crypto.subtle.exportKey('raw', signingKeys.publicKey)))), nonce, signedAt: ts, address: fields.address ?? '8abc', currency: fields.currency ?? 'xmr' };
+  const raw = JSON.stringify(report);
+  const signature = sig ?? b64url(new Uint8Array(await crypto.subtle.sign('Ed25519', signingKeys.privateKey, new TextEncoder().encode(`cipher-payment-watcher-v2\n${raw}`))));
+  const headers = { 'content-type': 'application/json', 'x-cipher-keyid': watcherKeyId, 'x-cipher-signature': signature };
   return {
     ok: true,
     status: 200,
@@ -149,13 +163,14 @@ test('an answer that does not name exactly one transaction moves nothing', async
 test('a forged or unsigned answer moves nothing', async () => {
   const watcherUrl = 'https://watch.example/payment?token=secret';
   // An attacker picked a different key. The answer is well formed and says paid.
+  const attackerKeys = await crypto.subtle.generateKey({ name: 'Ed25519' }, true, ['sign', 'verify']);
   await assert.rejects(
     () => checkPayment({
       watcherUrl,
       address: '8abc',
       currency: 'xmr',
       state: 'address_issued',
-      fetchImpl: () => watcherAnswer({ txid: 'forged', confirmations: 10 }, { token: 'attacker' }),
+      fetchImpl: () => watcherAnswer({ txid: 'forged', confirmations: 10 }, { signingKeys: attackerKeys }),
     }),
     /signature check/,
   );
@@ -172,6 +187,17 @@ test('a forged or unsigned answer moves nothing', async () => {
   );
 });
 
+test('an unpinned watcher and a legacy v1 report leave the payment on hold', async () => {
+  const watcherUrl = 'https://watch.example/payment?token=secret';
+  clearPaymentWatcherPin({ confirmRemoval: true });
+  let requested = false;
+  await assert.rejects(() => checkPayment({ watcherUrl, address: '8abc', currency: 'xmr', state: 'address_issued', fetchImpl: async () => { requested = true; return watcherAnswer({ txid: 'ab', confirmations: 10 }); } }), /Pin the payment watcher/);
+  assert.equal(requested, false);
+  await pinPaymentWatcherKey(watcherPublicText);
+  const raw = JSON.stringify({ address: '8abc', currency: 'xmr', txid: 'ab', confirmations: 10 });
+  await assert.rejects(() => checkPayment({ watcherUrl, address: '8abc', currency: 'xmr', state: 'address_issued', fetchImpl: async () => ({ ok: true, status: 200, headers: { get: (name) => name === 'x-cipher-signature' ? 'v1=legacy' : null }, text: async () => raw }) }), /signature check/);
+});
+
 test('an answer signed with the right key but an old or future time is refused', async () => {
   const watcherUrl = 'https://watch.example/payment?token=secret';
   const now = Math.floor(Date.now() / 1000);
@@ -183,7 +209,7 @@ test('an answer signed with the right key but an old or future time is refused',
       state: 'address_issued',
       fetchImpl: () => watcherAnswer({ txid: 'ab', confirmations: 10 }, { tsSec: now - 121 }),
     }),
-    /signature check/,
+    /report is stale/,
   );
   await assert.rejects(
     () => checkPayment({
@@ -193,17 +219,55 @@ test('an answer signed with the right key but an old or future time is refused',
       state: 'address_issued',
       fetchImpl: () => watcherAnswer({ txid: 'ab', confirmations: 10 }, { tsSec: now + 130 }),
     }),
-    /signature check/,
+    /report is stale/,
   );
+});
+
+test('a signed report is bound to the fresh request nonce and exact raw bytes', async () => {
+  const watcherUrl = 'https://watch.example/payment?token=secret';
+  let staleResponse;
+  const first = await checkPayment({ watcherUrl, address: '8abc', currency: 'xmr', state: 'address_issued', fetchImpl: async () => { staleResponse = await watcherAnswer({ address: '8abc', currency: 'xmr', txid: 'ab', amount: '0.5', confirmations: 10 }); return staleResponse; } });
+  assert.equal(first.moved, true);
+  await assert.rejects(() => checkPayment({ watcherUrl, address: '8abc', currency: 'xmr', state: 'address_issued', fetchImpl: () => staleResponse }), /signature check/);
+  let wrongNonce;
+  await assert.rejects(() => checkPayment({ watcherUrl, address: '8abc', currency: 'xmr', state: 'address_issued', fetchImpl: async () => { wrongNonce = await watcherAnswer({ address: '8abc', currency: 'xmr', txid: 'cd', amount: '0.5', confirmations: 10 }, { nonce: knownNonce }); return wrongNonce; } }), /signature check/);
+  let good;
+  await assert.rejects(async () => checkPayment({ watcherUrl, address: '8abc', currency: 'xmr', state: 'address_issued', fetchImpl: async () => { good = await watcherAnswer({ address: '8abc', currency: 'xmr', txid: 'ef', amount: '0.5', confirmations: 10 }); const body = await good.text(); return { ...good, text: async () => `${body} ` }; } }), /signature check/);
+  const body = await good.text();
+  const signature = good.headers.get('x-cipher-signature');
+  assert.equal(await verifyPaymentWatcherReport({ rawBody: body, signature, publicKey: watcherPublicText, expectedNonce: JSON.parse(body).nonce }), true);
+  assert.equal(await verifyPaymentWatcherReport({ rawBody: body, signature, publicKey: watcherPublicText, expectedNonce: knownNonce }), false);
+  assert.equal(await verifyPaymentWatcherReport({ rawBody: body, signature, publicKey: watcherPublicText,
+    expectedNonce: JSON.parse(body).nonce, expectedAddress: '8other', expectedCurrency: 'xmr' }), false);
+  assert.equal(await verifyPaymentWatcherReport({ rawBody: body, signature, publicKey: watcherPublicText,
+    expectedNonce: JSON.parse(body).nonce, expectedAddress: '8abc', expectedCurrency: 'btc' }), false);
+});
+
+test('a stalled watcher request times out and an oversized report is rejected before parsing', async () => {
+  const watcherUrl = 'https://watch.example/payment?token=secret';
+  const state = 'address_issued';
+  let aborted = false;
+  await assert.rejects(() => checkPayment({ watcherUrl, address: '8abc', currency: 'xmr', state, timeoutMs: 10, fetchImpl: (_url, { signal }) => new Promise((_resolve, reject) => {
+    signal.addEventListener('abort', () => { aborted = true; reject(new Error('aborted')); }, { once: true });
+  }) }), /took too long/);
+  assert.equal(aborted, true);
+  assert.equal(state, 'address_issued');
+
+  let read = false;
+  const declaredOversize = { ok: true, status: 200, headers: { get: (name) => name === 'content-length' ? String(256 * 1024 + 1) : null }, text: async () => { read = true; return '{}'; } };
+  await assert.rejects(() => checkPayment({ watcherUrl, address: '8abc', currency: 'xmr', state, fetchImpl: async () => declaredOversize }), /report was too large/);
+  assert.equal(read, false);
+
+  const unboundedHeaderBody = new Response(new ReadableStream({ start(controller) { controller.enqueue(new Uint8Array(256 * 1024 + 1)); controller.close(); } }), { headers: { 'content-type': 'application/json' } });
+  await assert.rejects(() => checkPayment({ watcherUrl, address: '8abc', currency: 'xmr', state, fetchImpl: async () => unboundedHeaderBody }), /report was too large/);
 });
 
 test('an answer that does not name the payment asked about answers nothing', async () => {
   const watcherUrl = 'https://watch.example/payment?token=secret';
   // An honestly signed report for one order, carried onto a second order on
   // another device: the bytes are real, the ask is not. The signature
-  // cannot see this — the child token healthy-client check is passed by
-  // signing under the ASKED payment's child — so the echo gate is what
-  // meets it. (security re-attack)
+  // cannot see this — both the report verifier and the post-parse echo gate
+  // bind the response to the requested payment. (security re-attack)
   await assert.rejects(
     () => checkPayment({
       watcherUrl,
@@ -212,7 +276,7 @@ test('an answer that does not name the payment asked about answers nothing', asy
       state: 'address_issued',
       fetchImpl: () => watcherAnswer({ address: '8abc', currency: 'xmr', txid: 'ab', confirmations: 10 }, { signFor: { address: '8other', currency: 'xmr' } }),
     }),
-    /does not name the payment/,
+    /signature check/,
   );
   // The same address under another currency is refused the same way.
   await assert.rejects(
@@ -221,37 +285,10 @@ test('an answer that does not name the payment asked about answers nothing', asy
       address: '8abc',
       currency: 'btc',
       state: 'address_issued',
-      fetchImpl: () => watcherAnswer({ address: '8abc', currency: 'xmr', txid: 'ab', confirmations: 10 }, { signFor: { address: '8abc', currency: 'btc' } }),
+      fetchImpl: () => watcherAnswer({ address: '8abc', currency: 'xmr', txid: 'ab', confirmations: 10, amount: '0.5' }, { signFor: { address: '8abc', currency: 'btc' } }),
     }),
-    /does not name the payment/,
+    /signature check/,
   );
-});
-
-test('verifyWatcherResponse takes valid, and refuses tampered, wrong key, stale, future, or unsigned', async () => {
-  const raw = JSON.stringify({ txid: 'ab', confirmations: 3, amount: '0.01' });
-  const ts = Math.floor(Date.now() / 1000);
-  const sig = await signBody(raw, TOKEN, ts);
-  const check = (over) => verifyWatcherResponse({ rawBody: raw, sig, ts: String(ts), token: TOKEN, nowSec: ts, ...over });
-  assert.equal(await check({}), true);
-  assert.equal(await check({ rawBody: `${raw} ` }), false);
-  assert.equal(await check({ rawBody: raw.replace('0.01', '0.99') }), false);
-  assert.equal(await check({ token: 'other' }), false);
-  assert.equal(await check({ sig: `v1=${'0'.repeat(64)}` }), false);
-  assert.equal(await check({ sig: sig.slice(3) }), false);
-  assert.equal(await check({ sig: undefined }), false);
-  assert.equal(await check({ ts: String(ts - 121) }), false);
-  assert.equal(await check({ ts: String(ts + 121) }), false);
-  assert.equal(await check({ ts: 'yesterday' }), false);
-  assert.equal(await check({ rawBody: '' }), false);
-  assert.equal(await check({ nowSec: 'n/a' }), false);
-  // The timestamp sits inside the signed bytes, so a captured answer cannot
-  // be replayed with a re-stamped date: the new stamp fails the signature.
-  // (security F6)
-  assert.equal(await check({ ts: String(ts - 1) }), false);
-  const edgeOld = await signBody(raw, TOKEN, ts - 120);
-  assert.equal(await verifyWatcherResponse({ rawBody: raw, sig: edgeOld, ts: String(ts - 120), token: TOKEN, nowSec: ts }), true);
-  const edgeFuture = await signBody(raw, TOKEN, ts + 120);
-  assert.equal(await verifyWatcherResponse({ rawBody: raw, sig: edgeFuture, ts: String(ts + 120), token: TOKEN, nowSec: ts }), true);
 });
 
 test('a short payment does not move, and a covering payment does', async () => {
@@ -463,21 +500,23 @@ test('the watcher signs every answer it gives, and the phone verifies the raw bo
   // authenticates nothing. (drill round three)
   assert.match(watcher, /await childWatcherToken\(watchToken, address, currency\)/);
   assert.match(watcher, /await tokenMatches\(presented, address, currency\)/);
-  assert.match(watcher, /createHmac\('sha256', token\)/);
-  assert.match(watcher, /x-cipher-sig/);
-  assert.match(watcher, /x-cipher-ts/);
+  assert.match(watcher, /sign\(null, Buffer\.from\(`cipher-payment-watcher-v2/);
+  assert.match(watcher, /WATCH_SIGNING_PRIVATE_KEY/);
+  assert.match(watcher, /x-cipher-signature/);
+  assert.doesNotMatch(watcher, /url\.searchParams\.get\('token'\)/);
   // The answer names what it answers for, so a signed reply for one order
   // cannot be replayed as another order's. (security re-attack)
-  assert.match(watcher, /signedAnswer\(res, address, currency, report\)/);
+  assert.match(watcher, /signedAnswer\(res, address, currency, nonce, report\)/);
   assert.match(watcher, /address, currency, \.\.\.report/);
   const app = fs.readFileSync(new URL('./paymentWatch.js', import.meta.url), 'utf8');
-  assert.match(app, /x-cipher-sig/);
-  assert.match(app, /x-cipher-ts/);
+  assert.match(app, /x-cipher-signature/);
+  assert.match(app, /verifyPaymentWatcherReport/);
   // The body is verified before it is parsed, so JSON round-tripping cannot
   // sneak a byte past the check.
   assert.match(app, /parseExactAmounts\(raw\)/);
-  // The check never walks out with the pasted base token.
-  assert.match(app, /childWatcherToken\(baseToken, address, currency\)/);
+  // Access credentials are sent in Authorization and never verify the report.
+  assert.match(app, /Authorization: `Bearer \$\{token\}`/);
+  assert.match(app, /readPaymentWatcherPin\(\)/);
 });
 
 test('a child token is bound to the payment asked about', async () => {
@@ -489,27 +528,96 @@ test('a child token is bound to the payment asked about', async () => {
   assert.notEqual(child, await childWatcherToken(TOKEN, '8abc', 'btc')); // another currency
   assert.notEqual(child, await childWatcherToken('other', '8abc', 'xmr')); // another watcher
   assert.notEqual(child, TOKEN); // the base secret never doubles as its own child
-  // The request URL walks out with the child, never the pasted base token.
+  // The access token is stripped from the URL before the request.
   const url = new URL(paymentWatchUrl(`https://watch.example/payment?token=${TOKEN}`, { address: '8abc', currency: 'xmr', token: child }));
-  assert.equal(url.searchParams.get('token'), child);
+  assert.equal(url.searchParams.get('token'), null);
+});
+
+test('watcher pins require valid Ed25519 keys and rotation signed by the current key', async () => {
+  clearPaymentWatcherPin({ confirmRemoval: true });
+  const first = await crypto.subtle.generateKey({ name: 'Ed25519' }, true, ['sign', 'verify']);
+  const second = await crypto.subtle.generateKey({ name: 'Ed25519' }, true, ['sign', 'verify']);
+  const publicText = async (pair) => b64url(new Uint8Array(await crypto.subtle.exportKey('raw', pair.publicKey)));
+  const firstText = await publicText(first);
+  const secondText = await publicText(second);
+  await assert.rejects(() => pinPaymentWatcherKey('not-a-key'));
+  await pinPaymentWatcherKey(firstText);
+  await assert.rejects(() => pinPaymentWatcherKey(secondText), /already pinned/);
+  await assert.rejects(() => rotatePaymentWatcherKey({ publicKey: secondText, signature: '', confirmRotation: true }), /Invalid base64url|not signed/);
+  await assert.rejects(() => rotatePaymentWatcherKey({ publicKey: secondText, signature: '', confirmRotation: false }), /Confirm/);
+  const message = new TextEncoder().encode(`cipher-payment-watcher-key-rotation-v2\n${secondText}`);
+  const signature = b64url(new Uint8Array(await crypto.subtle.sign('Ed25519', first.privateKey, message)));
+  await rotatePaymentWatcherKey({ publicKey: secondText, signature, confirmRotation: true });
+  assert.equal(readPaymentWatcherPin(), secondText);
+  clearPaymentWatcherPin({ confirmRemoval: true });
+  await pinPaymentWatcherKey(firstText);
+  assert.equal(readPaymentWatcherPin(), firstText);
+  clearPaymentWatcherPin({ confirmRemoval: true });
+  await pinPaymentWatcherKey(watcherPublicText);
+});
+
+test('a failed watcher pin persistence blocks the old key and never reports success', async () => {
+  const owner = localStorage.getItem('cipher_active_pubkey');
+  const firstText = watcherPublicText;
+  const replacement = await crypto.subtle.generateKey({ name: 'Ed25519' }, true, ['sign', 'verify']);
+  const replacementText = b64url(new Uint8Array(await crypto.subtle.exportKey('raw', replacement.publicKey)));
+  clearPaymentWatcherPin({ confirmRemoval: true });
+  await pinPaymentWatcherKey(firstText);
+  const fullKey = `cipher_${owner}_payment_watcher_signing_key`;
+  const storage = globalThis.localStorage;
+  const originalSet = storage.setItem;
+  storage.setItem = (key, value) => {
+    if (key === fullKey) throw new Error('storage denied');
+    originalSet.call(storage, key, value);
+  };
+  assert.throws(() => clearPaymentWatcherPin({ confirmRemoval: true }), /could not be removed/);
+  assert.equal(readPaymentWatcherPin(), '');
+  const message = new TextEncoder().encode(`cipher-payment-watcher-key-rotation-v2\n${replacementText}`);
+  const signature = b64url(new Uint8Array(await crypto.subtle.sign('Ed25519', watcherKeys.privateKey, message)));
+  await assert.rejects(() => rotatePaymentWatcherKey({ publicKey: replacementText, signature, confirmRotation: true }), /Confirm/);
+  storage.setItem = originalSet;
+  await pinPaymentWatcherKey(replacementText);
+  assert.equal(readPaymentWatcherPin(), replacementText);
+  clearPaymentWatcherPin({ confirmRemoval: true });
+  await pinPaymentWatcherKey(watcherPublicText);
 });
 
 test('the base token authenticates nothing on the wire — only the order\'s child does', async () => {
   process.env.WATCH_TOKEN = TOKEN;
+  process.env.WATCH_ALLOWED_ORIGINS = 'https://www.ciphermessenger.org';
   const { server } = await import('../../scripts/payment-watcher.mjs');
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   try {
     const port = server.address().port;
-    const ask = async (token) => fetch(
-      `http://127.0.0.1:${port}/payment?address=8abc&currency=xmr`,
-      { headers: { Authorization: `Bearer ${token}` } },
+    const preflight = await fetch(`http://127.0.0.1:${port}/payment`, {
+      method: 'OPTIONS',
+      headers: { Origin: 'https://www.ciphermessenger.org', 'Access-Control-Request-Method': 'GET', 'Access-Control-Request-Headers': 'authorization' },
+    });
+    assert.equal(preflight.status, 204);
+    assert.equal(preflight.headers.get('access-control-allow-origin'), 'https://www.ciphermessenger.org');
+    assert.equal(preflight.headers.get('access-control-allow-credentials'), null);
+    const refusedOrigin = await fetch(`http://127.0.0.1:${port}/payment`, {
+      method: 'OPTIONS',
+      headers: { Origin: 'https://attacker.example', 'Access-Control-Request-Method': 'GET', 'Access-Control-Request-Headers': 'authorization' },
+    });
+    assert.equal(refusedOrigin.status, 403);
+    assert.equal(refusedOrigin.headers.get('access-control-allow-origin'), null);
+    const ask = async (token, inQuery = false) => fetch(
+      `http://127.0.0.1:${port}/payment?address=8abc&currency=xmr${inQuery ? `&token=${token}` : ''}`,
+      { headers: inQuery ? {} : { Authorization: `Bearer ${token}` } },
     ).then((response) => response.status);
     // The pasted base secret answers nothing: dead on the wire, whatever it
     // could have unlocked before. (drill round three)
     assert.equal(await ask(TOKEN), 401);
+    assert.equal(await ask(await childWatcherToken(TOKEN, '8abc', 'xmr'), true), 401);
     // The child passes the lock; the next honest wall is the missing node.
     const child = await childWatcherToken(TOKEN, '8abc', 'xmr');
     assert.equal(await ask(child), 503);
+    const originResponse = await fetch(`http://127.0.0.1:${port}/payment?address=8abc&currency=xmr`, {
+      headers: { Origin: 'https://www.ciphermessenger.org', Authorization: `Bearer ${child}` },
+    });
+    assert.equal(originResponse.status, 503);
+    assert.equal(originResponse.headers.get('access-control-allow-origin'), 'https://www.ciphermessenger.org');
     // A child captured for another order's address opens nothing here.
     assert.equal(await ask(await childWatcherToken(TOKEN, '8other', 'xmr')), 401);
   } finally {

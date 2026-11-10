@@ -1,0 +1,42 @@
+{
+  "run_id": "20261110T023008Z",
+  "status": "pass",
+  "head": "2172f726f83923801b87ea93de897d4b271add9a",
+  "index_tree": "420095c456ad7deab242e5932249a387096132cb",
+  "tracked_paths": 692,
+  "source": "git checkout-index export of the staged index",
+  "checks": [
+    {
+      "check": "npm_ci",
+      "exit_code": 0
+    },
+    {
+      "check": "lint",
+      "exit_code": 0
+    },
+    {
+      "check": "build",
+      "exit_code": 0
+    },
+    {
+      "check": "unit",
+      "exit_code": 0
+    },
+    {
+      "check": "protocol_unit",
+      "exit_code": 0
+    },
+    {
+      "check": "protocol_build",
+      "exit_code": 0
+    },
+    {
+      "check": "protocol_browser",
+      "exit_code": 0
+    }
+  ],
+  "combined_log": "/home/aegis/cipher/docs/evidence/clean-verify-20261110T023008Z.log",
+  "combined_log_sha256": "2f5a5da099cd6aeb26339bf37f2c4f60170ab96a850578c93e8d0a408dabfe44",
+  "guard_carrier": "The exported index contains tracked files only; ignored or untracked local build carriers are excluded.",
+  "combined_log_normalization": "trailing horizontal whitespace removed per line; ANSI sequences retained"
+}

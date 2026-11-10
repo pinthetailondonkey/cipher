@@ -1,0 +1,17 @@
+{
+  "profile": "IETF-MLS-0.9.2-CS1-PINNED",
+  "source": "OpenMLS v0.9.2 tag, openmls/test_vectors directory (https://github.com/openmls/openmls/tree/v0.9.2/openmls/test_vectors)",
+  "pinnedAt": "2026-11-10",
+  "filter": "Only entries with cipher_suite == 1 (MLS_128_DHKEMX25519_AES128GCM_SHA256_Ed25519, the mandatory-to-implement suite this crate pins) are vendored. Untouched otherwise; entries with redaction placeholders were counted and there are none in the vendored subsets.",
+  "usage": "Consumed by crypto/mls-wasm (native cargo test and wasm-bindgen export) and scripts/run-mls-vectors.mjs. These are read-only inputs; regenerate the filter with the documented count/sha256 values, never edit by hand.",
+  "files": {
+    "welcome.json": { "count": 1, "sha256": "8318d656eeb0f217da4f401736edf342314a20b38fe3fdda744ad81d4de2f05c" },
+    "transcript-hashes.json": { "count": 100, "sha256": "e3ac4ac1be22ed35e7000a21e8c41556b9259320cd5889d37dbfb26c28d57304" },
+    "key-schedule.json": { "count": 1, "sha256": "30bd2d86bd946815f68cca9f610909ce3f71ce31f1defb52b59488f4ccc12ced" },
+    "messages.json": { "count": 100, "sha256": "6a79f43f6de7650587d309f60f6b96f1c1732b67835197eae3631059a986843e", "filterNote": "messages.json upstream has no cipher_suite field; entries were selected by the ciphersuite u16 inside the serialized mls_key_package (offset after version u16 + MlsMessageBodyIn discriminant u16), verified == 1 for all 100 kept and != 1 (2 or 3) for all 200 dropped." },
+    "psk_secret.json": { "count": 10, "sha256": "b586930a130d0c539c17a70dceaca3e6da324a74ad0ce88b84395f6169d8fc62" },
+    "secret-tree.json": { "count": 3, "sha256": "5dc32edc291ad6ff1e8a3c71e48684e47289eb45e68e1e29215761d6a1c53564" },
+    "treekem.json": { "count": 11, "sha256": "c3b70398cb7fcc086f221c5eeaf20e0c573ee1244590c19d4df32af96826a761" },
+    "passive-client-welcome.json": { "count": 8, "sha256": "910f4aa3b094cfdd0f8badb142d09e7c7422ade376e6c1801d6de4352888d7d2" }
+  }
+}

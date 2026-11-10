@@ -12,6 +12,11 @@ import { getPublicKey, finalizeEvent } from 'nostr-tools';
 
 const SK = Uint8Array.from({ length: 32 }, () => 170);
 const PK = getPublicKey(SK);
+const makeSecurityFence = () => ({
+  context: { owner: PK },
+  assertCurrent() {},
+});
+const makeIdentity = () => ({ pk: PK, sk: SK, securityFence: makeSecurityFence() });
 const GROUP_RELAY = 'wss://groups.ciphertele.com';
 const PUBLIC_RELAY = 'wss://relay.damus.io';
 
@@ -107,7 +112,7 @@ async function withPool(stub, run) {
   const previous = globalThis.WebSocket;
   globalThis.WebSocket = stub.RelaySocket;
   const mod = await import('./pool.js');
-  const identity = { pk: PK, sk: SK };
+  const identity = makeIdentity();
   const pool = await mod.getAuthenticatedPool(identity);
   try {
     await run({ pool, mod, identity });
@@ -117,6 +122,21 @@ async function withPool(stub, run) {
     else globalThis.WebSocket = previous;
   }
 }
+
+test('an async relay signer result is discarded when its account incarnation expires', async () => {
+  const { runWithCurrentSecurityContext } = await import('./pool.js?context-race');
+  let current = true;
+  let releaseOperation;
+  const identity = makeIdentity();
+  identity.securityFence.assertCurrent = () => {
+    if (!current) throw Object.assign(new Error('expired context'), { code: 'SECURITY_CONTEXT_EXPIRED' });
+  };
+  const pending = runWithCurrentSecurityContext(identity,
+    () => new Promise((resolve) => { releaseOperation = resolve; }));
+  current = false;
+  releaseOperation('late signature');
+  await assert.rejects(pending, { code: 'SECURITY_CONTEXT_EXPIRED' });
+});
 
 test('late challenge: signing alone leaves the first read empty, and the helper asks again', async () => {
   const stub = makeMannerStub({ manner: 'late', challengeMs: 120 });
@@ -294,7 +314,7 @@ test('the choke point every read passes through re-issues, on the pool the app b
   const mod = await import('./pool.js');
   const { queryWithTimeout } = await import('./relays.js');
   try {
-    const pool = await mod.getAuthenticatedPool({ pk: PK, sk: SK });
+    const pool = await mod.getAuthenticatedPool(makeIdentity());
     const events = await queryWithTimeout(pool, [GROUP_RELAY], { kinds: [39000], limit: 1 }, 4000);
     assert.equal(events.length, 1, 'the read came back with the event after the AUTH');
     assert.equal(stub.seen.req, 2, 'a second REQ went out through the choke point');
@@ -368,7 +388,7 @@ test('a challenged read through the account pool is answered with an ACTOR-signe
   globalThis.WebSocket = RelaySocket;
 
   const { getAuthenticatedPool, clearPool } = await import('./pool.js');
-  const identity = { pk: PK, sk: SK };
+  const identity = makeIdentity();
   const pool = await getAuthenticatedPool(identity);
 
   assert.equal(pool.automaticallyAuth, pool.automaticallyAuth, 'sanity');
@@ -407,7 +427,7 @@ test('a first-contact create or join can prove with its supplied group actor bef
   setMyGroups(PK, []);
 
   const { getAuthenticatedPool, setAuthProofGroup, clearPool } = await import('./pool.js');
-  const identity = { pk: PK, sk: SK };
+  const identity = makeIdentity();
   const pool = await getAuthenticatedPool(identity);
   assert.equal(setAuthProofGroup(pool, firstContactGroup), true);
   try {

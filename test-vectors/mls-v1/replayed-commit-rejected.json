@@ -1,0 +1,12 @@
+{
+  "observed": [
+    "replayed-commit"
+  ],
+  "expectedRejectionReasons": [
+    "replayed-commit"
+  ],
+  "_meta": {
+    "name": "replayed-commit-rejected",
+    "profile": "MLS-TEST-PROFILE-V1"
+  }
+}

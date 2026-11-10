@@ -51,8 +51,8 @@ test('the profile fetch reads the profile relays first and the message relay las
     'A2: the whole missing set must go to the profile relays first');
   assert.match(body, /const stragglers = missing\.filter\(\(pk\) => !answered\.has\(pk\)\)/,
     'A2: only unanswered names may fall through');
-  assert.match(body, /if \(stragglers\.length > 0\) events = events\.concat\(await askFor\(stragglers, generalRelays\)\)/,
-    'A2: the message relay is a fallback, and only for stragglers');
+  assert.match(body, /if \(stragglers\.length > 0\) \{ events = events\.concat\(await askFor\(stragglers, generalRelays\)\); assertSecurityContextOwner\(identity\.securityFence, identity\.pk\); \}/,
+    'A2: the message relay is a fallback, only for stragglers, with the captured account context rechecked after the fetch');
   assert.equal(/generalRelays, \.\.\.groupRelays/.test(body), false,
     'A2: the group boxes must not see the address book');
 });

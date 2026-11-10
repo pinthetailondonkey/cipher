@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import test from 'node:test';
+import test, { beforeEach } from 'node:test';
 import { webcrypto } from 'node:crypto';
 import 'fake-indexeddb/auto';
 import { generateSecretKey, getPublicKey } from 'nostr-tools/pure';
@@ -8,11 +8,22 @@ import {
   createIndependentDeviceCredential, enrollDeviceV2, replaceDeviceAuthority,
 } from './deviceAuthority.js';
 import {
-  commitPrimaryRegistryHead, loadPrimaryAuthoritySecret, loadPrimaryAuthorityState, loadPrimaryDeviceSecret,
-  storePrimaryAuthoritySecret,
+  commitPrimaryRegistryHead as storeCommitRegistry,
+  loadPrimaryAuthoritySecret as storeLoadAuthority,
+  loadPrimaryAuthorityState as storeLoadState,
+  loadPrimaryDeviceSecret as storeLoadDevice,
+  storePrimaryAuthoritySecret as storeAuthoritySecret,
 } from './deviceAuthorityStorage.js';
+import { activateSharedSecurityContext } from './securityContextCoordination.js';
 
 const now = 1_800_000_000;
+const securityFence = { context: { owner: 'c'.repeat(64), incarnation: 'c'.repeat(32) }, assertCurrent() {} };
+const commitPrimaryRegistryHead = (args) => storeCommitRegistry({ ...args, securityFence });
+const loadPrimaryAuthoritySecret = (args) => storeLoadAuthority({ ...args, securityFence });
+const loadPrimaryAuthorityState = (args) => storeLoadState({ ...args, securityFence });
+const loadPrimaryDeviceSecret = (args) => storeLoadDevice({ ...args, securityFence });
+const storePrimaryAuthoritySecret = (args) => storeAuthoritySecret({ ...args, securityFence });
+beforeEach(async () => { await activateSharedSecurityContext(securityFence); });
 
 test('primary authority is wrapped by a separate non-extractable local key and checks device and policy binding', async () => {
   const state = createDeviceAuthoritySetup({ accountPubkey: getPublicKey(generateSecretKey()), now });

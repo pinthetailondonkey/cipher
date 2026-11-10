@@ -1,0 +1,15 @@
+{
+  "profile": "MLS-TEST-PROFILE-V1",
+  "note": "App-level test vectors only. Pinned OpenMLS/IETF vector run NOT included (open item).",
+  "generatedByScript": "scripts/gen-mls-vectors.mjs",
+  "vectorFiles": [
+    "forged-commit-rejected.json",
+    "roster-only-add-rejected.json",
+    "wrong-prev-revision-rejected.json",
+    "mismatched-cross-hash-rejected.json",
+    "stale-epoch-rejected.json",
+    "replayed-commit-rejected.json",
+    "forked-transcript-rejected.json",
+    "valid-chain-three-epochs-accepted.json"
+  ]
+}

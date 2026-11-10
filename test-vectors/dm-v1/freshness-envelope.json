@@ -1,0 +1,138 @@
+{
+  "schema": "cipher-dm-kat/v1",
+  "kind": "freshness-envelope",
+  "vector": {
+    "profileSection": 8,
+    "inputs": {
+      "operationCanonicalSha256": "6f5bdab64242634905de0c0b96051acc70f510246b8b77423ccc4b87550c78f3",
+      "envelopeShapeNote": "one canonical shape frozen in docs/DM-TEST-PROFILE-V1.md section 8; carried inside the Olm payload under key freshnessEnvelope"
+    },
+    "cases": [
+      {
+        "id": "accept",
+        "envelope": {
+          "boundTarget": {
+            "recipientRoutePubkey": "8ab5796ccc6356c5be5850c34a4010442c67ce1350ae8702b160188b24408bf5",
+            "senderDeviceId": "d4fe49ffaa482f805bf1b1963155d5ca2dcfda0fd40dfdee98236ee84e8ad311"
+          },
+          "issuedAt": 1760000000,
+          "notAfter": 1760003600,
+          "opDigestHex": "6f5bdab64242634905de0c0b96051acc70f510246b8b77423ccc4b87550c78f3",
+          "opId": "f9db1636d0dc667803db7512c36a2f41",
+          "v": 1
+        },
+        "checkArgs": {
+          "nowSeconds": 1760000060,
+          "expectedOpId": "f9db1636d0dc667803db7512c36a2f41",
+          "expectedSenderDeviceId": "d4fe49ffaa482f805bf1b1963155d5ca2dcfda0fd40dfdee98236ee84e8ad311",
+          "expectedRecipientRoutePubkey": "8ab5796ccc6356c5be5850c34a4010442c67ce1350ae8702b160188b24408bf5",
+          "expectedOpDigestHex": "6f5bdab64242634905de0c0b96051acc70f510246b8b77423ccc4b87550c78f3"
+        },
+        "expect": {
+          "ok": true,
+          "reason": null
+        }
+      },
+      {
+        "id": "boundary-notafter-equals-now",
+        "envelope": {
+          "boundTarget": {
+            "recipientRoutePubkey": "8ab5796ccc6356c5be5850c34a4010442c67ce1350ae8702b160188b24408bf5",
+            "senderDeviceId": "d4fe49ffaa482f805bf1b1963155d5ca2dcfda0fd40dfdee98236ee84e8ad311"
+          },
+          "issuedAt": 1760000000,
+          "notAfter": 1760003600,
+          "opDigestHex": "6f5bdab64242634905de0c0b96051acc70f510246b8b77423ccc4b87550c78f3",
+          "opId": "f9db1636d0dc667803db7512c36a2f41",
+          "v": 1
+        },
+        "checkArgs": {
+          "nowSeconds": 1760003600,
+          "expectedOpId": "f9db1636d0dc667803db7512c36a2f41",
+          "expectedSenderDeviceId": "d4fe49ffaa482f805bf1b1963155d5ca2dcfda0fd40dfdee98236ee84e8ad311",
+          "expectedRecipientRoutePubkey": "8ab5796ccc6356c5be5850c34a4010442c67ce1350ae8702b160188b24408bf5",
+          "expectedOpDigestHex": "6f5bdab64242634905de0c0b96051acc70f510246b8b77423ccc4b87550c78f3"
+        },
+        "expect": {
+          "ok": true,
+          "reason": null
+        }
+      },
+      {
+        "id": "expired",
+        "envelope": {
+          "boundTarget": {
+            "recipientRoutePubkey": "8ab5796ccc6356c5be5850c34a4010442c67ce1350ae8702b160188b24408bf5",
+            "senderDeviceId": "d4fe49ffaa482f805bf1b1963155d5ca2dcfda0fd40dfdee98236ee84e8ad311"
+          },
+          "issuedAt": 1759992800,
+          "notAfter": 1759996400,
+          "opDigestHex": "6f5bdab64242634905de0c0b96051acc70f510246b8b77423ccc4b87550c78f3",
+          "opId": "f9db1636d0dc667803db7512c36a2f41",
+          "v": 1
+        },
+        "checkArgs": {
+          "nowSeconds": 1760000060,
+          "expectedOpId": "f9db1636d0dc667803db7512c36a2f41",
+          "expectedSenderDeviceId": "d4fe49ffaa482f805bf1b1963155d5ca2dcfda0fd40dfdee98236ee84e8ad311",
+          "expectedRecipientRoutePubkey": "8ab5796ccc6356c5be5850c34a4010442c67ce1350ae8702b160188b24408bf5",
+          "expectedOpDigestHex": "6f5bdab64242634905de0c0b96051acc70f510246b8b77423ccc4b87550c78f3"
+        },
+        "expect": {
+          "ok": false,
+          "reason": "envelope-expired"
+        }
+      },
+      {
+        "id": "target-mismatch",
+        "envelope": {
+          "boundTarget": {
+            "recipientRoutePubkey": "8ab5796ccc6356c5be5850c34a4010442c67ce1350ae8702b160188b24408bf5",
+            "senderDeviceId": "d936fbb2530ae62e443a58d175a1b5d8c1ec30aaaca4e37251a421aff374f804"
+          },
+          "issuedAt": 1760000000,
+          "notAfter": 1760003600,
+          "opDigestHex": "6f5bdab64242634905de0c0b96051acc70f510246b8b77423ccc4b87550c78f3",
+          "opId": "f9db1636d0dc667803db7512c36a2f41",
+          "v": 1
+        },
+        "checkArgs": {
+          "nowSeconds": 1760000060,
+          "expectedOpId": "f9db1636d0dc667803db7512c36a2f41",
+          "expectedSenderDeviceId": "d4fe49ffaa482f805bf1b1963155d5ca2dcfda0fd40dfdee98236ee84e8ad311",
+          "expectedRecipientRoutePubkey": "8ab5796ccc6356c5be5850c34a4010442c67ce1350ae8702b160188b24408bf5",
+          "expectedOpDigestHex": "6f5bdab64242634905de0c0b96051acc70f510246b8b77423ccc4b87550c78f3"
+        },
+        "expect": {
+          "ok": false,
+          "reason": "target-mismatch"
+        }
+      },
+      {
+        "id": "digest-mismatch",
+        "envelope": {
+          "boundTarget": {
+            "recipientRoutePubkey": "8ab5796ccc6356c5be5850c34a4010442c67ce1350ae8702b160188b24408bf5",
+            "senderDeviceId": "d4fe49ffaa482f805bf1b1963155d5ca2dcfda0fd40dfdee98236ee84e8ad311"
+          },
+          "issuedAt": 1760000000,
+          "notAfter": 1760003600,
+          "opDigestHex": "7c1d387f892b3c965dfc1951e2a92a2149cd103cef25c8ba5d0cc30a3a21063f",
+          "opId": "f9db1636d0dc667803db7512c36a2f41",
+          "v": 1
+        },
+        "checkArgs": {
+          "nowSeconds": 1760000060,
+          "expectedOpId": "f9db1636d0dc667803db7512c36a2f41",
+          "expectedSenderDeviceId": "d4fe49ffaa482f805bf1b1963155d5ca2dcfda0fd40dfdee98236ee84e8ad311",
+          "expectedRecipientRoutePubkey": "8ab5796ccc6356c5be5850c34a4010442c67ce1350ae8702b160188b24408bf5",
+          "expectedOpDigestHex": "6f5bdab64242634905de0c0b96051acc70f510246b8b77423ccc4b87550c78f3"
+        },
+        "expect": {
+          "ok": false,
+          "reason": "digest-mismatch"
+        }
+      }
+    ]
+  }
+}

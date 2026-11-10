@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import test from 'node:test';
+import test, { beforeEach } from 'node:test';
 import { generateSecretKey, getPublicKey } from 'nostr-tools/pure';
 import {
   createDeviceAuthoritySetup, createIndependentDeviceCredential, createDeviceEnrollmentChallengeV2,
@@ -14,9 +14,12 @@ import {
   applyPeerDeviceRegistryUpdate, applyPeerRecoveryRootReplacement, initializePeerDeviceAuthority, loadPeerDeviceAuthority,
 } from './deviceAuthorityPeerStore.js';
 import { recoveryIdentityFingerprint } from './deviceAuthorityContactVerification.js';
+import { activateSharedSecurityContext } from './securityContextCoordination.js';
 import 'fake-indexeddb/auto';
 
 const now = 1_800_000_000;
+const securityFence = { context: { owner: 'e'.repeat(64), incarnation: 'e'.repeat(32) }, assertCurrent() {} };
+beforeEach(async () => { await activateSharedSecurityContext(securityFence); });
 function setup() {
   const accountSecret = generateSecretKey();
   const state = createDeviceAuthoritySetup({ accountPubkey: getPublicKey(accountSecret), now });
@@ -162,7 +165,7 @@ test('revocation update reaches an independently pinned contact privately and ad
   assert.equal(opened?.nextRegistryEvent.id, revoked.id);
 
   const args = { expectedAccountPubkey: senderPolicy.accountPubkey,
-    expectedRecoveryPubkey: senderPolicy.recoveryPubkey, now: now + 6 };
+    expectedRecoveryPubkey: senderPolicy.recoveryPubkey, now: now + 6, securityFence };
   await initializePeerDeviceAuthority({ policyEvent: sender.policyEvent,
     registryEvent: sender.registryEvent, ...args });
   await applyPeerDeviceRegistryUpdate({ update: { type: 'registry-update', policyEvent: sender.policyEvent,
@@ -204,7 +207,7 @@ test('new recovery root is delivered only as a candidate and needs independent c
   assert.equal(candidate?.nextPolicyEvent.id, replacement.policyEvent.id);
   const args = { expectedAccountPubkey: senderPolicy.accountPubkey,
     expectedRecoveryPubkey: senderPolicy.recoveryPubkey, expectedOldRecoveryPubkey: senderPolicy.recoveryPubkey,
-    now: now + 8 };
+    now: now + 8, securityFence };
   await initializePeerDeviceAuthority({ policyEvent: sender.policyEvent,
     registryEvent: sender.registryEvent, ...args });
   await applyPeerDeviceRegistryUpdate({ update: { type: 'registry-update', policyEvent: sender.policyEvent,
@@ -218,6 +221,6 @@ test('new recovery root is delivered only as a candidate and needs independent c
     nextRegistryEvent: replacement.registryEvent,
     ...args, confirmedFingerprint: fingerprint });
   const pinned = await loadPeerDeviceAuthority({ expectedAccountPubkey: senderPolicy.accountPubkey,
-    expectedRecoveryPubkey: newRecoveryPubkey, now: now + 9 });
+    expectedRecoveryPubkey: newRecoveryPubkey, now: now + 9, securityFence });
   assert.equal(pinned.policyId, replacement.policyEvent.id);
 });

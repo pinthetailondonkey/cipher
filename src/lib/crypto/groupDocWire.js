@@ -17,7 +17,7 @@
 //       matters that memberBaseline already put similar data there.
 
 import { finalizeEvent } from 'nostr-tools';
-import { db } from '../../db';
+import { db, runAccountDbWriteForFence } from '../../db';
 import { canonicalBody } from './groupDoc.js';
 import { deriveDocAesInput, normalizeDocKey } from './groupDocKey';
 
@@ -162,12 +162,13 @@ const docsTable = () => (docsDb || db).groupMemberDocs;
 // same id is idempotent noise from a second relay answering twice. Equal gen
 // with a DIFFERENT id is an H9 conflict pair: both are stored (the reconciler
 // heals), neither overwrites the other.
-export async function rememberVerifiedDoc({ groupId, pin, signed }) {
+export async function rememberVerifiedDoc({ groupId, pin, signed, securityFence = null }) {
   const opened = await verifyAgainstPin({ pin, signed });
   if (!opened) return null;
+  securityFence?.assertCurrent();
   // `opened` is the verified body carrying its recomputed id; pass it under
   // the wrapper shape storeVerifiedDocRow expects.
-  return storeVerifiedDocRow({ groupId, signed: { id: opened.id, sig: signed?.sig || '', body: opened } });
+  return storeVerifiedDocRow({ groupId, signed: { id: opened.id, sig: signed?.sig || '', body: opened }, securityFence });
 }
 
 export async function verifyAgainstPin({ pin, signed }) {
@@ -175,23 +176,30 @@ export async function verifyAgainstPin({ pin, signed }) {
   return verifySignedDoc({ signed, pin });
 }
 
-async function storeVerifiedDocRow({ groupId, signed }) {
+async function storeVerifiedDocRow({ groupId, signed, securityFence = null }) {
   const canonical = canonicalBody(signed.body);
   if (!canonical) return null;
   try {
-    const existing = await docsTable().get([groupId, canonical.gen]);
-    if (existing && existing.docId !== signed.id) {
-      // Conflict pair at this generation: keep both under their ids.
-      await docsTable().put({
+    if (!docsDb && !securityFence) {
+      const error = new Error('A captured account security context is required to store a verified member document.');
+      error.code = 'SECURITY_CONTEXT_EXPIRED';
+      throw error;
+    }
+    securityFence?.assertCurrent();
+    let conflictWith = null;
+    const write = async (table) => {
+      const existing = await table.get([groupId, canonical.gen]);
+      if (existing && existing.docId !== signed.id) conflictWith = existing;
+      await table.put({
         groupId, gen: canonical.gen, docId: signed.id, doc: signed, updatedAt: Math.floor(Date.now() / 1000),
       });
-      return { stored: true, conflictWith: existing };
-    }
-    await docsTable().put({
-      groupId, gen: canonical.gen, docId: signed.id, doc: signed, updatedAt: Math.floor(Date.now() / 1000),
-    });
-    return { stored: true };
-  } catch {
+    };
+    if (docsDb) await write(docsTable());
+    else await runAccountDbWriteForFence(securityFence, ['groupMemberDocs'], (database) => write(database.groupMemberDocs));
+    securityFence?.assertCurrent();
+    return { stored: true, ...(conflictWith ? { conflictWith } : {}) };
+  } catch (error) {
+    if (error?.code === 'SECURITY_CONTEXT_EXPIRED') throw error;
     return null;
   }
 }
@@ -225,7 +233,7 @@ export async function loadMemberDocHeads(groupId, { limit = 5 } = {}) {
 // One wire event → {stored, opened} or null. Every refusal is quiet-by-design:
 // a wrong-pin or foreign-key doc is relay noise, not an error to surface, and
 // the caller answers from whatever heads it already holds (H4's null path).
-export async function ingestMemberDocEvent(event, { pin, groupId, docKey = null }) {
+export async function ingestMemberDocEvent(event, { pin, groupId, docKey = null, securityFence = null }) {
   if (!event || event.kind !== MEMBER_DOC_KIND) return null;
   if (!pin || !groupId) return null;
   // SEC-1: resolve this device's held governance-doc key here so every
@@ -236,8 +244,12 @@ export async function ingestMemberDocEvent(event, { pin, groupId, docKey = null 
   if (!heldDocKey) {
     try {
       const { getDocKey } = await import('./groupKeyStore');
-      heldDocKey = (await getDocKey(groupId))?.bytes || null;
-    } catch { /* v2 will refuse; the decoder still supports historical v1 */ }
+      heldDocKey = (await getDocKey(groupId, securityFence))?.bytes || null;
+      securityFence?.assertCurrent();
+    } catch (error) {
+      if (error?.code === 'SECURITY_CONTEXT_EXPIRED') throw error;
+      /* v2 will refuse; the decoder still supports historical v1 */
+    }
   }
   const dTag = (event.tags || []).find((tag) => tag[0] === 'd')?.[1] || '';
   if (dTag !== memberDocTag(groupId)) return null;
@@ -250,6 +262,7 @@ export async function ingestMemberDocEvent(event, { pin, groupId, docKey = null 
   if (String(event.pubkey || '').toLowerCase() !== compact) return null;
   const signed = await openSealedDocBody(event.content, pin, groupId, heldDocKey);
   if (!signed) return null;
-  return rememberVerifiedDoc({ groupId, pin, signed });
+  securityFence?.assertCurrent();
+  return rememberVerifiedDoc({ groupId, pin, signed, securityFence });
 }
 

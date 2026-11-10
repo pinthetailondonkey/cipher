@@ -1,0 +1,12 @@
+{
+  "observed": [
+    "wrong-prev-revision"
+  ],
+  "expectedRejectionReasons": [
+    "wrong-prev-revision"
+  ],
+  "_meta": {
+    "name": "wrong-prev-revision-rejected",
+    "profile": "MLS-TEST-PROFILE-V1"
+  }
+}

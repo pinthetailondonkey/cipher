@@ -23,5 +23,5 @@ kill9-out/
 desktop/data/
 dist-desktop/
 /crypto/ratchet-wasm/target/
-/crypto/mls-eval/target/
+/crypto/mls-wasm/target/
 /src/lib/ratchet/wasm/

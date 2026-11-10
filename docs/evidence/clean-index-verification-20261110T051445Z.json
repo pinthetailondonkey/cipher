@@ -1,0 +1,55 @@
+{
+  "run_id": "20261110T051445Z",
+  "status": "pass",
+  "head": "2172f726f83923801b87ea93de897d4b271add9a",
+  "index_tree": "d07e297b04de34dc81b1651c2be57db9c5e0a677",
+  "tracked_paths": 699,
+  "source": "git checkout-index export of the staged index; all commands ran in that same export",
+  "checks": [
+    {
+      "check": "npm_ci",
+      "exit_code": 0
+    },
+    {
+      "check": "lint",
+      "exit_code": 0
+    },
+    {
+      "check": "build",
+      "exit_code": 0
+    },
+    {
+      "check": "unit",
+      "exit_code": 0
+    },
+    {
+      "check": "protocol_unit",
+      "exit_code": 0
+    },
+    {
+      "check": "protocol_build",
+      "exit_code": 0
+    },
+    {
+      "check": "protocol_browser",
+      "exit_code": 0
+    }
+  ],
+  "unit_summary": {
+    "passed": 1362,
+    "failed": 0,
+    "skipped": 0
+  },
+  "protocol_mode_summary": {
+    "passed": 8,
+    "failed": 0,
+    "skipped": 0
+  },
+  "combined_log": "/home/aegis/cipher/docs/evidence/clean-index-verification-20261110T051445Z.log",
+  "combined_log_sha256": "086ebefbb7a39134252711df32c1556cf2bdacc4fbb3e5e9e207085b3bba23ea",
+  "combined_log_normalization": "trailing horizontal whitespace removed per line; ANSI sequences retained; one final newline",
+  "limitations": [
+    "Browser isolation harness proves its stated local scaffold boundary only; no protocol messages are implemented.",
+    "This evidence does not establish live DM security, commerce operator readiness, public-relay behavior, or independent protocol review."
+  ]
+}

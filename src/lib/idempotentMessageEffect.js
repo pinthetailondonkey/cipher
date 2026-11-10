@@ -4,6 +4,7 @@
 import { sha256 } from '@noble/hashes/sha2.js';
 import { verifyEvent } from 'nostr-tools/pure';
 import { currentOwner, db } from '../db.js';
+import { assertSecurityContextOwner } from './securityContextFence.js';
 
 function hex(bytes) {
   return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
@@ -28,7 +29,9 @@ function outboxRow(event, now, relays, effectKey) {
   };
 }
 
-export async function reserveMessageEffect({ owner, idempotencyKey, intent = '', event, relays = null, now = Date.now() }) {
+export async function reserveMessageEffect({ owner, idempotencyKey, intent = '', event, relays = null, now = Date.now(), securityFence = null }) {
+  const assertCurrent = () => { if (securityFence) assertSecurityContextOwner(securityFence, owner); };
+  assertCurrent();
   if (!owner || currentOwner() !== owner) throw new Error('The account database is not open.');
   if (typeof idempotencyKey !== 'string' || !idempotencyKey || idempotencyKey.length > 65536) {
     throw new Error('A valid message effect key is required.');
@@ -38,15 +41,18 @@ export async function reserveMessageEffect({ owner, idempotencyKey, intent = '',
   }
   const effectKey = digest(`${owner}|${idempotencyKey}`);
   const intentHash = digest(String(intent));
-  return db.transaction('rw', 'messageEffects', 'outbox', async () => {
+  const result = await db.transaction('rw', 'messageEffects', 'outbox', async () => {
+    assertCurrent();
     if (currentOwner() !== owner) throw new Error('The account changed before the message effect was reserved.');
     const existing = await db.messageEffects.get(effectKey);
+    assertCurrent();
     if (existing) {
       if (existing.intentHash !== intentHash || existing.kind !== event.kind) {
         throw new Error('The idempotency key was reused for a different message effect.');
       }
       if (existing.status === 'sent') return { status: 'sent', eventId: existing.eventId, event: null, relays: existing.relays || [], created: false };
       const queued = await db.outbox.get(existing.eventId);
+      assertCurrent();
       if (!queued || queued.effectKey !== effectKey || queued.kind !== existing.kind || queued.event?.id !== existing.eventId) {
         throw new Error('The pending message effect is missing its immutable outbox event; recovery is required.');
       }
@@ -56,22 +62,35 @@ export async function reserveMessageEffect({ owner, idempotencyKey, intent = '',
       effectKey, eventId: event.id, kind: event.kind, intentHash,
       status: 'pending', createdAt: now, updatedAt: now, relays: relays || [],
     });
+    assertCurrent();
     await db.outbox.add(outboxRow(event, now, relays, effectKey));
+    assertCurrent();
     return { status: 'pending', eventId: event.id, event, relays: relays || [], created: true };
   });
+  assertCurrent();
+  return result;
 }
 
-export async function completeMessageEffect({ owner, eventId }) {
+export async function completeMessageEffect({ owner, eventId, securityFence = null }) {
+  const assertCurrent = () => { if (securityFence) assertSecurityContextOwner(securityFence, owner); };
+  assertCurrent();
   if (!owner || currentOwner() !== owner || !eventId) throw new Error('The account database is not open.');
-  return db.transaction('rw', 'messageEffects', 'outbox', async () => {
+  const result = await db.transaction('rw', 'messageEffects', 'outbox', async () => {
+    assertCurrent();
     if (currentOwner() !== owner) throw new Error('The account changed before the message effect was completed.');
     const row = await db.messageEffects.where('eventId').equals(eventId).first();
+    assertCurrent();
     if (!row) throw new Error('The durable message effect reservation is missing.');
     if (row.status !== 'sent') await db.messageEffects.put({ ...row, status: 'sent', updatedAt: Date.now() });
+    assertCurrent();
     const queued = await db.outbox.get(eventId);
+    assertCurrent();
     if (queued?.effectKey === row.effectKey) await db.outbox.delete(eventId);
+    assertCurrent();
     return true;
   });
+  assertCurrent();
+  return result;
 }
 
 export async function completeQueuedMessageEffect(owner, queued) {

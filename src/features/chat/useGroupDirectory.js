@@ -6,17 +6,20 @@ import { getAuthenticatedPool } from '../../lib/pool';
 import { useChatStore } from '../../store/chatStore';
 import { PENDING_JOIN, heldGroupRow, joinGroup, joinRefusal } from '../../lib/groupJoin';
 import { ACCESS_PUBLIC, heldSealedFields } from '../../lib/groupCreate';
+import { assertSecurityContextOwner } from '../../lib/securityContextFence';
 
-export function useMyGroups(pubkey) {
+export function useMyGroups(pubkey, securityFence) {
   const setGroupsStore = useChatStore((s) => s.setGroups);
   return useCallback((val) => {
+    assertSecurityContextOwner(securityFence, pubkey);
     setGroupsStore((prev) => {
+      assertSecurityContextOwner(securityFence, pubkey);
       const next = typeof val === 'function' ? val(prev) : val;
       const myGroupsRaw = localStorage.getItem('cipher_my_groups_' + pubkey?.slice(0, 16));
       const myGroupIds = new Set(myGroupsRaw ? JSON.parse(myGroupsRaw).map((g) => g.id) : []);
       return (next || []).filter((g) => myGroupIds.has(g.id));
     });
-  }, [pubkey, setGroupsStore]);
+  }, [pubkey, securityFence, setGroupsStore]);
 }
 
 export function useGroupDirectory({ identity, createGroupHook, setGroups }) {
@@ -28,15 +31,19 @@ export function useGroupDirectory({ identity, createGroupHook, setGroups }) {
   const setActiveDm = useChatStore((s) => s.setActiveDm);
   const setActiveGroup = useChatStore((s) => s.setActiveGroup);
   const setView = useChatStore((s) => s.setView);
+  const assertCurrent = () => assertSecurityContextOwner(identity?.securityFence, identity?.pk);
 
   const markAsRead = async (chatId) => {
     try {
+      assertCurrent();
       await db.chatReads.put({ chatId, lastRead: Math.floor(Date.now() / 1000) });
+      assertCurrent();
       setUnreadCounts(prev => ({ ...prev, [chatId]: 0 }));
     } catch {}
   };
 
   const openChat = (type, id, groupObj = null) => {
+    assertCurrent();
     markAsRead(id);
     setTypingUsers({});
     setGroupTypingUsers({});
@@ -48,10 +55,12 @@ export function useGroupDirectory({ identity, createGroupHook, setGroups }) {
   };
 
   const joinGroupById = async (groupId, passedName = null, channel = false) => {
+    assertCurrent();
     if (!groupId) return;
     setLoading(true);
     try {
       const newGroupObj = await joinGroup(identity, groupId, { name: passedName, channel });
+      assertCurrent();
       // The store row obeys the same law as the saved one: a held row keeps
       // its name (drill residual).
       setGroups(prev => [
@@ -68,19 +77,26 @@ export function useGroupDirectory({ identity, createGroupHook, setGroups }) {
       openChat('group', newGroupObj.id, newGroupObj);
       setToast({ type: 'success', message: 'Joined group' });
     } catch (err) {
+      if (err?.code === 'SECURITY_CONTEXT_EXPIRED') return;
       console.error('[joinGroupById] error:', err);
       // The relay's own reason is machine text and never reaches the screen.
       setToast({ type: 'error', message: joinRefusal(err) });
     } finally {
-      setLoading(false);
-      if (window.location.search.length > 0) window.history.replaceState({}, document.title, window.location.pathname);
+      try {
+        assertCurrent();
+        setLoading(false);
+        if (window.location.search.length > 0) window.history.replaceState({}, document.title, window.location.pathname);
+      } catch {}
     }
   };
 
   const fetchGroups = async () => {
     try {
+      assertCurrent();
       const pool = await getAuthenticatedPool(identity);
+      assertCurrent();
       const events = await queryWithTimeout(pool, groupRelays, { kinds: [39000, 9002], limit: 200 });
+      assertCurrent();
       const parsed = events.map(ev => {
         const tag = (n) => ev.tags.find((t) => t[0] === n)?.[1];
         const id = tag('d') || tag('h') || ev.id;
@@ -95,6 +111,7 @@ export function useGroupDirectory({ identity, createGroupHook, setGroups }) {
       });
       const uniqueGroups = Array.from(new Map(parsed.map(g => [g.id, g])).values());
       const localGroups = getMyGroups(identity.pk);
+      assertCurrent();
       // A row the device holds is named by the device's records; a
       // directory rebuild restating relay metadata must not rename it.
       const held = new Map(localGroups.map((lg) => [lg.id, lg]));
@@ -112,13 +129,15 @@ export function useGroupDirectory({ identity, createGroupHook, setGroups }) {
       });
       setGroups(allGroups);
       return allGroups;
-    } catch (e) { 
+    } catch (e) {
+      if (e?.code === 'SECURITY_CONTEXT_EXPIRED') return [];
       console.error("[fetchGroups] failed:", e); 
       return []; 
     }
   };
 
   const createGroup = async (e, access = ACCESS_PUBLIC) => {
+    assertCurrent();
     if (e) e.preventDefault();
     const state = useChatStore.getState();
     if (!state.newGroupName.trim()) return;
@@ -136,9 +155,11 @@ export function useGroupDirectory({ identity, createGroupHook, setGroups }) {
     state.setGroupAccess(ACCESS_PUBLIC);
     try {
       const group = await createGroupHook(gName.trim(), gAbout.trim(), gChannel, { access: gAccess });
+      assertCurrent();
       if (group) openChat('group', group.id, group);
       setToast({ type: 'success', message: 'Group created!' });
     } catch (err) { 
+      if (err?.code === 'SECURITY_CONTEXT_EXPIRED') return;
       console.error("[createGroup] FAILED:", err); 
       state.setShowCreateGroup(true);
       state.setNewGroupName(gName);

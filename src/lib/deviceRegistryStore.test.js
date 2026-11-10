@@ -2,19 +2,20 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import 'fake-indexeddb/auto';
 import { generateSecretKey, getPublicKey } from 'nostr-tools/pure';
-import { db, openDBFor } from '../db.js';
+import { closeDB, db, openDBFor, retireDatabaseSecurityContext } from '../db.js';
 import { setAtRestKeyProvider } from './messageAtRest.js';
 import { buildDeviceRegistryEvent } from './deviceEnrollment.js';
 import {
-  acceptDeviceRegistry,
-  commitEnrolledDevice,
+  acceptDeviceRegistry as acceptDeviceRegistryRaw,
+  commitEnrolledDevice as commitEnrolledDeviceRaw,
   DeviceRegistryConflict,
-  acceptPeerDeviceRegistry,
-  loadDeviceCredential,
-  loadPeerDeviceRegistry,
-  loadDeviceRegistry,
+  acceptPeerDeviceRegistry as acceptPeerDeviceRegistryRaw,
+  loadDeviceCredential as loadDeviceCredentialRaw,
+  loadPeerDeviceRegistry as loadPeerDeviceRegistryRaw,
+  loadDeviceRegistry as loadDeviceRegistryRaw,
 } from './deviceRegistryStore.js';
 import { commitRatchetDevicePublication, loadRatchetDeviceAccountState } from './dmRatchetTransactions.js';
+import { createSecurityContextFence, establishSecurityContext, retireSecurityContext } from './securityContextFence.js';
 
 const secret = generateSecretKey();
 const owner = getPublicKey(secret);
@@ -26,7 +27,19 @@ globalThis.localStorage = {
   removeItem(key) { this.values.delete(key); },
 };
 setAtRestKeyProvider(() => new Uint8Array(32).fill(44));
-openDBFor(owner);
+const contextStorage = globalThis.localStorage;
+let securityContext = establishSecurityContext({ owner, storage: contextStorage,
+  randomId: () => 'device-registry-test-incarnation-0001' });
+let securityFence = createSecurityContextFence({ context: securityContext, storage: contextStorage });
+openDBFor(owner, securityFence);
+
+const testNow = Math.floor(Date.now() / 1000);
+const loadDeviceRegistry = (account, at = testNow) => loadDeviceRegistryRaw(account, at, securityFence);
+const acceptDeviceRegistry = (account, signed, at = testNow) => acceptDeviceRegistryRaw(account, signed, at, securityFence);
+const acceptPeerDeviceRegistry = (account, signed, at = testNow) => acceptPeerDeviceRegistryRaw(account, signed, at, securityFence);
+const loadPeerDeviceRegistry = (account, peer, at = testNow) => loadPeerDeviceRegistryRaw(account, peer, at, securityFence);
+const loadDeviceCredential = (account, device, at = testNow) => loadDeviceCredentialRaw(account, device, at, securityFence);
+const commitEnrolledDevice = (options) => commitEnrolledDeviceRaw({ ...options, securityFence });
 
 function event(generation, deviceRows) {
   return buildDeviceRegistryEvent({ accountSecret: secret, generation, devices: deviceRows }, now + generation);
@@ -167,4 +180,33 @@ test('publishing ratchet account state cannot overwrite the enrolled device cred
   assert.deepEqual(await loadRatchetDeviceAccountState(owner, deviceId), {
     version: 1, value: { accountPickle: 'ratchet-account-state' },
   });
+});
+
+test('device-registry work remains bound to its captured same-account incarnation', async () => {
+  const oldFence = securityFence;
+  const replacement = event(30, [{
+    deviceId: '1'.repeat(32), pubkey: owner, status: 'active', enrolledAt: now + 30,
+  }]);
+  const before = await loadDeviceRegistry(owner, now + 29);
+  const pending = acceptDeviceRegistryRaw(owner, replacement, now + 30, oldFence);
+  const pendingRejected = assert.rejects(pending, { code: 'SECURITY_CONTEXT_EXPIRED' });
+
+  oldFence.invalidate('test-lock');
+  oldFence.close();
+  retireSecurityContext({ context: securityContext, storage: contextStorage });
+  assert.equal((await retireDatabaseSecurityContext(securityContext)).retired, true);
+  closeDB();
+
+  securityContext = establishSecurityContext({ owner, storage: contextStorage,
+    randomId: () => 'device-registry-test-incarnation-0002' });
+  securityFence = createSecurityContextFence({ context: securityContext, storage: contextStorage });
+  openDBFor(owner, securityFence);
+  await pendingRejected;
+  await assert.rejects(
+    () => acceptDeviceRegistryRaw(owner, replacement, now + 30),
+    { code: 'SECURITY_CONTEXT_EXPIRED' },
+    'a production registry write without the caller fence is rejected',
+  );
+  assert.equal((await loadDeviceRegistry(owner, now + 30)).event.id, before.event.id,
+    'neither stale nor unfenced work wrote into the new account incarnation');
 });

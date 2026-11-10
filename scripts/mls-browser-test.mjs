@@ -6,7 +6,7 @@ import { chromium } from 'playwright';
 
 const port = 8092;
 const origin = `http://127.0.0.1:${port}`;
-const wasmDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../crypto/mls-eval/target/browser-bindings');
+const wasmDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../crypto/mls-wasm/target/browser-bindings');
 const assets = new Map([
   ['/mls/cipher_mls_eval.js', ['cipher_mls_eval.js', 'text/javascript; charset=utf-8']],
   ['/mls/cipher_mls_eval_bg.wasm', ['cipher_mls_eval_bg.wasm', 'application/wasm']],

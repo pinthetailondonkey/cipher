@@ -1,0 +1,27 @@
+{
+  "schema": "cipher-dm-kat/v1",
+  "kind": "cross-check",
+  "crossCheck": {
+    "profileDoc": "docs/DM-TEST-PROFILE-V1.md",
+    "generatorScript": "scripts/gen-dm-kat.mjs",
+    "seedsPrefix": "cipher-dm-test-kat/v1",
+    "identityPubkeys": {
+      "senderDevice": "d4fe49ffaa482f805bf1b1963155d5ca2dcfda0fd40dfdee98236ee84e8ad311",
+      "receiverDevice": "0a73f75da091651c94e307c7602051c81ad9981428cedec89567aeda87978a46",
+      "authority": "7511d87aca7f823bfea6c309d869a6749568d5c17853cc753ccf7d6d9da7ffd1",
+      "route": "8ab5796ccc6356c5be5850c34a4010442c67ce1350ae8702b160188b24408bf5",
+      "wrap": "103bf84a9657ce8cd8779ce09ac8aafd9ab2a467fb60565889af9c4de1c16a70"
+    },
+    "registryHeadId": "9698496fbb604a429fb0aace1f55280fcd5f749e52b73a6b49d618fa0cc4efd1",
+    "operationId": "f9db1636d0dc667803db7512c36a2f41",
+    "operationCanonical": "{\"amountXmrDecimalString\":\"0.500000000000\",\"body\":\"hello first contact\",\"fromDevice\":\"d4fe49ffaa482f805bf1b1963155d5ca2dcfda0fd40dfdee98236ee84e8ad311\",\"opId\":\"f9db1636d0dc667803db7512c36a2f41\",\"protocol\":\"cipher-dm-test-v1\",\"sessionId\":\"cf0ce516745d32e45cbeb61f\",\"toDevice\":\"0a73f75da091651c94e307c7602051c81ad9981428cedec89567aeda87978a46\",\"version\":1}",
+    "operationCanonicalSha256": "6f5bdab64242634905de0c0b96051acc70f510246b8b77423ccc4b87550c78f3",
+    "sealId": "c947654d3d73c405d95ef15512cab467ec5ed13bc0ebc71bd06aca1544141246",
+    "wrapId": "dfb5cd36ecd0e53f2f1b650acae2f7305a7a48a2ac2c31f458daa5bb0c243fda",
+    "wrapCreated_at": 1760000000,
+    "claimChecks": {
+      "noAccountKeyInTags": true,
+      "wrapSenderDiffersFromDevice": true
+    }
+  }
+}

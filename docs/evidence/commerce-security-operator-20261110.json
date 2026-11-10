@@ -1,0 +1,74 @@
+{
+  "date": "2026-11-10",
+  "milestone": "local watcher operator setup and signed report verification",
+  "environment": {
+    "node": "v20.20.2",
+    "npm": "10.8.2",
+    "repository_head": "2172f726f83923801b87ea93de897d4b271add9a"
+  },
+  "checks": [
+    {
+      "command": "npm run test:watcher-operator",
+      "result": "pass",
+      "exit_code": 0,
+      "coverage": [
+        "Invoked the documented Ed25519 key generator and kept its private seed in memory until writing a mode-0600 temporary .env.",
+        "Started the actual payment watcher handler with that temporary operator configuration.",
+        "Served one synthetic incoming Monero transfer from a local wallet-RPC fixture.",
+        "Pinned the generated public key and passed the signed v2 report through production checkPayment until the synthetic state reached confirmed.",
+        "Verified the order-scoped child token is in the Authorization header and neither it nor the base token is in the request URL."
+      ]
+    },
+    {
+      "command": "npm run test:watcher-browser",
+      "result": "pass",
+      "exit_code": 0,
+      "coverage": [
+        "Chromium completed allowed-origin preflight and signed report read against a local synthetic RPC.",
+        "Chromium could not read the report from a refused origin."
+      ]
+    },
+    {
+      "command": "node --import ./scripts/resolve-extensionless.mjs --test src/lib/paymentWatch.test.js",
+      "result": "pass",
+      "passed": 30,
+      "failed": 0,
+      "skipped": 0
+    },
+    {
+      "command": "npx oxlint scripts/payment-watcher-operator-test.mjs",
+      "result": "pass",
+      "exit_code": 0
+    },
+    {
+      "command": "npx playwright test tests/ui/watcher-real-handler.spec.js --workers=1 --reporter=line",
+      "result": "pass",
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0,
+      "environment": "Source-only clone of the staged index; .grok carrier excluded; local preview, Chromium, watcher and synthetic RPC.",
+      "coverage": [
+        "Playwright run-context setup confirmed the test-seam build and port.",
+        "Seeded vendor-view and buyer-view order scenarios both displayed confirmed from the actual local watcher v2 response.",
+        "Vendor-view scenario wrote a local receipt and pending signed kind-1059 outbox event.",
+        "Both scenarios verified one local RPC lookup, exact child-token Authorization header, no token query parameter, and browser preflight."
+      ]
+    }
+  ],
+  "source_sha256": {
+    "scripts/payment-watcher-operator-test.mjs": "d8b5aba02a6d25023d4e95d81f0bea1effbe8c8f19ee6e210ac9de0959cc807c",
+    "package.json": "901469acc2dcbcb8800c2b02acba3e331e76c55649167b99469568036606d78f",
+    "scripts/payment-watcher.mjs": "880fec2f60e8e8c7604e2e6aadf6fdab57e1bb58ed43fffdbd95fe38c666861c",
+    "src/lib/paymentWatch.js": "348cffca1e4217d76d6b0aa9ca8833b9dc84d4c3b0d16ed2696ca06e3ad2e770",
+    "src/lib/paymentWatcherTrust.js": "5c2d09fcf6ce91756bac04419241b0e428bc336ef7c94a1dfead879884e63d52",
+    "tests/ui/watcher-real-handler.spec.js": "1d201501997ca700b295a4d1beee0dfc1a94e2ac45b1a0da1d180cab770d2c60"
+  },
+  "limits": [
+    "The wallet RPC and transfer are synthetic; no real wallet daemon, chain transaction, or payment was used.",
+    "The operator smoke imports the actual watcher handler into an isolated runner; it is not a deployed service test.",
+    "Buyer-view and vendor-view cases use seeded history and the same fixture test identity in separate browser runs; they are not an exchange between independently authenticated accounts.",
+    "The vendor outbox event remains pending; no relay accepted it and no two-account delivery was exercised.",
+    "This milestone is not a commerce release decision."
+  ],
+  "staged_index_tree": "1be08e0bcbd91230dc4787838e38db2d80fa57ea"
+}

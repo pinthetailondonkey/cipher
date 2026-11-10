@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { prfEnvironmentProblem, prfProvider, prfStorageKey } from './devicePrf.js';
+import { forgetDeviceProviderSecret } from './deviceProvider.js';
+import { getDeviceProvider, setDeviceProvider } from './vaultEnvelope.js';
 
 const goodEnv = () => ({
   window: { PublicKeyCredential: function PublicKeyCredential() {}, isSecureContext: true },
@@ -31,4 +33,26 @@ test('the passkey device lock is offered only where WebAuthn can really work', (
 test('the stored passkey record is per account and the provider names itself prf', () => {
   assert.equal(prfStorageKey('abc'), 'cipher_devkey_abc');
   assert.equal(prfProvider.kind, 'prf');
+});
+
+test('locking forgets only the selected account device secret', () => {
+  const previous = getDeviceProvider();
+  const forgotten = [];
+  setDeviceProvider({ forget: (pubkey) => forgotten.push(pubkey) });
+  try {
+    assert.equal(forgetDeviceProviderSecret('a'.repeat(64)), true);
+    assert.deepEqual(forgotten, ['a'.repeat(64)]);
+  } finally {
+    setDeviceProvider(previous);
+  }
+});
+
+test('providers without a memory cache still allow account lock to proceed', () => {
+  const previous = getDeviceProvider();
+  setDeviceProvider({ kind: 'safe' });
+  try {
+    assert.equal(forgetDeviceProviderSecret('b'.repeat(64)), true);
+  } finally {
+    setDeviceProvider(previous);
+  }
 });

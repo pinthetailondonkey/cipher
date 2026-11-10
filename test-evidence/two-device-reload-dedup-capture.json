@@ -1,0 +1,508 @@
+{
+  "result": "passed",
+  "captureSchema": "cipher-two-device-reload-dedup-capture-v1",
+  "generatedAt": "2026-11-10T21:03:17.985Z",
+  "transport": "disposable NIP-01-compatible WebSocket relay bound to loopback; no production account or public relay",
+  "phases": {
+    "A": {
+      "sentCount": 3,
+      "sends": [
+        {
+          "eventId": "a023f321c653753b62fb69cc333a6db2eaea1233ab7d782d4edef07b1920b733",
+          "rumorId": "62acf4dba94d7c8b99fd6df662618e638f2a2de71df84656454e881cd35c433d",
+          "savedRowId": "62acf4dba94d7c8b99fd6df662618e638f2a2de71df84656454e881cd35c433d"
+        },
+        {
+          "eventId": "3db6820cc7529d8c8636ae9b961d9fb55b360aabf8b622bb158180e077b15345",
+          "rumorId": "5ce02987727e445fddaa8b17c48a6edba1c2d818286e3ec630871e90c5b5c1ec",
+          "savedRowId": "5ce02987727e445fddaa8b17c48a6edba1c2d818286e3ec630871e90c5b5c1ec"
+        },
+        {
+          "eventId": "c9cd7b871bfe3b9660139195765dff42e06ce9a27ddb71f5e85daf43cb6d1bc4",
+          "rumorId": "daad43791c652812da78688198222ba17225ccfba7f4df9fabf971313a5b32cc",
+          "savedRowId": "daad43791c652812da78688198222ba17225ccfba7f4df9fabf971313a5b32cc"
+        }
+      ],
+      "allRumorIdsDistinct": true
+    },
+    "B1_fetchCycles": [
+      {
+        "stoppedSubscription": true,
+        "counterparties": [
+          "857ccdf8a26aa0ea206ec6b37c31b29e99a9f03cf8de2367a74fd085578b4146"
+        ],
+        "durationMs": 4097
+      },
+      {
+        "stoppedSubscription": true,
+        "counterparties": [
+          "9058af2e7b6f0dc54d96925b80868515bf87f3158e95afce81927b3b772d5b24"
+        ],
+        "durationMs": 4169
+      }
+    ],
+    "B2_replayFetchCycles": [
+      {
+        "counterparties": [
+          "857ccdf8a26aa0ea206ec6b37c31b29e99a9f03cf8de2367a74fd085578b4146"
+        ],
+        "durationMs": 4086
+      },
+      {
+        "counterparties": [
+          "9058af2e7b6f0dc54d96925b80868515bf87f3158e95afce81927b3b772d5b24"
+        ],
+        "durationMs": 4145
+      }
+    ],
+    "legacyWrapKeyedCase": {
+      "verdict": "EXPECTED-FALLBACK",
+      "wrapRowId": "bd457181628c4fb98e9cbc1d8fd403a5w",
+      "resolvedOnceWithoutDuplication": true,
+      "note": "pre-fix restores resolve via fallback ordering; documented limitation, captured not fixed"
+    }
+  },
+  "assertions": [
+    {
+      "name": "deviceB-exactly-live-rows-total-after-replays",
+      "passed": true,
+      "detail": {
+        "expected": 5,
+        "actual": 5,
+        "rows": [
+          {
+            "id": "30688af6990a8673",
+            "type": "order_update",
+            "isSender": true,
+            "replyTo": null
+          },
+          {
+            "id": "5ce02987727e445f",
+            "type": "text",
+            "message": "reload-dedup-msg-1",
+            "isSender": false,
+            "replyTo": null
+          },
+          {
+            "id": "62acf4dba94d7c8b",
+            "type": "text",
+            "message": "reload-dedup-msg-0",
+            "isSender": false,
+            "replyTo": null
+          },
+          {
+            "id": "942274e78ea1b737",
+            "type": "cipher_order",
+            "isSender": false,
+            "replyTo": null
+          },
+          {
+            "id": "daad43791c652812",
+            "type": "text",
+            "message": "reload-dedup-msg-2",
+            "isSender": false,
+            "replyTo": null
+          }
+        ]
+      }
+    },
+    {
+      "name": "deviceB-no-rumor-id-duplicates-by-count",
+      "passed": true,
+      "detail": {
+        "counts": {
+          "30688af6990a8673697e3148953e4f83c379f7420f742bc252209dcb0c699a6e": 1,
+          "5ce02987727e445fddaa8b17c48a6edba1c2d818286e3ec630871e90c5b5c1ec": 1,
+          "62acf4dba94d7c8b99fd6df662618e638f2a2de71df84656454e881cd35c433d": 1,
+          "942274e78ea1b737fe35450c395e395e5aec2e5d44c0279586dc2e2efe0e0c09": 1,
+          "daad43791c652812da78688198222ba17225ccfba7f4df9fabf971313a5b32cc": 1
+        }
+      }
+    },
+    {
+      "name": "deviceB-holds-every-phase-A-rumor-id-exactly-once",
+      "passed": true,
+      "detail": {
+        "counts": {
+          "30688af6990a8673697e3148953e4f83c379f7420f742bc252209dcb0c699a6e": 1,
+          "5ce02987727e445fddaa8b17c48a6edba1c2d818286e3ec630871e90c5b5c1ec": 1,
+          "62acf4dba94d7c8b99fd6df662618e638f2a2de71df84656454e881cd35c433d": 1,
+          "942274e78ea1b737fe35450c395e395e5aec2e5d44c0279586dc2e2efe0e0c09": 1,
+          "daad43791c652812da78688198222ba17225ccfba7f4df9fabf971313a5b32cc": 1
+        }
+      }
+    },
+    {
+      "name": "deviceB-cipher-order-request-singleton-after-replays",
+      "passed": true,
+      "detail": {
+        "orders": [
+          {
+            "id": "942274e78ea1b737",
+            "type": "cipher_order",
+            "isSender": false,
+            "replyTo": null
+          }
+        ]
+      }
+    },
+    {
+      "name": "deviceA-acceptance-update-singleton-after-replays",
+      "passed": true,
+      "detail": {
+        "updates": [
+          {
+            "id": "30688af6990a8673",
+            "type": "order_update",
+            "isSender": false,
+            "replyTo": null
+          }
+        ]
+      }
+    },
+    {
+      "name": "deviceA-own-rows-under-rumor-ids-present-once",
+      "passed": true,
+      "detail": {
+        "found": [
+          "62acf4dba94d7c8b99fd6df662618e638f2a2de71df84656454e881cd35c433d",
+          "5ce02987727e445fddaa8b17c48a6edba1c2d818286e3ec630871e90c5b5c1ec",
+          "daad43791c652812da78688198222ba17225ccfba7f4df9fabf971313a5b32cc"
+        ]
+      }
+    },
+    {
+      "name": "deviceA-no-stray-wrap-keyed-own-rows",
+      "passed": true,
+      "detail": {
+        "stray": [],
+        "allOwnIds": [
+          "5ce02987727e445f",
+          "62acf4dba94d7c8b",
+          "942274e78ea1b737",
+          "daad43791c652812"
+        ]
+      }
+    },
+    {
+      "name": "reply-tag-resolves-to-parent-post-reload",
+      "passed": true,
+      "detail": {
+        "replyTarget": "62acf4dba94d7c8b",
+        "replyRowId": "8b8955f8cc245ded",
+        "replyToSeen": "62acf4dba94d7c8b",
+        "aRows": [
+          {
+            "id": "30688af6990a8673",
+            "type": "order_update",
+            "isSender": false,
+            "replyTo": null
+          },
+          {
+            "id": "5ce02987727e445f",
+            "type": "text",
+            "message": "reload-dedup-msg-1",
+            "isSender": true,
+            "replyTo": null
+          },
+          {
+            "id": "62acf4dba94d7c8b",
+            "type": "text",
+            "message": "reload-dedup-msg-0",
+            "isSender": true,
+            "replyTo": null
+          },
+          {
+            "id": "8b8955f8cc245ded",
+            "type": "text",
+            "message": "reload-dedup-reply",
+            "isSender": false,
+            "replyTo": "62acf4dba94d7c8b99fd6df662618e638f2a2de71df84656454e881cd35c433d"
+          },
+          {
+            "id": "942274e78ea1b737",
+            "type": "cipher_order",
+            "isSender": true,
+            "replyTo": null
+          },
+          {
+            "id": "daad43791c652812",
+            "type": "text",
+            "message": "reload-dedup-msg-2",
+            "isSender": true,
+            "replyTo": null
+          }
+        ]
+      }
+    },
+    {
+      "name": "parent-thread-singletons-under-reply-pressure",
+      "passed": true,
+      "detail": {}
+    },
+    {
+      "name": "vendor-ledger-resolves-order-by-rumor-id-unique-card",
+      "passed": true,
+      "detail": {
+        "cipherOrderRowIds": [
+          "942274e78ea1b737fe35450c395e395e5aec2e5d44c0279586dc2e2efe0e0c09"
+        ],
+        "cipherOrderRowCount": 1,
+        "orderRecordResolvable": true,
+        "acceptanceRowIds": [
+          "30688af6990a8673697e3148953e4f83c379f7420f742bc252209dcb0c699a6e"
+        ],
+        "acceptanceRowCount": 1,
+        "deviceWatchedMarker": false
+      }
+    },
+    {
+      "name": "acceptance-update-binds-rumor-keyed-request-row-once-after-reloads",
+      "passed": true,
+      "detail": {
+        "cipherOrderRowIds": [
+          "942274e78ea1b737fe35450c395e395e5aec2e5d44c0279586dc2e2efe0e0c09"
+        ],
+        "cipherOrderRowCount": 1,
+        "orderRecordResolvable": true,
+        "acceptanceRowIds": [
+          "30688af6990a8673697e3148953e4f83c379f7420f742bc252209dcb0c699a6e"
+        ],
+        "acceptanceRowCount": 1,
+        "deviceWatchedMarker": false
+      }
+    },
+    {
+      "name": "legacy-wrap-keyed-row-survives-fallback-once",
+      "passed": true,
+      "detail": {
+        "storedUnderWrapId": 1,
+        "matchesAfterReplays": [
+          "bd457181628c4fb9"
+        ]
+      }
+    },
+    {
+      "name": "legacy-row-not-promoted-permanently-into-a-rumor-key-too",
+      "passed": true,
+      "detail": {
+        "countsSlice": {
+          "30688af6990a8673697e3148953e4f83c379f7420f742bc252209dcb0c699a6e": 1,
+          "5ce02987727e445fddaa8b17c48a6edba1c2d818286e3ec630871e90c5b5c1ec": 1,
+          "62acf4dba94d7c8b99fd6df662618e638f2a2de71df84656454e881cd35c433d": 1,
+          "8b8955f8cc245ded7a6add4d57ef6fdea8678cb28d57d8f70344f229ace84698": 1,
+          "942274e78ea1b737fe35450c395e395e5aec2e5d44c0279586dc2e2efe0e0c09": 1,
+          "bd457181628c4fb98e9cbc1d8fd403a5w": 1,
+          "daad43791c652812da78688198222ba17225ccfba7f4df9fabf971313a5b32cc": 1
+        }
+      }
+    }
+  ],
+  "clients": {
+    "deviceA": "9058af2e7b6f",
+    "deviceB": "857ccdf8a26a"
+  },
+  "wireAtPhaseA": [
+    {
+      "device": "A",
+      "recv": [
+        {
+          "eventId": "3c43295ba001",
+          "kind": 10002,
+          "sub": "sub:3",
+          "readyState": 1
+        }
+      ],
+      "sentEvents": [
+        "137eae2b380e",
+        "a023f321c653",
+        "3db6820cc752",
+        "c9cd7b871bfe"
+      ]
+    },
+    {
+      "device": "B",
+      "recv": [
+        {
+          "eventId": "a023f321c653",
+          "kind": 1059,
+          "sub": "sub:1",
+          "readyState": 1
+        },
+        {
+          "eventId": "3db6820cc752",
+          "kind": 1059,
+          "sub": "sub:1",
+          "readyState": 1
+        },
+        {
+          "eventId": "c9cd7b871bfe",
+          "kind": 1059,
+          "sub": "sub:1",
+          "readyState": 1
+        }
+      ],
+      "sentEvents": [
+        "3c43295ba001"
+      ]
+    }
+  ],
+  "replyTagDebug": {
+    "searched": 2,
+    "found": [
+      {
+        "wrapId": "fdf973a1f9b9",
+        "rumorId": "8b8955f8cc245ded7a6add4d57ef6fdea8678cb28d57d8f70344f229ace84698",
+        "tags": [
+          [
+            "p",
+            "9058af2e7b6f0dc54d96925b80868515bf87f3158e95afce81927b3b772d5b24"
+          ],
+          [
+            "e",
+            "62acf4dba94d7c8b99fd6df662618e638f2a2de71df84656454e881cd35c433d",
+            "",
+            "reply"
+          ]
+        ]
+      }
+    ]
+  },
+  "rowCountsBeforeAfter": {
+    "before": {
+      "deviceARows": 3,
+      "deviceBRows": 3
+    },
+    "afterFirstReload": {
+      "deviceA": 6,
+      "deviceB": 5
+    }
+  },
+  "relayReqCounts": {
+    "beforeReplay": 12,
+    "afterReplay": 18
+  },
+  "relayEventCount": 8,
+  "afterReplayRows": {
+    "deviceATotal": 6,
+    "deviceAByIdOccurrences": {
+      "30688af6990a8673697e3148953e4f83c379f7420f742bc252209dcb0c699a6e": 1,
+      "5ce02987727e445fddaa8b17c48a6edba1c2d818286e3ec630871e90c5b5c1ec": 1,
+      "62acf4dba94d7c8b99fd6df662618e638f2a2de71df84656454e881cd35c433d": 1,
+      "8b8955f8cc245ded7a6add4d57ef6fdea8678cb28d57d8f70344f229ace84698": 1,
+      "942274e78ea1b737fe35450c395e395e5aec2e5d44c0279586dc2e2efe0e0c09": 1,
+      "daad43791c652812da78688198222ba17225ccfba7f4df9fabf971313a5b32cc": 1
+    },
+    "deviceBTotal": 5,
+    "deviceBByIdOccurrences": {
+      "30688af6990a8673697e3148953e4f83c379f7420f742bc252209dcb0c699a6e": 1,
+      "5ce02987727e445fddaa8b17c48a6edba1c2d818286e3ec630871e90c5b5c1ec": 1,
+      "62acf4dba94d7c8b99fd6df662618e638f2a2de71df84656454e881cd35c433d": 1,
+      "942274e78ea1b737fe35450c395e395e5aec2e5d44c0279586dc2e2efe0e0c09": 1,
+      "daad43791c652812da78688198222ba17225ccfba7f4df9fabf971313a5b32cc": 1
+    }
+  },
+  "rawReplyDebug": {
+    "keys": [
+      "id",
+      "chatId",
+      "pubkey",
+      "timestamp",
+      "clientId",
+      "isSender",
+      "local_timestamp",
+      "data",
+      "replyTo",
+      "arrival"
+    ],
+    "replyTo": "62acf4dba94d7c8b99fd6df662618e638f2a2de71df84656454e881cd35c433d",
+    "chatId": "857ccdf8a26aa0ea206ec6b37c31b29e99a9f03cf8de2367a74fd085578b4146"
+  },
+  "finalStoreSnapshots": {
+    "deviceA": [
+      {
+        "id": "30688af6990a8673",
+        "type": "order_update",
+        "isSender": false,
+        "replyTo": null
+      },
+      {
+        "id": "5ce02987727e445f",
+        "type": "text",
+        "message": "reload-dedup-msg-1",
+        "isSender": true,
+        "replyTo": null
+      },
+      {
+        "id": "62acf4dba94d7c8b",
+        "type": "text",
+        "message": "reload-dedup-msg-0",
+        "isSender": true,
+        "replyTo": null
+      },
+      {
+        "id": "8b8955f8cc245ded",
+        "type": "text",
+        "message": "reload-dedup-reply",
+        "isSender": false,
+        "replyTo": "62acf4dba94d7c8b99fd6df662618e638f2a2de71df84656454e881cd35c433d"
+      },
+      {
+        "id": "942274e78ea1b737",
+        "type": "cipher_order",
+        "isSender": true,
+        "replyTo": null
+      },
+      {
+        "id": "bd457181628c4fb9",
+        "type": "text",
+        "message": "legacy-wrap-keyed-own-row",
+        "isSender": true,
+        "replyTo": null
+      },
+      {
+        "id": "daad43791c652812",
+        "type": "text",
+        "message": "reload-dedup-msg-2",
+        "isSender": true,
+        "replyTo": null
+      }
+    ],
+    "deviceB": [
+      {
+        "id": "30688af6990a8673",
+        "type": "order_update",
+        "isSender": true,
+        "replyTo": null
+      },
+      {
+        "id": "5ce02987727e445f",
+        "type": "text",
+        "message": "reload-dedup-msg-1",
+        "isSender": false,
+        "replyTo": null
+      },
+      {
+        "id": "62acf4dba94d7c8b",
+        "type": "text",
+        "message": "reload-dedup-msg-0",
+        "isSender": false,
+        "replyTo": null
+      },
+      {
+        "id": "942274e78ea1b737",
+        "type": "cipher_order",
+        "isSender": false,
+        "replyTo": null
+      },
+      {
+        "id": "daad43791c652812",
+        "type": "text",
+        "message": "reload-dedup-msg-2",
+        "isSender": false,
+        "replyTo": null
+      }
+    ]
+  },
+  "failedAssertions": []
+}

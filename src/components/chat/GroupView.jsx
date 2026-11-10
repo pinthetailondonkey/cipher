@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { X } from 'lucide-react';
 import MessageBubble from '../MessageBubble';
 import MessageInput from '../MessageInput';
@@ -21,8 +21,9 @@ import { uploadAttachment, photoRefusalToast } from '../../lib/mediaCrypto';
 import { blossomServers } from '../../lib/egress';
 import { ProductImage } from '../ui/PrivateMedia';
 import { timerSeconds } from '../../lib/disappearing';
+import { assertSecurityContextOwner } from '../../lib/securityContextFence.js';
 
-function GroupStorefront({ items, pinnedId, canList, onBuy, onList, pendingLists = [], now = 0, onRetrySecure }) {
+function GroupStorefront({ items, pinnedId, canList, onBuy, onList, pendingLists = [], now = 0, onRetrySecure, securityFence, owner }) {
   const [open, setOpen] = useState(false);
   const [title, setTitle] = useState('');
   const [price, setPrice] = useState('');
@@ -30,6 +31,7 @@ function GroupStorefront({ items, pinnedId, canList, onBuy, onList, pendingLists
   const [photo, setPhoto] = useState(null);
   const [addingPhoto, setAddingPhoto] = useState(false);
   const [formError, setFormError] = useState('');
+  const pickPhotoRef = useRef(null);
   // A menu photo leaves the device the way a chat photo does: encrypted to a
   // host this device names, its key riding the listing payload itself. A
   // host that refuses is the shared toast's sentence — the photo is simply
@@ -38,16 +40,29 @@ function GroupStorefront({ items, pinnedId, canList, onBuy, onList, pendingLists
     const file = (event.target.files || [])[0];
     event.target.value = '';
     if (!file) return;
+    try { assertSecurityContextOwner(securityFence, owner); } catch { return; }
     setAddingPhoto(true);
     try {
-      setPhoto(await uploadAttachment(file, blossomServers()));
+      const upload = import.meta.env?.VITE_TEST_HOOKS === '1' && typeof window !== 'undefined'
+        && typeof window.__cipherMediaUpload === 'function'
+        ? window.__cipherMediaUpload : uploadAttachment;
+      const uploaded = await upload(file, blossomServers(), securityFence, owner, 'group-listing');
+      assertSecurityContextOwner(securityFence, owner);
+      setPhoto(uploaded);
     } catch (error) {
+      if (!securityFence?.isCurrent?.()) return;
       console.error('[shop] Encrypted photo upload failed:', error);
       useChatStore.getState().setToast({ type: 'error', message: photoRefusalToast(error?.message) });
     } finally {
-      setAddingPhoto(false);
+      if (securityFence?.isCurrent?.()) setAddingPhoto(false);
     }
   };
+  useEffect(() => { pickPhotoRef.current = pickPhoto; });
+  useEffect(() => {
+    if (import.meta.env?.VITE_TEST_HOOKS !== '1' || typeof window === 'undefined') return undefined;
+    window.__groupPhotoUpload = (...args) => pickPhotoRef.current?.(...args);
+    return () => { delete window.__groupPhotoUpload; };
+  }, []);
   const money = (product) => {
     const amount = product.priceUsd ?? product.price ?? '';
     if (amount === '' || amount == null) return 'Ask';
@@ -161,7 +176,13 @@ export default function GroupView({
   pinMessage,
   unpinMessage,
 }) {
-  const { sendGroupMessage, leaveGroup, kickMember, updateGroupSettings, addMember } = useNIP29Group({ identity });
+  const { sendGroupMessage: sendGroupMessageCore, leaveGroup, kickMember, updateGroupSettings, addMember } = useNIP29Group({ identity });
+  const sendGroupMessage = import.meta.env?.VITE_TEST_HOOKS === '1' && typeof window !== 'undefined'
+    && typeof window.__cipherGroupMessage === 'function'
+    ? (...args) => window.__cipherGroupMessage(...args, identity)
+    : sendGroupMessageCore;
+  const securityFence = identity?.securityFence;
+  const assertCurrent = () => assertSecurityContextOwner(securityFence, identity?.pk);
   const activeGroup = useChatStore((state) => state.activeGroup);
   const messages = useChatStore((state) => state.groupMessages[state.activeGroup?.id] || EMPTY_MESSAGES);
   const profiles = useChatStore((state) => state.profiles);
@@ -204,20 +225,23 @@ export default function GroupView({
   useEffect(() => {
     if (!identity?.pk || !activeGroup?.id) return undefined;
     const refresh = () => {
+      if (!securityFence?.isCurrent?.()) return;
       const pending = securingSendsFor(identity.pk, activeGroup.id).filter((item) => item.payload?.type === 'product');
       setPendingLists((prev) => {
+        if (!securityFence?.isCurrent?.()) return prev;
         const same = prev.length === pending.length && prev.every((item, index) => item.id === pending[index].id && item.since === pending[index].since);
         return same ? prev : pending;
       });
-      if (pending.length) setNow(Date.now());
+      if (pending.length && securityFence?.isCurrent?.()) setNow(Date.now());
     };
     refresh();
     const id = setInterval(refresh, 1000);
     return () => clearInterval(id);
-  }, [identity?.pk, activeGroup?.id, messages]);
+  }, [identity?.pk, activeGroup?.id, messages, securityFence]);
 
   const retrySecure = async () => {
     if (!activeGroup?.id) return;
+    try { assertCurrent(); } catch { return; }
     haptic('light');
     const since = Date.now();
     useChatStore.getState().setGroupMessages((prev) => ({
@@ -228,8 +252,10 @@ export default function GroupView({
     }));
     try {
       await retrySecuringGroup(identity, activeGroup.id);
+      assertCurrent();
       setToast({ type: 'success', message: 'Retrying…' });
     } catch (error) {
+      if (error?.code === 'SECURITY_CONTEXT_EXPIRED' || !securityFence?.isCurrent?.()) return;
       console.error('[group] retry failed:', error);
       setToast({ type: 'error', message: 'Could not retry.' });
     }
@@ -239,7 +265,7 @@ export default function GroupView({
     if (!activeGroup?.id || !identity?.pk) return undefined;
     let cancelled = false;
     loadGroupProfile(identity, activeGroup.id, activeGroup.name).then((profile) => {
-      if (cancelled || !profile?.id) return;
+      if (cancelled || !profile?.id || !securityFence?.isCurrent?.()) return;
       const current = useChatStore.getState().activeGroup;
       if (current?.id === profile.id) {
         const merged = mergeGroupProfile(current, profile);
@@ -253,9 +279,9 @@ export default function GroupView({
         if (!merged.changed) return list;
         return list.map((group) => (group.id === profile.id ? merged.next : group));
       });
-    }).catch((error) => console.warn('[GroupView] Group name lookup failed:', error));
+    }).catch((error) => { if (!cancelled && securityFence?.isCurrent?.()) console.warn('[GroupView] Group name lookup failed:', error); });
     return () => { cancelled = true; };
-  }, [activeGroup?.id, identity?.pk]);
+  }, [activeGroup?.id, activeGroup?.name, identity, securityFence]);
 
   useEffect(() => {
     if (activeGroup?.id) {
@@ -273,6 +299,7 @@ export default function GroupView({
   const sendGroupText = async (text, customPayload = null) => {
     const groupId = activeGroup?.id;
     if (!groupId) return 'failed';
+    assertCurrent();
     const replyId = replyingTo?.id || null;
     const payload = customPayload || { type: 'text', message: text };
     const seconds = timerSeconds(useChatStore.getState().disappearingTimers?.[groupId]);
@@ -294,8 +321,11 @@ export default function GroupView({
       ...prev,
       [groupId]: [...(prev[groupId] || []), optimistic],
     }));
+    assertCurrent();
     await saveMessage(groupId, optimistic);
+    assertCurrent();
     const result = await sendGroupMessage(groupId, payload, tempId, replyId);
+    assertCurrent();
     if (!result?.success) {
       if (result?.error === 'NO_KEY') {
         const securing = { ...optimistic, deliveryStatus: 'securing', securingSince: Date.now(), pending: false };
@@ -305,14 +335,18 @@ export default function GroupView({
             message.id === tempId || message.clientId === tempId ? securing : message
           )),
         }));
+        assertCurrent();
         await saveMessage(groupId, securing);
+        assertCurrent();
         return 'securing';
       }
       useChatStore.getState().setGroupMessages((prev) => ({
         ...prev,
         [groupId]: (prev[groupId] || []).filter((message) => message.id !== tempId && message.clientId !== tempId),
       }));
-      try { await db.messages.delete(tempId); } catch (error) { console.error('[GroupView] Failed to remove unsent message:', error); }
+      assertCurrent();
+      try { await db.messages.delete(tempId); assertCurrent(); } catch (error) { if (!securityFence?.isCurrent?.()) return 'failed'; console.error('[GroupView] Failed to remove unsent message:', error); }
+      assertCurrent();
       useChatStore.getState().setToast({ type: 'error', message: 'Failed to send to group' });
       return 'failed';
     }
@@ -331,8 +365,10 @@ export default function GroupView({
           return confirmed;
         }),
       }));
-      if (confirmed) await saveMessage(groupId, confirmed);
+      assertCurrent();
+      if (confirmed) { await saveMessage(groupId, confirmed); assertCurrent(); }
     }
+    assertCurrent();
     setReplyingTo(null);
     scopedRemove(`draft-group-${groupId}`);
     return sendOutcome(result);
@@ -353,6 +389,7 @@ export default function GroupView({
   const postListing = async (product) => {
     const groupId = activeGroup?.id;
     if (!groupId) return;
+    assertCurrent();
     const payload = { type: 'product', ...product };
     const tempId = `temp-${Date.now()}`;
     const optimistic = stampArrival({
@@ -371,8 +408,11 @@ export default function GroupView({
       ...prev,
       [groupId]: [...(prev[groupId] || []), optimistic],
     }));
+    assertCurrent();
     await saveMessage(groupId, optimistic);
+    assertCurrent();
     const result = await sendGroupMessage(groupId, payload, tempId, null);
+    assertCurrent();
     if (!result?.success) {
       if (result?.error === 'NO_KEY') {
         const securing = { ...optimistic, deliveryStatus: 'securing', securingSince: Date.now(), pending: false };
@@ -382,14 +422,18 @@ export default function GroupView({
             message.id === tempId || message.clientId === tempId ? securing : message
           )),
         }));
+        assertCurrent();
         await saveMessage(groupId, securing);
+        assertCurrent();
         return;
       }
       useChatStore.getState().setGroupMessages((prev) => ({
         ...prev,
         [groupId]: (prev[groupId] || []).filter((message) => message.id !== tempId && message.clientId !== tempId),
       }));
-      try { await db.messages.delete(tempId); } catch (error) { console.error('[GroupView] Failed to remove unsent message:', error); }
+      assertCurrent();
+      try { await db.messages.delete(tempId); assertCurrent(); } catch (error) { if (!securityFence?.isCurrent?.()) return; console.error('[GroupView] Failed to remove unsent message:', error); }
+      assertCurrent();
       setToast({ type: 'error', message: 'Failed to send to group' });
       return;
     }
@@ -408,9 +452,22 @@ export default function GroupView({
           return confirmed;
         }),
       }));
-      if (confirmed) await saveMessage(groupId, confirmed);
+      assertCurrent();
+      if (confirmed) { await saveMessage(groupId, confirmed); assertCurrent(); }
     }
   };
+
+  const lifecycleActionsRef = useRef(null);
+  useEffect(() => { lifecycleActionsRef.current = { sendGroupText, postListing, retrySecure }; });
+  useEffect(() => {
+    if (import.meta.env?.VITE_TEST_HOOKS !== '1' || typeof window === 'undefined') return undefined;
+    window.__groupViewLifecycle = {
+      sendGroupText: (...args) => lifecycleActionsRef.current?.sendGroupText(...args),
+      postListing: (...args) => lifecycleActionsRef.current?.postListing(...args),
+      retrySecure: (...args) => lifecycleActionsRef.current?.retrySecure(...args),
+    };
+    return () => { delete window.__groupViewLifecycle; };
+  }, []);
 
   return (
     <section className="relative flex h-full min-h-0 flex-col bg-transparent md:flex-row">
@@ -429,6 +486,8 @@ export default function GroupView({
           pendingLists={pendingLists}
           now={now}
           onRetrySecure={retrySecure}
+          securityFence={securityFence}
+          owner={identity?.pk}
           onBuy={({ message, product }) => handleMessageAction?.('buy_product', { ...message, data: product })}
           onList={postListing}
         />

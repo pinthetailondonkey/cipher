@@ -1,0 +1,12 @@
+{
+  "observed": [
+    "roster-only-add"
+  ],
+  "expectedRejectionReasons": [
+    "roster-only-add"
+  ],
+  "_meta": {
+    "name": "roster-only-add-rejected",
+    "profile": "MLS-TEST-PROFILE-V1"
+  }
+}

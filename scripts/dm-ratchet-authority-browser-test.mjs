@@ -8,7 +8,7 @@ import {
   createDeviceEnrollmentChallengeV2, createDeviceFreshnessChallengeV2, createIndependentDeviceCredential,
   enrollDeviceV2,
 } from '../src/lib/deviceAuthority.js';
-import { createRatchetOperationId } from '../src/lib/dmRatchetAuthority.js';
+import { authorizeRatchetSend, buildAuthorizedRatchetDm, createRatchetOperationId } from '../src/lib/dmRatchetAuthority.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const vite = await createViteServer({ configFile: path.join(root, 'vite.config.js'),
@@ -78,9 +78,13 @@ try {
   const commitInTab = (page) => page.evaluate(async (input) => {
     const { openDBFor, db } = await import('/src/db.js');
     const { setAtRestKeyProvider } = await import('/src/lib/messageAtRest.js');
+    const { createSecurityContextFence, establishSecurityContext, SECURITY_CONTEXT_KEY } = await import('/src/lib/securityContextFence.js');
     const { commitRatchetOutboundV2 } = await import('/src/lib/dmRatchetTransactions.js');
     const { shouldFlushOutboxRow } = await import('/src/lib/outbox.js');
     setAtRestKeyProvider(() => Uint8Array.from(input.vaultKey));
+    const context = establishSecurityContext({ owner: input.accountPubkey });
+    const channel = new BroadcastChannel(`${SECURITY_CONTEXT_KEY}:invalidate`);
+    const securityFence = createSecurityContextFence({ context, channel });
     openDBFor(input.accountPubkey);
     await db.open();
     const result = await commitRatchetOutboundV2({ owner: input.accountPubkey,
@@ -90,6 +94,7 @@ try {
       applicationPayload: { kind: 'order-receipt', id: 'browser-effect-once' },
       senderDeviceSecret: Uint8Array.from(input.senderDeviceSecret),
       authorization: { operationId: input.operationId, sender: input.senderProof, recipient: input.recipientProof },
+      securityFence,
       now: input.nowMs });
     const rows = await db.outbox.toArray();
     const ratchetRow = rows.find((row) => row.ratchetDelivery?.operationId === input.operationId);
@@ -119,8 +124,12 @@ try {
   const receiveInTab = (page) => page.evaluate(async (input) => {
     const { openDBFor, db } = await import('/src/db.js');
     const { setAtRestKeyProvider } = await import('/src/lib/messageAtRest.js');
+    const { createSecurityContextFence, establishSecurityContext, SECURITY_CONTEXT_KEY } = await import('/src/lib/securityContextFence.js');
     const { commitRatchetInboundV2, loadRatchetState } = await import('/src/lib/dmRatchetTransactions.js');
     setAtRestKeyProvider(() => Uint8Array.from(input.vaultKey));
+    const context = establishSecurityContext({ owner: input.owner });
+    const channel = new BroadcastChannel(`${SECURITY_CONTEXT_KEY}:invalidate`);
+    const securityFence = createSecurityContextFence({ context, channel });
     openDBFor(input.owner);
     await db.open();
     let effects = 0;
@@ -128,7 +137,7 @@ try {
       recipientDeviceSecret: Uint8Array.from(input.recipientDeviceSecret),
       senderCheckpoint: input.senderCheckpoint, recipientCheckpoint: input.recipientCheckpoint,
       recipientRequesterDeviceId: input.recipientRequesterDeviceId, wrap: input.wrap,
-      expectedVersion: null, now: input.nowMs,
+      expectedVersion: null, securityFence, now: input.nowMs,
       processRatchetMessage: async ({ ratchetCiphertext, applicationPayload }) => {
         effects += 1;
         if (ratchetCiphertext !== 'browser-ratchet-ciphertext') throw new Error('wrong ciphertext');
@@ -153,6 +162,73 @@ try {
     throw new Error(`The losing receiver tab did not recover as an idempotent duplicate: ${JSON.stringify(retried)}`);
   }
 
+  const fencedOperationId = createRatchetOperationId();
+  const fencedAuthorization = authorizeRatchetSend({ operationId: fencedOperationId,
+    sender: proof(alice, fencedOperationId), recipient: proof(bob, fencedOperationId, bob.device), now: now + 7 });
+  const fencedMessage = buildAuthorizedRatchetDm({ authorization: fencedAuthorization,
+    ratchetCiphertext: 'interrupted-lifecycle-transition',
+    applicationPayload: { kind: 'message', text: 'must not commit after invalidation' },
+    senderDeviceSecret: alice.primaryDevice.deviceSecret, recipientDevicePubkey: bob.device.devicePubkey,
+    createdAt: now + 8 }).wrap;
+  const receivePaused = await bobTabs[0].evaluate(async (input) => {
+    const { openDBFor, db } = await import('/src/db.js');
+    const { setAtRestKeyProvider } = await import('/src/lib/messageAtRest.js');
+    const { createSecurityContextFence, establishSecurityContext, SECURITY_CONTEXT_KEY } = await import('/src/lib/securityContextFence.js');
+    const { commitRatchetInboundV2 } = await import('/src/lib/dmRatchetTransactions.js');
+    setAtRestKeyProvider(() => Uint8Array.from(input.vaultKey));
+    const context = establishSecurityContext({ owner: input.owner });
+    const channel = new BroadcastChannel(`${SECURITY_CONTEXT_KEY}:invalidate`);
+    const securityFence = createSecurityContextFence({ context, channel });
+    window.__securityFence = securityFence;
+    window.__securityChannel = channel;
+    openDBFor(input.owner);
+    await db.open();
+    const paused = new Promise((resolve) => { window.__resumeLifecycle = resolve; });
+    window.__pendingRatchetReceive = commitRatchetInboundV2({ owner: input.owner,
+      deviceId: input.deviceId, recipientDeviceSecret: Uint8Array.from(input.recipientDeviceSecret),
+      senderCheckpoint: input.senderCheckpoint, recipientCheckpoint: input.recipientCheckpoint,
+      recipientRequesterDeviceId: input.recipientRequesterDeviceId, wrap: input.wrap,
+      expectedVersion: null, securityFence, now: input.nowMs,
+      processRatchetMessage: async ({ applicationPayload }) => {
+        await paused;
+        return { sessionId: 'invalidated-before-ratchet-commit', sessionState: { key: 'must-not-save' },
+          chatId: 'chat', journal: { payload: applicationPayload } };
+      } });
+    window.__pendingRatchetReceive.catch(() => {});
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      const claim = await db.ratchetInbox.get(input.operationId);
+      if (claim?.status === 'processing') return true;
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+    return false;
+  }, { owner: bob.checkpoint.accountPubkey, deviceId: bob.device.deviceId,
+    recipientDeviceSecret: Array.from(bob.device.deviceSecret), senderCheckpoint: alice.checkpoint,
+    recipientCheckpoint: bob.checkpoint, recipientRequesterDeviceId: bob.primaryDevice.deviceId,
+    wrap: fencedMessage, operationId: fencedOperationId, nowMs: (now + 9) * 1000, vaultKey });
+  if (!receivePaused) throw new Error('The lifecycle race fixture did not reserve the inbound operation.');
+  await bobTabs[1].evaluate(async (owner) => {
+    const { invalidateSecurityContext, SECURITY_CONTEXT_KEY } = await import('/src/lib/securityContextFence.js');
+    const channel = new BroadcastChannel(`${SECURITY_CONTEXT_KEY}:invalidate`);
+    const result = invalidateSecurityContext({ owner, channel });
+    channel.close();
+    if (!result.persisted) throw new Error(`Could not durably invalidate the account: ${JSON.stringify(result)}`);
+  }, bob.checkpoint.accountPubkey);
+  const interrupted = await bobTabs[0].evaluate(async (operationId) => {
+    for (let attempt = 0; attempt < 100 && window.__securityFence.isCurrent(); attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+    const invalidated = !window.__securityFence.isCurrent();
+    window.__resumeLifecycle?.();
+    const result = await window.__pendingRatchetReceive.then(() => ({ committed: true }), (error) => ({ committed: false, error: error.message }));
+    const { db } = await import('/src/db.js');
+    return { ...result, invalidated,
+      session: await db.ratchetSessions.get('invalidated-before-ratchet-commit'),
+      inbox: await db.ratchetInbox.get(operationId) };
+  }, fencedOperationId);
+  if (interrupted.committed || !interrupted.invalidated || interrupted.session || interrupted.inbox) {
+    throw new Error(`A locked context committed a delayed ratchet transition: ${JSON.stringify(interrupted)}`);
+  }
+
   // Reload an Alice tab to model a crash after IndexedDB commit and before relay
   // acknowledgement. The exact event and advanced state must remain recoverable.
   await aliceTabs[0].reload();
@@ -173,6 +249,7 @@ try {
   }
 
   console.log('R5 authority-to-ratchet browser harness: 2 independent accounts; concurrent tabs converged; NIP-59 relay frame hid account keys; receiver applied one effect; forced expired retry held; reload recovered exact event/state.');
+  console.log('Lifecycle fence check: account-scoped invalidation reached a second tab and prevented a paused receive from committing.');
   await aliceContext.close();
   await bobContext.close();
 } finally {

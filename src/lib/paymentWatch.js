@@ -1,5 +1,6 @@
 import { applyWatcherReport, coinUnits, confirmationsRequired, unitsToCoins } from './paymentState.js';
 import { scopedGet } from './storage.js';
+import { readPaymentWatcherPin, verifyPaymentWatcherReport } from './paymentWatcherTrust.js';
 
 // Public explorers. Pasting one is still a block-explorer call, so it is refused
 // before any request. A watcher you run is a different host.
@@ -36,20 +37,9 @@ export function isLocalWatcherHost(hostname) {
   return LOCAL_WATCHER_HOSTS.has(host);
 }
 
-// ————— per-order child token —————
-// A watcher answer is signed with the token, so whoever holds the token can
-// forge chain truth for ANY address on that watcher, forever. The pasted
-// watcher URL carries that base token, and anything that copies the URL
-// (a screen share, a synced backup) captures exactly that unbounded key.
-// The check now derives a child token bound to the exact payment asked
-// about: HMAC of the base secret over a version string, the currency and
-// the address. The watcher recomputes the child from its own secret and the
-// requested payment, so the base token never authenticates a check at all
-// — an open-ended token is dead on the wire — and a captured child answers
-// for one address and one currency only. Orders are checked on per-order
-// derived addresses (the shared-address case is refused before any check),
-// so a captured child holds nothing once its order is settled or dead,
-// wherever the base token still sits.
+// The access credential opens the watcher endpoint. It does not authenticate
+// the report. The watcher signs v2 reports with a separate Ed25519 key whose
+// public key this account pins independently.
 const CHILD_TOKEN_VERSION = 'cipher-watch-v1';
 
 export async function childWatcherToken(baseToken, address, currency) {
@@ -70,7 +60,7 @@ export async function childWatcherToken(baseToken, address, currency) {
   return hex;
 }
 
-export function paymentWatchUrl(watcherUrl, { address, currency, token } = {}) {
+export function paymentWatchUrl(watcherUrl, { address, currency, token, nonce } = {}) {
   const raw = String(watcherUrl || '').trim();
   if (!raw) throw new Error('No payment watcher is set. This device does not check a block explorer.');
   if (isPublicExplorer(raw)) throw new Error('That host is a block explorer. This device will not call it. Paste a watcher you run.');
@@ -88,13 +78,14 @@ export function paymentWatchUrl(watcherUrl, { address, currency, token } = {}) {
   if (url.protocol === 'http:' && !isLocalWatcherHost(url.hostname)) {
     throw new Error('A payment watcher on the open internet must use HTTPS. Paste an https watcher, or run this one on this device.');
   }
-  // Callers that know the payment pass the child token; the pasted base
-  // token is only the fallback, and a check never sends it.
+  // Legacy URLs may still carry the access token as configuration, but it is
+  // removed before the request and sent only as an Authorization header.
   const watchToken = token || url.searchParams.get('token') || '';
   if (!watchToken) throw new Error('The payment watcher URL needs a token.');
   url.searchParams.set('address', String(address || '').trim());
   url.searchParams.set('currency', String(currency || '').trim());
-  url.searchParams.set('token', watchToken);
+  url.searchParams.delete('token');
+  if (nonce) url.searchParams.set('nonce', String(nonce));
   return url.href;
 }
 
@@ -280,69 +271,96 @@ export function issuePrecedes(report, issuedAtSec) {
   return time < issuedAt;
 }
 
-// A watcher answer carries `x-cipher-sig: v1=<hex hmac-sha256>` over the exact
-// raw body bytes, with the watch token as the key, and `x-cipher-ts` in unix
-// seconds. An answer older or newer than 120 seconds is stale, so a captured
-// answer cannot be replayed later.
-const WATCHER_SIG_MAX_AGE = 120;
+const WATCHER_REPORT_MAX_AGE = 120;
+const WATCHER_REPORT_MAX_BYTES = 256 * 1024;
+const WATCHER_REQUEST_TIMEOUT_MS = 15_000;
 
-function hexEqual(a, b) {
-  if (a.length !== b.length) return false;
-  let diff = 0;
-  for (let i = 0; i < a.length; i += 1) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
-  return diff === 0;
+async function limitedResponseText(response) {
+  const declaredLength = Number(response.headers?.get?.('content-length'));
+  if (Number.isFinite(declaredLength) && declaredLength > WATCHER_REPORT_MAX_BYTES) {
+    throw Object.assign(new Error('The payment watcher report is too large.'), { code: 'WATCHER_REPORT_TOO_LARGE' });
+  }
+  const reader = response.body?.getReader?.();
+  if (!reader) {
+    const text = await response.text();
+    if (new TextEncoder().encode(text).byteLength > WATCHER_REPORT_MAX_BYTES) {
+      throw Object.assign(new Error('The payment watcher report is too large.'), { code: 'WATCHER_REPORT_TOO_LARGE' });
+    }
+    return text;
+  }
+  const chunks = [];
+  let size = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      if (size > WATCHER_REPORT_MAX_BYTES) {
+        reader.cancel().catch(() => {});
+        throw Object.assign(new Error('The payment watcher report is too large.'), { code: 'WATCHER_REPORT_TOO_LARGE' });
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock?.();
+  }
+  const bytes = new Uint8Array(size);
+  let offset = 0;
+  for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
+  return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
 }
 
-async function watcherSignature(rawBody, token, ts) {
-  const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(token), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
-  // The timestamp is inside the signed bytes. A captured answer replayed
-  // with a re-stamped date verified under a bare-body HMAC; with the date
-  // covered, a replay's stamp no longer matches and freshness bites. (security F6)
-  const mac = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(`${ts}:${rawBody}`));
-  let hex = '';
-  for (const byte of new Uint8Array(mac)) hex += byte.toString(16).padStart(2, '0');
-  return hex;
+async function requestWatcherReport(fetchImpl, endpoint, token, timeoutMs) {
+  const controller = new AbortController();
+  let timer;
+  const timeout = new Promise((resolve, reject) => {
+    timer = setTimeout(() => {
+      controller.abort();
+      reject(Object.assign(new Error('The payment watcher timed out.'), { code: 'WATCHER_TIMEOUT' }));
+    }, timeoutMs);
+  });
+  try {
+    const response = await Promise.race([Promise.resolve().then(() => fetchImpl(endpoint, {
+      headers: { Accept: 'application/json', Authorization: `Bearer ${token}` },
+      credentials: 'omit',
+      referrerPolicy: 'no-referrer',
+      redirect: 'error',
+      signal: controller.signal,
+    })), timeout]);
+    const raw = await Promise.race([limitedResponseText(response), timeout]);
+    return { response, raw };
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
-export async function verifyWatcherResponse({ rawBody, sig, ts, token, nowSec } = {}) {
-  if (typeof rawBody !== 'string' || rawBody.length === 0) return false;
-  if (!/^\d+$/.test(String(ts ?? '').trim())) return false;
-  const sent = Number(ts);
-  const now = Number(nowSec);
-  if (!Number.isInteger(now)) return false;
-  if (Math.abs(now - sent) > WATCHER_SIG_MAX_AGE) return false;
-  const presented = String(sig ?? '').trim();
-  const match = presented.match(/^v1=([0-9a-f]{64})$/);
-  if (!match) return false;
-  const computed = await watcherSignature(rawBody, token, String(ts).trim());
-  return hexEqual(computed, match[1]);
-}
-
-export async function checkPayment({ watcherUrl, address, currency, state, amount, issuedAt, fetchImpl = globalThis.fetch } = {}) {
+export async function checkPayment({ watcherUrl, address, currency, state, amount, issuedAt, fetchImpl = globalThis.fetch, timeoutMs = WATCHER_REQUEST_TIMEOUT_MS } = {}) {
   // The paste itself is validated first — explorer, scheme, host, token
   // presence — so a bad watcher fails with its own words, not a crypto
   // error from deriving over an empty secret. Then the check walks out the
   // door with the order's child token, never the base secret.
   const paste = String(watcherUrl || '').trim();
   paymentWatchUrl(paste, { address, currency });
+  const pinnedKey = readPaymentWatcherPin();
+  if (!pinnedKey) throw Object.assign(new Error('Pin the payment watcher verification key in Connections before checking payment.'), { code: 'WATCHER_ATTESTATION_REQUIRED' });
   let baseToken = '';
   try { baseToken = new URL(paste).searchParams.get('token') || ''; } catch {}
   const child = await childWatcherToken(baseToken, address, currency);
-  const endpoint = paymentWatchUrl(paste, { address, currency, token: child });
+  const nonceBytes = crypto.getRandomValues(new Uint8Array(18));
+  const nonce = [...nonceBytes].map((byte) => String.fromCharCode(byte)).join('');
+  const nonceTag = btoa(nonce).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+  const endpoint = paymentWatchUrl(paste, { address, currency, token: child, nonce: nonceTag });
   if (!String(address || '').trim()) throw new Error('This order has no payment address to check.');
-  const token = new URL(endpoint).searchParams.get('token');
+  const token = child;
   let response;
+  let raw;
   try {
-    response = await fetchImpl(endpoint, { headers: { Accept: 'application/json', Authorization: `Bearer ${token}` } });
+    ({ response, raw } = await requestWatcherReport(fetchImpl, endpoint, token, timeoutMs));
   } catch (error) {
+    if (error?.code === 'WATCHER_TIMEOUT') throw new Error('The payment watcher took too long to answer. Nothing was marked on the order.');
+    if (error?.code === 'WATCHER_REPORT_TOO_LARGE') throw new Error('The payment watcher report was too large. Nothing was marked on the order.');
     console.error('[payments] Watcher did not answer:', error);
     throw new Error('The payment watcher did not answer.');
-  }
-  let raw = null;
-  try {
-    raw = await response.text();
-  } catch {
-    raw = null;
   }
   if (!response.ok) {
     let errorBody = null;
@@ -361,16 +379,28 @@ export async function checkPayment({ watcherUrl, address, currency, state, amoun
   }
   // Every answer is signed and freshness-checked before it can speak about the
   // chain. A missing signature or a wrong one fails closed: nothing moves.
-  const sig = response.headers?.get?.('x-cipher-sig') ?? null;
-  const ts = response.headers?.get?.('x-cipher-ts') ?? null;
-  const verified = raw != null && await verifyWatcherResponse({ rawBody: raw, sig, ts, token, nowSec: Math.floor(Date.now() / 1000) });
+  const sig = response.headers?.get?.('x-cipher-signature') ?? null;
+  const verified = raw != null && sig != null && await verifyPaymentWatcherReport({
+    rawBody: raw, signature: sig, publicKey: pinnedKey, expectedAddress: String(address || '').trim(),
+    expectedCurrency: String(currency || '').trim().toLowerCase(), expectedNonce: nonceTag,
+  });
   if (!verified) {
-    if (sig == null && ts == null) {
+    if (sig == null) {
       console.warn('[payments] This watcher does not sign its answers. Update your watcher, then check again.');
     } else {
       console.warn('[payments] A watcher answer failed its signature or freshness check. It was ignored.');
     }
     throw new Error('The payment watcher tried to answer, but its answer did not pass the signature check. Nothing was marked on the order.');
+  }
+  if (readPaymentWatcherPin() !== pinnedKey) {
+    throw new Error('The payment watcher key changed during this check. Nothing was marked on the order.');
+  }
+  let signedBody;
+  try { signedBody = JSON.parse(raw); } catch { signedBody = null; }
+  const signedAt = Number(signedBody?.signedAt);
+  const nowSec = Math.floor(Date.now() / 1000);
+  if (!Number.isInteger(signedAt) || Math.abs(nowSec - signedAt) > WATCHER_REPORT_MAX_AGE) {
+    throw new Error('The payment watcher report is stale. Nothing was marked on the order.');
   }
   let body = null;
   try {

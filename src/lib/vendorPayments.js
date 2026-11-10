@@ -1,7 +1,11 @@
 import { bech32 } from '@scure/base';
 import { deriveMoneroAddress } from './moneroAddress';
 import { checkPaymentAddress } from './paymentAddress';
-import { scopeKey, scopedGet, scopedRaw, scopedSet } from './storage';
+import { getActivePubkey, migrateLegacyScope, scopedGet, scopedRaw, scopedSet } from './storage';
+import { assertSecurityContextOwner } from './securityContextFence';
+import { activateBitcoinAllocationContext, descriptorId, initializeBitcoinDescriptor,
+  markBitcoinReservationReady, reserveBitcoinIndex } from './commerceWalletStore';
+import { getPublicKey } from 'nostr-tools/pure';
 
 const LEGACY_ADDRESS_KEYS = {
   btc: ['cipher_btc_address', 'cipher_btc'],
@@ -32,9 +36,17 @@ export function readPaymentAddresses(storage = globalThis.localStorage) {
   return { btc: scopedGet('btc_address', '') || '', xmr: scopedGet('xmr_address', '') || '' };
 }
 
-export function savePaymentAddresses({ btc = '', xmr = '' } = {}) {
+export function savePaymentAddresses({ btc = '', xmr = '' } = {}, securityFence) {
+  const owner = securityFence?.context?.owner;
+  assertSecurityContextOwner(securityFence, owner);
+  if (getActivePubkey() !== owner) {
+    const error = new Error('The active account changed before payment addresses could be saved.');
+    error.code = 'SECURITY_CONTEXT_EXPIRED';
+    throw error;
+  }
   scopedSet('btc_address', String(btc).trim());
   scopedSet('xmr_address', String(xmr).trim());
+  securityFence.assertCurrent();
 }
 
 const BITCOIN_HRP = { bc: 'bc', bcrt: 'bcrt' };
@@ -47,6 +59,21 @@ export function bitcoinHrp(network = 'bc') {
 const CONFIG_KEY = 'advanced_vendor_payment_keys';
 const MAX_DERIVATION_INDEX = 10000;
 const settingsLocks = new Map();
+
+function ownerSettingsKey(owner) { return `cipher_${owner}_${CONFIG_KEY}`; }
+
+function assertOwner(identity, owner = identity?.pk, generation, fence = identity?.securityFence) {
+  if (!identity?.sk || !owner || getPublicKey(identity.sk) !== owner) throw new Error('The unlocked account does not match the wallet settings owner.');
+  if (fence) {
+    if (fence.context?.owner !== owner) throw Object.assign(new Error('The wallet operation no longer belongs to the current account context.'), { code: 'SECURITY_CONTEXT_EXPIRED' });
+    fence.assertCurrent();
+  }
+  const active = localStorage.getItem('cipher_active_pubkey') || localStorage.getItem('cipher_db_owner') || 'guest';
+  if (active !== owner) throw Object.assign(new Error('The active account changed during this payment operation.'), { code: 'WALLET_ACCOUNT_CHANGED' });
+  if (generation !== undefined && localStorage.getItem('cipher_identity_session_generation') !== generation) {
+    throw Object.assign(new Error('The unlocked account session changed during this payment operation.'), { code: 'WALLET_SESSION_CHANGED' });
+  }
+}
 
 function defaultSettings() {
   return { btcXpub: '', xmrPrivateViewKey: '', btcNetwork: 'bc', btcIndex: 0, xmrIndex: 0, orders: {} };
@@ -62,10 +89,16 @@ async function deriveEncryptionKey(secretKey) {
   }, material, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
 }
 
-async function readSettings(identity) {
+async function readSettings(identity, owner = identity?.pk, generation, fence = identity?.securityFence) {
   if (!identity?.sk) throw new Error('Unlock your account to access vendor payment settings.');
-  const raw = localStorage.getItem(scopeKey(CONFIG_KEY));
-  if (!raw) return defaultSettings();
+  assertOwner(identity, owner, generation, fence);
+  migrateLegacyScope();
+  const raw = localStorage.getItem(ownerSettingsKey(owner));
+  if (!raw) {
+    const legacyRaw = owner.length >= 8 ? localStorage.getItem(`cipher_${owner.slice(0, 8)}_${CONFIG_KEY}`) : null;
+    if (legacyRaw) throw Object.assign(new Error('Older wallet settings could not be assigned to this account safely. Resolve the shared legacy account prefix before changing payment settings.'), { code: 'WALLET_SETTINGS_RECOVERY_REQUIRED' });
+    return defaultSettings();
+  }
   const envelope = JSON.parse(raw);
   if (!Array.isArray(envelope.iv) || !Array.isArray(envelope.data)) {
     throw new Error('Stored vendor payment settings are invalid.');
@@ -77,26 +110,38 @@ async function readSettings(identity) {
     new Uint8Array(envelope.data),
   );
   const parsed = JSON.parse(new TextDecoder().decode(plaintext));
+  assertOwner(identity, owner, generation, fence);
   return { ...defaultSettings(), ...parsed, orders: parsed.orders || {} };
 }
 
-async function writeSettings(identity, settings) {
+async function writeSettings(identity, settings, owner = identity?.pk, generation, fence = identity?.securityFence) {
+  assertOwner(identity, owner, generation, fence);
   const key = await deriveEncryptionKey(identity.sk);
   const iv = crypto.getRandomValues(new Uint8Array(12));
   const plaintext = new TextEncoder().encode(JSON.stringify(settings));
   const encrypted = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, plaintext);
-  localStorage.setItem(scopeKey(CONFIG_KEY), JSON.stringify({
+  assertOwner(identity, owner, generation, fence);
+  localStorage.setItem(ownerSettingsKey(owner), JSON.stringify({
     iv: Array.from(iv),
     data: Array.from(new Uint8Array(encrypted)),
   }));
 }
 
 export async function loadVendorPaymentConfig(identity) {
-  const { btcXpub, xmrPrivateViewKey, btcNetwork } = await readSettings(identity);
+  const owner = identity?.pk;
+  const generation = localStorage.getItem('cipher_identity_session_generation');
+  const fence = identity?.securityFence;
+  assertOwner(identity, owner, generation, fence);
+  const { btcXpub, xmrPrivateViewKey, btcNetwork } = await readSettings(identity, owner, generation, fence);
+  assertOwner(identity, owner, generation, fence);
   return { btcXpub, xmrPrivateViewKey, btcNetwork: bitcoinHrp(btcNetwork || 'bc') };
 }
 
 export async function saveVendorPaymentConfig(identity, { btcXpub, xmrPrivateViewKey, btcNetwork } = {}) {
+  const owner = identity?.pk;
+  const generation = localStorage.getItem('cipher_identity_session_generation');
+  const fence = identity?.securityFence;
+  assertOwner(identity, owner, generation, fence);
   const normalizedXpub = (btcXpub || '').trim();
   const normalizedViewKey = (xmrPrivateViewKey || '').trim().toLowerCase();
   const network = bitcoinHrp(btcNetwork || 'bc');
@@ -110,13 +155,20 @@ export async function saveVendorPaymentConfig(identity, { btcXpub, xmrPrivateVie
     throw new Error('The Monero private view key must be 64 hexadecimal characters.');
   }
   await withSettingsLock(identity.pk, async () => {
-    const settings = await readSettings(identity);
+    const settings = await readSettings(identity, owner, generation, fence);
+    assertOwner(identity, owner, generation, fence);
+    if (fence) await activateBitcoinAllocationContext(fence);
+    assertOwner(identity, owner, generation, fence);
+    if (normalizedXpub && normalizedXpub !== settings.btcXpub) {
+      const descriptor = await descriptorId(normalizedXpub, network);
+      await initializeBitcoinDescriptor({ owner, descriptor, explicitlyNew: true, securityFence: fence });
+    }
     await writeSettings(identity, {
       ...settings,
       btcXpub: normalizedXpub,
       xmrPrivateViewKey: normalizedViewKey,
       btcNetwork: network,
-    });
+    }, owner, generation, fence);
   });
 }
 
@@ -145,13 +197,23 @@ async function withSettingsLock(pubkey, callback) {
   const current = new Promise((resolve) => { release = resolve; });
   const queued = previous.then(() => current);
   settingsLocks.set(pubkey, queued);
-  await previous;
-  try {
-    return await callback();
-  } finally {
+  const run = async () => {
+    await previous;
+    try { return await callback(); }
+    finally {
+      release();
+      if (settingsLocks.get(pubkey) === queued) settingsLocks.delete(pubkey);
+    }
+  };
+  if (globalThis.navigator?.locks?.request) {
+    return navigator.locks.request(`cipher-vendor-payment-settings:${pubkey}`, run);
+  }
+  if (globalThis.window) {
     release();
     if (settingsLocks.get(pubkey) === queued) settingsLocks.delete(pubkey);
+    throw Object.assign(new Error('This browser cannot safely coordinate wallet settings across tabs.'), { code: 'WALLET_ALLOCATION_UNAVAILABLE' });
   }
+  return run();
 }
 
 export async function getOrderPaymentMethods(identity, orderId, mainAddresses, paymentPreference = 'xmr') {
@@ -161,8 +223,13 @@ export async function getOrderPaymentMethods(identity, orderId, mainAddresses, p
   if (!['btc', 'xmr', 'both'].includes(paymentPreference)) {
     throw new Error('Choose a supported order payment method.');
   }
+  const owner = identity.pk;
+  const generation = localStorage.getItem('cipher_identity_session_generation');
+  const fence = identity?.securityFence;
+  assertOwner(identity, owner, generation, fence);
   return withSettingsLock(identity.pk, async () => {
-    const settings = await readSettings(identity);
+    const settings = await readSettings(identity, owner, generation, fence);
+    assertOwner(identity, owner, generation, fence);
     const existing = settings.orders[orderId];
     // An older build could leave an order parked on the account's shared
     // address. Re-accepting that order issues it a fresh address instead of
@@ -180,12 +247,20 @@ export async function getOrderPaymentMethods(identity, orderId, mainAddresses, p
     // lifetime payments would pool in whichever order was checked. (security S1)
     const paymentMethods = { btc: null, xmr: null };
     let nextBtcIndex = settings.btcIndex;
+    let btcDescriptor = '';
+    let btcReservation = null;
     let nextXmrIndex = settings.xmrIndex;
 
     if (wantsBtc && settings.btcXpub) {
-      nextBtcIndex += 1;
-      if (nextBtcIndex > MAX_DERIVATION_INDEX) throw new Error('Bitcoin address derivation limit reached.');
-      paymentMethods.btc = await deriveBitcoinAddress(settings.btcXpub, nextBtcIndex, settings.btcNetwork || 'bc');
+      btcDescriptor = await descriptorId(settings.btcXpub, settings.btcNetwork || 'bc');
+      assertOwner(identity, owner, generation, fence);
+      if (fence) await activateBitcoinAllocationContext(fence);
+      assertOwner(identity, owner, generation, fence);
+      btcReservation = await reserveBitcoinIndex({ owner, descriptor: btcDescriptor, orderId, securityFence: fence });
+      if (btcReservation.descriptorId !== btcDescriptor) throw Object.assign(new Error('This order is already reserved against a different wallet descriptor.'), { code: 'WALLET_DESCRIPTOR_MISMATCH' });
+      if (btcReservation.index > MAX_DERIVATION_INDEX) throw new Error('Bitcoin address derivation limit reached.');
+      nextBtcIndex = Math.max(nextBtcIndex, btcReservation.index);
+      paymentMethods.btc = await deriveBitcoinAddress(settings.btcXpub, btcReservation.index, settings.btcNetwork || 'bc');
     }
     if (wantsXmr && settings.xmrPrivateViewKey) {
       nextXmrIndex += 1;
@@ -213,7 +288,12 @@ export async function getOrderPaymentMethods(identity, orderId, mainAddresses, p
     settings.btcIndex = nextBtcIndex;
     settings.xmrIndex = nextXmrIndex;
     settings.orders = { ...settings.orders, [orderId]: paymentMethods };
-    await writeSettings(identity, settings);
+    if (btcReservation && paymentMethods.btc) {
+      await markBitcoinReservationReady({ owner, descriptor: btcDescriptor, orderId,
+        index: btcReservation.index, securityFence: fence });
+    }
+    assertOwner(identity, owner, generation, fence);
+    await writeSettings(identity, settings, owner, generation, fence);
     return paymentMethods;
   });
 }

@@ -223,8 +223,8 @@ test.describe('Persistence', () => {
     const dbName = await waitForAppDatabase(page);
 
     // Close the account's database, then write through the app seam: with no
-    // database open, the save waits in the write queue (src/db.js) and is
-    // applied when openDBFor runs again. Close, enqueue and reopen in one
+    // database open, the save waits in the account-scoped at-rest queue
+    // (src/db.js) and is applied when openDBFor runs again. Close, enqueue and reopen in one
     // evaluate, so a background fetch cannot reopen it in between.
     const peer = 'b'.repeat(64);
     const chatId = `dm:${peer}`;

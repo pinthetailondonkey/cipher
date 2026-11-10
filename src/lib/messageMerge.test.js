@@ -127,7 +127,8 @@ test('a deleted message is not written again when the relay copy is re-saved', a
   assert.match(commands, /await deleteMessageForGood\(id,/);
   assert.equal(/db\.messages\.delete\(id\)/.test(commands), false);
   assert.match(bootstrap, /kinds: \[5\], authors: \[identity\.pk\]/);
-  assert.match(bootstrap, /\(await deletedMessageIds\(\)\)\.forEach\(\(id\) => deleted\.add\(id\)\)/);
+  assert.match(bootstrap, /const localDeletedIds = await deletedMessageIds\(\);\s*assertSecurityContextOwner\(identity\.securityFence, identity\.pk\);\s*localDeletedIds\.forEach\(\(id\) => deleted\.add\(id\)\)/,
+    'history waits for tombstones and rechecks the captured account before applying them');
 });
 
 test('a local edit survives the history fetch that serves the original text again', async () => {

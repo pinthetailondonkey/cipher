@@ -1,0 +1,19 @@
+{
+  "schema": "cipher-dm-kat/v1",
+  "kind": "dedupe-key",
+  "vector": {
+    "inputs": {
+      "senderDevicePubkey": "d4fe49ffaa482f805bf1b1963155d5ca2dcfda0fd40dfdee98236ee84e8ad311",
+      "operationId": "f9db1636d0dc667803db7512c36a2f41"
+    },
+    "expected": {
+      "tuple": "d4fe49ffaa482f805bf1b1963155d5ca2dcfda0fd40dfdee98236ee84e8ad311:f9db1636d0dc667803db7512c36a2f41",
+      "tupleSha256": "5dcfb4606de4a44e0f18d0d1b09191054f5040bfe8e9e2fe5ed5a61116b75ddf",
+      "storedDigest": "5dcfb4606de4a44e0f18d0d1b09191054f5040bfe8e9e2fe5ed5a61116b75ddf",
+      "verdictSameDigest": "duplicate",
+      "verdictConflict": "conflict",
+      "conflictingOperationDigest": "af56093485c4162e8a1c0276e9979a2ed77615b6139398faa2f48e26f528e07c",
+      "rule": "compared by digest of the tuple bytes, never by event/rumor/wrap id"
+    }
+  }
+}

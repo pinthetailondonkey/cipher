@@ -73,12 +73,12 @@ browser, create an MLS group, execute a commit, or exercise persistence. Use
 the WASM-compatible provider and test exact release artifacts before any
 selection.
 
-The pinned `crypto/mls-eval` crate now checks the dependency actually needed
+The pinned `crypto/mls-wasm` crate now checks the dependency actually needed
 for MLS credentials as well: `openmls_basic_credential` 0.6.0 pulls
 `getrandom` 0.2, so this isolated evaluation pins 0.2.17 with its `js` feature
 in addition to OpenMLS 0.9.2's `js` feature and the Libcrux provider. The
 repository command
-`cargo check --manifest-path crypto/mls-eval/Cargo.toml --locked --target
+`cargo check --manifest-path crypto/mls-wasm/Cargo.toml --locked --target
 wasm32-unknown-unknown` passed on 2026-11-07. On 2026-11-07, the exact
 OpenMLS add/Welcome/commit/removal witness was also built with the pinned
 `wasm-bindgen` CLI and executed in headless Chromium via `npm run
@@ -87,7 +87,7 @@ Carol, both members processing the current epoch, delivery of an application
 message to the remaining members, and rejection of a post-removal application
 message by Bob. Carol also rejects a duplicate delivery of the already merged
 removal Commit. The native and browser checks invoke the same Rust flow in
-`crypto/mls-eval/src/group_flow.rs`. This is evidence for OpenMLS 0.9.2 plus
+`crypto/mls-wasm/src/group_flow.rs`. This is evidence for OpenMLS 0.9.2 plus
 the pinned Libcrux provider in this narrow browser scenario, not a production
 adapter, storage, relay, or interoperability result.
 
@@ -114,8 +114,8 @@ withholds the other branch from a device remains undetectable without an
 independent authenticated view or cross-relay comparison.
 
 The repository includes a pinned, isolated native behavior witness at
-`crypto/mls-eval`, run with
-`cargo test --manifest-path crypto/mls-eval/Cargo.toml --locked`. It creates Alice's group,
+`crypto/mls-wasm`, run with
+`cargo test --manifest-path crypto/mls-wasm/Cargo.toml --locked`. It creates Alice's group,
 adds Bob and Carol with Welcome messages, advances Bob using the received
 staged Commit, confirms both remaining members decrypt an application message,
 removes Bob, then confirms Carol decrypts a later message while Bob rejects it.

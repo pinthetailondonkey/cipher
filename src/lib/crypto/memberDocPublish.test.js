@@ -120,6 +120,29 @@ test('a membership change folds onto the held doc and publishes gen+1', async ()
   }
 });
 
+test('a retired account incarnation cannot publish a member document', async () => {
+  const env = await setup();
+  try {
+    const staleFence = {
+      context: { owner: OWNER, incarnation: 'retired-incarnation-test' },
+      assertCurrent() {
+        const error = new Error('retired account context');
+        error.code = 'SECURITY_CONTEXT_EXPIRED';
+        throw error;
+      },
+    };
+    await assert.rejects(
+      publishMemberDocUpdate(GID, [OWNER], { securityFence: staleFence, owner: OWNER }),
+      { code: 'SECURITY_CONTEXT_EXPIRED' },
+    );
+    assert.equal(env.publishedDocs.length, 0);
+  } finally {
+    __setDocOpEnvForTests(null);
+    __setMembershipDbForTests(null);
+    __setGroupKeyStoreForTests(null);
+  }
+});
+
 test('approving a fourth member from object-shaped governance rows preserves the existing three', async () => {
   const env = await setup();
   try {

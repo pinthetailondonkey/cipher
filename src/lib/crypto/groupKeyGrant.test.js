@@ -30,6 +30,65 @@ test('grant tracking never schedules an older epoch even if old grant records ex
   assert.deepEqual(epochsToSend({ records, epoch: 3, explicit: false, nowSec: 40 }), []);
 });
 
+test('a retired account incarnation cannot start group-key distribution', async () => {
+  const senderPrivkey = generateSecretKey();
+  const senderPubkey = getPublicKey(senderPrivkey);
+  let published = false;
+  const securityFence = {
+    context: { owner: senderPubkey, incarnation: 'retired-grant-test' },
+    assertCurrent() {
+      const error = new Error('retired account context');
+      error.code = 'SECURITY_CONTEXT_EXPIRED';
+      throw error;
+    },
+  };
+  await assert.rejects(distributeGroupKey({
+    senderPrivkey,
+    senderPubkey,
+    groupId: 'retired-grant-test',
+    epoch: 1,
+    keyBytes: generateGroupKey(),
+    recipients: [senderPubkey],
+    publish: async () => { published = true; },
+    securityFence,
+  }), { code: 'SECURITY_CONTEXT_EXPIRED' });
+  assert.equal(published, false);
+});
+
+test('group-key distribution stops between a stale ledger read and publication', async () => {
+  const senderPrivkey = generateSecretKey();
+  const senderPubkey = getPublicKey(senderPrivkey);
+  let stale = false;
+  let published = false;
+  let recorded = false;
+  const securityFence = {
+    context: { owner: senderPubkey, incarnation: 'mid-grant-test-incarnation' },
+    assertCurrent() {
+      if (!stale) return;
+      const error = new Error('retired account context');
+      error.code = 'SECURITY_CONTEXT_EXPIRED';
+      throw error;
+    },
+  };
+  await assert.rejects(distributeGroupKey({
+    senderPrivkey,
+    senderPubkey,
+    groupId: 'mid-grant-test',
+    epoch: 1,
+    keyBytes: generateGroupKey(),
+    docKey: new Uint8Array(32).fill(9),
+    recipients: [senderPubkey],
+    ledger: {
+      async getGrantRecords() { stale = true; return new Map(); },
+      async recordGrant() { recorded = true; },
+    },
+    publish: async () => { published = true; },
+    securityFence,
+  }), { code: 'SECURITY_CONTEXT_EXPIRED' });
+  assert.equal(published, false);
+  assert.equal(recorded, false);
+});
+
 test('a received key bundle is the epoch list, and a bad hex is dropped', () => {
   const hex = 'ab'.repeat(32);
   assert.deepEqual(parseGroupKeyBundle({
