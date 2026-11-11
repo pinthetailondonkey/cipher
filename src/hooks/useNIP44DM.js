@@ -73,6 +73,10 @@ function dmEffectPayload(payload = {}) {
 const DEVICE_SECRET_DOMAIN = new TextEncoder().encode('cipher-dm-test-device/v1');
 const appLaneForPk = new Map(); // pk -> Uint8Array(32) domain device secret
 
+// Browser-safe hex: the test-lane path runs in the page where Buffer does not
+// exist under Vite.
+const hexFromBytes = (bytes) => Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+
 async function loadAppLane() {
   return import('../lib/protocolTestDm/appLane.js');
 }
@@ -105,7 +109,7 @@ async function sendViaTestProfileLane({ identity, targetDm, messageText, clientI
     const opSeed = clientId
       ? new TextEncoder().encode(`cipher-dm-test-op/v1|${identity.pk}|${targetDm}|${clientId}`)
       : crypto.getRandomValues(new Uint8Array(32));
-    const opId = Buffer.from(sha256(opSeed)).toString('hex');
+    const opId = hexFromBytes(sha256(opSeed));
     const skBytes = identity.sk instanceof Uint8Array ? identity.sk : Uint8Array.from(identity.sk);
     // Lane R route key (REVIEWER-OPEN derivation shape): HKDF over the SENDER
     // ACCOUNT secret with the peer account pubkey as salt. The receiver

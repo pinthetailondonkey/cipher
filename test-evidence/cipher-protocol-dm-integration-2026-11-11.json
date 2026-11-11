@@ -1,22 +1,22 @@
 {
   "result": "passed",
   "captureSchema": "cipher-protocol-dm-integration-capture-v1",
-  "generatedAt": "2026-11-11T11:55:07.179Z",
+  "generatedAt": "2026-11-11T12:01:07.440Z",
   "evidenceTier": "LOCAL-TEST ONLY / no interop claim",
   "transport": "disposable NIP-01-compatible WebSocket relay bound to loopback; no production account or public relay",
-  "relayUrl": "ws://127.0.0.1:39055",
+  "relayUrl": "ws://127.0.0.1:42245",
   "clients": {
     "accountA": "9058af2e7b6f0dc54d96925b80868515bf87f3158e95afce81927b3b772d5b24",
     "accountB": "857ccdf8a26aa0ea206ec6b37c31b29e99a9f03cf8de2367a74fd085578b4146",
-    "senderDeviceA": "b13218caee8eccf35e369f62d327f91ce1d6c517e964f556586f1e16aad5165d",
-    "senderDeviceB": "35bed803af0857e4a02dae74fefe5d185bf38cd8e9bc7b5f0a4c8684f25488f8"
+    "senderDeviceA": "255444f77b8f01aa4d5024e323f6a8a2fef6cbbb522ede5b25e08cf345738254",
+    "senderDeviceB": "deda5fe98645a9985376e7753d831f944468ec7e3fd58494dd2469abd8edc62d"
   },
   "phases": [
     {
       "name": "pre-wire baseline (ordinary app path)",
       "senderAccount": "9058af2e7b6f0dc54d96925b80868515bf87f3158e95afce81927b3b772d5b24",
       "recipientAccount": "857ccdf8a26aa0ea206ec6b37c31b29e99a9f03cf8de2367a74fd085578b4146",
-      "eventId": "f7eeb1af01322d14bd69847bafe5277f045c0dba3af3b1fa70ca8881a82836dd",
+      "eventId": "516356cd6af740f200abe62e55aa4a7ed23fc9b5b244e3e3daaf2d6a9564b749",
       "kind": 1059,
       "acknowledged": true,
       "receivedByRecipientChatStore": true,
@@ -29,8 +29,8 @@
       "events": [
         {
           "direction": "AtoB",
-          "eventId": "d56f304752c8255d1bdfbde5d5beefc1e4100b712883a2a0f08437eee7528a23",
-          "operationDigestHex": "24643e3c6c06263a456e1757a64ed551fcbbd8548e8ba48a192d3c37cf30575e",
+          "eventId": "bca446957cf75f406d3d07d321462cb0b9e336dbb242c504d4561749317c4832",
+          "operationDigestHex": "dc72c7b75559d2ecc36c47a5fd0f9531ec52e07d49c71e5b5f4b553aff7a29c2",
           "routePubkeyHex": "e49083e6072e1dd6060bde05142910b2b4cc48239031798a073c7380ba2d9e26",
           "acceptedStep": 10,
           "bodyRecovered": true,
@@ -47,8 +47,8 @@
         },
         {
           "direction": "BtoA",
-          "eventId": "5bba0860aa84082722d33b6e6c939c73cd5dab3067284d23c8c4fbf70cf9de1b",
-          "operationDigestHex": "329d4fcf129dbab5de1cc5a721ceaa5fbaaacd474d487299e8a0212e4e149beb",
+          "eventId": "678387f46c9cfd6127186798ad2f6f48065014fc6960bfa5e440bb5ec7a92fb9",
+          "operationDigestHex": "53b26a6b019ec60b2833b3ebad1006f37db33e581ccff8dbbf13272ed4d0165a",
           "routePubkeyHex": "54bc108c2e3f08e5a459b7287d752942f53dcda838578604e1d50b242dabe7fa",
           "acceptedStep": 10,
           "bodyRecovered": true,

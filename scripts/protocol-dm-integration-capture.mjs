@@ -190,7 +190,7 @@ try {
       if (!restored.success) throw new Error(`restore B failed: ${restored.error}`);
       await new Promise((resolve) => setTimeout(resolve, 250));
       return window.__identity.pk;
-    }, MNEMONIC_B),
+    }, fixtureB),
   ]);
   check(pkA && pkB && pkA !== pkB, 'two distinct synthetic accounts restored');
 
