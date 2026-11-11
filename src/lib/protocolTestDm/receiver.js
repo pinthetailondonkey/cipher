@@ -193,6 +193,11 @@ export function createTestReceiver({
         senderDeviceId: senderDevicePubkey,
         operationId: decrypted.operationId,
         body: recoveredPayload?.body ?? null,
+        // App-lane dispatch needs both account identities for chat keying:
+        // fromDevice files the inbound message under the sender's account,
+        // toDevice confirms direction.
+        fromDevicePubkey: opObject?.fromDevice ?? null,
+        toDevicePubkey: opObject?.toDevice ?? null,
       });
     }
     return {

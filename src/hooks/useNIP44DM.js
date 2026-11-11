@@ -267,9 +267,10 @@ async function receiveViaTestProfileLane({ identity, incoming }) {
 async function dispatchLaneMessage({ identity, effect }) {
   try {
     assertSecurityContextOwner(identity?.securityFence, identity?.pk);
-    const senderAccount = effect.senderDeviceId; // device pubkey of the sender's seal
-    // Resolve the chat by whatever name/profile map says; fall back to raw key.
-    const counterparty = effect.counterpartyPubkey ?? senderAccount;
+    // The chat row files under the SENDER's ACCOUNT pubkey: the operation's
+    // fromDevice (toDevice is my own key; it only disambiguates direction).
+    // Device-pubkey fallback keeps old fixtures dispatching at all.
+    const counterparty = effect.fromDevicePubkey ?? effect.senderDeviceId;
     const data = { type: 'text', message: effect.body ?? '' };
     const nowSec = Math.floor(Date.now() / 1000);
     const newMsg = stampArrival({
@@ -278,7 +279,7 @@ async function dispatchLaneMessage({ identity, effect }) {
       isSender: false,
       timestamp: effect.receivedAtSeconds ?? nowSec,
       data,
-      pubkey: senderAccount,
+      pubkey: effect.senderDeviceId,
       local_timestamp: Date.now(),
       deliveryStatus: undefined,
       replyTo: null,
@@ -545,7 +546,32 @@ export function useNIP44DM({ identity }) {
       assertIdentityCurrent(identity);
       if (!mounted.current) return;
       publishOwnRelayList(identity).catch(() => {});
-      const dmFilters = dmSubscriptionFilters(identity.pk, since);
+      // Test-profile DM lane routes: when the flag is on, derive THIS side's
+      // inbound route pubkey per known chat counterparty (the same symmetric
+      // ECDH shape the sender uses) and watch those keys alongside the
+      // account key, or lane-addressed wraps never reach onevent. Derivation
+      // failure for a single peer only drops that peer's route from the
+      // filter; the shipped filters stay intact either way.
+      let laneRouteKeys = [];
+      if (allowsProtocolTestDm()) {
+        try {
+          const lane = await loadAppLane();
+          const skBytes = identity.sk instanceof Uint8Array ? identity.sk : Uint8Array.from(identity.sk);
+          const peers = new Set(Object.keys(useChatStore.getState().dms || {}));
+          for (const peerAccountPubkeyHex of peers) {
+            try {
+              const pair = await lane.deriveRouteKeyPair(skBytes, peerAccountPubkeyHex);
+              laneRouteKeys.push(pair.pubkey);
+            } catch (pairError) {
+              console.warn('[DM-lane] Route derivation skipped for one peer filter:', pairError?.message ?? String(pairError));
+            }
+          }
+        } catch (laneError) {
+          console.warn('[DM-lane] Lane subscription routes unavailable:', laneError?.message ?? String(laneError));
+        }
+        laneRouteKeys = [...new Set(laneRouteKeys)];
+      }
+      const dmFilters = dmSubscriptionFilters(identity.pk, since, laneRouteKeys);
       for (const filter of dmFilters) {
         if (!mounted.current) break;
         // The serving relay is the safety number's honest input (drill round
