@@ -100,6 +100,12 @@ export default function VendorProfilePage({
           <Avatar src={profile.picture} name={name} size={44} />
           <div className="min-w-0">
             <h1 className="truncate text-[20px] font-bold tracking-tight text-ink">{name}</h1>
+            {/* The status line is the profile's own word about itself: shown
+                only when the profile carries one, under the name it belongs
+                to. Sanitized at publish, so it is plain text here. */}
+            {profile.status && (
+              <p className="truncate text-[13px] text-inkSubtle">{profile.status}</p>
+            )}
             <p className="mono truncate text-[12px] text-inkSubtle">{shortNpub(vendorPubkey, 16)}</p>
           </div>
         </div>

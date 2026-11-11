@@ -2,9 +2,10 @@ import { useState } from 'react';
 import { useProfiles, updateProfileCache } from '../../useProfiles';
 import { useChatStore } from '../../store/chatStore';
 import { getPrivacy } from '../../lib/privacy';
-import { AtSign, Image, Type, User } from 'lucide-react';
+import { AtSign, Image, Smile, Type, User } from 'lucide-react';
 
 import { profileEditorRelays } from '../../lib/relays';
+import { sanitizeStatus } from '../../lib/profileStatus';
 import { publishVendorCard, vendorCardContent } from '../../lib/vendorCard';
 
 // The sheet it lives in draws the heading and the dismiss control, so this
@@ -16,6 +17,7 @@ export default function ProfileEditor({ identity }) {
   const values = draft || {
     name: profile.name || '',
     displayName: profile.displayName || profile.name || '',
+    status: profile.status || '',
     about: profile.about || '',
     picture: profile.picture || '',
   };
@@ -46,6 +48,7 @@ export default function ProfileEditor({ identity }) {
           display_name: values.displayName.trim(),
           about: values.about.trim(),
           picture: getPrivacy().profilePhoto === 'nobody' ? '' : values.picture.trim(),
+          ...(values.status.trim() ? { status: sanitizeStatus(values.status) } : {}),
         })),
       }, identity.sk);
       const results = await Promise.allSettled(pool.publish(profileEditorRelays, nostrEvent));
@@ -56,6 +59,7 @@ export default function ProfileEditor({ identity }) {
         displayName: values.displayName.trim(),
         about: values.about.trim(),
         picture: values.picture.trim() || null,
+        status: sanitizeStatus(values.status),
       };
       updateProfileCache(identity.pk, updated);
       // A vendor's card also lands on the group relay, because that is the
@@ -96,6 +100,13 @@ export default function ProfileEditor({ identity }) {
               <span className="min-w-0 flex-1">
                 <span className="block text-[12px] text-inkSubtle">Display name</span>
                 <input value={values.displayName} onChange={set('displayName')} className={field} maxLength={64} />
+              </span>
+            </label>
+            <label className="flex items-center gap-3 border-b border-line p-4">
+              <Smile size={24} className="shrink-0 text-inkSubtle" />
+              <span className="min-w-0 flex-1">
+                <span className="block text-[12px] text-inkSubtle">Status</span>
+                <input value={values.status} onChange={set('status')} className={field} maxLength={60} placeholder="How you're doing, in a line" />
               </span>
             </label>
             <label className="flex items-start gap-3 border-b border-line p-4">

@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { LOCKED_OUT_MESSAGE, MIN_PIN_LENGTH, PIN_TOO_SHORT_MESSAGE, isPlausiblePin, deviceKeyFailureMessage, deviceLockUpgradeMessage, failUnlockAttempt, isAcceptableNewPin, isDamagedVault, pinFailureMessage, removeAccountKeys, resetPinFailures } from './lib/vaultLockout'
 import { profileRelays as PROFILE_RELAYS } from './lib/relays'
+import { sanitizeStatus } from './lib/profileStatus'
 import { DeviceKeyMissing, getDeviceProvider, isDeviceKeyError, isDeviceVault, unwrapDeviceVault } from './lib/vaultEnvelope'
 import { destroyDeviceKeys, sealNewVault, upgradeStoredVault } from './lib/deviceLock'
 import { COMMIT_FAILED_MESSAGE, commitWithRollback } from './lib/vaultCommit'
@@ -261,11 +262,15 @@ export async function publishCipherProfile(sk, profile = {}, relays = PROFILE_RE
   const username = (profile?.username || profile?.name || '').replace(/^@/, '').trim().toLowerCase()
   const displayName = (profile?.displayName || profile?.display_name || username || 'User').trim()
   const about = profile?.about || 'New to Cipher.'
+  // Emoji status, public by choice: visible text only, short enough for a
+  // name plate. Control characters never ride the wire.
+  const status = sanitizeStatus(profile?.status)
   const profileData = {
     name: username || displayName,
     display_name: displayName,
     about,
   }
+  if (status) profileData.status = status
   if (profile?.picture) profileData.picture = profile.picture
 
   const { finalizeEvent } = await import('nostr-tools')
