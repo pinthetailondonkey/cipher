@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Eye, Image, Users, CheckCheck, Keyboard, Ban, Link2, AlertTriangle, Bell } from 'lucide-react';
+import { Eye, Image, Users, CheckCheck, Keyboard, Ban, Link2, AlertTriangle, Bell, FlaskConical } from 'lucide-react';
 import ScreenHeader from '../ui/ScreenHeader';
 import { getPrivacy, setPrivacy } from '../../lib/privacy';
 import { requestNotificationPermission } from '../../lib/notifications';
@@ -113,6 +113,7 @@ export default function PrivacySettings({ onBack }) {
           <Toggle icon={Link2} label="Link previews" hint="On sends every link in a chat you open to the preview host. Off keeps links plain." checked={privacy.linkPreviews === true} onChange={(linkPreviews) => update({ linkPreviews })} />
           <Toggle icon={Bell} label="Notifications" hint="On asks the OS once and buzzes for a new message or order. Off keeps the app silent." checked={privacy.notifications === true} onChange={toggleNotifications} />
           {notifNote && <p role="status" className="px-4 pb-3 text-[13px] text-inkMuted">{notifNote}</p>}
+          <Toggle icon={FlaskConical} label="Test-profile DM lane" hint="Experimental message lane for protocol review. When you turn it on, your direct messages send and open through the test-profile wire. The change applies the next time the chat session restarts." checked={privacy.protocolTestDm === true} onChange={(protocolTestDm) => update({ protocolTestDm })} />
         </div>
         <div className="overflow-hidden rounded-2xl border border-line bg-panel">
           {(blocked || []).length === 0 ? (

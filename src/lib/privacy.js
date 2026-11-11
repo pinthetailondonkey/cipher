@@ -12,6 +12,9 @@ export const DEFAULT_PRIVACY = {
   // A buzz asks the OS for permission, and the prompt is the person's to
   // give: it is not fired on mount. Opt-in here; the OS grant is separate.
   notifications: false,
+  // The experimental review lane for direct messages. Opt-in per account;
+  // off means the default transport does the sending, exactly as shipped.
+  protocolTestDm: false,
 };
 
 let privacyKey = '';
@@ -69,4 +72,12 @@ export function allowsNotifications() {
 // setting describes an engine that really runs.
 export function allowsGroupJoins() {
   return getPrivacy().groups !== 'nobody';
+}
+
+// The experimental DM review lane is opt-in per account. Read fresh by the
+// send and receive paths on every attempt, so a flip takes hold on the next
+// connection cycle without deeper restart requirements than the setting
+// advertises.
+export function allowsProtocolTestDm() {
+  return getPrivacy().protocolTestDm === true;
 }
