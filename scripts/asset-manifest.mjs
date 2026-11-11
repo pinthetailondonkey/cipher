@@ -30,10 +30,60 @@ export async function collectAssetFiles(distDir) {
     .sort();
 }
 
+// The entry chunk and its static-import closure, one level deep: the built
+// HTML names the entry with a script tag, and each built chunk names its own
+// static imports in import statements the bundler rewrote to /assets/ names.
+// Reading the graph out of the produced files keeps every name a file the
+// build actually emitted; a hand-listed chunk is the 404 that waits for a
+// cold load. One level is the point: the browser's own resolver fetches the
+// next level the moment it parses the first, on its own connection pool.
+export async function entryPreloadList(files, html, distDir) {
+  const chunks = files.filter((file) => file.endsWith('.js'));
+  const entry = html.match(/<script\b[^>]*\bsrc="(\/assets\/[^"]+\.js)"/)?.[1] || null;
+  if (!entry || !chunks.includes(entry)) return [];
+  const seen = new Set([entry]);
+  const imports = new Set();
+  const scan = async (chunk) => {
+    for (const match of (await readChunkSource(distDir, chunk)).matchAll(/(?:^|[^\w.])import[\s(]*"(\.[^"]+\.js)"/g)) {
+      const resolved = path.posix.join(path.posix.dirname(chunk), match[1]);
+      if (chunks.includes(resolved) && !imports.has(resolved)) {
+        imports.add(resolved);
+        await scan(resolved);
+      }
+    }
+  };
+  await scan(entry);
+  return [entry, ...imports];
+}
+
+// One built chunk's source, from dist. Chunk paths are /assets/ URLs; the
+// missing-extension form readChunkSource resolves keeps the caller honest:
+// only files collectAssetFiles listed are ever read.
+import { readFile as readNodeFile } from 'node:fs/promises';
+function readChunkSource(distDir, assetPath) {
+  return readNodeFile(path.join(distDir, assetPath.replace(/^\//, '')), 'utf8');
+}
+
 export async function writeManifest(distDir) {
   const files = await collectAssetFiles(distDir);
   const manifest = { version: 1, files };
   await writeFile(path.join(distDir, MANIFEST_NAME), `${JSON.stringify(manifest, null, 2)}\n`);
+  // Slow links start three fetches before any code runs: HTML, then the
+  // entry chunk, then its imports. The preload hints move the entry's
+  // static imports onto the HTML fetch's connection pool, which is the
+  // only parallelism a cold load gets before the module graph exists.
+  const htmlPath = path.join(distDir, 'index.html');
+  try {
+    const html = await readFile(htmlPath, 'utf8');
+    const preloadTargets = await entryPreloadList(files, html, distDir);
+    if (preloadTargets.length) {
+      const hints = preloadTargets.map((file) => `<link rel="modulepreload" href="${file}" />`).join('\n    ');
+      const rewritten = html.replace('</head>', `    ${hints}\n  </head>`);
+      await writeFile(htmlPath, rewritten);
+    }
+  } catch (error) {
+    console.error('[assets] Could not inject modulepreload hints:', error);
+  }
   return manifest;
 }
 

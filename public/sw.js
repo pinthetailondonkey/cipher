@@ -76,7 +76,13 @@ self.addEventListener('fetch', (event) => {
   }
 
   event.respondWith(
-    caches.match(request).then(async (cached) => {
+    (async () => {
+      // Cache-busters on the query (?_ship=...) must not turn one cached
+      // file into one cache entry per deploy: the pathname is what the
+      // cache holds, so try the bare pathname first and fall back to the
+      // exact URL for anything that truly varies by query.
+      const cached = await caches.match(request, { ignoreSearch: url.pathname.startsWith('/assets/') })
+        || await caches.match(url.pathname);
       if (cached) return cached;
       const response = await fetch(request);
       if (response.ok && (url.pathname.startsWith('/assets/') || url.pathname === '/sw.js')) {
@@ -86,7 +92,7 @@ self.addEventListener('fetch', (event) => {
           .catch((error) => console.error('[offline] Could not cache app asset:', url.pathname, error));
       }
       return response;
-    }),
+    })(),
   );
 });
 
