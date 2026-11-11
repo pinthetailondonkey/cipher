@@ -25,6 +25,8 @@ import { scopedSetVerified } from '../lib/storage';
 import { assertSecurityContextOwner } from '../lib/securityContextFence';
 import { allowsProtocolTestDm } from '../lib/privacy';
 
+import { getPublicKey } from 'nostr-tools/pure';
+
 function assertIdentityCurrent(identity) {
   assertSecurityContextOwner(identity?.securityFence, identity?.pk);
 }
@@ -156,6 +158,121 @@ async function sendViaTestProfileLane({ identity, targetDm, messageText, clientI
   } catch (error) {
     console.error('[DM-lane] Test-profile send failed:', error);
     return { success: false, error: error?.message || 'Test-profile DM lane failed.' };
+  }
+}
+
+// Receive one kind-1059 wrap through the frozen test-profile receiver.
+// Per-account lazy singleton: route identity + sealed lane store built once
+// per account in this session and reused for every wrap. Verdicts:
+//   {handled:true}        accepted (and message dispatched to the chat)
+//   {rejected:true,...}   frozen order said no; caller must NOT ingest
+//   {handled:false}       wrap is not addressed to this account's lane route
+//                         -> caller may fall through to the shipped path
+const appLaneReceiverForPk = new Map(); // pk -> Promise<{laneStore, receiver, routePair}>
+
+async function getLaneReceiver(identity) {
+  const cached = appLaneReceiverForPk.get(identity.pk);
+  if (cached) return cached;
+  const built = (async () => {
+    const lane = await loadAppLane();
+    const { openDBFor } = await import('../db');
+    openDBFor(identity.pk, identity.securityFence);
+    const dbInstance = (await import('../db')).db;
+    const skBytes = identity.sk instanceof Uint8Array ? identity.sk : Uint8Array.from(identity.sk);
+    // The RECEIVING direction derives with THIS account's pubkey as salt;
+    // the sender derived the same pair (contact secret + recipient salt).
+    const routePair = await lane.deriveRouteKeyPair(skBytes, identity.pk);
+    const deviceSecret = await laneDeviceSecret(identity);
+    const laneStore = lane.createAppLaneStore({ db: dbInstance, vaultKeyBytes: skBytes });
+    await laneStore.init();
+    const receiver = lane.createAppLaneReceiver({
+      laneStore,
+      routeSecretBytes: routePair.secret,
+      routeRecipientPubkeyHex: routePair.pubkey,
+      authorityPubkeyHex: getPublicKey(deviceSecret),
+      pinnedRegistryHeadIdHex: LANE_REGISTRY_HEAD_PLACEHOLDER,
+      onApplicationEffect: async (effect) => dispatchLaneMessage({ identity, effect }),
+    });
+    return { lane, laneStore, receiver, routePair, deviceSecret };
+  })();
+  appLaneReceiverForPk.set(identity.pk, built);
+  built.catch(() => appLaneReceiverForPk.delete(identity.pk));
+  return built;
+}
+
+// Domain placeholder head for the TEST lane: the authority chain is a parked
+// lane (Gate A/B); the fixture receiver skips cert/D3 checks when no
+// certificate map is provided (profile section 9.1), which is exactly what
+// this wiring relies on until certificates ship in a later commit.
+const LANE_REGISTRY_HEAD_PLACEHOLDER = 'f'.repeat(64);
+
+async function receiveViaTestProfileLane({ identity, incoming }) {
+  try {
+    const { receiver } = await getLaneReceiver(identity);
+    let verdict;
+    try {
+      verdict = await receiver.receive(incoming, { nowSeconds: Math.floor(Date.now() / 1000) });
+    } catch (receiveError) {
+      // Structural throws (missing p tag target etc.) surface as step-1-style
+      // refusals in the frozen order; an unexpected throw is still fail-closed.
+      return { rejected: true, reason: receiveError?.message || 'lane-receive-throw' };
+    }
+    if (verdict?.accepted) {
+      if (!verdict.duplicate) {
+        // Message dispatched exactly once by the receiver's own effect hook;
+        // nothing further to do here.
+        return { handled: true };
+      }
+      return { handled: true };
+    }
+    // The wrap decrypts at step 1 with THIS account's route key only. Any
+    // rejection below step 5 is a real protocol verdict for a lane-addressed
+    // wrap; failure at step 1 means it was not addressed here -> not ours.
+    if (verdict?.step === 1 && (verdict.reason === 'route-tag-mismatch' || verdict.reason === 'wrap-decrypt')) {
+      return { handled: false };
+    }
+    return { rejected: true, reason: `${verdict?.step ?? '?'}:${verdict?.reason ?? 'unknown'}` };
+  } catch (error) {
+    console.error('[DM-lane] Receiver construction failed:', error);
+    return { rejected: true, reason: `receiver-unavailable:${error?.message ?? String(error)}` };
+  }
+}
+
+// Dispatch one accepted lane operation into the REAL chat store + database,
+// reusing the same persistence shape as the shipped ingestion path so the
+// bubble renders identically and survives reload.
+async function dispatchLaneMessage({ identity, effect }) {
+  try {
+    assertSecurityContextOwner(identity?.securityFence, identity?.pk);
+    const senderAccount = effect.senderDeviceId; // device pubkey of the sender's seal
+    // Resolve the chat by whatever name/profile map says; fall back to raw key.
+    const counterparty = effect.counterpartyPubkey ?? senderAccount;
+    const data = { type: 'text', message: effect.body ?? '' };
+    const nowSec = Math.floor(Date.now() / 1000);
+    const newMsg = stampArrival({
+      id: `lanemsg-${effect.operationId.slice(0, 24)}`,
+      clientId: null,
+      isSender: false,
+      timestamp: effect.receivedAtSeconds ?? nowSec,
+      data,
+      pubkey: senderAccount,
+      local_timestamp: Date.now(),
+      deliveryStatus: undefined,
+      replyTo: null,
+    });
+    const insertion = await saveMessageOnce(counterparty, newMsg);
+    if (!['inserted', 'exists'].includes(insertion.status)) {
+      console.warn('[DM-lane] Accepted operation was not durably stored:', insertion.status);
+      return { dispatched: false, reason: insertion.status };
+    }
+    useChatStore.getState().setDms((prev) => ({
+      ...prev,
+      [counterparty]: [...(prev[counterparty] || []), newMsg].sort(sortMessages),
+    }));
+    return { dispatched: true };
+  } catch (error) {
+    console.error('[DM-lane] Effect dispatch failed after commit:', error);
+    return { dispatched: false, reason: error?.message ?? String(error) };
   }
 }
 
@@ -426,6 +543,22 @@ export function useNIP44DM({ identity }) {
             if (!mounted.current) return;
             try {
               assertIdentityCurrent(identity);
+              // Test-profile DM lane receive (flag: Privacy > Test-profile DM
+              // lane): a kind-1059 wrap when the flag is on goes through the
+              // frozen receiver FIRST. Fail closed: any rejection logs the
+              // reason and returns with NO effect and NO fallback ingest of
+              // the event by the legacy path. The legacy openDmTransportEvent
+              // below stays untouched for the flag-off case.
+              if (incoming?.kind === GIFT_WRAP_KIND && allowsProtocolTestDm()) {
+                const laneVerdict = await receiveViaTestProfileLane({ identity, incoming });
+                if (laneVerdict.handled) return;
+                if (laneVerdict.rejected) {
+                  console.warn('[DM-lane] Wrap rejected by test-profile receiver:', laneVerdict.reason);
+                  return;
+                }
+                // handled=false, rejected=false -> not a lane-addressed wrap:
+                // fall through to the shipped path (ordinary DMs stay working).
+              }
               const { nip44 } = await import('nostr-tools');
               assertIdentityCurrent(identity);
               // NIP-59 transition: a wrapped DM (kind 1059) opens here before

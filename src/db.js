@@ -146,6 +146,13 @@ function makeDB(name) {
   d.version(20).stores({
     securityContexts: '&id, owner, incarnation',
   });
+  // v21 adds the test-profile DM lane's sealed key/value rows (TEST-ONLY
+  // lane behind the per-account opt-in): the SealedSessionStore adapter
+  // treats this table as a bag of {key,value} records under one primary
+  // index. Sealing is applied before put; no plaintext ever lands here.
+  d.version(21).stores({
+    laneState: 'key',
+  });
   return d;
 }
 
