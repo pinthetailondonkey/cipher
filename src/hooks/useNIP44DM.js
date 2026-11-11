@@ -24,6 +24,7 @@ import { deviceWatchedOrderOf, orderRecordForReceipt } from '../lib/orderActions
 import { scopedSetVerified } from '../lib/storage';
 import { assertSecurityContextOwner } from '../lib/securityContextFence';
 import { allowsProtocolTestDm } from '../lib/privacy';
+import { dmRatchetEnabled } from '../lib/dmRatchetMode';
 
 import { getPublicKey } from 'nostr-tools/pure';
 
@@ -378,6 +379,14 @@ export function useNIP44DM({ identity }) {
       return sendViaTestProfileLane({ identity, targetDm, messageText: payload.message, clientId, replyId });
     }
 
+    // Production ratchet cutover (flag: dm_ratchet_mode, default off). The
+    // same lane primitives the test profile proves, driven by the real
+    // account: ratcheted plain text, shipped NIP-44 for everything else.
+    // Checked after the test gate so the two flags never fight.
+    if (dmRatchetEnabled() && payload?.type === 'text' && typeof payload.message === 'string') {
+      return sendViaTestProfileLane({ identity, targetDm, messageText: payload.message, clientId, replyId });
+    }
+
     try {
       assertIdentityCurrent(identity);
       const { nip44, nip59 } = await import('nostr-tools');
@@ -555,7 +564,11 @@ export function useNIP44DM({ identity }) {
       // failure for a single peer only drops that peer's route from the
       // filter; the shipped filters stay intact either way.
       let laneRouteKeys = [];
-      if (allowsProtocolTestDm()) {
+      // Route subscription: the test-profile lane and the production ratchet
+      // cutover share one derivation shape, so either flag being on means
+      // this side must watch its inbound route keys or lane-addressed wraps
+      // never reach onevent.
+      if (allowsProtocolTestDm() || dmRatchetEnabled()) {
         try {
           const lane = await loadAppLane();
           const skBytes = identity.sk instanceof Uint8Array ? identity.sk : Uint8Array.from(identity.sk);
@@ -595,12 +608,13 @@ export function useNIP44DM({ identity }) {
             try {
               assertIdentityCurrent(identity);
               // Test-profile DM lane receive (flag: Privacy > Test-profile DM
-              // lane): a kind-1059 wrap when the flag is on goes through the
-              // frozen receiver FIRST. Fail closed: any rejection logs the
-              // reason and returns with NO effect and NO fallback ingest of
-              // the event by the legacy path. The legacy openDmTransportEvent
-              // below stays untouched for the flag-off case.
-              if (incoming?.kind === GIFT_WRAP_KIND && allowsProtocolTestDm()) {
+              // lane) and the production ratchet cutover share the frozen
+              // receiver: a kind-1059 wrap when either is on goes through it
+              // FIRST. Fail closed: any rejection logs the reason and returns
+              // with NO effect and NO fallback ingest of the event by the
+              // legacy path. The legacy openDmTransportEvent below stays
+              // untouched for the flag-off case.
+              if (incoming?.kind === GIFT_WRAP_KIND && (allowsProtocolTestDm() || dmRatchetEnabled())) {
                 const laneVerdict = await receiveViaTestProfileLane({ identity, incoming });
                 if (laneVerdict.handled) return;
                 if (laneVerdict.rejected) {
