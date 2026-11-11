@@ -117,11 +117,29 @@ outer events. This is transport and app-path evidence only: the harness sends
 the order payload through the DM API rather than clicking the commerce UI or
 creating its receipt-ledger entry.
 
+The real-UI loop now closes that last gap: `scripts/commerce-local-relay-ui-loop.mjs`
+drives the whole commerce lifecycle through the shipped interface — the buyer
+places the order from the real Menus browse and OneTapCheckout sheet, the
+vendor accepts from the real order card with a freshly derived per-order
+subaddress, the buyer pins the watcher key through the real Connections screen
+and checks the chain from the real button, the vendor confirms from its own
+button into a vendor-signed receipt and the consumed-txids ledger, the buyer
+countersigns, and both devices hold a two-signature receipt that
+`proofOfTrade.verifyReceipt` verifies. The local relay's capture shows the
+gift-wrapped DM wire exposing no order plaintext (the vendor's kind-30402
+menu event carries its own title in the clear by design), and the ledger
+spot-check refuses the txid and address for any other order. Evidence:
+`test-evidence/commerce-ui-loop-2026-11-11.json`
+(schema `cipher-commerce-ui-loop-capture-v1`). Still synthetic: identities,
+wallet RPC, transfer and txid; no deployed operator setup, no real chain.
+
 These checks do not use a real wallet daemon or chain transaction and do not
 exercise a deployed watcher operator setup. The commerce release gate remains
-open for real-chain evidence, the complete buyer/vendor commerce UI and
-receipt-ledger path, and operator deployment exercise. Retained focused evidence is in
+open for real-chain evidence and operator deployment exercise; the complete
+buyer/vendor commerce UI and receipt-ledger path is now exercised end to end
+by the real-UI loop above. Retained focused evidence is in
 `docs/evidence/commerce-security-operator-20261110.json`; full UI evidence is
 in `docs/evidence/commerce-security-ui-20261110.json`; the independent-account
 loopback run is recorded in
-`docs/evidence/commerce-security-two-account-20261110.json`.
+`docs/evidence/commerce-security-two-account-20261110.json`; the real-UI
+closure run is recorded in `test-evidence/commerce-ui-loop-2026-11-11.json`.
