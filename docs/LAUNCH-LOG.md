@@ -356,3 +356,49 @@ The capture harness (`scripts/wire-capture.mjs` shape, kept in scratch)
 reproduces the run: local dist server, capture relay answering AUTH/OK/EOSE
 per NIP-01/NIP-42, CDP Network frame recording, incremental JSONL writes.
 Rerun whenever the send path changes.
+
+## Phase 12 — verify:live, and what the bundle name can and cannot say (2026-11-11)
+
+`npm run verify:live` at `9731e48`: the live page serves `index-B0qVsyZp.js`, this tree builds `index-ClsVpkaX.js`. Exit 1 — the check doing its job: **the live site is not this branch.** It never was supposed to be; `security-ui-remediation` carries 54 commits over `main`, none merged or deployed. Recorded at that SHA so no one reads "failing check" as "broken site".
+
+### Where the deployed bytes come from (bundle-name hunt)
+
+The served bundle pins to a deploy window, not to a commit's name alone:
+
+- Deploy time: `index-B0qVsyZp.js` last-modified **2026-11-11 08:52:07Z**, etag `c03f84d6c87e7b04c8c687b947d584ee`.
+- The deployed tree is `origin/main` @ `381677d` ("the capture becomes a tool anyone can rerun", committed 2026-11-06 08:52:28 -0500) — main has not moved since Nov 6, so an unchanged tree was re-deployed today.
+
+### The name alone could have lied (found by construction, pinned by evidence)
+
+A clean local build of `381677d` produces `index-C7H7bszn.js`, **not** `B0qVsyZp`. Two facts together identify what actually happened:
+
+1. Byte length: local build 439,163 bytes == served 439,163 bytes; sha256 within ~4×10⁻⁵ divergence — the entire difference is child-chunk hash names inside `__vite__mapDeps` plus tiny content deltas inside those chunks (`useNIP29Group`, `outbox`, `AuthenticatedApp`, `Sheet`, `esm/db/pool`).
+2. No reachable commit anywhere on this machine builds `B0qVsyZp` locally — SHA table across 30+ candidate builds below.
+
+So the deployed bundle IS `381677d`'s graph, and Vercel produced a different name for it because **the deploy platform's build env differs from any local one**: some project-level `VITE_*` value reaches inlined code through `loadEnv` (`vite.config.js`) and shifts the chunk hashes. `VITE_AUTH_ENABLED=true` was tested locally and does NOT reproduce; the exact key(s) need dashboard access. That means for this repo a bundle NAME proves content identity only between same-env builds; cross-env, only the byte fingerprint (`verify:live`'s second half) remains meaningful.
+
+Every build here used `scripts/with-app-env.mjs vite build` semantics; worktree-at-depth reproducibility was confirmed first (same commit → same name from any directory).
+
+### Full name table, read at each SHA
+
+| SHAs | built entry |
+|---|---|
+| 9731e48 / 5e1b43a | B_U7xiCz |
+| 8592109 | CVu9IMaV |
+| 8861238 / 1949571 | 2RgHtH_l |
+| d5f6871 | ydK-VH5u |
+| bee979c | DtaojsFX |
+| c4f659d / 181cec6 / ae1d661 / 3122762 | DlplixL3 |
+| 7c906e0 | Ds8l1M5J |
+| f4e12db / bad61d2 / 7e5bb2c / 3a4a339 / fc40fd2 | DagzlgQL |
+| e6e9ced / 07e27b7 / 56e7bec / 5d97e03 / c09c469 / 4557a25 | CpuLWOcg |
+| 2172f72 | B_zvNx9R |
+| d734c72 | Dk_bLVTb |
+| 56f8acb | CJqMqhte |
+| b89880f..2aa05ab family | CSljFYLd |
+| eb882fb / 2850f7a / 7f880a1 | hG7mNne2 / B0Cijmoo variants |
+| 92efeab / 0368819 | Dwz-xyFn |
+| 040fda9 / e8e56dd | CKr0eFXL / CddQX_sj |
+| 381677d (origin/main tip) | C7H7bszn |
+
+Served: `B0qVsyZp` — matches NONE of these exactly, matches `381677d`'s byte-length and content-fingerprint graph exactly except the five chunk-hash names above. Verdict: proven-unreachable-by-name locally; env-delta on the platform identified as cause, key(s) unidentified pending dashboard access.
