@@ -23,6 +23,7 @@ import { acceptPayment, rememberPublicView, receiptBindsOrder, sendCountersignOn
 import { deviceWatchedOrderOf, orderRecordForReceipt } from '../lib/orderActions';
 import { scopedSetVerified } from '../lib/storage';
 import { assertSecurityContextOwner } from '../lib/securityContextFence';
+import { allowsProtocolTestDm } from '../lib/privacy';
 
 function assertIdentityCurrent(identity) {
   assertSecurityContextOwner(identity?.securityFence, identity?.pk);
@@ -57,6 +58,101 @@ function dmEffectPayload(payload = {}) {
   if (normalized.receipt?.hash) normalized.receipt = { hash: normalized.receipt.hash };
   if (normalized.published?.hash) normalized.published = { hash: normalized.published.hash };
   return normalized;
+}
+
+// ── Test-profile DM lane (per-account opt-in, Privacy > Test-profile DM lane)
+//
+// When the flag is ON a plain text DM is wrapped by the FROZEN test-profile
+// wire (docs/DM-TEST-PROFILE-V1.md): kind 14 rumor -> kind 13 seal signed by
+// a device key -> kind 1059 wrap, with the operation digest bound inside the
+// Olm payload. The wrap publishes to the account's relay list like any send.
+// There is NO fallback to the legacy path while the flag is on: if the wire
+// build fails the send fails with its reason. Non-text payloads and order/
+// receipt flows keep the shipped NIP-44 path; this lane is text only by
+// design and says so in code.
+const DEVICE_SECRET_DOMAIN = new TextEncoder().encode('cipher-dm-test-device/v1');
+const appLaneForPk = new Map(); // pk -> Uint8Array(32) domain device secret
+
+async function loadAppLane() {
+  return import('../lib/protocolTestDm/appLane.js');
+}
+
+async function laneDeviceSecret(identity) {
+  const cached = appLaneForPk.get(identity.pk);
+  if (cached) return cached;
+  const sk = identity.sk instanceof Uint8Array ? identity.sk : Uint8Array.from(identity.sk);
+  const { sha256 } = await import('@noble/hashes/sha2.js');
+  const secret = sha256(new Uint8Array([...DEVICE_SECRET_DOMAIN, ...sk]));
+  appLaneForPk.set(identity.pk, secret);
+  return secret;
+}
+
+// Send one plain text DM through the frozen test-profile wire. Publishes the
+// kind-1059 wrap through the SAME pool/relay-list/outbox machinery as the
+// legacy path so relay behavior stays comparable; only the wire differs.
+// Results mirror sendDM's shape exactly ({success,event,rumorId,...}).
+async function sendViaTestProfileLane({ identity, targetDm, messageText, clientId = null }) {
+  try {
+    assertSecurityContextOwner(identity?.securityFence, identity?.pk);
+    const lane = await loadAppLane();
+    const { getPublicKey } = await import('nostr-tools/pure');
+    const deviceSecret = await laneDeviceSecret(identity);
+    const nowSeconds = Math.floor(Date.now() / 1000);
+    // Operation id: deterministic from (sender account, recipient, clientId)
+    // when a clientId exists so an outbox retry carries identical bytes; else
+    // random per profile section 6 retry semantics.
+    const { sha256 } = await import('@noble/hashes/sha2.js');
+    const opSeed = clientId
+      ? new TextEncoder().encode(`cipher-dm-test-op/v1|${identity.pk}|${targetDm}|${clientId}`)
+      : crypto.getRandomValues(new Uint8Array(32));
+    const opId = Buffer.from(sha256(opSeed)).toString('hex');
+    const skBytes = identity.sk instanceof Uint8Array ? identity.sk : Uint8Array.from(identity.sk);
+    // Lane R route key (REVIEWER-OPEN derivation shape): HKDF over the SENDER
+    // ACCOUNT secret with the peer account pubkey as salt. The receiver
+    // derives its own receiving direction identically. No directory (Gate B).
+    const routePair = await lane.deriveRouteKeyPair(skBytes, targetDm);
+    const operation = lane.buildAppLaneOperation({
+      opId,
+      sessionId: `lane-${opId.slice(0, 12)}`,
+      fromDevicePubkeyHex: getPublicKey(deviceSecret),
+      peerAccountPubkeyHex: targetDm,
+      bodyText: messageText,
+      createdAtSeconds: nowSeconds,
+    });
+    const built = lane.buildTestProfileWrap({
+      operation,
+      senderDeviceSecretBytes: deviceSecret,
+      routeRecipientSecretOrPubkey: routePair.pubkey,
+      sessionId: operation.sessionId ?? `lane-${opId.slice(0, 12)}`,
+      authoritySendTimeSeconds: nowSeconds,
+      createdAtSeconds: nowSeconds,
+    });
+    // Publish through the SAME write-ahead outbox + relay pool as every send:
+    // identical delivery semantics; only the wrapped event differs.
+    let targets = generalRelays.slice();
+    let pool = null;
+    try {
+      pool = await getAuthenticatedPool(identity);
+      assertSecurityContextOwner(identity?.securityFence, identity?.pk);
+      targets = await relaysForPeer(identity, targetDm);
+      assertSecurityContextOwner(identity?.securityFence, identity?.pk);
+    } catch (poolError) {
+      console.warn('[DM-lane] Offline publish deferred to outbox:', poolError);
+    }
+    const ephemeral = false; // lane text is a durable message: write-ahead on
+    const sent = await publishWriteAhead(built.wrap, targets, () => {
+      assertSecurityContextOwner(identity?.securityFence, identity?.pk);
+      if (!pool) throw new Error('No relay connection yet.');
+      return pool.publish(targets, built.wrap);
+    }, { writeAhead: !ephemeral, assertCurrent: () => assertSecurityContextOwner(identity?.securityFence, identity?.pk) });
+    assertSecurityContextOwner(identity?.securityFence, identity?.pk);
+    if (!sent.queued) return { success: true, event: built.wrap, rumorId: built.wrap.id, results: sent.results, relayCount: sent.okCount, testProfile: true };
+    console.warn('[DM-lane] All relays rejected or unreachable:', sent.results);
+    return { success: true, queued: true, event: built.wrap, rumorId: built.wrap.id, results: sent.results, relayCount: 0, testProfile: true };
+  } catch (error) {
+    console.error('[DM-lane] Test-profile send failed:', error);
+    return { success: false, error: error?.message || 'Test-profile DM lane failed.' };
+  }
 }
 
 export function useNIP44DM({ identity }) {
@@ -127,6 +223,13 @@ export function useNIP44DM({ identity }) {
       || (payload?.type === 'order_update'
         ? `dm-order-update-v1|${identity.pk}|${targetDm}|${intent}`
         : null);
+
+    // Test-profile DM lane dispatch (flag: Privacy > Test-profile DM lane).
+    // Plain text only; everything else keeps the shipped path. No fallback:
+    // a failure here is a failed send with its reason.
+    if (allowsProtocolTestDm() && payload?.type === 'text' && typeof payload.message === 'string') {
+      return sendViaTestProfileLane({ identity, targetDm, messageText: payload.message, clientId, replyId });
+    }
 
     try {
       assertIdentityCurrent(identity);

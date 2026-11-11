@@ -165,3 +165,21 @@ test('store refuses missing sealer or broken storage shape', () => {
   assert.throws(() => new SealedSessionStore({ storage: memoryStorage(), sealer: {} }), /injected sealer/);
   assert.throws(() => new SealedSessionStore({ storage: null, sealer: xorSealer() }), /get\/put\/delete/);
 });
+
+test('plain constructor (no transactionRunner) commits through the snapshot fallback', async () => {
+  // Regression: apply() with no injected transactionRunner used to invoke
+  // createSnapshotRollbackRunner WITHOUT its staged-keys argument, so every
+  // plain-constructor commit threw "keys is not iterable" at snapshot time.
+  // Found by the app-lane round-trip smoke; browser callers construct without
+  // a native runner (IndexedDB storage adapter provides durability).
+  const storage = memoryStorage();
+  const store = new SealedSessionStore({ storage, sealer: xorSealer() });
+  await store.init();
+  const result = await store.apply({
+    sessionMutation: { sessionId: 'plain-1', state: { step: 7 } },
+    inboundJournalEntry: { senderDeviceId: 'dev-x', operationId: 'op-1', dedupeDigest: 'd1' },
+  });
+  assert.equal(result.committed, true);
+  assert.equal((await store.getSession('plain-1')).step, 7);
+  assert.ok(await store.getInboundJournalEntry('dev-x', 'op-1'));
+});

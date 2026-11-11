@@ -146,7 +146,12 @@ export class SealedSessionStore {
 
     const runner = this.transactionRunner
       ? (applyWrites) => this.transactionRunner(stagedKeysOf(stagedWrites), applyWrites)
-      : createSnapshotRollbackRunner(this.storage);
+      // Without an injected native-transaction runner the snapshot fallback
+      // still needs the SAME staged-key list: it takes pre-image snapshots of
+      // exactly those keys and restores them on any error. Calling it without
+      // them made every plain-constructor apply() throw "keys is not
+      // iterable" at commit time (found by the app-lane round-trip smoke).
+      : (applyWrites) => createSnapshotRollbackRunner(this.storage)(stagedKeysOf(stagedWrites), applyWrites);
 
     await runner(async () => {
       for (const write of stagedWrites) {
