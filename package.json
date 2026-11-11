@@ -26,6 +26,7 @@
     "test:device-authority-browser": "node scripts/device-authority-browser-test.mjs",
     "test:ratchet-authority-browser": "node scripts/dm-ratchet-authority-browser-test.mjs",
     "test:dm-local-relay": "node scripts/dm-local-relay-integration.mjs",
+    "test:gatec-baseline": "node scripts/gate-c-wire-baseline-capture.mjs",
     "test:reload-dedup": "node scripts/two-device-reload-dedup-capture.mjs",
     "test:security-context-lifecycle-browser": "node scripts/security-context-lifecycle-browser-test.mjs",
     "lint:core": "oxlint src/useIdentity.js src/Chat.jsx src/hooks/useNIP44DM.js src/hooks/useNIP29Group.js src/db.js",

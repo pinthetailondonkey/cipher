@@ -1,0 +1,678 @@
+{
+  "result": "passed",
+  "captureSchema": "cipher-mls-relay-envelope-capture-v1",
+  "generatedAt": "2026-11-11T01:53:04.953Z",
+  "evidenceTier": "LOCAL-TEST ONLY. Disposable loopback NIP-01 relays; synthetic profiles; fixture MLS wire bytes.",
+  "transportKind": 10606,
+  "relayInstances": [
+    {
+      "url": "ws://127.0.0.1:43249",
+      "connectionCount": 1,
+      "eventCount": 12,
+      "frameCount": 40
+    },
+    {
+      "url": "ws://127.0.0.1:46685",
+      "connectionCount": 1,
+      "eventCount": 12,
+      "frameCount": 38
+    }
+  ],
+  "crossRelayComparisonMode": "Genuine two local relay instances; admin compared per-relay attestation sets at every epoch.",
+  "whatRanOverRealRelayFrames": [
+    "kind-10606 EVENT publish + OK acknowledgement on both relays",
+    "subscriber REQ/EOSE + EVENT delivery on both relays",
+    "full envelope verification (signature, governance chain, attestation binding) at every delivery",
+    "per-epoch multi-member attestations compared across both relay instances",
+    "tampered unsigned envelope rejected by the relay itself",
+    "well-signed envelope citing unknown governance revision rejected fail-closed by receivers",
+    "remove + re-add flow per profile rules"
+  ],
+  "whatRemainsSimulatedOrOutOfScope": [
+    "MLS wire bytes are opaque sha256 fixtures; no live OpenMLS group state in this script",
+    "equivocation injection (differing per-relay attestation copies) is asserted-by-agreement, not fault-injected",
+    "no public relay, no interop with other MLS implementations, no production security claim"
+  ],
+  "governanceChain": [
+    0,
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6
+  ],
+  "phases": [
+    {
+      "phase": "create-group",
+      "envelopesPublished": 1,
+      "memberBaccepted": 1,
+      "memberCaccepted": 1
+    },
+    {
+      "phase": "attest-compare-epoch0",
+      "epoch": 0,
+      "crossRelayComparison": {
+        "relaysCompared": 2,
+        "agree": true,
+        "members": 3
+      }
+    },
+    {
+      "phase": "attest-compare-epoch1",
+      "epoch": 1,
+      "crossRelayComparison": {
+        "relaysCompared": 2,
+        "agree": true,
+        "members": 3
+      }
+    },
+    {
+      "phase": "add-member-b",
+      "envelopesPublished": 2,
+      "memberBEpoch": 1,
+      "memberCEpoch": 1
+    },
+    {
+      "phase": "attest-compare-epoch2",
+      "epoch": 2,
+      "crossRelayComparison": {
+        "relaysCompared": 2,
+        "agree": true,
+        "members": 3
+      }
+    },
+    {
+      "phase": "add-member-c",
+      "envelopesPublished": 2,
+      "memberBEpoch": 2,
+      "memberCEpoch": 2
+    },
+    {
+      "phase": "group-message-from-c",
+      "envelopesPublished": 1,
+      "receiversVerified": [
+        "admin-a",
+        "profile-b"
+      ]
+    },
+    {
+      "phase": "forged-envelope-rejected-by-relay",
+      "eventId": "a6fca83b8c378bf3e243b36487d5a7b03f9ea311017db4be13ab6aff547f8bcf"
+    },
+    {
+      "phase": "unknown-governance-rev-fail-closed",
+      "rejectedReason": "governance-mismatch"
+    },
+    {
+      "phase": "attest-compare-epoch3",
+      "epoch": 3,
+      "crossRelayComparison": {
+        "relaysCompared": 2,
+        "agree": true,
+        "members": 3
+      }
+    },
+    {
+      "phase": "remove-member-b",
+      "envelopesPublished": 1,
+      "adminEpoch": 3,
+      "memberCEpoch": 3
+    },
+    {
+      "phase": "removed-member-blocks-further-epochs",
+      "bLastKnownEpoch": 3,
+      "bSawOwnRemoval": true,
+      "blockedFurtherEpochs": true
+    },
+    {
+      "phase": "attest-compare-epoch4",
+      "epoch": 4,
+      "crossRelayComparison": {
+        "relaysCompared": 2,
+        "agree": true,
+        "members": 3
+      }
+    },
+    {
+      "phase": "attest-compare-epoch5",
+      "epoch": 5,
+      "crossRelayComparison": {
+        "relaysCompared": 2,
+        "agree": true,
+        "members": 3
+      }
+    },
+    {
+      "phase": "re-add-b-per-section5-rules",
+      "envelopesPublished": 2,
+      "rejoinedFromFreshWelcome": true,
+      "historyReplayUsed": false
+    }
+  ],
+  "members": {
+    "admin": {
+      "deviceId": "device-admin",
+      "finalEpoch": 5,
+      "acceptedCount": 11,
+      "rejectedCount": 1,
+      "rejectedReasons": [
+        {
+          "phase": "unknown-governance-rev",
+          "reason": "governance-mismatch"
+        }
+      ]
+    },
+    "memberB": {
+      "deviceId": "device-b",
+      "finalEpoch": 3,
+      "acceptedCount": 7,
+      "rejectedCount": 2,
+      "rejectedReasons": [
+        {
+          "phase": "add-c",
+          "reason": "governance-mismatch"
+        },
+        {
+          "phase": "unknown-governance-rev",
+          "reason": "governance-mismatch"
+        }
+      ]
+    },
+    "memberC": {
+      "deviceId": "device-c",
+      "finalEpoch": 5,
+      "acceptedCount": 10,
+      "rejectedCount": 2,
+      "rejectedReasons": [
+        {
+          "phase": "add-c",
+          "reason": "governance-mismatch"
+        },
+        {
+          "phase": "remove-b",
+          "reason": "governance-mismatch"
+        }
+      ]
+    },
+    "rejoinedB": {
+      "deviceId": "device-b-new-session",
+      "finalEpoch": 5,
+      "acceptedCount": 2,
+      "rejectedCount": 0,
+      "rejectedReasons": []
+    }
+  },
+  "relayVisibleFrames": [
+    {
+      "direction": "client",
+      "connectionId": 1,
+      "type": "REQ"
+    },
+    {
+      "direction": "relay",
+      "connectionId": 1,
+      "type": "EOSE"
+    },
+    {
+      "direction": "client",
+      "connectionId": 1,
+      "type": "EVENT",
+      "kind": 10606,
+      "eventId": "4c2e5bf1338eb8fab30ee04e9a07df57e789de5955a4b0050fd49fb794cc5150"
+    },
+    {
+      "direction": "relay",
+      "connectionId": 1,
+      "type": "OK",
+      "okAccepted": true
+    },
+    {
+      "direction": "relay",
+      "connectionId": 1,
+      "type": "EVENT"
+    },
+    {
+      "direction": "client",
+      "connectionId": 1,
+      "type": "EVENT",
+      "kind": 10606,
+      "eventId": "95fb97c202d4857c279f34873757dc1454329b631eb849a5d3b27e722bf89600"
+    },
+    {
+      "direction": "relay",
+      "connectionId": 1,
+      "type": "OK",
+      "okAccepted": true
+    },
+    {
+      "direction": "relay",
+      "connectionId": 1,
+      "type": "EVENT"
+    },
+    {
+      "direction": "client",
+      "connectionId": 1,
+      "type": "EVENT",
+      "kind": 10606,
+      "eventId": "9c1592010023709346492cc30624bbfc03106665279a33daf0482620f368b992"
+    },
+    {
+      "direction": "relay",
+      "connectionId": 1,
+      "type": "OK",
+      "okAccepted": true
+    },
+    {
+      "direction": "relay",
+      "connectionId": 1,
+      "type": "EVENT"
+    },
+    {
+      "direction": "client",
+      "connectionId": 1,
+      "type": "EVENT",
+      "kind": 10606,
+      "eventId": "caee0d59021c934b61d07df1ff4edb8ac22366c1433ee58b077579eb4dc13133"
+    },
+    {
+      "direction": "relay",
+      "connectionId": 1,
+      "type": "OK",
+      "okAccepted": true
+    },
+    {
+      "direction": "relay",
+      "connectionId": 1,
+      "type": "EVENT"
+    },
+    {
+      "direction": "client",
+      "connectionId": 1,
+      "type": "EVENT",
+      "kind": 10606,
+      "eventId": "0a9d30262dadd88c88fd141b71c73b65c6c77a3404443fd878aee494060499ae"
+    },
+    {
+      "direction": "relay",
+      "connectionId": 1,
+      "type": "OK",
+      "okAccepted": true
+    },
+    {
+      "direction": "relay",
+      "connectionId": 1,
+      "type": "EVENT"
+    },
+    {
+      "direction": "client",
+      "connectionId": 1,
+      "type": "EVENT",
+      "kind": 10606,
+      "eventId": "1f9227a4109c4b51af9111a4dc529178fb492abf06b43ed0b8a353ee443d790d"
+    },
+    {
+      "direction": "relay",
+      "connectionId": 1,
+      "type": "OK",
+      "okAccepted": true
+    },
+    {
+      "direction": "relay",
+      "connectionId": 1,
+      "type": "EVENT"
+    },
+    {
+      "direction": "client",
+      "connectionId": 1,
+      "type": "EVENT",
+      "kind": 10606,
+      "eventId": "a6fca83b8c378bf3e243b36487d5a7b03f9ea311017db4be13ab6aff547f8bcf"
+    },
+    {
+      "direction": "relay",
+      "connectionId": 1,
+      "type": "OK",
+      "okAccepted": true
+    },
+    {
+      "direction": "relay",
+      "connectionId": 1,
+      "type": "EVENT"
+    },
+    {
+      "direction": "client",
+      "connectionId": 1,
+      "type": "EVENT",
+      "kind": 10606,
+      "eventId": "a6fca83b8c378bf3e243b36487d5a7b03f9ea311017db4be13ab6aff547f8bcf"
+    },
+    {
+      "direction": "relay",
+      "connectionId": 1,
+      "type": "OK"
+    },
+    {
+      "direction": "client",
+      "connectionId": 1,
+      "type": "EVENT",
+      "kind": 10606,
+      "eventId": "ec43e4fd314ca6418305013761d3f952ab3a182bc7713b59d5d3c21fe450fa99"
+    },
+    {
+      "direction": "relay",
+      "connectionId": 1,
+      "type": "OK",
+      "okAccepted": true
+    },
+    {
+      "direction": "relay",
+      "connectionId": 1,
+      "type": "EVENT"
+    },
+    {
+      "direction": "client",
+      "connectionId": 1,
+      "type": "EVENT",
+      "kind": 10606,
+      "eventId": "4a0af73763d74b75bd8796e744b830405e9b5fb0c88082ae53c3cd1fee80d770"
+    },
+    {
+      "direction": "relay",
+      "connectionId": 1,
+      "type": "OK",
+      "okAccepted": true
+    },
+    {
+      "direction": "relay",
+      "connectionId": 1,
+      "type": "EVENT"
+    },
+    {
+      "direction": "client",
+      "connectionId": 1,
+      "type": "EVENT",
+      "kind": 10606,
+      "eventId": "5b956dbcf9efacd8b41be0870954bd23491be4961b538b0219730c17ffe99551"
+    },
+    {
+      "direction": "relay",
+      "connectionId": 1,
+      "type": "OK",
+      "okAccepted": true
+    },
+    {
+      "direction": "relay",
+      "connectionId": 1,
+      "type": "EVENT"
+    },
+    {
+      "direction": "client",
+      "connectionId": 1,
+      "type": "EVENT",
+      "kind": 10606,
+      "eventId": "bb38aff46733e9f710e382e3fb6b5701b7aa795c682c58503491db011e2658f1"
+    },
+    {
+      "direction": "relay",
+      "connectionId": 1,
+      "type": "OK",
+      "okAccepted": true
+    },
+    {
+      "direction": "relay",
+      "connectionId": 1,
+      "type": "EVENT"
+    },
+    {
+      "direction": "client",
+      "connectionId": 1,
+      "type": "EVENT",
+      "kind": 10606,
+      "eventId": "1421c2caaedeaf266d5dcd6c8c9e01531fb785579b5eca9f8af8508f1bb5b21e"
+    },
+    {
+      "direction": "relay",
+      "connectionId": 1,
+      "type": "OK",
+      "okAccepted": true
+    },
+    {
+      "direction": "relay",
+      "connectionId": 1,
+      "type": "EVENT"
+    },
+    {
+      "direction": "client",
+      "connectionId": 1,
+      "type": "REQ"
+    },
+    {
+      "direction": "relay",
+      "connectionId": 1,
+      "type": "EOSE"
+    },
+    {
+      "direction": "client",
+      "connectionId": 1,
+      "type": "EVENT",
+      "kind": 10606,
+      "eventId": "4c2e5bf1338eb8fab30ee04e9a07df57e789de5955a4b0050fd49fb794cc5150"
+    },
+    {
+      "direction": "relay",
+      "connectionId": 1,
+      "type": "OK",
+      "okAccepted": true
+    },
+    {
+      "direction": "relay",
+      "connectionId": 1,
+      "type": "EVENT"
+    },
+    {
+      "direction": "client",
+      "connectionId": 1,
+      "type": "EVENT",
+      "kind": 10606,
+      "eventId": "95fb97c202d4857c279f34873757dc1454329b631eb849a5d3b27e722bf89600"
+    },
+    {
+      "direction": "relay",
+      "connectionId": 1,
+      "type": "OK",
+      "okAccepted": true
+    },
+    {
+      "direction": "relay",
+      "connectionId": 1,
+      "type": "EVENT"
+    },
+    {
+      "direction": "client",
+      "connectionId": 1,
+      "type": "EVENT",
+      "kind": 10606,
+      "eventId": "9c1592010023709346492cc30624bbfc03106665279a33daf0482620f368b992"
+    },
+    {
+      "direction": "relay",
+      "connectionId": 1,
+      "type": "OK",
+      "okAccepted": true
+    },
+    {
+      "direction": "relay",
+      "connectionId": 1,
+      "type": "EVENT"
+    },
+    {
+      "direction": "client",
+      "connectionId": 1,
+      "type": "EVENT",
+      "kind": 10606,
+      "eventId": "caee0d59021c934b61d07df1ff4edb8ac22366c1433ee58b077579eb4dc13133"
+    },
+    {
+      "direction": "relay",
+      "connectionId": 1,
+      "type": "OK",
+      "okAccepted": true
+    },
+    {
+      "direction": "relay",
+      "connectionId": 1,
+      "type": "EVENT"
+    },
+    {
+      "direction": "client",
+      "connectionId": 1,
+      "type": "EVENT",
+      "kind": 10606,
+      "eventId": "0a9d30262dadd88c88fd141b71c73b65c6c77a3404443fd878aee494060499ae"
+    },
+    {
+      "direction": "relay",
+      "connectionId": 1,
+      "type": "OK",
+      "okAccepted": true
+    },
+    {
+      "direction": "relay",
+      "connectionId": 1,
+      "type": "EVENT"
+    },
+    {
+      "direction": "client",
+      "connectionId": 1,
+      "type": "EVENT",
+      "kind": 10606,
+      "eventId": "1f9227a4109c4b51af9111a4dc529178fb492abf06b43ed0b8a353ee443d790d"
+    },
+    {
+      "direction": "relay",
+      "connectionId": 1,
+      "type": "OK",
+      "okAccepted": true
+    },
+    {
+      "direction": "relay",
+      "connectionId": 1,
+      "type": "EVENT"
+    },
+    {
+      "direction": "client",
+      "connectionId": 1,
+      "type": "EVENT",
+      "kind": 10606,
+      "eventId": "a6fca83b8c378bf3e243b36487d5a7b03f9ea311017db4be13ab6aff547f8bcf"
+    },
+    {
+      "direction": "relay",
+      "connectionId": 1,
+      "type": "OK",
+      "okAccepted": true
+    },
+    {
+      "direction": "relay",
+      "connectionId": 1,
+      "type": "EVENT"
+    },
+    {
+      "direction": "client",
+      "connectionId": 1,
+      "type": "EVENT",
+      "kind": 10606,
+      "eventId": "ec43e4fd314ca6418305013761d3f952ab3a182bc7713b59d5d3c21fe450fa99"
+    },
+    {
+      "direction": "relay",
+      "connectionId": 1,
+      "type": "OK",
+      "okAccepted": true
+    },
+    {
+      "direction": "relay",
+      "connectionId": 1,
+      "type": "EVENT"
+    },
+    {
+      "direction": "client",
+      "connectionId": 1,
+      "type": "EVENT",
+      "kind": 10606,
+      "eventId": "4a0af73763d74b75bd8796e744b830405e9b5fb0c88082ae53c3cd1fee80d770"
+    },
+    {
+      "direction": "relay",
+      "connectionId": 1,
+      "type": "OK",
+      "okAccepted": true
+    },
+    {
+      "direction": "relay",
+      "connectionId": 1,
+      "type": "EVENT"
+    },
+    {
+      "direction": "client",
+      "connectionId": 1,
+      "type": "EVENT",
+      "kind": 10606,
+      "eventId": "5b956dbcf9efacd8b41be0870954bd23491be4961b538b0219730c17ffe99551"
+    },
+    {
+      "direction": "relay",
+      "connectionId": 1,
+      "type": "OK",
+      "okAccepted": true
+    },
+    {
+      "direction": "relay",
+      "connectionId": 1,
+      "type": "EVENT"
+    },
+    {
+      "direction": "client",
+      "connectionId": 1,
+      "type": "EVENT",
+      "kind": 10606,
+      "eventId": "bb38aff46733e9f710e382e3fb6b5701b7aa795c682c58503491db011e2658f1"
+    },
+    {
+      "direction": "relay",
+      "connectionId": 1,
+      "type": "OK",
+      "okAccepted": true
+    },
+    {
+      "direction": "relay",
+      "connectionId": 1,
+      "type": "EVENT"
+    },
+    {
+      "direction": "client",
+      "connectionId": 1,
+      "type": "EVENT",
+      "kind": 10606,
+      "eventId": "1421c2caaedeaf266d5dcd6c8c9e01531fb785579b5eca9f8af8508f1bb5b21e"
+    },
+    {
+      "direction": "relay",
+      "connectionId": 1,
+      "type": "OK",
+      "okAccepted": true
+    },
+    {
+      "direction": "relay",
+      "connectionId": 1,
+      "type": "EVENT"
+    }
+  ],
+  "limitations": [
+    "LOCAL-TEST tier only.",
+    "Not interop, not production.",
+    "One machine, two loopback relay ports."
+  ]
+}

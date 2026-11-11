@@ -1,0 +1,722 @@
+{
+  "result": "passed",
+  "captureSchema": "cipher-gate-c-wire-baseline-v1",
+  "generatedAt": "2026-11-11T00:00:07.416Z",
+  "transport": "disposable NIP-01-compatible WebSocket relay bound to loopback; no public relay observed",
+  "corpus": {
+    "shortCount": 10,
+    "mediumCount": 10,
+    "longCount": 6,
+    "burstBatches": 2,
+    "burstSize": 5,
+    "quietGapMs": 32000,
+    "orderDm": 1
+  },
+  "assertions": [
+    {
+      "name": "corpus delivered complete",
+      "passed": true,
+      "detail": {
+        "expectedMin": 27,
+        "actualWraps": 27
+      }
+    },
+    {
+      "name": "every wrap carries the recipient p tag",
+      "passed": true,
+      "detail": {
+        "wraps": 27,
+        "withRecipientPTag": 27
+      }
+    },
+    {
+      "name": "every captured frame parsed or flagged",
+      "passed": true,
+      "detail": {
+        "fixtureErrors": 0
+      }
+    },
+    {
+      "name": "zero secrets in evidence (heuristic pubkey scan)",
+      "passed": true,
+      "detail": {
+        "leaked": null,
+        "note": "Redaction is heuristic: 64-hex-char tag values are stripped before serialization; the scan above is best-effort, not a cryptographic guarantee."
+      }
+    }
+  ],
+  "measurements": {
+    "padding": {
+      "legacyTarget": "640 JS code units (not bytes)",
+      "observedWrapContentByteSizes": [
+        3504,
+        5552
+      ],
+      "observedRungFloorBytes": 3504,
+      "note": "The 640-code-unit target is a code-unit guarantee only; UTF-8 bytes of sealed ciphertext content exceed it whenever multibyte content or NIP-44 overhead is present. Byte-level rung floor measured at relay.",
+      "ladderComparisonPreview": [
+        {
+          "class": "short",
+          "plaintextChars": 88,
+          "plaintextUtf8Bytes": 88,
+          "ladderBucketBytes": 512
+        },
+        {
+          "class": "short",
+          "plaintextChars": 88,
+          "plaintextUtf8Bytes": 88,
+          "ladderBucketBytes": 512
+        },
+        {
+          "class": "short",
+          "plaintextChars": 88,
+          "plaintextUtf8Bytes": 88,
+          "ladderBucketBytes": 512
+        },
+        {
+          "class": "short",
+          "plaintextChars": 88,
+          "plaintextUtf8Bytes": 88,
+          "ladderBucketBytes": 512
+        },
+        {
+          "class": "short",
+          "plaintextChars": 88,
+          "plaintextUtf8Bytes": 88,
+          "ladderBucketBytes": 512
+        },
+        {
+          "class": "short",
+          "plaintextChars": 88,
+          "plaintextUtf8Bytes": 88,
+          "ladderBucketBytes": 512
+        }
+      ],
+      "ladderUsesPadBytesModule": "src/lib/privacyMetrics/padBytes.js padToBucket"
+    },
+    "timing": {
+      "interMessageGapsMs": [
+        49,
+        43,
+        50,
+        76,
+        644,
+        47,
+        43,
+        62,
+        99,
+        32633,
+        327,
+        324,
+        344,
+        319,
+        319,
+        315,
+        343,
+        320,
+        318,
+        323,
+        322,
+        340,
+        318,
+        313,
+        334,
+        306
+      ],
+      "p50GapMs": 318,
+      "p95GapMs": 644,
+      "burstVsQuietNote": "Quiet-phase gap is simulated via sleep between phases; burst arrivals come from the rapid-fire short-text batches."
+    },
+    "reqExposure": {
+      "queryCount": 10,
+      "shapes": [
+        [
+          {
+            "kinds": [
+              4,
+              1059
+            ],
+            "authorsFilterPresent": false,
+            "recipientHashPTagPresent": true
+          }
+        ],
+        [
+          {
+            "kinds": [
+              4
+            ],
+            "authorsFilterPresent": true,
+            "recipientHashPTagPresent": false
+          }
+        ],
+        [
+          {
+            "kinds": [
+              10002
+            ],
+            "authorsFilterPresent": true,
+            "recipientHashPTagPresent": false
+          }
+        ],
+        [
+          {
+            "kinds": [
+              10002
+            ],
+            "authorsFilterPresent": true,
+            "recipientHashPTagPresent": false
+          }
+        ],
+        [
+          {
+            "kinds": [
+              10002
+            ],
+            "authorsFilterPresent": true,
+            "recipientHashPTagPresent": false
+          }
+        ],
+        [
+          {
+            "kinds": [
+              10002
+            ],
+            "authorsFilterPresent": true,
+            "recipientHashPTagPresent": false
+          }
+        ],
+        [
+          {
+            "kinds": [
+              10002
+            ],
+            "authorsFilterPresent": true,
+            "recipientHashPTagPresent": false
+          }
+        ],
+        [
+          {
+            "kinds": [
+              4
+            ],
+            "authorsFilterPresent": true,
+            "recipientHashPTagPresent": false
+          }
+        ],
+        [
+          {
+            "kinds": [
+              4,
+              1059
+            ],
+            "authorsFilterPresent": false,
+            "recipientHashPTagPresent": true
+          }
+        ],
+        [
+          {
+            "kinds": [
+              4,
+              1059
+            ],
+            "authorsFilterPresent": false,
+            "recipientHashPTagPresent": true
+          }
+        ]
+      ],
+      "recipientPTagQueries": 3,
+      "authorsFilterQueries": 7,
+      "note": "Pattern shapes only. Subscription ids and filter values redacted."
+    },
+    "repeatedIdentifierStability": {
+      "distinctPTagValues": 1,
+      "recipientWrapCount": 27,
+      "totalWraps": 27,
+      "note": "The recipient account key recurs on every wrap: the account-graph linkability residual Gate C flags."
+    },
+    "classifierPreview": {
+      "description": "PREVIEW STATISTIC ONLY: raw confusion counts of a size-only threshold separating short (<1024B observed content) from long wraps. NOT an AUC claim. NOT a Gate C numeric-limit pass.",
+      "thresholdBytes": null,
+      "correctRows": 0,
+      "totalRows": 2,
+      "confusion": null
+    }
+  },
+  "limitations": [
+    "Loopback relay only: no public-relay IP-level observation.",
+    "No cross-platform device diversity: two synthetic browser profiles on one host.",
+    "Timing includes browser and scheduler overhead, not production network delay.",
+    "Preview statistic only: NOT an AUC claim and NOT a pass against any Gate C numeric limit.",
+    "No anonymity or metadata-resistance achieved: this quantifies the baseline exposure.",
+    "Tag-value redaction is heuristic; evidence must not be treated as secret-free by construction."
+  ],
+  "wraps": [
+    {
+      "atMs": 1794355246962,
+      "kind": 1059,
+      "contentUtf8Bytes": 3504,
+      "pTagPresent": true,
+      "pTagValueRedacted": "<redacted-64hex>",
+      "tags": [
+        [
+          "p",
+          "<redacted-64hex>"
+        ],
+        [
+          "expiration",
+          "1796934236"
+        ]
+      ]
+    },
+    {
+      "atMs": 1794355247011,
+      "kind": 1059,
+      "contentUtf8Bytes": 3504,
+      "pTagPresent": true,
+      "pTagValueRedacted": "<redacted-64hex>",
+      "tags": [
+        [
+          "p",
+          "<redacted-64hex>"
+        ],
+        [
+          "expiration",
+          "1796873793"
+        ]
+      ]
+    },
+    {
+      "atMs": 1794355247054,
+      "kind": 1059,
+      "contentUtf8Bytes": 3504,
+      "pTagPresent": true,
+      "pTagValueRedacted": "<redacted-64hex>",
+      "tags": [
+        [
+          "p",
+          "<redacted-64hex>"
+        ],
+        [
+          "expiration",
+          "1796940538"
+        ]
+      ]
+    },
+    {
+      "atMs": 1794355247104,
+      "kind": 1059,
+      "contentUtf8Bytes": 3504,
+      "pTagPresent": true,
+      "pTagValueRedacted": "<redacted-64hex>",
+      "tags": [
+        [
+          "p",
+          "<redacted-64hex>"
+        ],
+        [
+          "expiration",
+          "1796901270"
+        ]
+      ]
+    },
+    {
+      "atMs": 1794355247180,
+      "kind": 1059,
+      "contentUtf8Bytes": 3504,
+      "pTagPresent": true,
+      "pTagValueRedacted": "<redacted-64hex>",
+      "tags": [
+        [
+          "p",
+          "<redacted-64hex>"
+        ],
+        [
+          "expiration",
+          "1796942056"
+        ]
+      ]
+    },
+    {
+      "atMs": 1794355247824,
+      "kind": 1059,
+      "contentUtf8Bytes": 3504,
+      "pTagPresent": true,
+      "pTagValueRedacted": "<redacted-64hex>",
+      "tags": [
+        [
+          "p",
+          "<redacted-64hex>"
+        ],
+        [
+          "expiration",
+          "1796849487"
+        ]
+      ]
+    },
+    {
+      "atMs": 1794355247871,
+      "kind": 1059,
+      "contentUtf8Bytes": 3504,
+      "pTagPresent": true,
+      "pTagValueRedacted": "<redacted-64hex>",
+      "tags": [
+        [
+          "p",
+          "<redacted-64hex>"
+        ],
+        [
+          "expiration",
+          "1796889921"
+        ]
+      ]
+    },
+    {
+      "atMs": 1794355247914,
+      "kind": 1059,
+      "contentUtf8Bytes": 3504,
+      "pTagPresent": true,
+      "pTagValueRedacted": "<redacted-64hex>",
+      "tags": [
+        [
+          "p",
+          "<redacted-64hex>"
+        ],
+        [
+          "expiration",
+          "1796907427"
+        ]
+      ]
+    },
+    {
+      "atMs": 1794355247976,
+      "kind": 1059,
+      "contentUtf8Bytes": 3504,
+      "pTagPresent": true,
+      "pTagValueRedacted": "<redacted-64hex>",
+      "tags": [
+        [
+          "p",
+          "<redacted-64hex>"
+        ],
+        [
+          "expiration",
+          "1796837435"
+        ]
+      ]
+    },
+    {
+      "atMs": 1794355248075,
+      "kind": 1059,
+      "contentUtf8Bytes": 3504,
+      "pTagPresent": true,
+      "pTagValueRedacted": "<redacted-64hex>",
+      "tags": [
+        [
+          "p",
+          "<redacted-64hex>"
+        ],
+        [
+          "expiration",
+          "1796820548"
+        ]
+      ]
+    },
+    {
+      "atMs": 1794355280708,
+      "kind": 1059,
+      "contentUtf8Bytes": 3504,
+      "pTagPresent": true,
+      "pTagValueRedacted": "<redacted-64hex>",
+      "tags": [
+        [
+          "p",
+          "<redacted-64hex>"
+        ],
+        [
+          "expiration",
+          "1796775826"
+        ]
+      ]
+    },
+    {
+      "atMs": 1794355281035,
+      "kind": 1059,
+      "contentUtf8Bytes": 3504,
+      "pTagPresent": true,
+      "pTagValueRedacted": "<redacted-64hex>",
+      "tags": [
+        [
+          "p",
+          "<redacted-64hex>"
+        ],
+        [
+          "expiration",
+          "1796868343"
+        ]
+      ]
+    },
+    {
+      "atMs": 1794355281359,
+      "kind": 1059,
+      "contentUtf8Bytes": 3504,
+      "pTagPresent": true,
+      "pTagValueRedacted": "<redacted-64hex>",
+      "tags": [
+        [
+          "p",
+          "<redacted-64hex>"
+        ],
+        [
+          "expiration",
+          "1796940820"
+        ]
+      ]
+    },
+    {
+      "atMs": 1794355281703,
+      "kind": 1059,
+      "contentUtf8Bytes": 3504,
+      "pTagPresent": true,
+      "pTagValueRedacted": "<redacted-64hex>",
+      "tags": [
+        [
+          "p",
+          "<redacted-64hex>"
+        ],
+        [
+          "expiration",
+          "1796901429"
+        ]
+      ]
+    },
+    {
+      "atMs": 1794355282022,
+      "kind": 1059,
+      "contentUtf8Bytes": 3504,
+      "pTagPresent": true,
+      "pTagValueRedacted": "<redacted-64hex>",
+      "tags": [
+        [
+          "p",
+          "<redacted-64hex>"
+        ],
+        [
+          "expiration",
+          "1796822342"
+        ]
+      ]
+    },
+    {
+      "atMs": 1794355282341,
+      "kind": 1059,
+      "contentUtf8Bytes": 3504,
+      "pTagPresent": true,
+      "pTagValueRedacted": "<redacted-64hex>",
+      "tags": [
+        [
+          "p",
+          "<redacted-64hex>"
+        ],
+        [
+          "expiration",
+          "1796902866"
+        ]
+      ]
+    },
+    {
+      "atMs": 1794355282656,
+      "kind": 1059,
+      "contentUtf8Bytes": 3504,
+      "pTagPresent": true,
+      "pTagValueRedacted": "<redacted-64hex>",
+      "tags": [
+        [
+          "p",
+          "<redacted-64hex>"
+        ],
+        [
+          "expiration",
+          "1796859085"
+        ]
+      ]
+    },
+    {
+      "atMs": 1794355282999,
+      "kind": 1059,
+      "contentUtf8Bytes": 3504,
+      "pTagPresent": true,
+      "pTagValueRedacted": "<redacted-64hex>",
+      "tags": [
+        [
+          "p",
+          "<redacted-64hex>"
+        ],
+        [
+          "expiration",
+          "1796816047"
+        ]
+      ]
+    },
+    {
+      "atMs": 1794355283319,
+      "kind": 1059,
+      "contentUtf8Bytes": 3504,
+      "pTagPresent": true,
+      "pTagValueRedacted": "<redacted-64hex>",
+      "tags": [
+        [
+          "p",
+          "<redacted-64hex>"
+        ],
+        [
+          "expiration",
+          "1796786182"
+        ]
+      ]
+    },
+    {
+      "atMs": 1794355283637,
+      "kind": 1059,
+      "contentUtf8Bytes": 3504,
+      "pTagPresent": true,
+      "pTagValueRedacted": "<redacted-64hex>",
+      "tags": [
+        [
+          "p",
+          "<redacted-64hex>"
+        ],
+        [
+          "expiration",
+          "1796895023"
+        ]
+      ]
+    },
+    {
+      "atMs": 1794355283960,
+      "kind": 1059,
+      "contentUtf8Bytes": 5552,
+      "pTagPresent": true,
+      "pTagValueRedacted": "<redacted-64hex>",
+      "tags": [
+        [
+          "p",
+          "<redacted-64hex>"
+        ],
+        [
+          "expiration",
+          "1796924534"
+        ]
+      ]
+    },
+    {
+      "atMs": 1794355284282,
+      "kind": 1059,
+      "contentUtf8Bytes": 5552,
+      "pTagPresent": true,
+      "pTagValueRedacted": "<redacted-64hex>",
+      "tags": [
+        [
+          "p",
+          "<redacted-64hex>"
+        ],
+        [
+          "expiration",
+          "1796871409"
+        ]
+      ]
+    },
+    {
+      "atMs": 1794355284622,
+      "kind": 1059,
+      "contentUtf8Bytes": 5552,
+      "pTagPresent": true,
+      "pTagValueRedacted": "<redacted-64hex>",
+      "tags": [
+        [
+          "p",
+          "<redacted-64hex>"
+        ],
+        [
+          "expiration",
+          "1796832536"
+        ]
+      ]
+    },
+    {
+      "atMs": 1794355284940,
+      "kind": 1059,
+      "contentUtf8Bytes": 5552,
+      "pTagPresent": true,
+      "pTagValueRedacted": "<redacted-64hex>",
+      "tags": [
+        [
+          "p",
+          "<redacted-64hex>"
+        ],
+        [
+          "expiration",
+          "1796837240"
+        ]
+      ]
+    },
+    {
+      "atMs": 1794355285253,
+      "kind": 1059,
+      "contentUtf8Bytes": 5552,
+      "pTagPresent": true,
+      "pTagValueRedacted": "<redacted-64hex>",
+      "tags": [
+        [
+          "p",
+          "<redacted-64hex>"
+        ],
+        [
+          "expiration",
+          "1796806870"
+        ]
+      ]
+    },
+    {
+      "atMs": 1794355285587,
+      "kind": 1059,
+      "contentUtf8Bytes": 5552,
+      "pTagPresent": true,
+      "pTagValueRedacted": "<redacted-64hex>",
+      "tags": [
+        [
+          "p",
+          "<redacted-64hex>"
+        ],
+        [
+          "expiration",
+          "1796943634"
+        ]
+      ]
+    },
+    {
+      "atMs": 1794355285893,
+      "kind": 1059,
+      "contentUtf8Bytes": 3504,
+      "pTagPresent": true,
+      "pTagValueRedacted": "<redacted-64hex>",
+      "tags": [
+        [
+          "p",
+          "<redacted-64hex>"
+        ],
+        [
+          "expiration",
+          "1796792513"
+        ]
+      ]
+    }
+  ],
+  "clients": {
+    "senderAccount": "<redacted-64hex>",
+    "recipientAccount": "<redacted-64hex>"
+  },
+  "corpusDelivered": {
+    "expected": 27,
+    "observedWraps": 27
+  }
+}
