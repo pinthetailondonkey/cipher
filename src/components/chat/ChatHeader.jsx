@@ -85,6 +85,21 @@ export default function ChatHeader({ mode }) {
     const chatId = mode === 'dm' ? activeDm : activeGroup?.id;
     return chatId ? state.disappearingTimers[chatId] : undefined;
   });
+  // One picker serves both kinds of chat: the send path already reads the
+  // timer keyed by chat id (groups included) and stamps expires_at. The
+  // toggle rows below key off the same id.
+  const activeChatId = mode === 'dm' ? activeDm : activeGroup?.id;
+  // The presentation toggles read their current state per render so each
+  // menu row shows what tapping it would do. The muted read mirrors the
+  // chat-list badge predicate exactly: on the mute list, or muted until a
+  // future time (or forever). Persisted writes belong to the store.
+  const pinned = useChatStore((state) => (activeChatId ? state.pinnedChats.includes(activeChatId) : false));
+  const muted = useChatStore((state) => {
+    if (!activeChatId) return false;
+    const until = state.mutedUntil[activeChatId];
+    return state.mutedChats.includes(activeChatId) || until === 'forever' || (typeof until === 'number' && until > Date.now());
+  });
+  const archived = useChatStore((state) => (activeChatId ? state.archivedChats.includes(activeChatId) : false));
   const [showTimer, setShowTimer] = useState(false);
   const [now, setNow] = useState(() => Date.now());
   // Long avatar hold in a group opens the group information Sheet without
@@ -116,9 +131,6 @@ export default function ChatHeader({ mode }) {
     ? (profile?.displayName || profile?.name || shortNpub(activeDm) || 'Chat')
     : activeGroup?.name || 'Group';
   const picture = mode === 'dm' ? profile?.picture : activeGroup?.picture;
-  // One picker serves both kinds of chat: the send path already reads the
-  // timer keyed by chat id (groups included) and stamps expires_at.
-  const activeChatId = mode === 'dm' ? activeDm : activeGroup?.id;
   const someoneTyping = mode === 'dm'
     ? Boolean(typingAt && now - typingAt < 6000)
     : Object.values(groupTyping || {}).some((stamp) => now - stamp < 6000);
@@ -269,6 +281,31 @@ export default function ChatHeader({ mode }) {
       )}
       {menuOpen && activeChatId && (
         <div className="absolute right-2 top-full z-fab mt-1 w-56 rounded-2xl border border-line bg-panel p-1">
+          {/* The presentation toggles live here because this is where a
+              conversation is being looked at: mute, pin, archive persist
+              through scoped storage (the store owns the write), and each
+              row shows its current state so the door is its own answer. */}
+          <button
+            type="button"
+            onClick={() => { haptic('light'); useChatStore.getState().togglePinChat(activeChatId); }}
+            className="flex w-full items-center justify-between rounded-xl px-3 py-3 text-left text-[14px] text-ink"
+          >
+            {pinned ? 'Unpin chat' : 'Pin chat'}
+          </button>
+          <button
+            type="button"
+            onClick={() => { haptic('light'); useChatStore.getState().toggleMuteChat(activeChatId); }}
+            className={`flex w-full items-center justify-between rounded-xl px-3 py-3 text-left text-[14px] ${muted ? 'text-accentText' : 'text-ink'}`}
+          >
+            {muted ? 'Unmute notifications' : 'Mute notifications'}
+          </button>
+          <button
+            type="button"
+            onClick={() => { setMenuOpen(false); haptic('light'); useChatStore.getState().toggleArchiveChat(activeChatId); if (!archived) setView('list'); }}
+            className="flex w-full items-center justify-between rounded-xl px-3 py-3 text-left text-[14px] text-ink"
+          >
+            {archived ? 'Unarchive chat' : 'Archive chat'}
+          </button>
           <button
             type="button"
             onClick={openTimer}
