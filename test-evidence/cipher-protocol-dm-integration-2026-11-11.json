@@ -1,0 +1,81 @@
+{
+  "result": "passed",
+  "captureSchema": "cipher-protocol-dm-integration-capture-v1",
+  "generatedAt": "2026-11-11T11:55:07.179Z",
+  "evidenceTier": "LOCAL-TEST ONLY / no interop claim",
+  "transport": "disposable NIP-01-compatible WebSocket relay bound to loopback; no production account or public relay",
+  "relayUrl": "ws://127.0.0.1:39055",
+  "clients": {
+    "accountA": "9058af2e7b6f0dc54d96925b80868515bf87f3158e95afce81927b3b772d5b24",
+    "accountB": "857ccdf8a26aa0ea206ec6b37c31b29e99a9f03cf8de2367a74fd085578b4146",
+    "senderDeviceA": "b13218caee8eccf35e369f62d327f91ce1d6c517e964f556586f1e16aad5165d",
+    "senderDeviceB": "35bed803af0857e4a02dae74fefe5d185bf38cd8e9bc7b5f0a4c8684f25488f8"
+  },
+  "phases": [
+    {
+      "name": "pre-wire baseline (ordinary app path)",
+      "senderAccount": "9058af2e7b6f0dc54d96925b80868515bf87f3158e95afce81927b3b772d5b24",
+      "recipientAccount": "857ccdf8a26aa0ea206ec6b37c31b29e99a9f03cf8de2367a74fd085578b4146",
+      "eventId": "f7eeb1af01322d14bd69847bafe5277f045c0dba3af3b1fa70ca8881a82836dd",
+      "kind": 1059,
+      "acknowledged": true,
+      "receivedByRecipientChatStore": true,
+      "relayVisibleContentFreeOfPlaintext": true,
+      "laneFlagAtCaptureTime": false
+    },
+    {
+      "name": "app-lane module evidence (direct in-page exercise)",
+      "contactSecretLabel": "cipher-dm-applane/e2e-contact",
+      "events": [
+        {
+          "direction": "AtoB",
+          "eventId": "d56f304752c8255d1bdfbde5d5beefc1e4100b712883a2a0f08437eee7528a23",
+          "operationDigestHex": "24643e3c6c06263a456e1757a64ed551fcbbd8548e8ba48a192d3c37cf30575e",
+          "routePubkeyHex": "e49083e6072e1dd6060bde05142910b2b4cc48239031798a073c7380ba2d9e26",
+          "acceptedStep": 10,
+          "bodyRecovered": true,
+          "replayDuplicate": true,
+          "tamperCase": {
+            "rejected": true,
+            "step": 1,
+            "reason": "wrap-decrypt",
+            "journalRowsBefore": 1,
+            "journalRowsAfter": 1,
+            "noDurableMutation": true
+          },
+          "journalRows": 1
+        },
+        {
+          "direction": "BtoA",
+          "eventId": "5bba0860aa84082722d33b6e6c939c73cd5dab3067284d23c8c4fbf70cf9de1b",
+          "operationDigestHex": "329d4fcf129dbab5de1cc5a721ceaa5fbaaacd474d487299e8a0212e4e149beb",
+          "routePubkeyHex": "54bc108c2e3f08e5a459b7287d752942f53dcda838578604e1d50b242dabe7fa",
+          "acceptedStep": 10,
+          "bodyRecovered": true,
+          "replayDuplicate": true,
+          "tamperCase": {
+            "rejected": true,
+            "step": 1,
+            "reason": "wrap-decrypt",
+            "journalRowsBefore": 1,
+            "journalRowsAfter": 1,
+            "noDurableMutation": true
+          },
+          "journalRows": 1
+        }
+      ],
+      "wireAssertions": {
+        "outerKindIs1059Wrap": true,
+        "singlePTagPerEvent": true,
+        "pTagNotAnyAccountOrDeviceKeyOnWire": true,
+        "publishedContentFreeOfPlaintextBody": true
+      },
+      "accepted": true
+    }
+  ],
+  "limitations": [
+    "The per-account Privacy toggle is ON for phase A context switching but today the shipped sendDM path remains NIP-44/NIP-59; phase B exercises the new app-lane modules directly. The seam wiring commit will re-run this capture.",
+    "Synthetic accounts restored from fixed public mnemonics on a disposable loopback relay.",
+    "LOCAL-TEST tier; no interop, anonymity, IP-protection or parity claim."
+  ]
+}
