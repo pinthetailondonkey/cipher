@@ -101,7 +101,6 @@ async function sendViaTestProfileLane({ identity, targetDm, messageText, clientI
   try {
     assertSecurityContextOwner(identity?.securityFence, identity?.pk);
     const lane = await loadAppLane();
-    const { getPublicKey } = await import('nostr-tools/pure');
     const deviceSecret = await laneDeviceSecret(identity);
     const nowSeconds = Math.floor(Date.now() / 1000);
     // Operation id: deterministic from (sender account, recipient, clientId)
@@ -117,10 +116,13 @@ async function sendViaTestProfileLane({ identity, targetDm, messageText, clientI
     // ACCOUNT secret with the peer account pubkey as salt. The receiver
     // derives its own receiving direction identically. No directory (Gate B).
     const routePair = await lane.deriveRouteKeyPair(skBytes, targetDm);
+    // fromDevice carries the SENDER ACCOUNT pubkey (identity.pk): chat rows
+    // file under it on the receiving side, same key the shipped path uses.
+    // The lane DEVICE key only signs the seal layer; it is never a chat id.
     const operation = lane.buildAppLaneOperation({
       opId,
       sessionId: `lane-${opId.slice(0, 12)}`,
-      fromDevicePubkeyHex: getPublicKey(deviceSecret),
+      fromDevicePubkeyHex: identity.pk,
       peerAccountPubkeyHex: targetDm,
       bodyText: messageText,
       createdAtSeconds: nowSeconds,
