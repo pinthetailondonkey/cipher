@@ -20,6 +20,11 @@ fi
 # Narrow extra rules (added 2026-10-27). Each looks at one file's staged
 # additions at a time. None of them touches public hex pubkeys: a name
 # containing "pub" is never a secret name here (GROUP_RELAY_PUBKEY passes).
+#
+# Fixture allowlist (added 2026-11-11): staged additions under
+# src/lib/protocolTest*/** and test-vectors/** are deterministic KAT/battery
+# vectors with fixed 64-hex literal keys shipped on purpose for
+# reproducibility. They are skipped with a printed reason note, not silence.
 adds() { git diff --cached -U0 -- "$1" | grep '^+' | grep -v '^+++'; }
 files=$(git diff --cached --name-only --diff-filter=ACMR -- . ':(exclude).githooks/pre-commit')
 fail=0
@@ -36,6 +41,10 @@ ONION='[a-z2-7]{16,56}\.onion'
 for f in $files; do
   a=$(adds "$f")
   [ -n "$a" ] || continue
+  case "$f" in src/lib/protocolTest*/*|test-vectors/*)
+    echo "pre-commit: fixture-allowlist note: $f carries deterministic test-vector literals, not secrets — scanning skipped by allowlist" >&2
+    continue;;
+  esac
   h=$(echo "$a" | grep -Eio -- "$HEX64" | grep -vi 'pub')
   [ -n "$h" ] && refuse "a bare 64-hex value is assigned to a secret-looking name" "$f" "$h"
   h=$(echo "$a" | grep -Ei -- "$AWS")
