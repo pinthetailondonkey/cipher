@@ -1,0 +1,45 @@
+{
+  "schema": "cipher-commerce-ui-loop-capture-v1",
+  "capturedAt": "2026-11-11T20:40:49.221Z",
+  "result": "passed",
+  "loop": [
+    "menus_buy_checkout_ui_order",
+    "rendered_accept_with_per_order_address",
+    "connections_pin_watcher_key",
+    "buyer_check_chain_device_mark",
+    "vendor_check_chain_receipt_plus_ledger",
+    "buyer_countersign_roundtrip",
+    "two_party_receipt_verified",
+    "consumed_ledger_binds_txid"
+  ],
+  "accounts": {
+    "buyer": "9058af2e7b6f0dc54d96925b80868515bf87f3158e95afce81927b3b772d5b24",
+    "vendor": "857ccdf8a26aa0ea206ec6b37c31b29e99a9f03cf8de2367a74fd085578b4146",
+    "distinct": true
+  },
+  "order": {
+    "id": "ab2bbd5d2bf628cfb1156d567fe824c4ac2fcc0da1e24dabe54e2e4ced97effc",
+    "amount": "0.5"
+  },
+  "receipt": {
+    "hash": "aa8fd180d5935162618210fd1759505fc67d87f7cfb0c90c98f422a4378b45e0",
+    "signaturesAtFirstObservation": 1,
+    "signaturesAfterCountersign": 2,
+    "cryptoVerified": true
+  },
+  "watcher": {
+    "signedV2": true,
+    "state": "confirmed",
+    "txid": "synthetic-ui-loop-ab2bbd5d2bf6",
+    "authorizationHeaderOnly": true
+  },
+  "relayCapture": {
+    "dmWrapSealEvents": 6,
+    "plaintextOrderTitleExposedInDmWire": false
+  },
+  "limits": [
+    "synthetic identities, wallet RPC, transfer, and txid; no chain or wallet-daemon evidence",
+    "relay and watcher are local test services; no deployed operator setup or public-relay test",
+    "production DMs remain on NIP-44/NIP-59; no protocol change and no anonymity claim"
+  ]
+}
