@@ -59,7 +59,9 @@ test('production account DB opens require the identity security fence', () => {
   const bootstrap = read('../features/chat/useChatBootstrap.js');
   const dm = read('./useNIP44DM.js');
   assert.match(bootstrap, /if \(identity\?\.pk && identity\?\.securityFence\) openDBFor\(identity\.pk, identity\.securityFence\)/);
-  assert.equal((dm.match(/openDBFor\(identity\.pk, identity\.securityFence\)/g) || []).length, 2);
+  // Three open sites now: bootstrap, the group-key engine, and the
+  // test-profile DM lane receiver (each behind its own fence guard).
+  assert.equal((dm.match(/openDBFor\(identity\.pk, identity\.securityFence\)/g) || []).length, 3);
   assert.match(dm, /if \(!identity\.securityFence\) return;\s+openDBFor\(identity\.pk, identity\.securityFence\)/);
   assert.match(dm, /if \(!identity\.securityFence\) continue;\s+openDBFor\(identity\.pk, identity\.securityFence\)/);
 });
