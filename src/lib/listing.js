@@ -44,6 +44,9 @@ export function listingFromEvent(event) {
     ...(currency === 'USD' ? { priceUsd: amount } : {}),
     image,
     vendorPubkey: event.pubkey,
+    // Optional `sold_out` tag on the published listing; absence reads as
+    // available so every older listing renders unchanged.
+    soldOut: soldOutFromEvent(event.tags),
   };
 }
 
@@ -123,6 +126,31 @@ export function productShareLink(product, base = '') {
   } catch {
     return '';
   }
+}
+
+// One URL opens a vendor's whole menu (the storefront, not one item). It is
+// honored wherever the storefront state is set; ?menu= bootstrapping on a
+// cold load lives in useChatBootstrap.js and rides the same vendor param.
+export function menuShareLink(vendorPubkey, base = '') {
+  const vendor = String(vendorPubkey ?? '').trim();
+  if (!vendor) return '';
+  const root = String(base || '').trim()
+    || (typeof window !== 'undefined' ? String(window.location?.origin || '') : '');
+  try {
+    const url = new URL(root);
+    url.searchParams.set('vendor', vendor);
+    return url.toString();
+  } catch {
+    return '';
+  }
+}
+
+// A listing can be marked sold out with an optional `sold_out` tag whose
+// value is any truthy word ('1', 'true', 'yes'). Absent tag or empty value
+// reads as in stock.
+export function soldOutFromEvent(tags) {
+  const raw = String((tags || []).find((item) => item[0] === 'sold_out')?.[1] || '').trim().toLowerCase();
+  return raw !== '' && !['0', 'false', 'no'].includes(raw);
 }
 
 export function markCachedProductDelivery(productId, delivery) {

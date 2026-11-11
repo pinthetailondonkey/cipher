@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Search, ChevronRight, ShoppingBag, X, Link2 } from 'lucide-react';
+import { Search, ChevronRight, ShoppingBag, X, Link2, QrCode } from 'lucide-react';
 import { useChatStore } from './store/chatStore';
 import { haptic } from './lib/haptics';
 import { copyText } from './lib/copyText';
@@ -10,7 +10,10 @@ import Avatar from './components/ui/Avatar';
 import EmptyState from './components/ui/EmptyState';
 import { pressable } from './components/ui/Button';
 import { SkeletonGrid } from './components/ui/Skeleton';
-import { listingFromEvent, priceLabel, productShareLink } from './lib/listing';
+import Sheet from './components/ui/Sheet';
+import Button from './components/ui/Button';
+import { QRCodeSVG } from 'qrcode.react';
+import { listingFromEvent, menuShareLink, priceLabel, productShareLink } from './lib/listing';
 import { noHexName } from './lib/npub';
 
 // The menus tab is a browse first: vendors on the network and the items
@@ -73,6 +76,7 @@ function MenuTile({ item, onBuy, onCopyLink }) {
 
 export default function Menus() {
   const [query, setQuery] = useState('');
+  const [qrVendor, setQrVendor] = useState(null);
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -225,6 +229,29 @@ export default function Menus() {
                 </span>
                 <ChevronRight size={18} className="shrink-0 text-inkSubtle" aria-hidden="true" />
               </button>
+              {/* Section tools sit beside the opener: one tap copies the
+                  whole-menu link, one opens its QR. Both carry the vendor
+                  key the storefront door uses, so a link or scan lands on
+                  this menu directly. They sit outside the opener so no
+                  button nests inside another. */}
+              <div className="flex justify-end gap-1 px-3">
+                <button
+                  type="button"
+                  aria-label={`Copy ${vendorName}'s menu link`}
+                  onClick={() => { haptic('light'); copyText(menuShareLink(vendor, APP_HOST_URL)); }}
+                  className="flex h-9 w-9 items-center justify-center rounded-xl text-inkSubtle active:bg-ink/5"
+                >
+                  <Link2 size={16} />
+                </button>
+                <button
+                  type="button"
+                  aria-label={`Show ${vendorName}'s menu QR code`}
+                  onClick={() => { haptic('light'); setQrVendor(vendor); }}
+                  className="flex h-9 w-9 items-center justify-center rounded-xl text-inkSubtle active:bg-ink/5"
+                >
+                  <QrCode size={16} />
+                </button>
+              </div>
               <div className="grid grid-cols-2 gap-3 px-4">
                 {items.map((item) => (
                   <MenuTile
@@ -255,6 +282,17 @@ export default function Menus() {
           </p>
         </footer>
       </div>
+
+      {/* One QR per menu section: it encodes that vendor's whole-menu link. */}
+      <Sheet open={Boolean(qrVendor)} onClose={() => setQrVendor(null)} title="Menu QR code">
+        <div className="flex flex-col items-center gap-3 px-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))] pt-2">
+          <QRCodeSVG value={menuShareLink(qrVendor, APP_HOST_URL)} size={200} level="M" />
+          <p className="break-all text-center text-[11px] text-inkSubtle">{noHexName(profiles[qrVendor], qrVendor)}</p>
+          <Button fullWidth onClick={() => { haptic('light'); copyText(menuShareLink(qrVendor, APP_HOST_URL)); }}>
+            Copy menu link
+          </Button>
+        </div>
+      </Sheet>
     </div>
   );
 }

@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
-import { MessageCircle, Package, Store, X } from 'lucide-react';
+import { X, QrCode, Link2, MessageCircle, Package, Store } from 'lucide-react';
 import { useVouchCount } from '../../hooks/useVouchCount';
 import { useVendorReviews } from '../../hooks/useVendorReviews';
 import { generalRelays } from '../../lib/relays';
-import { listingFromEvent, priceLabel } from '../../lib/listing';
+import { listingFromEvent, menuShareLink, priceLabel } from '../../lib/listing';
 import Button, { pressable } from '../ui/Button';
 import Chip from '../ui/Chip';
 import Avatar from '../ui/Avatar';
@@ -11,8 +11,12 @@ import { ProductImage } from '../ui/PrivateMedia';
 import EmptyState from '../ui/EmptyState';
 import { SkeletonGrid } from '../ui/Skeleton';
 import { useModalA11y } from '../ui/modal';
+import Sheet from '../ui/Sheet';
+import { QRCodeSVG } from 'qrcode.react';
+import { copyText } from '../../lib/copyText';
 import { noHexName } from '../../lib/npub';
 import { haptic } from '../../lib/haptics';
+import { entryById } from '../../lib/egress';
 import ProvenBanner from './ProvenBanner';
 import VendorProfilePage from './VendorProfilePage';
 
@@ -28,10 +32,14 @@ import VendorProfilePage from './VendorProfilePage';
 // falls back to the device's own proofOfTrade views). Swapping providers
 // never touches this JSX.
 export default function VendorMenuHome({ open, onClose, vendorPubkey, profiles = {}, identity, onOpenChat, onBuy, dealsProvenOf }) {
+  // Shares build on the canonical app host the egress table names, not this
+  // window's origin (the desktop build serves a loopback address).
+  const APP_HOST_URL = entryById('app-host')?.url || '';
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [page, setPage] = useState('menu');
+  const [qrOpen, setQrOpen] = useState(false);
   const [pageVendor, setPageVendor] = useState(vendorPubkey);
   // A new vendor always opens on the menu, never on the page last read:
   // the reset adjusts state to the prop during render, no effect.
@@ -149,8 +157,30 @@ export default function VendorMenuHome({ open, onClose, vendorPubkey, profiles =
             {standing.monthsActive > 0 && (
               <Chip>Active {standing.monthsActive} {standing.monthsActive === 1 ? 'month' : 'months'}</Chip>
             )}
+            {standing.monthsActive > 0 && (
+              <Chip>Active {standing.monthsActive} {standing.monthsActive === 1 ? 'month' : 'months'}</Chip>
+            )}
             <Chip>Standing · {vouchCount} {vouchCount === 1 ? 'vouch' : 'vouches'}</Chip>
           </div>
+          {/* The whole menu travels as one link and one code: the share opens
+              the storefront door directly (the same vendor key), and the QR
+              draws that URL so a scan lands here without a typed address. */}
+          <button
+            type="button"
+            aria-label="Copy menu link"
+            onClick={() => { haptic('light'); copyText(menuShareLink(vendorPubkey, APP_HOST_URL)); }}
+            className={`flex min-h-[36px] items-center gap-1 rounded-full border border-line px-3 text-[12px] font-semibold text-inkMuted ${pressable}`}
+          >
+            <Link2 size={14} aria-hidden="true" /> Menu link
+          </button>
+          <button
+            type="button"
+            aria-label="Show menu QR code"
+            onClick={() => { haptic('light'); setQrOpen(true); }}
+            className={`flex min-h-[36px] items-center gap-1 rounded-full border border-line px-3 text-[12px] font-semibold text-inkMuted ${pressable}`}
+          >
+            <QrCode size={14} aria-hidden="true" /> Show QR
+          </button>
         </div>
 
         {profile.about && (
@@ -180,28 +210,37 @@ export default function VendorMenuHome({ open, onClose, vendorPubkey, profiles =
                     value={product.image}
                     alt=""
                     loading="lazy"
-                    className="aspect-[4/5] w-full border-b border-line object-cover"
+                    className={`aspect-[4/5] w-full border-b border-line object-cover ${product.soldOut ? 'opacity-50' : ''}`}
                     fallback={
                       <div className="flex aspect-[4/5] w-full items-center justify-center border-b border-line bg-panelAlt text-inkSubtle">
                         <Package size={22} />
                       </div>
                     }
                   />
+                  {product.soldOut && (
+                    <span className="absolute left-2 top-2 rounded-full bg-scrim/80 px-2 py-0.5 text-[11px] font-bold text-scrim">Sold out</span>
+                  )}
                   <div className="space-y-1 p-3">
                     <h2 className="line-clamp-2 min-h-[2.2em] text-[14px] font-semibold leading-snug text-ink">{product.name}</h2>
                     <p className="mono truncate text-[13px] font-semibold text-accentText">
                       {priceLabel(product.price, product.currency) || 'Ask'}
                     </p>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        haptic('light');
-                        onBuy?.(product, vendorPubkey);
-                      }}
-                      className="w-full rounded-xl bg-accent py-2.5 text-[13px] font-bold text-accentInk"
-                    >
-                      Buy
-                    </button>
+                    {/* A sold-out listing cannot start an order; the button
+                        dims rather than vanishes so the card keeps its shape. */}
+                    {product.soldOut ? (
+                      <span aria-disabled="true" className="block w-full cursor-not-allowed select-none rounded-xl bg-accent/40 py-2.5 text-center text-[13px] font-bold text-accentInk">Buy</span>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          haptic('light');
+                          onBuy?.(product, vendorPubkey);
+                        }}
+                        className="w-full rounded-xl bg-accent py-2.5 text-[13px] font-bold text-accentInk"
+                      >
+                        Buy
+                      </button>
+                    )}
                   </div>
                 </article>
               ))}
@@ -215,6 +254,18 @@ export default function VendorMenuHome({ open, onClose, vendorPubkey, profiles =
           Message vendor
         </Button>
       </footer>
+
+      {/* The QR is this menu's whole link: one scan opens the storefront, the
+          same door every in-app entry already uses. */}
+      <Sheet open={qrOpen} onClose={() => setQrOpen(false)} title="Menu QR code">
+        <div className="flex flex-col items-center gap-3 px-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))] pt-2">
+          <QRCodeSVG value={menuShareLink(vendorPubkey, APP_HOST_URL)} size={200} level="M" />
+          <p className="break-all text-center text-[11px] text-inkSubtle">{menuShareLink(vendorPubkey, APP_HOST_URL)}</p>
+          <Button fullWidth onClick={() => { haptic('light'); copyText(menuShareLink(vendorPubkey, APP_HOST_URL)); }}>
+            Copy menu link
+          </Button>
+        </div>
+      </Sheet>
     </section>
   );
 }
