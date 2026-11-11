@@ -85,6 +85,14 @@ if (import.meta.env?.VITE_TEST_HOOKS === '1') {
   import('./store/chatStore').then(({ useChatStore }) => {
     window.__cipherStore = useChatStore;
   });
+  // The commerce UI-loop harness drives the REAL rendered app (lock screen,
+  // restore flow, chat) and after restoring needs the same hook handles the
+  // probe pages publish. A tiny hidden seam component mounts alongside App
+  // and runs the identity and DM hooks exactly as App does. The shipping
+  // bundle never imports this file: everything below sits inside this flag.
+  import('./lib/testHookSeam.jsx').then(({ mountTestHookSeam }) => {
+    mountTestHookSeam();
+  }).catch(() => { /* the store seam alone is enough */ });
 }
 
 ReactDOM.createRoot(document.getElementById('root')).render(
