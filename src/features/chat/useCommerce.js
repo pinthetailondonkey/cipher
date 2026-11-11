@@ -123,7 +123,7 @@ export function useCommerce({ identity, sendDM, sendGroupMessage, sendVouch, ope
     catch (error) { return { outcome: 'failed', error: error?.message || 'The account security context is unavailable.' }; }
 
     const paymentMethod = scopedGet('preferred_payment_method', 'xmr');
-    const payload = { type: 'cipher_order', status: ORDER_STATUS.PENDING, paymentState: 'created', paymentMethod, product: orderProduct(order), delivery: order.delivery };
+    const payload = { type: 'cipher_order', status: ORDER_STATUS.PENDING, paymentState: 'created', paymentMethod, product: orderProduct(order.product), delivery: order.delivery };
     const tempId = `temp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const optimisticMessage = stampArrival({
       id: tempId,
