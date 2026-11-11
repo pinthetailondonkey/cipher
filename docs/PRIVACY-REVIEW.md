@@ -731,3 +731,18 @@ iterations of PBKDF2-SHA-256).
 
 Ship every claim with its falsifier. If no test can fail a claim, the claim is
 copy, not engineering.
+
+## 18. Promotion notice (2026-11-11): crypto cutover flags
+
+The wasm Double Ratchet DM lane and the MLS v1 group lane now have production
+cutover surfaces: persisted account-scoped flags `dm_ratchet_mode`
+(`src/lib/dmRatchetMode.js`) and `group_mls_mode` (`src/lib/groupCryptoMode.js`),
+both default OFF, both with a Privacy-settings row for the DM flag.
+This section records what actually changed on the wire: nothing yet. The DM
+flag routes a real account's plain-text DMs through the lane the test profile
+proves (send plus receive, fail-closed); the MLS flag ships dormant with no
+live-traffic consumer until the governance review in docs/CRYPTO-CUTOVER.md
+Part 2 is run. NIP-44 stays the receive fallback for DM history, and group
+cipher stays the shipped group path. The one-sided-update limitation — a peer
+without the flag cannot open ratcheted messages until they update and opt in —
+is disclosed in the flag's own UI copy.
