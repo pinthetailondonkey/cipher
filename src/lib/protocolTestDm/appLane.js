@@ -30,6 +30,7 @@
 import { sha256 } from '@noble/hashes/sha2.js';
 import { hkdf } from '@noble/hashes/hkdf.js';
 import { getPublicKey } from 'nostr-tools/pure';
+import { nip44 } from 'nostr-tools';
 import {
   buildTestDmEnvelope,
   operationDigest,
@@ -45,11 +46,13 @@ export { assertLoopbackRelayUrl };
 
 export const APP_LANE_VERSION = 1;
 
-// Lane R derivation domain: per-contact route secrets from one shared contact
-// secret (the verified-pin bundle carries the public half). REVIEWER-OPEN by
-// profile section 1: derivation shape is lane R work; this adapter pins ONE
-// deterministic shape for the app-lane fixture so both sides derive the same
-// route secret without any directory.
+// Lane R derivation domain: the route secret is a function of a value BOTH
+// sides compute identically. ikm = NIP-44 conversation key of (own sk, peer
+// account pubkey) - that primitive IS a symmetric secp256k1 ECDH - so sender
+// and receiver reach the same secret with no directory and no pre-shared
+// contact file; each side only needs the other's public account key, which
+// chat already knows. REVIEWER-OPEN per profile section 1: derivation shape
+// is lane R work; this adapter pins ONE deterministic shape for the app-lane.
 const ROUTE_KDF_INFO = 'cipher-dm-test-route/v1';
 
 const HEX64 = /^[0-9a-f]{64}$/;
@@ -60,14 +63,20 @@ function requireBytes(value, label, length = 32) {
   }
 }
 
-export function deriveRouteKeyPair(contactSecretBytes, peerAccountPubkeyHex) {
-  requireBytes(contactSecretBytes, 'a 32-byte contact secret');
+export function deriveRouteKeyPair(ownSecretKeyBytes, peerAccountPubkeyHex) {
+  requireBytes(ownSecretKeyBytes, 'a 32-byte own secret key');
   if (!HEX64.test(peerAccountPubkeyHex || '')) {
     throw new Error('Route derivation needs the peer account pubkey hex.');
   }
-  const salt = new TextEncoder().encode(peerAccountPubkeyHex);
+  // Symmetric ECDH: this side's sk against the PEER's public key gives the
+  // same shared bytes whichever side computes it.
+  const ikm = nip44.v2.utils.getConversationKey(ownSecretKeyBytes, peerAccountPubkeyHex);
+  // Order-independent salt: the two chat pubkeys sorted so the A->B and B->A
+  // derivations agree byte for byte without either side knowing direction.
+  const saltPair = [getPublicKey(ownSecretKeyBytes), peerAccountPubkeyHex].sort();
+  const salt = new TextEncoder().encode(saltPair.join('|'));
   const info = new TextEncoder().encode(ROUTE_KDF_INFO);
-  const derived = hkdf(sha256, contactSecretBytes, salt, info, 32);
+  const derived = hkdf(sha256, ikm, salt, info, 32);
   return { secret: derived, pubkey: getPublicKey(derived) };
 }
 

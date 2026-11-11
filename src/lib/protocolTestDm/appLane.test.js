@@ -74,7 +74,7 @@ test('deriveRouteKeyPair is deterministic and input-sensitive', () => {
   assert.equal(first.secret.length, 32);
 
   assert.throws(() => deriveRouteKeyPair(new Uint8Array(31), PEER_ACCOUNT_PUBKEY),
-    /needs a 32-byte contact secret/);
+    /needs a 32-byte own secret key/);
   assert.throws(() => deriveRouteKeyPair(CONTACT_SECRET, 'zzzz'),
     /peer account pubkey hex/);
 });

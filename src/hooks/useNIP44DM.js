@@ -170,8 +170,18 @@ async function sendViaTestProfileLane({ identity, targetDm, messageText, clientI
 //                         -> caller may fall through to the shipped path
 const appLaneReceiverForPk = new Map(); // pk -> Promise<{laneStore, receiver, routePair}>
 
-async function getLaneReceiver(identity) {
-  const cached = appLaneReceiverForPk.get(identity.pk);
+// Route salt discipline: the sender derives the route with (skSender, peer
+// account pubkey). The receiving side of a DM to B therefore derives with
+// (skB, A account pubkey) - the PEER's key as salt on both ends. The peer's
+// account pubkey is read from the incoming wrap: NIP-59 seal recovery needs
+// no trust at this stage, and the receiver accepts ONLY wraps whose p tag
+// names its own derived route pubkey, so a wrong guess fails closed at step 1.
+async function getLaneReceiver(identity, peerAccountPubkeyHex) {
+  if (!peerAccountPubkeyHex || !/^[0-9a-f]{64}$/.test(peerAccountPubkeyHex)) {
+    throw new Error('The lane receiver needs the peer account pubkey hex.');
+  }
+  const cacheKey = `${identity.pk}:${peerAccountPubkeyHex}`;
+  const cached = appLaneReceiverForPk.get(cacheKey);
   if (cached) return cached;
   const built = (async () => {
     const lane = await loadAppLane();
@@ -179,9 +189,9 @@ async function getLaneReceiver(identity) {
     openDBFor(identity.pk, identity.securityFence);
     const dbInstance = (await import('../db')).db;
     const skBytes = identity.sk instanceof Uint8Array ? identity.sk : Uint8Array.from(identity.sk);
-    // The RECEIVING direction derives with THIS account's pubkey as salt;
-    // the sender derived the same pair (contact secret + recipient salt).
-    const routePair = await lane.deriveRouteKeyPair(skBytes, identity.pk);
+    // Receiving direction: same derivation shape as the send path, but THIS
+    // side's secret against the PEER's public key. Symmetric ECDH inside.
+    const routePair = await lane.deriveRouteKeyPair(skBytes, peerAccountPubkeyHex);
     const deviceSecret = await laneDeviceSecret(identity);
     const laneStore = lane.createAppLaneStore({ db: dbInstance, vaultKeyBytes: skBytes });
     await laneStore.init();
@@ -195,8 +205,8 @@ async function getLaneReceiver(identity) {
     });
     return { lane, laneStore, receiver, routePair, deviceSecret };
   })();
-  appLaneReceiverForPk.set(identity.pk, built);
-  built.catch(() => appLaneReceiverForPk.delete(identity.pk));
+  appLaneReceiverForPk.set(cacheKey, built);
+  built.catch(() => appLaneReceiverForPk.delete(cacheKey));
   return built;
 }
 
@@ -208,32 +218,45 @@ const LANE_REGISTRY_HEAD_PLACEHOLDER = 'f'.repeat(64);
 
 async function receiveViaTestProfileLane({ identity, incoming }) {
   try {
-    const { receiver } = await getLaneReceiver(identity);
-    let verdict;
-    try {
-      verdict = await receiver.receive(incoming, { nowSeconds: Math.floor(Date.now() / 1000) });
-    } catch (receiveError) {
-      // Structural throws (missing p tag target etc.) surface as step-1-style
-      // refusals in the frozen order; an unexpected throw is still fail-closed.
-      return { rejected: true, reason: receiveError?.message || 'lane-receive-throw' };
-    }
-    if (verdict?.accepted) {
-      if (!verdict.duplicate) {
-        // Message dispatched exactly once by the receiver's own effect hook;
-        // nothing further to do here.
+    // Peer candidates: every account this device has an open chat with, plus
+    // a hex64 p tag if the wrap carries one (lane fixture routes may be
+    // pubkey-shaped). Try each as the route salt until ONE decrypts at step 1;
+    // nothing about this loop trusts content, and failure for all candidates
+    // means "not addressed to any known lane route" -> shipped-path fallback.
+    const state = useChatStore.getState();
+    const candidates = new Set(Object.keys(state.dms || {}));
+    const directTag = incoming?.tags?.find((tag) => tag[0] === 'p')?.[1];
+    if (typeof directTag === 'string' && /^[0-9a-f]{64}$/.test(directTag)) candidates.add(directTag);
+    if (candidates.size === 0) return { handled: false };
+    let lastVerdict = null;
+    for (const peerAccountPubkeyHex of candidates) {
+      let receiverBundle;
+      try {
+        receiverBundle = await getLaneReceiver(identity, peerAccountPubkeyHex);
+      } catch (constructError) {
+        console.error('[DM-lane] Receiver construction failed:', constructError);
+        continue;
+      }
+      try {
+        lastVerdict = await receiverBundle.receiver.receive(incoming, { nowSeconds: Math.floor(Date.now() / 1000) });
+      } catch (receiveError) {
+        lastVerdict = { accepted: false, step: 0, reason: receiveError?.message || 'lane-receive-throw' };
+      }
+      if (lastVerdict?.accepted) {
+        // Dispatch happens inside the receiver's own effect hook, exactly once.
         return { handled: true };
       }
-      return { handled: true };
+      if (lastVerdict?.step !== 1) break; // real protocol verdict below step 1
     }
-    // The wrap decrypts at step 1 with THIS account's route key only. Any
-    // rejection below step 5 is a real protocol verdict for a lane-addressed
-    // wrap; failure at step 1 means it was not addressed here -> not ours.
-    if (verdict?.step === 1 && (verdict.reason === 'route-tag-mismatch' || verdict.reason === 'wrap-decrypt')) {
+    const verdict = lastVerdict;
+    if (!verdict) return { handled: false };
+    // Step-1 failures mean the wrap was not addressed to any candidate route.
+    if (verdict.step === 1 && (verdict.reason === 'route-tag-mismatch' || verdict.reason === 'wrap-decrypt')) {
       return { handled: false };
     }
-    return { rejected: true, reason: `${verdict?.step ?? '?'}:${verdict?.reason ?? 'unknown'}` };
+    return { rejected: true, reason: `${verdict.step ?? '?'}:${verdict.reason ?? 'unknown'}` };
   } catch (error) {
-    console.error('[DM-lane] Receiver construction failed:', error);
+    console.error('[DM-lane] Receive dispatch failed:', error);
     return { rejected: true, reason: `receiver-unavailable:${error?.message ?? String(error)}` };
   }
 }
