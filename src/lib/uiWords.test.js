@@ -28,6 +28,7 @@ const rel = (file) => path.relative(SRC, file);
 const PROTOCOL_FILES = new Set([
   'lib/egress.js', // hosts registry: sanctioned uses of the words by contract
   'lib/protocolTestDm/testPublisher.js', // TEST-ONLY wire lane: relay/challenge are NIP-42 wire tags, never rendered copy
+  'lib/mlsTest/relayEnvelope.js', // TEST-ONLY MLS lane: VERIFY_REASONS strings are envelope verdict codes, never rendered copy
   'hooks/useNIP44DM.js',
   'hooks/useNIP29Group.js',
   'lib/crypto/groupCipher.js',
