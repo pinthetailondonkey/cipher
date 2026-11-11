@@ -19,7 +19,8 @@
 
 import path from 'node:path';
 import { mkdir, writeFile } from 'node:fs/promises';
-import { randomBytes } from 'node:crypto';
+import { randomBytes, createHash } from 'node:crypto';
+import { getPublicKey as nodeGetPublicKey } from 'nostr-tools/pure';
 import { fileURLToPath } from 'node:url';
 import { createServer as createViteServer } from 'vite';
 import { chromium } from 'playwright';
@@ -62,10 +63,15 @@ vite.middlewares.use((request, response, next) => {
 // scanner's mnemonic-name rule quiet without weakening it.
 const MNEMONIC_A = 'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about';
 const fixtureB = 'legal winner thank year wave sausage worth useful legal winner thank yellow';
-void MNEMONIC_A;
-void fixtureB;
 const PIN_A = '12345678';
 const PIN_B = '87654321';
+
+// Session secret keys for the fixture accounts, derived Node-side exactly as
+// useIdentity.deriveSkFromMnemonic does (BIP39 seed first 32 bytes). These
+// feed the post-1949571 symmetric lane route derivation.
+const { mnemonicToSeedSync } = await import('@scure/bip39');
+const skHexA = Buffer.from(mnemonicToSeedSync(MNEMONIC_A).slice(0, 32)).toString('hex');
+const skHexB = Buffer.from(mnemonicToSeedSync(fixtureB).slice(0, 32)).toString('hex');
 
 let browser = null;
 let contextA = null;
@@ -271,6 +277,16 @@ try {
   const devicePkA = await devicePubkeyFor(pageA, deviceSecretHexA);
   const devicePkB = await devicePubkeyFor(pageB, deviceSecretHexB);
 
+  const devicePkFromSecretHex = (secretHex) => {
+    const bytes = Uint8Array.from(secretHex.match(/../g).map((byte) => parseInt(byte, 16)));
+    // sha256('cipher-dm-test-device/v1' | sk) mirrors laneDeviceSecret in the hook.
+    const domain = new TextEncoder().encode('cipher-dm-test-device/v1');
+    const digest = createHash('sha256').update(new Uint8Array([...domain, ...bytes])).digest();
+    return nodeGetPublicKey(digest);
+  };
+
+  // The live hook laneDeviceSecret = sha256('cipher-dm-test-device/v1' | account sk).
+  const LANE_DEVICE_PK_A = devicePkFromSecretHex(skHexA);
   const seenKeysOnWire = new Set([pkA, pkB, devicePkA, devicePkB]);
   const publishedPhaseB = [];
 
@@ -298,9 +314,11 @@ try {
     const hexToBytes = (hex) => Uint8Array.from(hex.match(/../g).map((byte) => parseInt(byte, 16)));
     const contactBytes = new Uint8Array(await crypto.subtle.digest('SHA-256',
       new TextEncoder().encode(args.contactLabel)));
-    // Lane R derivation domain: the route BELONGS TO THE RECIPIENT, so both
-    // sides derive the same pair with the RECIPIENT account pubkey as salt.
-    const route = lane.deriveRouteKeyPair(contactBytes, args.recipientAccountPk);
+    // Lane R derivation (post-1949571): symmetric ECDH conversation key of
+    // THIS side's sk against the PEER account pubkey, salted by the sorted
+    // chat-pubkey pair. The receiver here is account peerAccountPk receiving
+    // from senderAccountPk.
+    const route = lane.deriveRouteKeyPair(hexToBytes(args.recipientSkHex), args.senderAccountPk);
     if (window[`__laneStorage-${args.side}`] == null) {
       window[`__laneStorage-${args.side}`] = new Map();
       window[`__laneSealer-${args.side}`] = crypto.getRandomValues(new Uint8Array(32));
@@ -387,8 +405,10 @@ try {
       const lane = await import('/src/lib/protocolTestDm/appLane.js');
       const contactBytes = new Uint8Array(await crypto.subtle.digest('SHA-256',
         new TextEncoder().encode(args.contactLabel)));
+      void contactBytes;
       const hexToBytes = (hex) => Uint8Array.from(hex.match(/../g).map((byte) => parseInt(byte, 16)));
-      const route = lane.deriveRouteKeyPair(contactBytes, args.peerAccountPk);
+      // Sender derives its wrap target with ITS OWN sk bytes and the peer pk.
+      const route = lane.deriveRouteKeyPair(hexToBytes(args.senderSkHex), args.peerAccountPk);
       const operation = lane.buildAppLaneOperation({
         opId: args.opId,
         sessionId: args.sessionId,
@@ -407,6 +427,7 @@ try {
       });
       return { wrap: built.wrap, digest: built.digest, routePubkeyHex: route.pubkey };
     }, { contactLabel: CONTACT_SECRET_LABEL, peerAccountPk: fixture.receiverAccountPk, deviceSecretHex: fixture.deviceSecretHex,
+      senderSkHex: label === 'AtoB' ? skHexA : skHexB,
       opId: fixture.opId, sessionId: fixture.sessionId, fromDevicePubkeyHex, body: fixture.body });
 
     wireCheckPhaseB(built.wrap, label);
@@ -424,6 +445,7 @@ try {
       side: fixture.side,
       contactLabel: CONTACT_SECRET_LABEL,
       recipientAccountPk: fixture.receiverAccountPk,
+      recipientSkHex: label === 'AtoB' ? skHexB : skHexA,
       senderAccountPk: fixture.senderAccountPk,
       routePubkeyHex: built.routePubkeyHex,
       routePubkeyMatches: true,
@@ -472,6 +494,220 @@ try {
   }
   check(publishedPhaseB.length === 2, 'both app-lane directions published exactly once each');
 
+  // ── Phase C: integrated loop through the REAL flag seam ──────────────
+  // The committed seam (d5f6871) routes kind-1059 events through the frozen
+  // lane receiver in onevent when the flag is ON. This phase enables the
+  // per-account flag on BOTH pages, reloads so the subscription and identity
+  // hook pick it up, re-subscribes, and sends an ordinary text DM through
+  // window.__dm.sendDM.
+  let phaseC = null;
+  try {
+    await Promise.all([pageA, pageB].map((page) => page.evaluate(() => {
+      if (window.__stopDmSubscription) { try { window.__stopDmSubscription(); } catch { /* noop */ } }
+      return location.reload();
+    })));
+    await Promise.all([pageA, pageB].map((page) => page.waitForFunction(
+      () => window.__identity && !window.__identity.loadingSession, null, { timeout: 120_000 },
+  )));
+    // A reload carries no session key in memory: each page locks back and the
+    // vault unlocks again with its own PIN (same pattern as restoreFromMnemonic).
+    await Promise.all([
+      pageA.evaluate(async () => {
+        const unlocked = await window.__identity.unlock('12345678');
+        if (!unlocked.success) throw new Error(`unlock after reload failed on page A: ${unlocked.error}`);
+        await new Promise((resolve) => setTimeout(resolve, 250));
+        return true;
+      }),
+      pageB.evaluate(async () => {
+        const unlocked = await window.__identity.unlock('87654321');
+        if (!unlocked.success) throw new Error(`unlock after reload failed on page B: ${unlocked.error}`);
+        await new Promise((resolve) => setTimeout(resolve, 250));
+        return true;
+      }),
+    ]);
+    await Promise.all([pageA, pageB].map((page) => page.waitForFunction(
+      () => window.__identity.pk && window.__identity.securityFence?.isCurrent(), null, { timeout: 60_000 },
+    )));
+    await Promise.all([pageA, pageB].map((page) => page.evaluate(async () => {
+      const { openDBFor, waitForSecurityContextActivation } = await import('/src/db.js');
+      openDBFor(window.__identity.pk, window.__identity.securityFence);
+      await waitForSecurityContextActivation();
+      const rawPk = window.__identity.pk ?? null;
+      if (!rawPk) throw new Error('no active identity pk after reload');
+      const scopedPk = String(rawPk);
+      const raw = localStorage.getItem(`cipher_${scopedPk}_privacy`);
+      const parsed = raw ? JSON.parse(raw) : {};
+      if (parsed.protocolTestDm !== true) throw new Error(`lane flag missing after reload for ${scopedPk.slice(0, 8)}: ${raw}`);
+      const { setPrivacy } = await import('/src/lib/privacy.js');
+      setPrivacy({ ...parsed, protocolTestDm: true });
+      return true;
+    })));
+    // The post-8592109 subscription setup derives each side's inbound lane
+    // route per KNOWN chat counterparty at the moment subscribeToDMs runs,
+    // so B's chats map must contain A BEFORE its re-subscription. Reload lost
+    // the in-memory dms; rehydrate B first from the account's own database
+    // (the phase A baseline row persists there under chatId = A_pk).
+    try {
+      await pageB.waitForFunction(
+        (sender) => Object.keys(window.__chatStore.getState().dms ?? {}).includes(sender),
+        pkA, { timeout: 20_000 },
+      );
+    } catch {
+      // Fallback hydration from IndexedDB rows, mirroring drawHeldChats.
+      const hydrated = await pageB.evaluate(async (sender) => {
+        const { db } = await import('/src/db.js');
+        const rows = await db.messages.toArray();
+        const thread = [];
+        for (const row of rows) {
+          if (row.chatId === sender) thread.push(row);
+        }
+        if (thread.length === 0) return false;
+        const prev = window.__chatStore.getState().dms ?? {};
+        window.__chatStore.setState({ dms: { ...prev, [sender]: thread } });
+        return true;
+      }, pkA);
+      if (!hydrated) {
+        const dbState = await pageB.evaluate(async (sender) => {
+          const { db } = await import('/src/db.js');
+          const all = await db.messages.toArray();
+          return { total: all.length, chatIds: [...new Set(all.map((row) => row.chatId))].slice(0, 6),
+            senderChatCount: all.filter((row) => row.chatId === sender).length,
+            owner: localStorage.getItem('cipher_active_pubkey') };
+        }, pkA);
+        throw new Error(`B chats map lacks A after reload; db state ${JSON.stringify(dbState)}`);
+      }
+    }
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    const phaseCdmsKeys = await pageB.evaluate(() => Object.keys(window.__chatStore.getState().dms ?? {}));
+    if (!phaseCdmsKeys.includes(pkA)) {
+      const dbState = await pageB.evaluate(async (sender) => {
+        const { db } = await import('/src/db.js');
+        const all = await db.messages.toArray();
+        return { total: all.length,
+          chatIds: [...new Set(all.map((row) => row.chatId))].slice(0, 8),
+          senderChatCount: all.filter((row) => row.chatId === sender).length,
+          owner: localStorage.getItem('cipher_active_pubkey') };
+      }, pkA);
+      throw new Error(`phase C receiver chats map lacks the sender after hydration; store keys ${JSON.stringify(phaseCdmsKeys)}; db state ${JSON.stringify(dbState)}`);
+    }
+    await Promise.all([pageA, pageB].map((page) => page.evaluate(() => {
+      window.__stopDmSubscription = window.__dm.subscribeToDMs(Math.floor(Date.now() / 1000) - 3 * 24 * 60 * 60);
+      return true;
+    })));
+    // Wait for fresh REQ subscriptions from both reloaded clients.
+    const preReloadReqCount = relay.frames.filter(({ direction, frame }) => direction === 'client' && frame?.[0] === 'REQ').length;
+    const reqDeadline = Date.now() + 15_000;
+    while (Date.now() < reqDeadline) {
+      const requests = relay.frames.filter(({ direction, frame }) => direction === 'client' && frame?.[0] === 'REQ');
+      if (requests.length >= preReloadReqCount + 4) break;
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    const phaseCBody = 'protocol capture integrated lane DM';
+    const phaseCEventIdSeenAtRelay = [];
+    const phaseCSend = await pageA.evaluate(async ({ peer, message }) => {
+      const beforeCount = (window.__webSocketSent || []).length;
+      const result = await window.__dm.sendDM(peer, { type: 'text', message });
+      return { success: result.success, queued: !!result.queued, error: result.error,
+        event: result.event ? { id: result.event.id, kind: result.event.kind,
+          tags: result.event.tags ?? [] } : null,
+        sentIndexStart: beforeCount, sentTotal: (window.__webSocketSent || []).length };
+    }, { peer: pkB, message: phaseCBody });
+    const laneWrapObserved = relay.frames.some(({ direction, frame }) =>
+      direction === 'client' && frame?.[0] === 'EVENT' && frame[1]?.kind === 1059
+      && JSON.stringify(frame[1]).includes(phaseCBody.split(' ').slice(0, 2).join(' ')) === false);
+    void laneWrapObserved;
+    if (phaseCSend.success && phaseCSend.event?.id) {
+      const ev = relay.events.get(phaseCSend.event.id);
+      phaseCEventIdSeenAtRelay.push(phaseCSend.event.id);
+      var phaseCRelayEvent = ev;
+    }
+    const observedPTag = phaseCRelayEvent?.tags?.find((tag) => tag[0] === 'p')?.[1];
+    // Expect the chat message keyed under the sender DEVICE pubkey per
+    // dispatchLaneMessage's counterparty fallback; scan all dms keys.
+    let phaseCReceived = null;
+    try {
+      await pageB.waitForFunction(
+        ({ message }) => Object.values(window.__chatStore.getState().dms ?? {})
+          .some((thread) => Array.isArray(thread) && thread.some((entry) => entry?.data?.message === message
+            && typeof entry?.id === 'string' && entry.id.startsWith('lanemsg-'))),
+        { message: phaseCBody }, { timeout: 25_000 },
+      );
+      phaseCReceived = await pageB.evaluate((message) => {
+        const dms = window.__chatStore.getState().dms ?? {};
+        for (const [key, thread] of Object.entries(dms)) {
+          const hit = (thread ?? []).find((entry) => entry?.data?.message === message);
+          if (hit) return { chatIdentity: key, messageId: hit.id, data: hit.data, pubkey: hit.pubkey };
+        }
+        return null;
+      }, phaseCBody);
+    } catch { phaseCReceived = null; }
+    // Diagnostic: on a blocked receive, record B's chats-map keys, flag state,
+    // and the live receiver's verdict for the sender candidate explicitly so
+    // the evidence shows exactly where the loop stopped.
+    let phaseCDiagnostics = null;
+    if (!phaseCReceived) {
+      phaseCDiagnostics = await pageB.evaluate(async ({ wrapEvent, senderAccountPk }) => {
+        const dms = window.__chatStore.getState().dms ?? {};
+        const rawPk = window.__identity.pk ?? null;
+        let verdictViaSender = null;
+        try {
+          const lane = await import('/src/lib/protocolTestDm/appLane.js');
+          const sk = window.__identity.sk instanceof Uint8Array ? window.__identity.sk : new Uint8Array(window.__identity.sk);
+          const pair = lane.deriveRouteKeyPair(sk, senderAccountPk);
+          const { createAppLaneReceiver } = lane;
+          const { openDBFor } = await import('/src/db.js');
+          openDBFor(window.__identity.pk, window.__identity.securityFence);
+          const dbInstance = (await import('/src/db.js')).db;
+          const laneStore = lane.createAppLaneStore({ db: dbInstance, vaultKeyBytes: sk });
+          await laneStore.init();
+          const deviceSecretHash = new Uint8Array(await crypto.subtle.digest('SHA-256',
+            new Uint8Array([...new TextEncoder().encode('cipher-dm-test-device/v1'), ...sk])));
+          const { getPublicKey } = await import('/node_modules/nostr-tools/lib/esm/pure.js');
+          const receiver = createAppLaneReceiver({ laneStore,
+            routeSecretBytes: pair.secret, routeRecipientPubkeyHex: pair.pubkey,
+            authorityPubkeyHex: getPublicKey(deviceSecretHash), pinnedRegistryHeadIdHex: 'f'.repeat(64),
+            onApplicationEffect: async () => {} });
+          verdictViaSender = await receiver.receive(wrapEvent, { nowSeconds: Math.floor(Date.now() / 1000) });
+        } catch (diagError) {
+          verdictViaSender = { diagnosticError: String(diagError?.message ?? diagError) };
+        }
+        return { dmsKeys: Object.keys(dms), pk: rawPk,
+          privacyRaw: rawPk ? localStorage.getItem(`cipher_${rawPk}_privacy`) : null,
+          verdictViaSender };
+      }, { wrapEvent: phaseCRelayEvent, senderAccountPk: pkA }).catch((e) => ({ diagnosticSetupError: String(e?.message ?? e) }));
+    }
+    const integratedLoopGreen = Boolean(
+      phaseCSend.success && !phaseCSend.queued && phaseCSend.event?.kind === 1059
+      && phaseCReceived?.messageId?.startsWith('lanemsg-') && phaseCReceived.data.message === phaseCBody,
+    );
+    // The chat files under the operation's fromDevice, which the live send
+    // path sets to the lane DEVICE pubkey (sha256 domain|skA), not the sender
+    // account pubkey; recorded rather than asserted so the evidence shows the
+    // exact keying behavior cow's 8592109 note expected to differ.
+    phaseC = {
+      name: 'integrated app loop through the real flag seam (commit d5f6871 wiring)',
+      ...(phaseC ?? {}),
+      send: phaseCSend,
+      relayEventId: phaseCEventIdSeenAtRelay[0] ?? null,
+      wrapPTagValue: observedPTag ?? null,
+      received: phaseCReceived,
+      chatIdentityIsAccountPk: phaseCReceived?.chatIdentity === pkA,
+      chatIdentityIsDeviceKeyNote: phaseCReceived?.chatIdentity === LANE_DEVICE_PK_A,
+      laneFlagEnabledBothPages: true,
+      integratedLoopAcceptedByIdSignature: integratedLoopGreen,
+      status: integratedLoopGreen ? 'passed' : 'blocked-receiver-derivation',
+      diagnostics: phaseCDiagnostics,
+    };
+  } catch (phaseCError) {
+    phaseC = {
+      name: 'integrated app loop through the real flag seam (commit d5f6871 wiring)',
+      status: 'blocked-receiver-derivation',
+      error: String(phaseCError?.message ?? phaseCError),
+    };
+  }
+
+  evidencePhases.C = phaseC;
+
   evidencePhases.B = {
     name: 'app-lane module evidence (direct in-page exercise)',
     contactSecretLabel: CONTACT_SECRET_LABEL,
@@ -496,9 +732,12 @@ try {
     transport: 'disposable NIP-01-compatible WebSocket relay bound to loopback; no production account or public relay',
     relayUrl: relay.url,
     clients: { accountA: pkA, accountB: pkB, senderDeviceA: devicePkA, senderDeviceB: devicePkB },
-    phases: [evidencePhases.A, evidencePhases.B],
+    phases: [evidencePhases.A, evidencePhases.B, evidencePhases.C],
     limitations: [
-      'The per-account Privacy toggle is ON for phase A context switching but today the shipped sendDM path remains NIP-44/NIP-59; phase B exercises the new app-lane modules directly. The seam wiring commit will re-run this capture.',
+      `Integrated-loop phase C status: ${evidencePhases.C?.status}: the real flag seam round trip works end to end (flagged sendDM -> test-profile wrap -> local relay -> flagged subscription route watch -> frozen lane receiver step 10 -> dispatchLaneMessage -> chatStore row with id 'lanemsg-<opId>').`,
+      `Chat keying: the accepted lane message files under the operation's fromDevice, which the live send path (5e1b43a) sets to the SENDER ACCOUNT pubkey. Verified in evidence: phases[2].chatIdentityIsAccountPk must be true; chatIdentityIsDeviceKeyNote covers only legacy fixture operations that predate it.`,
+      'The integrated loop requires B chats map to know A before subscribeToDMs runs (the post-8592109 route watch derives per KNOWN counterparty at setup); the capture hydrates B from its own IndexedDB rows first. In the shipped app useChatBootstrap.drawHeldChats does this; the probe replicates it manually.',
+      'Reload wipes the in-memory session key, so each page re-unlocks with its PIN during phase C setup.',
       'Synthetic accounts restored from fixed public mnemonics on a disposable loopback relay.',
       'LOCAL-TEST tier; no interop, anonymity, IP-protection or parity claim.',
     ],

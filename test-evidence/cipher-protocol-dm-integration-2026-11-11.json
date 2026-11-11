@@ -1,22 +1,22 @@
 {
   "result": "passed",
   "captureSchema": "cipher-protocol-dm-integration-capture-v1",
-  "generatedAt": "2026-11-11T12:01:07.440Z",
+  "generatedAt": "2026-11-11T13:08:15.109Z",
   "evidenceTier": "LOCAL-TEST ONLY / no interop claim",
   "transport": "disposable NIP-01-compatible WebSocket relay bound to loopback; no production account or public relay",
-  "relayUrl": "ws://127.0.0.1:42245",
+  "relayUrl": "ws://127.0.0.1:41555",
   "clients": {
     "accountA": "9058af2e7b6f0dc54d96925b80868515bf87f3158e95afce81927b3b772d5b24",
     "accountB": "857ccdf8a26aa0ea206ec6b37c31b29e99a9f03cf8de2367a74fd085578b4146",
-    "senderDeviceA": "255444f77b8f01aa4d5024e323f6a8a2fef6cbbb522ede5b25e08cf345738254",
-    "senderDeviceB": "deda5fe98645a9985376e7753d831f944468ec7e3fd58494dd2469abd8edc62d"
+    "senderDeviceA": "fa040506db0e6de902558a9289e551d1543d5f51f4ae7bead75bfaf7a31d118f",
+    "senderDeviceB": "b074add4e208fac05d8d205bea78e0fd4575952b9d35f42f8e13ec2298e360b3"
   },
   "phases": [
     {
       "name": "pre-wire baseline (ordinary app path)",
       "senderAccount": "9058af2e7b6f0dc54d96925b80868515bf87f3158e95afce81927b3b772d5b24",
       "recipientAccount": "857ccdf8a26aa0ea206ec6b37c31b29e99a9f03cf8de2367a74fd085578b4146",
-      "eventId": "516356cd6af740f200abe62e55aa4a7ed23fc9b5b244e3e3daaf2d6a9564b749",
+      "eventId": "1d3ebb54f36f945848d593cf971afd0de4c67e58b5e5110ea944eae9811a0508",
       "kind": 1059,
       "acknowledged": true,
       "receivedByRecipientChatStore": true,
@@ -29,9 +29,9 @@
       "events": [
         {
           "direction": "AtoB",
-          "eventId": "bca446957cf75f406d3d07d321462cb0b9e336dbb242c504d4561749317c4832",
-          "operationDigestHex": "dc72c7b75559d2ecc36c47a5fd0f9531ec52e07d49c71e5b5f4b553aff7a29c2",
-          "routePubkeyHex": "e49083e6072e1dd6060bde05142910b2b4cc48239031798a073c7380ba2d9e26",
+          "eventId": "101d97f0bdf53ebca1d00724ec01858197509743afba00d2cc12b70a08d671c1",
+          "operationDigestHex": "20ae4a7b39915b5cf5e3ab1a9f0ab3e1fb2484982027626fcaf499114c007bcf",
+          "routePubkeyHex": "973f41c661ff81a940ff3ec353a9330f24f150818dc0d2b59d2ae7d934c9daa9",
           "acceptedStep": 10,
           "bodyRecovered": true,
           "replayDuplicate": true,
@@ -47,9 +47,9 @@
         },
         {
           "direction": "BtoA",
-          "eventId": "678387f46c9cfd6127186798ad2f6f48065014fc6960bfa5e440bb5ec7a92fb9",
-          "operationDigestHex": "53b26a6b019ec60b2833b3ebad1006f37db33e581ccff8dbbf13272ed4d0165a",
-          "routePubkeyHex": "54bc108c2e3f08e5a459b7287d752942f53dcda838578604e1d50b242dabe7fa",
+          "eventId": "33a8b738f4dc1d762a5aed8eed086948998e87ded55d18031f260bf4eef3e00a",
+          "operationDigestHex": "0bd26dadca4301a8dcf53d529c67233a5c3b6494e30f54cb78a2da76354eb6c4",
+          "routePubkeyHex": "973f41c661ff81a940ff3ec353a9330f24f150818dc0d2b59d2ae7d934c9daa9",
           "acceptedStep": 10,
           "bodyRecovered": true,
           "replayDuplicate": true,
@@ -71,10 +71,49 @@
         "publishedContentFreeOfPlaintextBody": true
       },
       "accepted": true
+    },
+    {
+      "name": "integrated app loop through the real flag seam (commit d5f6871 wiring)",
+      "send": {
+        "success": true,
+        "queued": false,
+        "event": {
+          "id": "acc91a18a427eaa4cbbd07a5cc528f96d51d37f12909892236a7002783ac9a1f",
+          "kind": 1059,
+          "tags": [
+            [
+              "p",
+              "973f41c661ff81a940ff3ec353a9330f24f150818dc0d2b59d2ae7d934c9daa9"
+            ]
+          ]
+        },
+        "sentIndexStart": 3,
+        "sentTotal": 6
+      },
+      "relayEventId": "acc91a18a427eaa4cbbd07a5cc528f96d51d37f12909892236a7002783ac9a1f",
+      "wrapPTagValue": "973f41c661ff81a940ff3ec353a9330f24f150818dc0d2b59d2ae7d934c9daa9",
+      "received": {
+        "chatIdentity": "9058af2e7b6f0dc54d96925b80868515bf87f3158e95afce81927b3b772d5b24",
+        "messageId": "lanemsg-6e2c40ea92e6a50dfc26f7eb",
+        "data": {
+          "type": "text",
+          "message": "protocol capture integrated lane DM"
+        },
+        "pubkey": "2fc08db5363cb4f15b0c3713c8e2faa7258eb2badd4fc939f2b7ea0af18ce42e"
+      },
+      "chatIdentityIsAccountPk": true,
+      "chatIdentityIsDeviceKeyNote": false,
+      "laneFlagEnabledBothPages": true,
+      "integratedLoopAcceptedByIdSignature": true,
+      "status": "passed",
+      "diagnostics": null
     }
   ],
   "limitations": [
-    "The per-account Privacy toggle is ON for phase A context switching but today the shipped sendDM path remains NIP-44/NIP-59; phase B exercises the new app-lane modules directly. The seam wiring commit will re-run this capture.",
+    "Integrated-loop phase C status: passed: the real flag seam round trip works end to end (flagged sendDM -> test-profile wrap -> local relay -> flagged subscription route watch -> frozen lane receiver step 10 -> dispatchLaneMessage -> chatStore row with id 'lanemsg-<opId>').",
+    "Chat keying: the accepted lane message files under the operation's fromDevice, which the live send path (5e1b43a) sets to the SENDER ACCOUNT pubkey. Verified in evidence: phases[2].chatIdentityIsAccountPk must be true; chatIdentityIsDeviceKeyNote covers only legacy fixture operations that predate it.",
+    "The integrated loop requires B chats map to know A before subscribeToDMs runs (the post-8592109 route watch derives per KNOWN counterparty at setup); the capture hydrates B from its own IndexedDB rows first. In the shipped app useChatBootstrap.drawHeldChats does this; the probe replicates it manually.",
+    "Reload wipes the in-memory session key, so each page re-unlocks with its PIN during phase C setup.",
     "Synthetic accounts restored from fixed public mnemonics on a disposable loopback relay.",
     "LOCAL-TEST tier; no interop, anonymity, IP-protection or parity claim."
   ]
