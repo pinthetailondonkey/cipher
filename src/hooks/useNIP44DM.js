@@ -23,8 +23,6 @@ import { acceptPayment, rememberPublicView, receiptBindsOrder, sendCountersignOn
 import { deviceWatchedOrderOf, orderRecordForReceipt } from '../lib/orderActions';
 import { scopedSetVerified } from '../lib/storage';
 import { assertSecurityContextOwner } from '../lib/securityContextFence';
-import { allowsProtocolTestDm } from '../lib/privacy';
-import { dmRatchetEnabled } from '../lib/dmRatchetMode';
 
 import { getPublicKey } from 'nostr-tools/pure';
 
@@ -372,18 +370,12 @@ export function useNIP44DM({ identity }) {
         ? `dm-order-update-v1|${identity.pk}|${targetDm}|${intent}`
         : null);
 
-    // Test-profile DM lane dispatch (flag: Privacy > Test-profile DM lane).
-    // Plain text only; everything else keeps the shipped path. No fallback:
-    // a failure here is a failed send with its reason.
-    if (allowsProtocolTestDm() && payload?.type === 'text' && typeof payload.message === 'string') {
-      return sendViaTestProfileLane({ identity, targetDm, messageText: payload.message, clientId, replyId });
-    }
-
-    // Production ratchet cutover (flag: dm_ratchet_mode, default off). The
-    // same lane primitives the test profile proves, driven by the real
-    // account: ratcheted plain text, shipped NIP-44 for everything else.
-    // Checked after the test gate so the two flags never fight.
-    if (dmRatchetEnabled() && payload?.type === 'text' && typeof payload.message === 'string') {
+    // Ratcheted plain-text DM dispatch. The double ratchet is the DEFAULT
+    // wire for DM text: the same lane primitives the test profile proves,
+    // driven by the real account. No fallback on failure: a failed send is
+    // a failed send with its reason. Non-text payloads (orders, receipts,
+    // calls, reads) keep the shipped NIP-44 path.
+    if (payload?.type === 'text' && typeof payload.message === 'string') {
       return sendViaTestProfileLane({ identity, targetDm, messageText: payload.message, clientId, replyId });
     }
 
@@ -563,29 +555,28 @@ export function useNIP44DM({ identity }) {
       // account key, or lane-addressed wraps never reach onevent. Derivation
       // failure for a single peer only drops that peer's route from the
       // filter; the shipped filters stay intact either way.
+      // Route subscription: ratcheted DMs are the default wire, so this side
+      // derives its inbound route keys per known counterparty, or
+      // lane-addressed wraps never reach onevent. Derivation failure for a
+      // single peer only drops that peer's route from the filter; the
+      // shipped filters stay intact either way.
       let laneRouteKeys = [];
-      // Route subscription: the test-profile lane and the production ratchet
-      // cutover share one derivation shape, so either flag being on means
-      // this side must watch its inbound route keys or lane-addressed wraps
-      // never reach onevent.
-      if (allowsProtocolTestDm() || dmRatchetEnabled()) {
-        try {
-          const lane = await loadAppLane();
-          const skBytes = identity.sk instanceof Uint8Array ? identity.sk : Uint8Array.from(identity.sk);
-          const peers = new Set(Object.keys(useChatStore.getState().dms || {}));
-          for (const peerAccountPubkeyHex of peers) {
-            try {
-              const pair = await lane.deriveRouteKeyPair(skBytes, peerAccountPubkeyHex);
-              laneRouteKeys.push(pair.pubkey);
-            } catch (pairError) {
-              console.warn('[DM-lane] Route derivation skipped for one peer filter:', pairError?.message ?? String(pairError));
-            }
+      try {
+        const lane = await loadAppLane();
+        const skBytes = identity.sk instanceof Uint8Array ? identity.sk : Uint8Array.from(identity.sk);
+        const peers = new Set(Object.keys(useChatStore.getState().dms || {}));
+        for (const peerAccountPubkeyHex of peers) {
+          try {
+            const pair = await lane.deriveRouteKeyPair(skBytes, peerAccountPubkeyHex);
+            laneRouteKeys.push(pair.pubkey);
+          } catch (pairError) {
+            console.warn('[DM-lane] Route derivation skipped for one peer filter:', pairError?.message ?? String(pairError));
           }
-        } catch (laneError) {
-          console.warn('[DM-lane] Lane subscription routes unavailable:', laneError?.message ?? String(laneError));
         }
-        laneRouteKeys = [...new Set(laneRouteKeys)];
+      } catch (laneError) {
+        console.warn('[DM-lane] Lane subscription routes unavailable:', laneError?.message ?? String(laneError));
       }
+      laneRouteKeys = [...new Set(laneRouteKeys)];
       const dmFilters = dmSubscriptionFilters(identity.pk, since, laneRouteKeys);
       for (const filter of dmFilters) {
         if (!mounted.current) break;
@@ -607,14 +598,13 @@ export function useNIP44DM({ identity }) {
             if (!mounted.current) return;
             try {
               assertIdentityCurrent(identity);
-              // Test-profile DM lane receive (flag: Privacy > Test-profile DM
-              // lane) and the production ratchet cutover share the frozen
-              // receiver: a kind-1059 wrap when either is on goes through it
-              // FIRST. Fail closed: any rejection logs the reason and returns
-              // with NO effect and NO fallback ingest of the event by the
-              // legacy path. The legacy openDmTransportEvent below stays
-              // untouched for the flag-off case.
-              if (incoming?.kind === GIFT_WRAP_KIND && (allowsProtocolTestDm() || dmRatchetEnabled())) {
+              // Ratcheted DM receive (default wire): every kind-1059 wrap
+              // goes through the frozen receiver FIRST. Fail closed: any
+              // rejection logs the reason and returns with NO effect and NO
+              // fallback ingest of the event by the legacy path. The legacy
+              // openDmTransportEvent below stays reachable for unwrapped and
+              // legacy bare events only.
+              if (incoming?.kind === GIFT_WRAP_KIND) {
                 const laneVerdict = await receiveViaTestProfileLane({ identity, incoming });
                 if (laneVerdict.handled) return;
                 if (laneVerdict.rejected) {

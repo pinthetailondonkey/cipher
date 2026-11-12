@@ -1,8 +1,7 @@
 import { useState } from 'react';
-import { Eye, Image, Users, CheckCheck, Keyboard, Ban, Link2, AlertTriangle, Bell, FlaskConical, Lock } from 'lucide-react';
+import { Eye, Image, Users, CheckCheck, Keyboard, Ban, Link2, AlertTriangle, Bell, FlaskConical } from 'lucide-react';
 import ScreenHeader from '../ui/ScreenHeader';
 import { getPrivacy, setPrivacy } from '../../lib/privacy';
-import { dmRatchetEnabled, setDmRatchet } from '../../lib/dmRatchetMode';
 import { requestNotificationPermission } from '../../lib/notifications';
 import { requestMotionAccess } from '../../lib/shakeDetector';
 import { useChatStore } from '../../store/chatStore';
@@ -63,7 +62,6 @@ export default function PrivacySettings({ onBack }) {
   const setPanicWipeEnabled = useChatStore((state) => state.setPanicWipeEnabled);
   const [motionNote, setMotionNote] = useState('');
   const [notifNote, setNotifNote] = useState('');
-  const [dmRatchet, setDmRatchetState] = useState(() => dmRatchetEnabled());
   // Turning notifications on is the deliberate gesture that asks the OS. A
   // refusal or an unsupported device leaves the switch off and says why, so it
   // never claims a buzz the phone cannot give. Turning it off asks nothing.
@@ -116,7 +114,6 @@ export default function PrivacySettings({ onBack }) {
           <Toggle icon={Bell} label="Notifications" hint="On asks the OS once and buzzes for a new message or order. Off keeps the app silent." checked={privacy.notifications === true} onChange={toggleNotifications} />
           {notifNote && <p role="status" className="px-4 pb-3 text-[13px] text-inkMuted">{notifNote}</p>}
           <Toggle icon={FlaskConical} label="Test-profile DM lane" hint="Experimental message lane for protocol review. When you turn it on, your direct messages send and open through the test-profile wire. The change applies the next time the chat session restarts." checked={privacy.protocolTestDm === true} onChange={(protocolTestDm) => update({ protocolTestDm })} />
-          <Toggle icon={Lock} label="Ratcheted DMs" hint="Encrypts your direct messages with a double ratchet, so keys keep moving forward after every message. Both people need this on: until the other person turns it on too, they cannot open what you send. Applies the next time the chat session restarts." checked={dmRatchet} onChange={(next) => setDmRatchetState(setDmRatchet(next))} />
         </div>
         <div className="overflow-hidden rounded-2xl border border-line bg-panel">
           {(blocked || []).length === 0 ? (
