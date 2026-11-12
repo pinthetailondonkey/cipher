@@ -8,6 +8,7 @@ mod group_flow;
 mod pinned_vectors;
 
 pub use group_flow::private_add_commit_and_removal_flow;
+pub mod session;
 
 // Pinned IETF/OpenMLS 0.9.2 vector runner (plan item 18). Public so the
 // npm-side runner and integration tests can execute the aggregate run.

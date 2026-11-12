@@ -82,6 +82,47 @@ What is NOT yet satisfied, stated plainly:
   Old kind-9 groupCipher messages stay readable during any transition by
   keeping the current decrypt as the fallback after the MLS attempt.
 
+## Part 3 — Founder cutover (2026-11-12): MLS is the DEFAULT path
+
+Direction changed by the founder: both crypto paths ship default-on for
+founder testing. No toggles.
+
+### DM double ratchet: unconditional
+
+`src/hooks/useNIP44DM.js` routes every plain-text DM through the ratchet lane
+(no flag check), every kind-1059 wrap opens through the frozen receiver first,
+and inbound route keys derive unconditionally at subscription time. Non-text
+payloads (orders, receipts, calls, reads) keep NIP-44. The
+`Ratcheted DMs` toggle row was REMOVED from Privacy settings; the
+`dm_ratchet_mode` flag module remains only as storage back-compat.
+
+### Groups: OpenMLS through the codec seam
+
+New bridge: `crypto/mls-wasm/src/session.rs` exposes real OpenMLS 0.9.2
+engine ops over opaque handles (create/keypackage/add/join/process/encrypt/
+members + JSON snapshots). `cargo test --test session_round_trip` proves the
+full lifecycle in Rust; `scripts/mls-seam-browser-test.mjs` proves it inside
+Chromium against the shipped wasm.
+
+JS seam: `src/lib/mlsGroups.js` (engine per unlocked account, snapshot
+persisted via scoped storage) and `src/lib/mlsGroupsRoute.js` (codec shim).
+`groupMessageCodec.encodeGroupPayload` seals with MLS when the engine holds
+the group (event tag `fmt=mls1`); `decodeGroupEvent` routes `fmt=mls1`
+content to the engine and NEVER falls back to legacy rendering.
+
+HONEST LIMITS for founder testing, all deliberate:
+1. Engine holds ONE group per account (single-group registry). Widening is a
+   documented refactor behind the same entry points.
+2. The relay-borne add/welcome handshake is not yet wired into the live
+   invite flow: a creator seals mls1 from day one of a NEW group; peers who
+   join without their own MLS state read those events as `decrypt-failed`
+   (shown honestly as undecryptable, never as fake text). Peer-engine joins
+   ride the next slice.
+3. Old groups keep working entirely on groupCipher: MLS engages where an
+   engine group exists, registered at NEW group creation.
+4. DM one-sided limitation is gone (ratchet ships to everyone), but two
+   Cipher installs must BOTH be this build or newer.
+
 ## Gates before any flag flips to on-by-default
 
 1. Both lanes' own node:test suites green (`dmRatchet*`, `ratchet*`,

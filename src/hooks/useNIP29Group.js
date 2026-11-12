@@ -954,6 +954,14 @@ export function useNIP29Group({ identity }) {
         const key = generateGroupKey();
         await putGroupKey(groupId, 1, key, {}, identity.securityFence);
         assertSecurityContextOwner(identity.securityFence, identity.pk);
+        // MLS default (founder cutover): the creator's device also opens its
+        // OpenMLS engine group and binds this groupId to it. Failure is
+        // non-fatal: sends still work through the group-cipher path.
+        import('../lib/mlsGroupsRoute')
+          .then(async ({ mlsCreatorSetup }) => {
+            await mlsCreatorSetup(groupId, identity.pk);
+          })
+          .catch((error) => console.warn('[createGroup] mls engine setup deferred', error?.message ?? String(error)));
         await distributeGroupKey({
           senderPrivkey: identity.sk, senderPubkey: identity.pk,
           groupId, epoch: 1, keyBytes: key, recipients: [identity.pk],

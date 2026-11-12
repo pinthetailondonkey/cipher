@@ -147,6 +147,25 @@ export function useChatBootstrap({
     if (identity?.pk && identity?.securityFence) openDBFor(identity.pk, identity.securityFence);
   }, [identity?.pk, identity?.securityFence]);
 
+  // MLS default (founder cutover): bring the OpenMLS engine up with the
+  // account. Restore-from-snapshot keeps epoch keys and the held group; a
+  // first unlock creates the engine. Failure never blocks chat: group sends
+  // fall back to the group-cipher path and the warning is recorded.
+  useEffect(() => {
+    if (!identity?.pk || !identity?.securityFence) return undefined;
+    let cancelled = false;
+    import('../../lib/mlsGroups')
+      .then(async (mls) => {
+        if (cancelled) return;
+        await mls.ensureEngine(identity.pk);
+        await mls.persistEngine();
+      })
+      .catch((error) => {
+        console.warn('[mls] Engine not ready at unlock:', error?.message ?? String(error));
+      });
+    return () => { cancelled = true; };
+  }, [identity?.pk, identity?.securityFence]);
+
   useEffect(() => {
     if (!identity?.pk || !identity?.securityFence) return undefined;
     const owner = identity.pk;

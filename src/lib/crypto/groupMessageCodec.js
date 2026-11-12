@@ -1,6 +1,8 @@
 import * as groupKeyStore from './groupKeyStore';
 import { verifyEvent } from 'nostr-tools';
 import { encryptGroupMessage, decryptGroupMessage } from './groupCipher';
+import { mlsSealBody, mlsOpenWire } from '../mlsGroupsRoute';
+const MLS_FMT_TAG = 'mls1';
 import { resolveControlSender } from './groupMembership';
 const KEY_WAIT_MS = 5000; const KEY_POLL_MS = 200;
 async function waitForKey(groupId, securityFence) {
@@ -9,6 +11,17 @@ async function waitForKey(groupId, securityFence) {
   return null;
 }
 export async function encodeGroupPayload({ groupId, payload, senderPubkey, by, waitForKey: wfk = false, securityFence = null }) {
+  // MLS default path (founder cutover): when this device's engine holds the
+  // group, bodies seal with OpenMLS instead of the shared-key cipher and the
+  // event carries fmt=mls1 so receivers route on it. Falls through to the
+  // group-cipher path while no MLS state exists yet.
+  const mlsReady = await mlsSealBody.ready(groupId);
+  if (mlsReady) {
+    const sealed = await mlsSealBody.seal(groupId, payload, by);
+    if (sealed) {
+      return { content: JSON.stringify({ mls: sealed }), epoch: null, tags: [['fmt', MLS_FMT_TAG]] };
+    }
+  }
   let current = await groupKeyStore.getCurrentGroupKey(groupId, securityFence);
   if (!current && wfk) current = await waitForKey(groupId, securityFence);
   if (!current) return { pending: true };
@@ -73,6 +86,15 @@ export async function decodeGroupEvent({ event, groupId, store = groupKeyStore, 
     }
     sender = resolveControlSender({ wirePubkey: event.pubkey, members });
     if (!sender) return { error: 'sender-not-in-current-membership', refused: true };
+  }
+  // MLS default path (founder cutover): fmt=mls1 content is an OpenMLS wire
+  // envelope routed to the engine; never read as group-cipher or legacy.
+  const fmtTags = event.tags.filter((tag) => tag[0] === 'fmt');
+  if (fmtTags.some((tag) => tag[1] === MLS_FMT_TAG)) {
+    const opened = await mlsOpenWire(event.content);
+    if (opened.error) return { ...opened, ...(sender ? { sender } : {}) };
+    if (opened.control) return opened;
+    return { plaintext: opened.plaintext, parsed: opened.parsed, mls: true, ...(sender ? { sender } : {}) };
   }
   const epTags = event.tags.filter((tag) => tag[0] === 'ep');
   if (epTags.length > 1) return { error: 'decrypt-failed', reason: 'ambiguous epoch tags' };
